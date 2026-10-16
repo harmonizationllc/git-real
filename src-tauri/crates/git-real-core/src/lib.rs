@@ -9,3 +9,11 @@
 //! such as status, log, diff, and refs, while network, credential, and signing
 //! operations shell out to the system `git` CLI. Network default features of
 //! `git2` are disabled for this reason.
+
+pub mod error;
+pub mod model;
+pub mod repo;
+
+pub use error::GitError;
+pub use model::*;
+pub use repo::RepoSession;
