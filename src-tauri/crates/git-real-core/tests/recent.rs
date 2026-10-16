@@ -301,3 +301,99 @@ fn cloned_list_is_equal_and_independent() {
     repos.remove(&p("a"));
     assert_eq!(copy.entries(), &[entry("a", 1)]);
 }
+
+// --- serde: leniency and strictness edges ---
+
+#[test]
+fn deserialize_ignores_unknown_entry_fields() {
+    let value = json!({"entries": [{"path": "/r/a", "name": "a", "lastOpened": 1, "extra": true}]});
+    let repos: RecentRepos = serde_json::from_value(value).unwrap();
+    assert_eq!(repos.entries(), &[entry("a", 1)]);
+}
+
+#[test]
+fn deserialize_unknown_top_level_key_keeps_entries() {
+    let value =
+        json!({"future": {"x": 1}, "entries": [{"path": "/r/a", "name": "a", "lastOpened": 1}]});
+    let repos: RecentRepos = serde_json::from_value(value).unwrap();
+    assert_eq!(repos.entries(), &[entry("a", 1)]);
+}
+
+#[test]
+fn deserialize_empty_entries_array_is_default() {
+    let repos: RecentRepos = serde_json::from_str(r#"{"entries":[]}"#).unwrap();
+    assert_eq!(repos, RecentRepos::default());
+}
+
+#[test]
+fn deserialize_preserves_entry_order_from_file() {
+    let value = json!({"entries": [
+        {"path": "/r/b", "name": "b", "lastOpened": 1},
+        {"path": "/r/a", "name": "a", "lastOpened": 9}
+    ]});
+    let repos: RecentRepos = serde_json::from_value(value).unwrap();
+    assert_eq!(paths(&repos), vec![p("b"), p("a")]);
+}
+
+#[test]
+fn deserialize_rejects_scalar_and_null_documents() {
+    for text in ["null", "42", r#""entries""#, "true"] {
+        assert!(
+            serde_json::from_str::<RecentRepos>(text).is_err(),
+            "{text} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn deserialize_rejects_entries_that_is_not_an_array() {
+    assert!(serde_json::from_str::<RecentRepos>(r#"{"entries":{}}"#).is_err());
+}
+
+#[test]
+fn deserialize_rejects_entry_missing_path() {
+    let value = json!({"entries": [{"name": "a", "lastOpened": 1}]});
+    assert!(serde_json::from_value::<RecentRepos>(value).is_err());
+}
+
+#[test]
+fn deserialize_rejects_entry_missing_last_opened() {
+    let value = json!({"entries": [{"path": "/r/a", "name": "a"}]});
+    assert!(serde_json::from_value::<RecentRepos>(value).is_err());
+}
+
+// --- behaviour on hand-edited data ---
+
+#[test]
+fn touch_on_deserialized_over_cap_list_truncates_to_max() {
+    let entries: Vec<_> = (0..25)
+        .map(|i| json!({"path": format!("/r/old{i}"), "name": "o", "lastOpened": i}))
+        .collect();
+    let mut repos: RecentRepos = serde_json::from_value(json!({ "entries": entries })).unwrap();
+    touch(&mut repos, "new", 99);
+    assert_eq!(repos.entries().len(), MAX_ENTRIES);
+    assert_eq!(repos.entries()[0], entry("new", 99));
+}
+
+#[test]
+fn remove_deletes_every_duplicate_from_hand_edited_data() {
+    let value = json!({"entries": [
+        {"path": "/r/a", "name": "a", "lastOpened": 2},
+        {"path": "/r/b", "name": "b", "lastOpened": 1},
+        {"path": "/r/a", "name": "a", "lastOpened": 0}
+    ]});
+    let mut repos: RecentRepos = serde_json::from_value(value).unwrap();
+    assert!(repos.remove(&p("a")));
+    assert_eq!(repos.entries(), &[entry("b", 1)]);
+}
+
+#[test]
+fn touch_on_hand_edited_duplicates_collapses_them_to_one() {
+    let value = json!({"entries": [
+        {"path": "/r/a", "name": "a", "lastOpened": 2},
+        {"path": "/r/a", "name": "a", "lastOpened": 0}
+    ]});
+    let mut repos: RecentRepos = serde_json::from_value(value).unwrap();
+    touch(&mut repos, "a", 5);
+    assert_eq!(repos.entries(), &[entry("a", 5)]);
+}
