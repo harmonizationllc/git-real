@@ -208,28 +208,24 @@ describe("useOpenRepo sequences", () => {
   });
 });
 
-// KNOWN BUG (developer finding): run() writes failure state from a stale earlier call after a
-// later call succeeded. it.fails keeps the suite green and turns red once fixed; then use plain it.
+// Contract: only the latest call may set or clear error state; a stale earlier rejection is ignored.
 describe("useOpenRepo overlapping calls", () => {
-  it.fails(
-    "should not show a stale error from a slower earlier open once a later call has succeeded",
-    async () => {
-      let rejectFirst!: (e: unknown) => void;
-      vi.mocked(openRepo)
-        .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
-        .mockResolvedValueOnce(opened("/b", 2));
-      const { result } = renderHookWithProviders(() => useOpenRepo());
-      let first!: Promise<void>;
-      act(() => {
-        first = result.current.open("/a");
-      });
-      await act(() => result.current.open("/b"));
-      await act(async () => {
-        rejectFirst(notARepo);
-        await first;
-      });
-      expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
-      expect(result.current.error).toBeNull();
-    },
-  );
+  it("should not show a stale error from a slower earlier open once a later call has succeeded", async () => {
+    let rejectFirst!: (e: unknown) => void;
+    vi.mocked(openRepo)
+      .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
+      .mockResolvedValueOnce(opened("/b", 2));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.open("/a");
+    });
+    await act(() => result.current.open("/b"));
+    await act(async () => {
+      rejectFirst(notARepo);
+      await first;
+    });
+    expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
+    expect(result.current.error).toBeNull();
+  });
 });

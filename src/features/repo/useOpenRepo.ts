@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { initRepo, isAppError, openRepo } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
@@ -24,14 +24,17 @@ export function useOpenRepo(): UseOpenRepo {
   const openTab = useRepoTabs((s) => s.openTab);
   const [failure, setFailure] = useState<{ error: AppError; path: string } | null>(null);
 
+  const latestCall = useRef(0);
+
   const run = async (req: OpenRequest): Promise<void> => {
+    const id = ++latestCall.current;
     setFailure(null);
     try {
       const repo = req.action === "open" ? await openRepo(req.path) : await initRepo(req.path);
       openTab(repo);
       await queryClient.invalidateQueries({ queryKey: queryKeys.recent });
     } catch (e) {
-      setFailure({ error: toAppError(e), path: req.path });
+      if (id === latestCall.current) setFailure({ error: toAppError(e), path: req.path });
     }
   };
 
