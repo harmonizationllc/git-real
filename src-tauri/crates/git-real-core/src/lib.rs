@@ -13,10 +13,12 @@
 pub mod error;
 pub mod model;
 pub mod progress;
+pub mod recent;
 pub mod remote;
 pub mod repo;
 
 pub use error::GitError;
 pub use model::*;
 pub use progress::ProgressSink;
+pub use recent::RecentRepos;
 pub use repo::RepoSession;
