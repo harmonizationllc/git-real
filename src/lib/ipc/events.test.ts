@@ -57,6 +57,20 @@ describe("onCloneProgress", () => {
     expect(handler.mock.calls).toEqual([[progress]]);
   });
 
+  it("delivers a matching progress whose percent is null unchanged", async () => {
+    const handler = vi.fn();
+    await onCloneProgress(7, handler);
+    const indeterminate: Progress = { phase: "counting", percent: null, message: "Counting" };
+    emit({ cloneId: 7, progress: indeterminate });
+    expect(handler).toHaveBeenCalledExactlyOnceWith(indeterminate);
+  });
+
+  it("the returned unlisten function is the one the listener produced and can be called", async () => {
+    const stop = await onCloneProgress(7, vi.fn());
+    stop();
+    expect(unlisten).toHaveBeenCalledOnce();
+  });
+
   it("returns the unlisten function", async () => {
     await expect(onCloneProgress(7, vi.fn())).resolves.toBe(unlisten);
   });

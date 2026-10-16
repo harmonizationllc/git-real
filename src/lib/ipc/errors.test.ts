@@ -45,6 +45,11 @@ describe("isAppError", () => {
     },
   );
 
+  it("isAppError rejects a JSON object whose only kind lives under __proto__", () => {
+    const value: unknown = JSON.parse('{"__proto__":{"kind":"io"},"message":"m"}');
+    expect(isAppError(value)).toBe(false);
+  });
+
   it.each(["toString", "constructor", "hasOwnProperty"])(
     "isAppError rejects prototype key %s as kind",
     (kind) => {

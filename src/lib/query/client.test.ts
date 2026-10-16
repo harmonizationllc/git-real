@@ -16,6 +16,14 @@ describe("query client", () => {
     expect(queryClient.getDefaultOptions().queries?.retry).toBe(false);
   });
 
+  it("clients from the factory do not share cache state", () => {
+    const a = createQueryClient();
+    const b = createQueryClient();
+    a.setQueryData(queryKeys.recent, [1]);
+    expect(a.getQueryData(queryKeys.recent)).toEqual([1]);
+    expect(b.getQueryData(queryKeys.recent)).toBeUndefined();
+  });
+
   it("app singleton is stable across reads", () => {
     expect(queryClient).toBe(queryClient);
     expect(queryClient).not.toBe(createQueryClient());

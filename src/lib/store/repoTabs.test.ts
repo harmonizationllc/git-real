@@ -59,6 +59,15 @@ describe("openTab", () => {
     expect(tabs[0]).toEqual({ id: 1, summary: fresh.summary });
   });
 
+  it("openTab with same id but a different path activates and refreshes the existing tab", () => {
+    openAll(1, 2);
+    useRepoTabs.getState().openTab(repo(1, "/moved/1", "dev"));
+    const { tabs, activeId } = useRepoTabs.getState();
+    expect(tabs).toHaveLength(2);
+    expect(activeId).toBe(1);
+    expect(tabs[0]).toEqual({ id: 1, summary: repo(1, "/moved/1", "dev").summary });
+  });
+
   it("openTab with same path keeps the existing id and position", () => {
     openAll(1, 2);
     useRepoTabs.getState().openTab(repo(9, "/r/1", "dev"));
