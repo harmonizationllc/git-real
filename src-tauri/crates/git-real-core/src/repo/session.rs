@@ -30,6 +30,9 @@ impl RepoSession {
     /// Initializes a new repository at `path`, creating the folder if needed.
     pub fn init(path: impl AsRef<Path>) -> Result<Self, GitError> {
         let path = path.as_ref();
+        if let Some(root) = enclosing_repo_root(path)? {
+            return Err(GitError::AlreadyARepository(root));
+        }
         match Repository::open(path) {
             Ok(_) => return Err(GitError::AlreadyARepository(path.to_path_buf())),
             Err(e) if e.code() == ErrorCode::NotFound => {}
@@ -64,5 +67,20 @@ impl RepoSession {
     fn from_repo(repo: Repository) -> Result<Self, GitError> {
         let root = std::fs::canonicalize(repo.workdir().unwrap_or_else(|| repo.path()))?;
         Ok(Self { repo, root })
+    }
+}
+
+/// Returns the canonical root of any repository enclosing `path`, looking from
+/// the nearest ancestor that exists (the path itself when it exists).
+fn enclosing_repo_root(path: &Path) -> Result<Option<PathBuf>, GitError> {
+    let Some(start) = path.ancestors().find(|p| p.exists()) else {
+        return Ok(None);
+    };
+    match Repository::discover(start) {
+        Ok(repo) => Ok(Some(std::fs::canonicalize(
+            repo.workdir().unwrap_or_else(|| repo.path()),
+        )?)),
+        Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
+        Err(e) => Err(GitError::Git2(e)),
     }
 }

@@ -340,3 +340,58 @@ fn summary_head_branch_none_when_head_points_outside_refs_heads() {
     let session = RepoSession::open(&path).unwrap();
     assert_eq!(session.summary().head_branch, None);
 }
+
+// --- init: inside an existing repository is an error ---
+
+#[test]
+fn init_in_existing_subfolder_of_repo_is_already_a_repository() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let sub = path.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    let root = std::fs::canonicalize(&path).unwrap();
+    let err = RepoSession::init(&sub).err().expect("should fail");
+    match err {
+        GitError::AlreadyARepository(p) => assert_eq!(p, root),
+        other => panic!("expected AlreadyARepository, got {other:?}"),
+    }
+}
+
+#[test]
+fn init_in_existing_subfolder_of_repo_does_not_create_nested_git_dir() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let sub = path.join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    let _ = RepoSession::init(&sub);
+    assert!(!sub.join(".git").exists());
+}
+
+#[test]
+fn init_in_missing_subfolder_of_repo_is_already_a_repository() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let root = std::fs::canonicalize(&path).unwrap();
+    let err = RepoSession::init(path.join("does").join("not").join("exist"))
+        .err()
+        .expect("should fail");
+    match err {
+        GitError::AlreadyARepository(p) => assert_eq!(p, root),
+        other => panic!("expected AlreadyARepository, got {other:?}"),
+    }
+}
+
+#[test]
+fn init_in_missing_subfolder_of_repo_does_not_create_directories() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let _ = RepoSession::init(path.join("does").join("not").join("exist"));
+    assert!(!path.join("does").exists());
+}
+
+#[test]
+fn init_beside_repo_in_same_parent_succeeds() {
+    let tmp = tempfile::tempdir().unwrap();
+    if git2::Repository::discover(tmp.path()).is_ok() {
+        eprintln!("skipping: temp dir is inside a git repository");
+        return;
+    }
+    git2::Repository::init(tmp.path().join("a")).unwrap();
+    assert!(RepoSession::init(tmp.path().join("b")).is_ok());
+}
