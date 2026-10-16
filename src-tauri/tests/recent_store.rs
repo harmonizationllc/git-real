@@ -205,3 +205,81 @@ fn rename_failure_cleans_up_tmp_file() {
     RecentStore::load(path.clone()).touch(p("/repo/a"), "a".into());
     assert!(!tmp_of(&path).exists());
 }
+
+// Coverage additions: empty file, non-UTF-8 save failure, concurrency, file state after failures.
+#[test]
+fn load_tolerates_empty_file() {
+    let (_dir, path) = common::temp_file_path("recent-repos.json");
+    fs::write(&path, "").unwrap();
+    assert!(RecentStore::load(path).entries().is_empty());
+}
+
+#[test]
+fn touch_with_unwritable_location_creates_no_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("file");
+    fs::write(&blocker, "x").unwrap();
+    RecentStore::load(blocker.join("recent.json")).touch(p("/repo/a"), "a".into());
+    assert_eq!(fs::read_to_string(&blocker).unwrap(), "x");
+}
+
+#[cfg(unix)]
+#[test]
+fn touch_with_non_utf8_path_logs_and_keeps_entry_in_memory() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let (_dir, path) = common::temp_file_path("recent-repos.json");
+    let store = RecentStore::load(path.clone());
+    let bad = PathBuf::from(OsStr::from_bytes(b"/repo/\xff\xfe"));
+    let returned = store.touch(bad.clone(), "bad".into());
+    assert_eq!(
+        (
+            returned[0].path.clone(),
+            path.exists(),
+            tmp_of(&path).exists()
+        ),
+        (bad, false, false)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_save_leaves_previous_file_intact() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let (_dir, path) = common::temp_file_path("recent-repos.json");
+    let store = RecentStore::load(path.clone());
+    store.touch(p("/repo/a"), "a".into());
+    let before = fs::read_to_string(&path).unwrap();
+    store.touch(
+        PathBuf::from(OsStr::from_bytes(b"/repo/\xff")),
+        "bad".into(),
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+}
+
+#[test]
+fn concurrent_touches_leave_consistent_file() {
+    let (_dir, path) = common::temp_file_path("recent-repos.json");
+    let store = std::sync::Arc::new(RecentStore::load(path.clone()));
+    let handles: Vec<_> = (0..8)
+        .map(|i| {
+            let store = std::sync::Arc::clone(&store);
+            std::thread::spawn(move || {
+                store.touch(PathBuf::from(format!("/repo/{i}")), format!("r{i}"));
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+    let mut on_disk: Vec<PathBuf> = RecentStore::load(path)
+        .entries()
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    let mut in_memory: Vec<PathBuf> = store.entries().into_iter().map(|e| e.path).collect();
+    on_disk.sort();
+    in_memory.sort();
+    assert_eq!((on_disk.len(), on_disk), (8, in_memory));
+}

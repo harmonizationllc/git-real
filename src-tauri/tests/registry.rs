@@ -123,3 +123,57 @@ fn registry_find_by_path_does_not_block_on_locked_session() {
     let _guard = session.lock().unwrap();
     assert_eq!(registry.find_by_path(&path), Some(id));
 }
+
+// Coverage additions: a panic while a session lock is held must not break the registry.
+#[test]
+fn registry_survives_panic_while_session_lock_held() {
+    let (_dir, s) = session();
+    let path = s.path().to_path_buf();
+    let registry = RepoRegistry::default();
+    let id = registry.register(s);
+    let session = registry.get(id).unwrap();
+    let _ = std::thread::spawn(move || {
+        let _guard = session.lock().unwrap();
+        panic!("poison the session lock");
+    })
+    .join();
+    assert_eq!(
+        (
+            registry.get(id).is_some(),
+            registry.find_by_path(&path),
+            registry.remove(id)
+        ),
+        (true, Some(id), true)
+    );
+}
+
+#[test]
+fn registry_concurrent_registers_yield_unique_ids() {
+    let registry = std::sync::Arc::new(RepoRegistry::default());
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let registry = std::sync::Arc::clone(&registry);
+            std::thread::spawn(move || {
+                let (_dir, s) = session();
+                (registry.register(s), _dir)
+            })
+        })
+        .collect();
+    let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let mut ids: Vec<u64> = results.iter().map(|(id, _)| *id).collect();
+    ids.sort();
+    assert_eq!(ids, (1..=8).collect::<Vec<u64>>());
+}
+
+#[test]
+fn registry_find_by_path_distinguishes_sessions() {
+    let (_d1, s1) = session();
+    let (_d2, s2) = session();
+    let (p1, p2) = (s1.path().to_path_buf(), s2.path().to_path_buf());
+    let registry = RepoRegistry::default();
+    let (id1, id2) = (registry.register(s1), registry.register(s2));
+    assert_eq!(
+        (registry.find_by_path(&p1), registry.find_by_path(&p2)),
+        (Some(id1), Some(id2))
+    );
+}
