@@ -165,3 +165,41 @@ fn clone_failed_message_without_code_reports_signal() {
         "git clone was terminated by a signal"
     );
 }
+
+#[test]
+fn clone_failed_message_with_only_error_line() {
+    assert_eq!(
+        clone_failed_message(Some(1), "Cloning into 'x'...\nerror: RPC failed\n"),
+        "error: RPC failed"
+    );
+}
+
+#[test]
+fn clone_failed_message_ignores_blank_and_whitespace_only_lines() {
+    assert_eq!(
+        clone_failed_message(Some(128), "\n   \r\n\t\nfatal: a\n\n  \nfatal: b\n"),
+        "fatal: a\nfatal: b"
+    );
+}
+
+#[test]
+fn clone_failed_message_ignores_fatal_not_at_line_start() {
+    assert_eq!(
+        clone_failed_message(Some(128), "remote: fatal: hidden\nwarning: error: nested\n"),
+        "git clone failed with exit code 128"
+    );
+}
+
+#[test]
+fn clone_failed_message_with_signal_and_noise_only_reports_signal() {
+    assert_eq!(
+        clone_failed_message(None, "Receiving objects:  50%\r"),
+        "git clone was terminated by a signal"
+    );
+}
+
+#[test]
+fn clone_failed_message_prefers_fatal_lines_over_exit_code() {
+    let message = clone_failed_message(Some(128), "fatal: nope\n");
+    assert!(!message.contains("exit code"));
+}
