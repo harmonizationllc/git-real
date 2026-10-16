@@ -1,0 +1,27 @@
+.root {
+  padding: 16px;
+  color: var(--color-text);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.name {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.path {
+  margin: 0;
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.branch {
+  margin: 0;
+  color: var(--color-accent);
+  font-family: ui-monospace, monospace;
+}

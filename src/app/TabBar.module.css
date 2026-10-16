@@ -1,0 +1,57 @@
+.root {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list {
+  display: flex;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+}
+
+.active {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-bottom-color: var(--color-accent);
+}
+
+.label,
+.close,
+.plus {
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.label,
+.close,
+.plus {
+  padding: 6px 8px;
+}
+
+.label {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  padding-left: 2px;
+}
+
+.label:focus-visible,
+.close:focus-visible,
+.plus:focus-visible {
+  outline: 2px solid var(--color-accent);
+}
