@@ -294,3 +294,26 @@ describe("useOpenRepo clone", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+// Contract: a stale clone failure neither sets the error nor changes its own boolean outcome.
+describe("useOpenRepo clone overlapping calls", () => {
+  it("should resolve false without setting the error when an older clone fails after a newer open succeeded", async () => {
+    let rejectClone!: (e: unknown) => void;
+    vi.mocked(cloneRepo).mockReturnValueOnce(new Promise((_, rej) => (rejectClone = rej)));
+    vi.mocked(openRepo).mockResolvedValueOnce(opened("/b", 2));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let first!: Promise<boolean>;
+    act(() => {
+      first = result.current.clone("u", "/d", 5);
+    });
+    await act(() => result.current.open("/b"));
+    let outcome: boolean | undefined;
+    await act(async () => {
+      rejectClone({ kind: "cloneFailed", message: "late" });
+      outcome = await first;
+    });
+    expect(outcome).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
+  });
+});

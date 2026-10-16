@@ -194,6 +194,14 @@ describe("CloneDialog form", () => {
     expect(screen.getByText("Destination: /home/u/src/b")).toBeInTheDocument();
   });
 
+  it("should use a single separator when the chosen folder ends with a backslash", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("C:\\src\\");
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    expect(await screen.findByText("Destination: C:\\src/b")).toBeInTheDocument();
+  });
+
   it("should keep the previous folder when the picker is cancelled", async () => {
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await fillForm(user);
@@ -309,6 +317,15 @@ describe("CloneDialog progress", () => {
     expect(screen.getByRole("button", { name: "Choose folder" })).toBeDisabled();
     expect(cloneBtn()).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("should not start a second clone when the form is submitted again while cloning", async () => {
+    vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
+    await startClone();
+    await screen.findByText("Starting clone…");
+    fireEvent.submit(screen.getByLabelText("Repository URL").closest("form")!);
+    expect(cloneRepo).toHaveBeenCalledTimes(1);
+    expect(onCloneProgress).toHaveBeenCalledTimes(1);
   });
 
   it("should ignore Escape while cloning", async () => {
