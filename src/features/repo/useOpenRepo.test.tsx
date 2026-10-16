@@ -146,3 +146,90 @@ describe("useOpenRepo error lifecycle", () => {
     expect(result.current.errorPath).toBeNull();
   });
 });
+
+describe("useOpenRepo sequences", () => {
+  it("should open two tabs when open is called twice with different paths", async () => {
+    vi.mocked(openRepo)
+      .mockResolvedValueOnce(opened("/a", 1))
+      .mockResolvedValueOnce(opened("/b", 2));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.open("/a"));
+    await act(() => result.current.open("/b"));
+    expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/a", "/b"]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should offer the failed path as errorPath so init can be retried on it", async () => {
+    vi.mocked(openRepo).mockRejectedValue(notARepo);
+    vi.mocked(initRepo).mockResolvedValue(opened("/r"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.open("/r"));
+    const failedPath = result.current.errorPath!;
+    await act(() => result.current.init(failedPath));
+    expect(initRepo).toHaveBeenCalledExactlyOnceWith("/r");
+    expect(result.current.error).toBeNull();
+    expect(useRepoTabs.getState().tabs).toHaveLength(1);
+  });
+
+  it("should replace the previous error with the new one when a second open fails", async () => {
+    vi.mocked(openRepo)
+      .mockRejectedValueOnce({ kind: "pathNotFound", message: "first" })
+      .mockRejectedValueOnce({ kind: "io", message: "second" });
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.open("/a"));
+    await act(() => result.current.open("/b"));
+    expect(result.current.error).toEqual({ kind: "io", message: "second" });
+    expect(result.current.errorPath).toBe("/b");
+  });
+
+  it("should map a non-Error rejection from init to an io error and not open a tab", async () => {
+    vi.mocked(initRepo).mockRejectedValue("boom");
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.init("/r"));
+    expect(result.current.error).toEqual({ kind: "io", message: "boom" });
+    expect(result.current.errorPath).toBe("/r");
+    expect(useRepoTabs.getState().tabs).toHaveLength(0);
+  });
+
+  it("should invalidate the recent query when init succeeds", async () => {
+    vi.mocked(initRepo).mockResolvedValue(opened("/r"));
+    const { result, queryClient } = renderHookWithProviders(() => useOpenRepo());
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.init("/r"));
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["recent"] });
+  });
+
+  it("should not invalidate the recent query when open fails", async () => {
+    vi.mocked(openRepo).mockRejectedValue(notARepo);
+    const { result, queryClient } = renderHookWithProviders(() => useOpenRepo());
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.open("/r"));
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// KNOWN BUG (developer finding): run() writes failure state from a stale earlier call after a
+// later call succeeded. it.fails keeps the suite green and turns red once fixed; then use plain it.
+describe("useOpenRepo overlapping calls", () => {
+  it.fails(
+    "should not show a stale error from a slower earlier open once a later call has succeeded",
+    async () => {
+      let rejectFirst!: (e: unknown) => void;
+      vi.mocked(openRepo)
+        .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
+        .mockResolvedValueOnce(opened("/b", 2));
+      const { result } = renderHookWithProviders(() => useOpenRepo());
+      let first!: Promise<void>;
+      act(() => {
+        first = result.current.open("/a");
+      });
+      await act(() => result.current.open("/b"));
+      await act(async () => {
+        rejectFirst(notARepo);
+        await first;
+      });
+      expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
+      expect(result.current.error).toBeNull();
+    },
+  );
+});

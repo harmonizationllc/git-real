@@ -202,3 +202,37 @@ describe("StartScreen clone", () => {
     expect(pickFolder).not.toHaveBeenCalled();
   });
 });
+
+// Contract: failures of init and non-AppError rejections surface in the error panel.
+describe("StartScreen init failure", () => {
+  it("should render the error and open no tab when initRepo rejects", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r");
+    vi.mocked(initRepo).mockRejectedValue({ kind: "io", message: "permission denied" });
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", initBtn));
+    expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
+    expect(screen.queryByRole("button", initHereBtn)).toBeNull();
+    expect(useRepoTabs.getState().tabs).toHaveLength(0);
+  });
+
+  it("should render the error message when openRepo rejects with a plain Error", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r");
+    vi.mocked(openRepo).mockRejectedValue(new Error("ipc unavailable"));
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", openBtn));
+    expect(await screen.findByRole("alert")).toHaveTextContent("ipc unavailable");
+  });
+
+  it("should clear the error panel when a later open succeeds", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r");
+    vi.mocked(openRepo)
+      .mockRejectedValueOnce({ kind: "pathNotFound", message: "No such path" })
+      .mockResolvedValueOnce(opened("/r"));
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", openBtn));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", openBtn));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(useRepoTabs.getState().tabs).toHaveLength(1);
+  });
+});

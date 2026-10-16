@@ -64,3 +64,29 @@ describe("RepoError dismiss", () => {
     expect(onInitHere).not.toHaveBeenCalled();
   });
 });
+
+describe("RepoError other kinds", () => {
+  it.each([
+    "alreadyARepository",
+    "gitCliMissing",
+    "cloneFailed",
+    "io",
+    "git",
+    "unknownRepo",
+  ] as const)(
+    "should show the message and no init offer when the kind is %s even with a path and handler",
+    (kind) => {
+      render(
+        <RepoError
+          error={{ kind, message: `msg ${kind}` }}
+          path="/r"
+          onInitHere={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("alert")).toHaveTextContent(`msg ${kind}`);
+      expect(screen.queryByRole("button", initName)).toBeNull();
+      expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    },
+  );
+});
