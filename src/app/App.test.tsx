@@ -107,6 +107,24 @@ describe("App closing tabs", () => {
     expect(screen.getByRole("heading", heading("alpha"))).toBeInTheDocument();
   });
 
+  it("closing the active first tab activates the right neighbour", async () => {
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"), repo(3, "gamma"));
+    await user.click(screen.getByRole("tab", { name: "alpha" }));
+    await user.click(screen.getByRole("button", { name: "Close alpha" }));
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["beta", "gamma"]);
+    expect(screen.getByRole("heading", heading("beta"))).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "beta" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("closing the active middle tab activates the left neighbour", async () => {
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"), repo(3, "gamma"));
+    await user.click(screen.getByRole("tab", { name: "beta" }));
+    await user.click(screen.getByRole("button", { name: "Close beta" }));
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["alpha", "gamma"]);
+    expect(screen.getByRole("heading", heading("alpha"))).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "alpha" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("closing the last tab returns to the start screen", async () => {
     const { user } = renderApp(repo(1, "alpha"));
     await user.click(screen.getByRole("button", { name: "Close alpha" }));
