@@ -60,3 +60,31 @@ pub fn temp_repo_with_unsupported_format() -> (TempDir, PathBuf) {
     .expect("write config");
     (dir, path)
 }
+
+/// Writes an executable shell script named `git` into `dir` and returns its path.
+/// Lets tests drive `clone_with` with a scripted stand-in for the git CLI.
+///
+/// A concurrent `fork` in another test thread can briefly inherit the write
+/// handle, making an immediate `exec` fail with ETXTBSY. The helper therefore
+/// probes the script (it exits at once when `FAKE_GIT_PROBE` is set) until the
+/// kernel accepts it.
+#[cfg(unix)]
+pub fn fake_git(dir: &Path, script: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let path = dir.join("git");
+    let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{script}\n");
+    std::fs::write(&path, body).expect("write fake git");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    for _ in 0..100 {
+        match Command::new(&path).env("FAKE_GIT_PROBE", "1").status() {
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("probing fake git failed: {e}"),
+            Ok(_) => break,
+        }
+    }
+    path
+}
