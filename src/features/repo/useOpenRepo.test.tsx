@@ -1,6 +1,6 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { initRepo, openRepo } from "../../lib/ipc";
+import { cloneRepo, initRepo, openRepo } from "../../lib/ipc";
 import type { AppError, OpenedRepo } from "../../lib/ipc";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
@@ -10,6 +10,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   openRepo: vi.fn(),
   initRepo: vi.fn(),
+  cloneRepo: vi.fn(),
   listRecent: vi.fn(),
   removeRecent: vi.fn(),
   pickFolder: vi.fn(),
@@ -227,5 +228,69 @@ describe("useOpenRepo overlapping calls", () => {
     });
     expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
     expect(result.current.error).toBeNull();
+  });
+});
+
+// Contract: clone shares the open/init pipeline but resolves a boolean and has no retryable path.
+describe("useOpenRepo clone", () => {
+  it("should open a tab and resolve true when clone succeeds", async () => {
+    vi.mocked(cloneRepo).mockResolvedValue(opened("/d"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.clone("u", "/d", 5);
+    });
+    expect(outcome).toBe(true);
+    expect(useRepoTabs.getState().tabs).toHaveLength(1);
+  });
+
+  it("should call cloneRepo with exactly url, dest and cloneId when clone succeeds", async () => {
+    vi.mocked(cloneRepo).mockResolvedValue(opened("/d"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.clone("u", "/d", 5));
+    expect(cloneRepo).toHaveBeenCalledExactlyOnceWith("u", "/d", 5);
+  });
+
+  it("should invalidate the recent query when clone succeeds", async () => {
+    vi.mocked(cloneRepo).mockResolvedValue(opened("/d"));
+    const { result, queryClient } = renderHookWithProviders(() => useOpenRepo());
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.clone("u", "/d", 5));
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["recent"] });
+  });
+
+  it("should resolve false and set the error when clone rejects with an AppError", async () => {
+    const err: AppError = { kind: "cloneFailed", message: "nope" };
+    vi.mocked(cloneRepo).mockRejectedValue(err);
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.clone("u", "/d", 5);
+    });
+    expect(outcome).toBe(false);
+    expect(result.current.error).toEqual(err);
+  });
+
+  it("should leave errorPath null and open no tab when clone fails", async () => {
+    vi.mocked(cloneRepo).mockRejectedValue({ kind: "cloneFailed", message: "nope" });
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.clone("u", "/d", 5));
+    expect(result.current.errorPath).toBeNull();
+    expect(useRepoTabs.getState().tabs).toEqual([]);
+  });
+
+  it("should map a non-AppError clone rejection to an io error", async () => {
+    vi.mocked(cloneRepo).mockRejectedValue(new Error("boom"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(() => result.current.clone("u", "/d", 5));
+    expect(result.current.error).toEqual({ kind: "io", message: "boom" });
+  });
+
+  it("should not invalidate the recent query when clone fails", async () => {
+    vi.mocked(cloneRepo).mockRejectedValue({ kind: "cloneFailed", message: "nope" });
+    const { result, queryClient } = renderHookWithProviders(() => useOpenRepo());
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.clone("u", "/d", 5));
+    expect(spy).not.toHaveBeenCalled();
   });
 });
