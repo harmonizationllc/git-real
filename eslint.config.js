@@ -4,10 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 const ipcSeamMessage = "Imports of the Tauri IPC must go through src/lib/ipc.";
 
 const restrictedTauriImports = {
-  paths: [
-    { name: "@tauri-apps/api/core", message: ipcSeamMessage },
-    { name: "@tauri-apps/api/event", message: ipcSeamMessage },
-  ],
+  patterns: [{ regex: "^@tauri-apps/(?!api/mocks$)", message: ipcSeamMessage }],
 };
 
 export default tseslint.config(

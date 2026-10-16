@@ -8,6 +8,21 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react()],
 
+  // Pre-bundle every runtime dependency up front so Vite never re-optimizes
+  // (and reloads) mid-session when a new bare import is first discovered.
+  optimizeDeps: {
+    include: [
+      "react",
+      "react/jsx-dev-runtime",
+      "react-dom/client",
+      "@tanstack/react-query",
+      "zustand",
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/event",
+      "@tauri-apps/plugin-dialog",
+    ],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -25,8 +40,8 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and test coverage output
+      ignored: ["**/src-tauri/**", "**/coverage/**"],
     },
   },
 

@@ -1,0 +1,15 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
