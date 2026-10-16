@@ -1295,12 +1295,14 @@ name = "git-real"
 version = "0.1.0"
 dependencies = [
  "git-real-core",
+ "git2",
  "notify",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
