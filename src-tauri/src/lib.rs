@@ -1,12 +1,36 @@
+pub mod commands;
 pub mod error;
+pub mod events;
 pub mod recent_store;
 pub mod state;
+
+use std::sync::Arc;
+
+use tauri::Manager;
+
+use crate::recent_store::RecentStore;
+use crate::state::RepoRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![])
+        .plugin(tauri_plugin_dialog::init())
+        .manage(Arc::new(RepoRegistry::default()))
+        .setup(|app| {
+            let dir = app.path().app_config_dir()?;
+            app.manage(Arc::new(RecentStore::load(dir.join("recent-repos.json"))));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::repo::open_repo,
+            commands::repo::init_repo,
+            commands::repo::clone_repo,
+            commands::repo::close_repo,
+            commands::repo::list_recent,
+            commands::repo::remove_recent,
+            commands::repo::check_git_cli,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

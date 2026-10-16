@@ -3,6 +3,11 @@
 
 use std::path::{Path, PathBuf};
 
+use git_real_core::remote::git_cli;
+use git_real_core::{Progress, ProgressSink};
+use git_real_lib::recent_store::RecentStore;
+use git_real_lib::state::RepoRegistry;
+
 use git2::{Repository, Signature};
 use tempfile::TempDir;
 
@@ -36,4 +41,47 @@ pub fn temp_file_path(name: &str) -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join(name);
     (dir, path)
+}
+
+/// Clones `src` into a bare repo inside a fresh temp dir.
+/// Returns the owning `TempDir` and the path of the bare repo.
+pub fn temp_bare_clone(src: &Path) -> (TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let dest = dir.path().join("bare.git");
+    git2::build::RepoBuilder::new()
+        .bare(true)
+        .clone(src.to_str().expect("utf-8 path"), &dest)
+        .expect("bare clone");
+    (dir, dest)
+}
+
+/// Returns a `file://` URL for a local path.
+pub fn file_url(path: &Path) -> String {
+    format!("file://{}", path.display())
+}
+
+/// Test double: records every progress report so tests can inspect them.
+pub struct RecordingSink(pub Vec<Progress>);
+
+impl ProgressSink for RecordingSink {
+    fn report(&mut self, progress: Progress) {
+        self.0.push(progress);
+    }
+}
+
+/// True when the system git CLI can be located; otherwise prints a skip notice.
+pub fn git_available() -> bool {
+    if git_cli::locate().is_err() {
+        eprintln!("skipping: git not on PATH");
+        return false;
+    }
+    true
+}
+
+/// A fresh registry plus a recent store backed by `<tmp>/recent-repos.json`.
+/// Keep the `TempDir` alive for the store file to remain valid.
+pub fn fresh_state() -> (TempDir, RepoRegistry, RecentStore) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = RecentStore::load(dir.path().join("recent-repos.json"));
+    (dir, RepoRegistry::default(), store)
 }

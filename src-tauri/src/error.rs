@@ -48,9 +48,26 @@ impl From<GitError> for AppError {
             GitError::Io(_) => AppErrorKind::Io,
             GitError::Git2(_) => AppErrorKind::Git,
         };
-        Self {
-            kind,
-            message: error.to_string(),
-        }
+        let message = match &error {
+            GitError::CloneFailed { code, stderr } => clone_failure_message(*code, stderr),
+            _ => error.to_string(),
+        };
+        Self { kind, message }
+    }
+}
+
+/// Reduces git's clone stderr (mostly progress noise) to its `fatal:`/`error:` lines.
+fn clone_failure_message(code: Option<i32>, stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .split(['\n', '\r'])
+        .map(str::trim)
+        .filter(|l| l.starts_with("fatal:") || l.starts_with("error:"))
+        .collect();
+    if !lines.is_empty() {
+        return lines.join("\n");
+    }
+    match code {
+        Some(c) => format!("git clone failed with exit code {c}"),
+        None => "git clone was terminated by a signal".to_string(),
     }
 }
