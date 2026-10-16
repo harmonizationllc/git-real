@@ -40,3 +40,23 @@ pub fn temp_bare_clone(src: &Path) -> (TempDir, PathBuf) {
         .expect("bare clone");
     (dir, dest)
 }
+
+/// Creates a repo whose config declares an unsupported `repositoryformatversion`,
+/// so libgit2 fails to open it with a non-NotFound error.
+pub fn temp_repo_with_unsupported_format() -> (TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let config = path.join(".git").join("config");
+    let text = std::fs::read_to_string(&config).expect("read config");
+    assert!(text.contains("repositoryformatversion = 0"));
+    std::fs::write(
+        &config,
+        text.replace(
+            "repositoryformatversion = 0",
+            "repositoryformatversion = 99",
+        ),
+    )
+    .expect("write config");
+    (dir, path)
+}
