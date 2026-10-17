@@ -80,6 +80,9 @@ pub struct FileDiff {
     pub hunks: Vec<Hunk>,
     /// `true` when `max_lines` was hit; hunks are then partial.
     pub truncated: bool,
+    /// Set only when the loader transcoded this side from UTF-16/UTF-32 (or UTF-8 opposite it).
+    pub old_encoding: Option<TextEncoding>,
+    pub new_encoding: Option<TextEncoding>,
 }
 
 /// A hunk, or some of its lines, chosen for a hunk action.
@@ -107,6 +110,8 @@ pub struct DiffOptions {
     pub context_lines: u32,
     /// Maximum number of lines collected across all hunks.
     pub max_lines: usize,
+    /// Largest side (in bytes) the loader will transcode from UTF-16/UTF-32.
+    pub max_decode_bytes: u64,
 }
 
 impl Default for DiffOptions {
@@ -115,6 +120,7 @@ impl Default for DiffOptions {
             ignore_whitespace: false,
             context_lines: 3,
             max_lines: 10_000,
+            max_decode_bytes: 20 * 1024 * 1024,
         }
     }
 }
