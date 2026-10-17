@@ -11,6 +11,10 @@ const kinds: AppErrorKind[] = [
   "io",
   "git",
   "unknownRepo",
+  "noChanges",
+  "badSelection",
+  "applyFailed",
+  "tooLarge",
 ];
 
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.
