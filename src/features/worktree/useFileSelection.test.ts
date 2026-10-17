@@ -235,3 +235,68 @@ describe("useFileSelection clear", () => {
     expect(() => act(() => result.current.clear())).not.toThrow();
   });
 });
+
+// Contract: keys are opaque, so equal paths in different sections never collide.
+describe("useFileSelection section keys", () => {
+  const keys = ["staged:a", "staged:b", "unstaged:a", "unstaged:b"];
+
+  it("should select only the clicked section's entry for a shared path", () => {
+    const { result } = setup(keys);
+    act(() => result.current.click("staged:a", plain));
+    expect(result.current.isSelected("staged:a")).toBe(true);
+    expect(result.current.isSelected("unstaged:a")).toBe(false);
+  });
+
+  it("should toggle same-path entries in different sections independently", () => {
+    const { result } = setup(keys);
+    act(() => result.current.click("staged:a", plain));
+    act(() => result.current.click("unstaged:a", ctrl));
+    act(() => result.current.click("staged:a", ctrl));
+    expect(sorted(result.current.selected)).toEqual(["unstaged:a"]);
+  });
+
+  it("should range across the section boundary in list order", () => {
+    const { result } = setup(keys);
+    act(() => result.current.click("staged:b", plain));
+    act(() => result.current.click("unstaged:a", shift));
+    expect(sorted(result.current.selected)).toEqual(["staged:b", "unstaged:a"]);
+  });
+
+  it("should prune only the entry whose section lost the path", () => {
+    const { result, rerender } = setup(keys);
+    act(() => result.current.click("staged:a", plain));
+    act(() => result.current.click("unstaged:a", ctrl));
+    rerender({ list: ["staged:a", "staged:b", "unstaged:b"] });
+    expect(sorted(result.current.selected)).toEqual(["staged:a"]);
+  });
+});
+
+// Contract: pins how the anchor behaves around deselection and pruning.
+describe("useFileSelection anchor edges", () => {
+  it("should range from a ctrl-deselected anchor, since ctrl moves the anchor to that key", () => {
+    const { result } = setup();
+    act(() => result.current.click("b", plain));
+    act(() => result.current.click("b", ctrl));
+    expect(result.current.selected.size).toBe(0);
+    act(() => result.current.click("d", shift));
+    expect(sorted(result.current.selected)).toEqual(["b", "c", "d"]);
+  });
+
+  it("should drop a pruned anchor so shift selects only the clicked key, keeping nothing stale", () => {
+    const { result, rerender } = setup();
+    act(() => result.current.click("b", plain));
+    act(() => result.current.click("c", ctrl));
+    rerender({ list: ["a", "b", "d", "e"] });
+    expect(sorted(result.current.selected)).toEqual(["b"]);
+    act(() => result.current.click("e", shift));
+    expect(sorted(result.current.selected)).toEqual(["e"]);
+  });
+
+  it("should keep the anchor when an unrelated entry is pruned", () => {
+    const { result, rerender } = setup();
+    act(() => result.current.click("b", plain));
+    rerender({ list: ["a", "b", "c", "d"] });
+    act(() => result.current.click("d", shift));
+    expect(sorted(result.current.selected)).toEqual(["b", "c", "d"]);
+  });
+});

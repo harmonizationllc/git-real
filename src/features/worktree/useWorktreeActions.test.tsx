@@ -212,3 +212,70 @@ describe("useWorktreeActions errors", () => {
     await waitFor(() => expect(result.current.error).toBeNull());
   });
 });
+
+// Contract (pinned behaviour): mutate is not serialised, so a second action while one is
+// pending runs in parallel; it is neither queued nor dropped.
+describe("useWorktreeActions overlapping actions", () => {
+  it("should start a second action immediately while the first is still pending", async () => {
+    vi.mocked(stagePaths).mockReturnValue(new Promise<void>(() => {}));
+    const { result } = renderHookWithProviders(() => useWorktreeActions(1));
+    act(() => result.current.stage(["a"]));
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    act(() => result.current.unstage(["b"]));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["a"]);
+    await waitFor(() => expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["b"]));
+    expect(stagePaths).toHaveBeenCalledOnce();
+  });
+
+  it("should invalidate once per settled action when two run in parallel", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useWorktreeActions(1));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await run(() => {
+      result.current.stage(["a"]);
+      result.current.stageAll();
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    expect(stagePaths).toHaveBeenCalledOnce();
+    expect(stageAll).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useWorktreeActions edges", () => {
+  it("should return nothing from addToGitignore, dropping the resolved pattern", async () => {
+    const { result } = renderHookWithProviders(() => useWorktreeActions(1));
+    let returned: unknown = "unset";
+    await run(() => {
+      returned = result.current.addToGitignore("a.txt");
+    });
+    expect(returned).toBeUndefined();
+    expect(addToGitignore).toHaveBeenCalledExactlyOnceWith(1, "a.txt");
+  });
+
+  it("should not surface an addToGitignore rejection as an unhandled rejection", async () => {
+    vi.mocked(addToGitignore).mockRejectedValue(noChanges);
+    const { result } = renderHookWithProviders(() => useWorktreeActions(1));
+    await run(() => result.current.addToGitignore("a"));
+    await waitFor(() => expect(result.current.error).toEqual(noChanges));
+  });
+
+  it("should leave pending false and error null after clearError following a failure", async () => {
+    vi.mocked(discardPaths).mockRejectedValue(noChanges);
+    const { result } = renderHookWithProviders(() => useWorktreeActions(1));
+    await run(() => result.current.discard(["a"]));
+    await waitFor(() => expect(result.current.error).toEqual(noChanges));
+    act(() => result.current.clearError());
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(result.current.pending).toBe(false);
+  });
+
+  it("should invalidate only the acting repo's key, not another repo's", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useWorktreeActions(4));
+    queryClient.setQueryData(["repo", 4, "status"], 1);
+    queryClient.setQueryData(["repo", 5, "status"], 1);
+    await run(() => result.current.stageAll());
+    await waitFor(() =>
+      expect(queryClient.getQueryState(["repo", 4, "status"])?.isInvalidated).toBe(true),
+    );
+    expect(queryClient.getQueryState(["repo", 5, "status"])?.isInvalidated).toBe(false);
+  });
+});
