@@ -39,24 +39,31 @@ pub(crate) fn repo_relative(raw: &str) -> Result<String, GitError> {
     Ok(trimmed.to_owned())
 }
 
-/// Escapes `\ * ? [` with a backslash so libgit2 glob patterns (pathspecs
-/// and gitignore lines) match `p` literally.
+/// Escapes `p` so a libgit2 glob pattern (a pathspec or a gitignore line)
+/// matches it literally: `\ * ? [` get a backslash, and so does each
+/// trailing space, which libgit2 would otherwise trim.
 pub(crate) fn escape_glob(p: &str) -> String {
-    let mut out = String::with_capacity(p.len());
-    for c in p.chars() {
+    let body = p.trim_end_matches(' ');
+    let mut out = String::with_capacity(p.len() + 4);
+    for c in body.chars() {
         if matches!(c, '\\' | '*' | '?' | '[') {
             out.push('\\');
         }
         out.push(c);
     }
+    out.push_str(&"\\ ".repeat(p.len() - body.len()));
     out
 }
 
-/// Escapes `p` for use as a literal libgit2 pathspec: glob characters as in
-/// [`escape_glob`], plus a leading `!`, which would otherwise negate it.
+/// Escapes `p` for use as a literal libgit2 pathspec: as [`escape_glob`],
+/// plus a leading `!` (negation) or `#` (comment), either of which would
+/// otherwise change or empty the pattern.
+///
+/// Every character of `p` is kept, so a non-empty path never parses to an
+/// empty pattern.
 pub(crate) fn escape_pathspec(p: &str) -> String {
     let escaped = escape_glob(p);
-    if escaped.starts_with('!') {
+    if escaped.starts_with(['!', '#']) {
         format!("\\{escaped}")
     } else {
         escaped

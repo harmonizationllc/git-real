@@ -1158,17 +1158,43 @@ fn stage_paths_stages_file_named_with_backslash_on_unix() {
 
 #[cfg(unix)]
 #[test]
-fn discard_paths_restores_file_named_with_backslash_on_unix() {
+fn discard_paths_tracked_file_named_with_backslash_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
     common::write_file(&path, "back\\slash.txt", "b\n");
     common::commit_all(&path, "add backslash file");
     common::write_file(&path, "back\\slash.txt", "changed\n");
-    session(&path)
+    let err = session(&path)
         .discard_paths(&paths(&["back\\slash.txt"]))
-        .expect("discard");
+        .expect_err("backslash");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_backslash_rejection_leaves_file_modified() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "back\\slash.txt", "b\n");
+    common::commit_all(&path, "add backslash file");
+    common::write_file(&path, "back\\slash.txt", "changed\n");
+    let _ = session(&path).discard_paths(&paths(&["back\\slash.txt"]));
     assert_eq!(
         std::fs::read_to_string(path.join("back\\slash.txt")).unwrap(),
-        "b\n"
+        "changed\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn unstage_paths_unstages_file_named_with_backslash_on_unix() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "back\\slash.txt", "b\n");
+    common::stage(&path, "back\\slash.txt");
+    session(&path)
+        .unstage_paths(&paths(&["back\\slash.txt"]))
+        .expect("unstage");
+    assert_eq!(
+        sides(&path, "back\\slash.txt"),
+        (None, Some(ChangeKind::Untracked))
     );
 }
 
@@ -1201,5 +1227,159 @@ fn unstage_all_restores_staged_deletion_and_modification_to_worktree_only() {
             (None, Some(ChangeKind::Deleted)),
             (None, Some(ChangeKind::Modified))
         )
+    );
+}
+
+// --- filenames ending in spaces must be matched exactly ---
+
+/// Commits `pad `, `two  ` and a sibling `pad`, then modifies all three.
+fn repo_with_trailing_space_files() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "pad ", "1\n");
+    common::write_file(&path, "two  ", "2\n");
+    common::write_file(&path, "pad", "3\n");
+    common::commit_all(&path, "add padded files");
+    common::write_file(&path, "pad ", "1x\n");
+    common::write_file(&path, "two  ", "2x\n");
+    common::write_file(&path, "pad", "3x\n");
+    (dir, path)
+}
+
+fn read(path: &std::path::Path, rel: &str) -> String {
+    std::fs::read_to_string(path.join(rel)).unwrap()
+}
+
+#[test]
+fn discard_paths_restores_file_with_one_trailing_space() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    session(&path)
+        .discard_paths(&paths(&["pad "]))
+        .expect("discard");
+    assert_eq!(read(&path, "pad "), "1\n");
+}
+
+#[test]
+fn discard_paths_restores_file_with_two_trailing_spaces() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    session(&path)
+        .discard_paths(&paths(&["two  "]))
+        .expect("discard");
+    assert_eq!(read(&path, "two  "), "2\n");
+}
+
+#[test]
+fn discard_paths_trailing_space_leaves_unspaced_sibling_modified() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    session(&path)
+        .discard_paths(&paths(&["pad "]))
+        .expect("discard");
+    assert_eq!(read(&path, "pad"), "3x\n");
+}
+
+#[test]
+fn unstage_paths_unstages_file_with_one_trailing_space() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    common::stage(&path, "pad ");
+    session(&path)
+        .unstage_paths(&paths(&["pad "]))
+        .expect("unstage");
+    assert_eq!(sides(&path, "pad "), (None, Some(ChangeKind::Modified)));
+}
+
+#[test]
+fn unstage_paths_unstages_file_with_two_trailing_spaces() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    common::stage(&path, "two  ");
+    session(&path)
+        .unstage_paths(&paths(&["two  "]))
+        .expect("unstage");
+    assert_eq!(sides(&path, "two  "), (None, Some(ChangeKind::Modified)));
+}
+
+#[test]
+fn unstage_paths_trailing_space_leaves_unspaced_sibling_staged() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    common::stage(&path, "pad ");
+    common::stage(&path, "pad");
+    session(&path)
+        .unstage_paths(&paths(&["pad "]))
+        .expect("unstage");
+    assert_eq!(sides(&path, "pad"), (Some(ChangeKind::Modified), None));
+}
+
+#[test]
+fn stage_paths_trailing_space_stages_only_that_file() {
+    let (_dir, path) = repo_with_trailing_space_files();
+    session(&path)
+        .stage_paths(&paths(&["pad "]))
+        .expect("stage");
+    assert_eq!(
+        (sides(&path, "pad "), sides(&path, "pad")),
+        (
+            (Some(ChangeKind::Modified), None),
+            (None, Some(ChangeKind::Modified))
+        )
+    );
+}
+
+// --- names that look like pathspec syntax must be matched literally ---
+
+fn repo_with_hash_files() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "#notes.txt", "n\n");
+    common::write_file(&path, "other.txt", "o\n");
+    common::commit_all(&path, "add hash file");
+    common::write_file(&path, "#notes.txt", "n2\n");
+    common::write_file(&path, "other.txt", "o2\n");
+    (dir, path)
+}
+
+#[test]
+fn discard_paths_hash_prefixed_name_restores_that_file() {
+    let (_dir, path) = repo_with_hash_files();
+    session(&path)
+        .discard_paths(&paths(&["#notes.txt"]))
+        .expect("discard");
+    assert_eq!(read(&path, "#notes.txt"), "n\n");
+}
+
+#[test]
+fn discard_paths_hash_prefixed_name_leaves_other_files_modified() {
+    let (_dir, path) = repo_with_hash_files();
+    session(&path)
+        .discard_paths(&paths(&["#notes.txt"]))
+        .expect("discard");
+    assert_eq!(
+        sides(&path, "other.txt"),
+        (None, Some(ChangeKind::Modified))
+    );
+}
+
+#[test]
+fn unstage_paths_hash_prefixed_name_unstages_only_that_file() {
+    let (_dir, path) = repo_with_hash_files();
+    common::stage(&path, "#notes.txt");
+    common::stage(&path, "other.txt");
+    session(&path)
+        .unstage_paths(&paths(&["#notes.txt"]))
+        .expect("unstage");
+    assert_eq!(
+        (sides(&path, "#notes.txt"), sides(&path, "other.txt")),
+        (
+            (None, Some(ChangeKind::Modified)),
+            (Some(ChangeKind::Modified), None)
+        )
+    );
+}
+
+#[test]
+fn stage_paths_hash_prefixed_name_stages_only_that_file() {
+    let (_dir, path) = repo_with_hash_files();
+    session(&path)
+        .stage_paths(&paths(&["#notes.txt"]))
+        .expect("stage");
+    assert_eq!(
+        sides(&path, "other.txt"),
+        (None, Some(ChangeKind::Modified))
     );
 }

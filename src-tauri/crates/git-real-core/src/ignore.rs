@@ -12,13 +12,8 @@ use crate::repo::RepoSession;
 /// Glob characters, backslashes and trailing spaces are escaped so only the
 /// literal name matches; directories get a trailing `/`.
 pub fn gitignore_pattern(path: &str, is_dir: bool) -> String {
-    let path = path.trim_end_matches('/');
-    let body = path.trim_end_matches(' ');
-    let trailing_spaces = path.len() - body.len();
-
     let mut pattern = String::from("/");
-    pattern.push_str(&escape_glob(body));
-    pattern.push_str(&"\\ ".repeat(trailing_spaces));
+    pattern.push_str(&escape_glob(path.trim_end_matches('/')));
     if is_dir {
         pattern.push('/');
     }

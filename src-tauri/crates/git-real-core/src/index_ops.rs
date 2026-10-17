@@ -109,8 +109,9 @@ impl RepoSession {
     /// Throws away unstaged changes: tracked paths are restored to their
     /// index content, untracked files and directories are deleted.
     ///
-    /// Conflicted paths and directories holding tracked files are rejected
-    /// with [`GitError::BadSelection`]. The index itself is never written.
+    /// Conflicted paths, directories holding tracked files and tracked names
+    /// containing `\` are rejected with [`GitError::BadSelection`]. The index
+    /// itself is never written.
     pub fn discard_paths(&self, paths: &[String]) -> Result<(), GitError> {
         if paths.is_empty() {
             return Ok(());
@@ -128,6 +129,11 @@ impl RepoSession {
                 return Err(GitError::BadSelection);
             }
             if in_index(&index, rel, 0..=0) {
+                // Checkout is given literal paths (pathspec matching off), and
+                // libgit2 cannot address a name containing `\` that way.
+                if p.contains('\\') {
+                    return Err(GitError::BadSelection);
+                }
                 tracked.push(p.as_str());
                 continue;
             }
@@ -146,13 +152,12 @@ impl RepoSession {
 
         if !tracked.is_empty() {
             let mut checkout = CheckoutBuilder::new();
-            checkout.force();
-            // Matched as escaped pathspecs: with matching disabled, libgit2
-            // cannot address a file whose name contains `\`. Tracked paths
-            // are files, so pathspec directory-prefix matching cannot widen
-            // the selection.
+            // Literal paths: with pathspec matching on, a name that parses to
+            // an empty pattern (such as a leading `#`) would select the whole
+            // index and force-restore every file.
+            checkout.force().disable_pathspec_match(true);
             for p in &tracked {
-                checkout.path(escape_pathspec(p));
+                checkout.path(p);
             }
             self.repo()
                 .checkout_index(Some(&mut index), Some(&mut checkout))?;
