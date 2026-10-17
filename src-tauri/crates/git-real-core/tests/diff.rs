@@ -750,3 +750,487 @@ fn diff_untracked_binary_is_ok_and_flagged() {
         (Some(ChangeKind::Untracked), true, true)
     );
 }
+
+// --- coverage audit: EOF markers ---
+
+#[test]
+fn diff_no_newline_on_both_sides_flags_context_line() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "a\nb");
+    common::stage(&path, "a.txt");
+    common::write_file(&path, "a.txt", "A\nb");
+    let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).expect("diff");
+    assert_eq!(
+        diff.hunks[0].lines,
+        vec![
+            line(DiffLineKind::Deletion, Some(1), None, "a", false),
+            line(DiffLineKind::Addition, None, Some(1), "A", false),
+            line(DiffLineKind::Context, Some(2), Some(2), "b", true),
+        ]
+    );
+}
+
+#[test]
+fn diff_no_newline_on_added_last_line_flags_the_addition() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "x\n");
+    common::stage(&path, "a.txt");
+    common::write_file(&path, "a.txt", "x\ny");
+    let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).expect("diff");
+    assert_eq!(
+        diff.hunks[0].lines,
+        vec![
+            line(DiffLineKind::Context, Some(1), Some(1), "x", false),
+            line(DiffLineKind::Addition, None, Some(2), "y", true),
+        ]
+    );
+}
+
+#[test]
+fn diff_two_eof_markers_in_one_hunk_flag_both_lines() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "x");
+    common::stage(&path, "a.txt");
+    common::write_file(&path, "a.txt", "y");
+    let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).expect("diff");
+    assert_eq!(
+        diff.hunks[0].lines,
+        vec![
+            line(DiffLineKind::Deletion, Some(1), None, "x", true),
+            line(DiffLineKind::Addition, None, Some(1), "y", true),
+        ]
+    );
+}
+
+#[test]
+fn diff_eof_marker_after_last_kept_line_is_kept_and_not_truncated() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "x");
+    common::stage(&path, "a.txt");
+    common::write_file(&path, "a.txt", "y");
+    let opts = DiffOptions {
+        max_lines: 2,
+        ..Default::default()
+    };
+    let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!(
+        (diff.truncated, all_lines(&diff).len()),
+        (false, 2),
+        "markers must not count toward max_lines"
+    );
+    assert!(all_lines(&diff).iter().all(|l| l.no_newline_at_eof));
+}
+
+#[test]
+fn diff_truncation_keeps_marker_on_last_kept_line() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "x");
+    common::stage(&path, "a.txt");
+    common::write_file(&path, "a.txt", "y");
+    let opts = DiffOptions {
+        max_lines: 1,
+        ..Default::default()
+    };
+    let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert!(diff.truncated);
+    assert_eq!(
+        diff.hunks[0].lines,
+        vec![line(DiffLineKind::Deletion, Some(1), None, "x", true)]
+    );
+}
+
+// --- coverage audit: multiple hunks ---
+
+/// 20 lines committed as `ten.txt`-style fixture; `edit` rewrites the worktree copy.
+fn twenty_line_fixture(edit: impl Fn(&str) -> String) -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    let original: String = (1..=20).map(|i| format!("l{i}\n")).collect();
+    common::write_file(&path, "twenty.txt", &original);
+    common::commit_all(&path, "add twenty");
+    common::write_file(&path, "twenty.txt", &edit(&original));
+    (dir, path)
+}
+
+fn two_replacements(text: &str) -> String {
+    text.replace("l3\n", "L3\n").replace("l18\n", "L18\n")
+}
+
+fn one_context() -> DiffOptions {
+    DiffOptions {
+        context_lines: 1,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn diff_two_separated_edits_yield_two_hunks_with_starts() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, one_context()).expect("diff");
+    let starts: Vec<(u32, u32, u32, u32)> = diff
+        .hunks
+        .iter()
+        .map(|h| (h.old_start, h.old_lines, h.new_start, h.new_lines))
+        .collect();
+    assert_eq!(starts, vec![(2, 3, 2, 3), (17, 3, 17, 3)]);
+}
+
+#[test]
+fn diff_line_numbers_restart_per_hunk_with_offset_after_insertion() {
+    let (_dir, path) = twenty_line_fixture(|t| two_replacements(t).replace("L3\n", "L3\nextra\n"));
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, one_context()).expect("diff");
+    assert_eq!(diff.hunks.len(), 2);
+    let second = &diff.hunks[1];
+    assert_eq!((second.old_start, second.new_start), (17, 18));
+    assert_eq!(
+        second.lines,
+        vec![
+            line(DiffLineKind::Context, Some(17), Some(18), "l17", false),
+            line(DiffLineKind::Deletion, Some(18), None, "l18", false),
+            line(DiffLineKind::Addition, None, Some(19), "L18", false),
+            line(DiffLineKind::Context, Some(19), Some(20), "l19", false),
+        ]
+    );
+}
+
+#[test]
+fn diff_truncation_inside_second_hunk_keeps_first_whole() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let opts = DiffOptions {
+        max_lines: 6,
+        ..one_context()
+    };
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("diff");
+    let counts: Vec<usize> = diff.hunks.iter().map(|h| h.lines.len()).collect();
+    assert_eq!((diff.truncated, counts), (true, vec![4, 2]));
+    assert_eq!(diff.hunks[1].new_lines, 3, "partial hunk keeps its counts");
+}
+
+#[test]
+fn diff_truncation_at_hunk_boundary_drops_the_empty_second_hunk() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let opts = DiffOptions {
+        max_lines: 4,
+        ..one_context()
+    };
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!((diff.truncated, diff.hunks.len()), (true, 1));
+    assert_eq!(diff.hunks[0].lines.len(), 4);
+}
+
+#[test]
+fn diff_max_lines_smaller_than_first_hunk_cuts_inside_it() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let opts = DiffOptions {
+        max_lines: 2,
+        ..one_context()
+    };
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!((diff.truncated, diff.hunks.len()), (true, 1));
+    assert_eq!(diff.hunks[0].lines.len(), 2);
+    assert_eq!(diff.hunks[0].old_lines, 3, "counts are the original ones");
+}
+
+#[test]
+fn diff_exactly_total_lines_across_hunks_is_not_truncated() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let opts = DiffOptions {
+        max_lines: 8,
+        ..one_context()
+    };
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!((diff.truncated, diff.hunks.len()), (false, 2));
+}
+
+// --- coverage audit: delta kinds and scopes ---
+
+#[test]
+fn diff_staged_deleted_file() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::remove_file(path.join("README.md")).expect("delete");
+    common::stage(&path, "README.md");
+    let diff = diff_of(
+        &path,
+        "README.md",
+        DiffScope::Staged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(diff.change, Some(ChangeKind::Deleted));
+    assert_eq!(
+        diff.hunks[0].lines,
+        vec![line(
+            DiffLineKind::Deletion,
+            Some(1),
+            None,
+            "# fixture",
+            false
+        )]
+    );
+}
+
+#[test]
+fn diff_staged_deletion_is_absent_from_unstaged_scope() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::remove_file(path.join("README.md")).expect("delete");
+    common::stage(&path, "README.md");
+    let err = diff_of(
+        &path,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffOptions::default(),
+    )
+    .expect_err("deletion is fully staged");
+    assert!(matches!(err, GitError::NoChanges(_)), "got {err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn diff_staged_typechange_to_symlink() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::remove_file(path.join("README.md")).expect("remove");
+    std::os::unix::fs::symlink("target.txt", path.join("README.md")).expect("symlink");
+    common::stage(&path, "README.md");
+    let diff = diff_of(
+        &path,
+        "README.md",
+        DiffScope::Staged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(
+        (diff.path.as_str(), diff.old_path, diff.change),
+        ("README.md", None, Some(ChangeKind::TypeChange))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn diff_unstaged_typechange_to_symlink_is_one_typechange() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::remove_file(path.join("README.md")).expect("remove");
+    std::os::unix::fs::symlink("elsewhere", path.join("README.md")).expect("symlink");
+    let diff = diff_of(
+        &path,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(diff.change, Some(ChangeKind::TypeChange));
+}
+
+#[test]
+fn diff_conflicted_path_is_ok_without_hunks_in_both_scopes() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    for scope in [DiffScope::Unstaged, DiffScope::Staged] {
+        let diff = diff_of(&path, "README.md", scope, DiffOptions::default())
+            .unwrap_or_else(|e| panic!("{scope:?}: {e:?}"));
+        assert_eq!(
+            (diff.change, diff.hunks.is_empty()),
+            (Some(ChangeKind::Conflicted), true),
+            "{scope:?}"
+        );
+    }
+}
+
+#[test]
+fn diff_empty_untracked_file_is_ok_without_hunks() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "empty.txt", "");
+    let diff = diff_of(
+        &path,
+        "empty.txt",
+        DiffScope::Unstaged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(
+        (diff.change, diff.is_binary, diff.hunks.is_empty()),
+        (Some(ChangeKind::Untracked), false, true)
+    );
+}
+
+#[test]
+fn diff_staged_rename_with_edit_has_old_path_and_hunk() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let original: String = (1..=10).map(|i| format!("line {i}\n")).collect();
+    common::write_file(&path, "old.txt", &original);
+    common::commit_all(&path, "add old");
+    std::fs::remove_file(path.join("old.txt")).expect("remove");
+    common::write_file(&path, "new.txt", &original.replace("line 5\n", "LINE 5\n"));
+    common::stage(&path, "old.txt");
+    common::stage(&path, "new.txt");
+    let diff = diff_of(&path, "new.txt", DiffScope::Staged, DiffOptions::default()).expect("diff");
+    assert_eq!(
+        (diff.old_path.as_deref(), diff.change, diff.hunks.len()),
+        (Some("old.txt"), Some(ChangeKind::Renamed), 1)
+    );
+}
+
+#[test]
+fn diff_staged_ignore_whitespace_hides_indent_change() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "  # fixture  \n");
+    common::stage(&path, "README.md");
+    let opts = DiffOptions {
+        ignore_whitespace: true,
+        ..Default::default()
+    };
+    let err = diff_of(&path, "README.md", DiffScope::Staged, opts).expect_err("ignored");
+    assert!(matches!(err, GitError::NoChanges(_)), "got {err:?}");
+}
+
+#[test]
+fn diff_path_in_nested_subdirectory() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "dir/inner/f.txt", "one\n");
+    common::commit_all(&path, "add nested");
+    common::write_file(&path, "dir/inner/f.txt", "one\ntwo\n");
+    let diff = diff_of(
+        &path,
+        "dir/inner/f.txt",
+        DiffScope::Unstaged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(
+        (diff.path.as_str(), diff.change, all_lines(&diff).len()),
+        ("dir/inner/f.txt", Some(ChangeKind::Modified), 2)
+    );
+}
+
+#[test]
+fn diff_staged_added_file_in_subdirectory() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "dir/new.txt", "one\n");
+    common::stage(&path, "dir/new.txt");
+    let diff = diff_of(
+        &path,
+        "dir/new.txt",
+        DiffScope::Staged,
+        DiffOptions::default(),
+    )
+    .expect("diff");
+    assert_eq!(
+        (diff.path.as_str(), diff.change),
+        ("dir/new.txt", Some(ChangeKind::Added))
+    );
+}
+
+// --- coverage audit: serde ---
+
+#[test]
+fn diff_enums_round_trip_through_camel_case_strings() {
+    use git_real_core::HunkAction;
+    for (scope, text) in [
+        (DiffScope::Staged, "\"staged\""),
+        (DiffScope::Unstaged, "\"unstaged\""),
+    ] {
+        assert_eq!(serde_json::to_string(&scope).unwrap(), text);
+        assert_eq!(serde_json::from_str::<DiffScope>(text).unwrap(), scope);
+    }
+    for (kind, text) in [
+        (DiffLineKind::Context, "\"context\""),
+        (DiffLineKind::Addition, "\"addition\""),
+        (DiffLineKind::Deletion, "\"deletion\""),
+    ] {
+        assert_eq!(serde_json::to_string(&kind).unwrap(), text);
+        assert_eq!(serde_json::from_str::<DiffLineKind>(text).unwrap(), kind);
+    }
+    for (action, text) in [
+        (HunkAction::Stage, "\"stage\""),
+        (HunkAction::Unstage, "\"unstage\""),
+        (HunkAction::Discard, "\"discard\""),
+    ] {
+        assert_eq!(serde_json::to_string(&action).unwrap(), text);
+        assert_eq!(serde_json::from_str::<HunkAction>(text).unwrap(), action);
+    }
+}
+
+#[test]
+fn diff_enums_reject_non_camel_case_names() {
+    assert!(serde_json::from_str::<DiffScope>("\"Staged\"").is_err());
+    assert!(serde_json::from_str::<DiffLineKind>("\"ADDITION\"").is_err());
+}
+
+#[test]
+fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
+    use git_real_core::HunkSelection;
+    let whole = HunkSelection {
+        hunk_index: 2,
+        lines: None,
+    };
+    let value = serde_json::to_value(&whole).unwrap();
+    assert_eq!(value, serde_json::json!({ "hunkIndex": 2, "lines": null }));
+    assert_eq!(
+        serde_json::from_value::<HunkSelection>(value).unwrap(),
+        whole
+    );
+
+    let subset = HunkSelection {
+        hunk_index: 0,
+        lines: Some(vec![1, 3]),
+    };
+    let value = serde_json::to_value(&subset).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({ "hunkIndex": 0, "lines": [1, 3] })
+    );
+    assert_eq!(
+        serde_json::from_value::<HunkSelection>(value).unwrap(),
+        subset
+    );
+}
+
+#[test]
+fn hunk_selection_without_lines_key_means_whole_hunk() {
+    use git_real_core::HunkSelection;
+    let parsed: HunkSelection = serde_json::from_str(r#"{"hunkIndex":1}"#).unwrap();
+    assert_eq!(parsed.lines, None);
+}
+
+#[test]
+fn hunk_selection_rejects_snake_case_keys() {
+    use git_real_core::HunkSelection;
+    assert!(serde_json::from_str::<HunkSelection>(r#"{"hunk_index":1,"lines":null}"#).is_err());
+}
+
+#[test]
+fn file_diff_round_trips_through_json() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, one_context()).expect("diff");
+    let text = serde_json::to_string(&diff).unwrap();
+    let back: FileDiff = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, diff);
+}
+
+#[test]
+fn file_diff_deserializes_from_frontend_shaped_json() {
+    let json = r#"{
+        "path": "a.txt", "oldPath": "b.txt", "scope": "staged", "change": "renamed",
+        "isBinary": false, "truncated": true,
+        "hunks": [{
+            "oldStart": 1, "oldLines": 1, "newStart": 1, "newLines": 1, "header": "@@",
+            "lines": [{"kind":"context","oldLineno":1,"newLineno":1,"content":"x","noNewlineAtEof":true}]
+        }]
+    }"#;
+    let diff: FileDiff = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        (
+            diff.old_path.as_deref(),
+            diff.scope,
+            diff.change,
+            diff.truncated
+        ),
+        (
+            Some("b.txt"),
+            DiffScope::Staged,
+            Some(ChangeKind::Renamed),
+            true
+        )
+    );
+    assert_eq!(
+        diff.hunks[0].lines[0],
+        line(DiffLineKind::Context, Some(1), Some(1), "x", true)
+    );
+}
