@@ -305,6 +305,18 @@ describe("ConfirmDialog under StrictMode", () => {
     return { onConfirm, onCancel };
   }
 
+  it("should focus the Cancel button on open", () => {
+    renderStrict();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
+  it("should call onCancel once when Escape is pressed", async () => {
+    const user = userEvent.setup();
+    const { onCancel } = renderStrict();
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   it("should call onConfirm once when Confirm is clicked", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderStrict();

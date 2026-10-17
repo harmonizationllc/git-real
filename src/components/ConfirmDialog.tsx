@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useState } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import styles from "./ConfirmDialog.module.css";
 
@@ -29,10 +29,15 @@ function ConfirmDialogBody({
   const titleId = useId();
   const bodyId = useId();
 
-  // Captured during render because the Cancel button's autoFocus runs before this component's
-  // layout effects. Restoring in a layout cleanup keeps it ahead of another dialog's autoFocus.
-  const [previous] = useState(() => document.activeElement as HTMLElement);
-  useLayoutEffect(() => () => previous.focus(), [previous]);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Focus Cancel on open and restore focus on close, in one layout effect so it is StrictMode-safe
+  // and the restore runs before another dialog's autoFocus.
+  useLayoutEffect(() => {
+    const previous = document.activeElement as HTMLElement;
+    (cancelRef.current as HTMLButtonElement).focus();
+    return () => previous.focus();
+  }, []);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") onCancel();
@@ -58,7 +63,7 @@ function ConfirmDialogBody({
         </h2>
         {body !== undefined && <p id={bodyId}>{body}</p>}
         <div className={styles.actions}>
-          <button type="button" onClick={onCancel} autoFocus>
+          <button ref={cancelRef} type="button" onClick={onCancel}>
             {cancelLabel}
           </button>
           <button

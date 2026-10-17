@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
@@ -271,10 +271,19 @@ describe("ContextMenu focus with disabled items", () => {
     expect(screen.getByRole("menu")).toHaveFocus();
   });
 
-  it("should not throw when ArrowDown is pressed and every item is disabled", async () => {
+  it("should keep focus on the menu when ArrowDown is pressed and every item is disabled", async () => {
     const user = userEvent.setup();
     renderMenu(makeItems([{ disabled: true }, { disabled: true }, { disabled: true }]));
-    await expect(user.keyboard("{ArrowDown}")).resolves.not.toThrow();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menu")).toHaveFocus();
+  });
+
+  it("should focus the last enabled item when ArrowUp is pressed with focus on the menu container", async () => {
+    const user = userEvent.setup();
+    renderMenu(makeItems());
+    screen.getByRole("menu").focus();
+    await user.keyboard("{ArrowUp}");
+    expect(screen.getByRole("menuitem", { name: "Charlie" })).toHaveFocus();
   });
 
   it("should skip a disabled item when ArrowDown is pressed", async () => {
@@ -323,6 +332,24 @@ describe("ContextMenu Tab and contextmenu", () => {
     const onClose = renderMenu(makeItems());
     await user.keyboard("{Tab}");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should move focus to the next tab stop after the opener when Tab closes the menu", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Opener</button>
+          <ContextMenu open={open} x={1} y={1} items={makeItems()} onClose={() => setOpen(false)} />
+          <button>After</button>
+        </>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    await user.keyboard("{Tab}");
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
   });
 
   it("should prevent the native context menu when right-clicked", () => {

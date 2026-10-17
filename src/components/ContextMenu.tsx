@@ -70,7 +70,7 @@ function ContextMenuBody({ x, y, items, onClose }: Omit<ContextMenuProps, "open"
         break;
       case "ArrowUp":
         e.preventDefault();
-        enabled[(current - 1 + count) % count]?.focus();
+        enabled[(current <= 0 ? count : current) - 1]?.focus();
         break;
       case "Home":
         e.preventDefault();
