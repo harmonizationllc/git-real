@@ -73,10 +73,16 @@ describe("tokenize", () => {
     const [line] = tokenize("// c", parser);
     expect(line[0]).toEqual({ text: "// c", className: "tok-comment" });
   });
-  it("should keep plain text intact with string-or-null classes", () => {
-    const [line] = tokenize("a", parser);
-    expect(line.map((t) => t.text).join("")).toBe("a");
-    expect(line.every((t) => t.className === null || typeof t.className === "string")).toBe(true);
+  it("should give unclassified text a null class", () => {
+    expect(tokenize("a = 1", parser)).toEqual([
+      [
+        { text: "a", className: "tok-variableName" },
+        { text: " ", className: null },
+        { text: "=", className: "tok-operator" },
+        { text: " ", className: null },
+        { text: "1", className: "tok-number" },
+      ],
+    ]);
   });
   it("should return a single empty line for empty text", () => {
     expect(tokenize("", parser)).toEqual([[]]);
@@ -160,7 +166,7 @@ describe("highlightHunk", () => {
   it("should give context lines the new side's tokens", () => {
     const ctx = hunk([L("deletion", "/*"), L("context", "x"), L("addition", "y")]);
     // old side opens a block comment around "x"; the new side does not.
-    expect(highlightHunk(ctx, parser)[1]?.[0]?.className).not.toBe("tok-comment");
+    expect(highlightHunk(ctx, parser)[1]?.[0]?.className).toBe("tok-variableName");
   });
 });
 

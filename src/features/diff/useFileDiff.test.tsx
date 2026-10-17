@@ -126,6 +126,25 @@ describe("useFileDiff refetch", () => {
   });
 });
 
+// Contract: the selected file's scope is forwarded and is part of the key.
+describe("useFileDiff scope", () => {
+  it("should pass the staged scope to getFileDiff", async () => {
+    const staged = { path: "a.ts", scope: "staged" } as const;
+    renderHookWithProviders(() => useFileDiff(1, staged, false, null));
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalled());
+    expect(getFileDiff).toHaveBeenCalledWith(1, "a.ts", "staged", false, undefined);
+  });
+  it("should request again with the new scope when the scope changes", async () => {
+    let current: { path: string; scope: "staged" | "unstaged" } = file;
+    const { rerender } = renderHookWithProviders(() => useFileDiff(1, current, false, null));
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(1));
+    current = { path: "a.ts", scope: "staged" };
+    rerender();
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
+    expect(getFileDiff).toHaveBeenLastCalledWith(1, "a.ts", "staged", false, undefined);
+  });
+});
+
 // Contract: query inputs are part of the key, so changing them refetches.
 describe("useFileDiff keys", () => {
   it("should request again when ignoreWhitespace changes", async () => {
