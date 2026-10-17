@@ -3,8 +3,10 @@
 mod common;
 
 use git_real_core::RepoSession;
-use git_real_lib::state::RepoRegistry;
+use git_real_lib::state::{RepoRegistry, WatcherRegistry};
+use git_real_lib::watcher::RepoWatcher;
 use std::path::PathBuf;
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn session() -> (TempDir, RepoSession) {
@@ -324,4 +326,43 @@ fn register_or_find_after_remove_inserts_with_a_fresh_id() {
     registry.remove(old_id);
     let again = registry.register_or_find(RepoSession::open(&path).expect("reopen"));
     assert_eq!(again, (old_id + 1, true));
+}
+
+// WatcherRegistry: owns one watcher per repo id; removal reports whether one existed.
+fn watcher(dir: &TempDir) -> RepoWatcher {
+    RepoWatcher::start(dir.path(), Duration::from_millis(100), || {}).expect("start watcher")
+}
+
+#[test]
+fn watcher_registry_insert_remove() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WatcherRegistry::default();
+    registry.insert(1, watcher(&dir));
+    assert_eq!((registry.remove(1), registry.remove(1)), (true, false));
+}
+
+#[test]
+fn watcher_registry_remove_unknown_is_false() {
+    let registry = WatcherRegistry::default();
+    assert!(!registry.remove(7));
+}
+
+#[test]
+fn watcher_registry_insert_same_id_keeps_existing() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WatcherRegistry::default();
+    let first = registry.insert(1, watcher(&dir));
+    let second = registry.insert(1, watcher(&dir));
+    assert_eq!((first, second), (true, false));
+}
+
+#[test]
+fn watcher_registry_contains() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WatcherRegistry::default();
+    let before = registry.contains(1);
+    registry.insert(1, watcher(&dir));
+    let during = registry.contains(1);
+    registry.remove(1);
+    assert_eq!((before, during, registry.contains(1)), (false, true, false));
 }

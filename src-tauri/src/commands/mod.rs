@@ -1,8 +1,14 @@
 //! Tauri command handlers.
 
 pub mod repo;
+pub mod worktree;
+
+use std::sync::PoisonError;
+
+use git_real_core::{GitError, RepoSession};
 
 use crate::error::{AppError, AppErrorKind};
+use crate::state::{RepoId, RepoRegistry};
 
 /// Runs blocking work on Tauri's blocking pool, mapping a join failure to an `Io` error.
 pub async fn run_blocking<T, F>(f: F) -> Result<T, AppError>
@@ -16,4 +22,16 @@ where
             kind: AppErrorKind::Io,
             message: e.to_string(),
         })?
+}
+
+/// Runs `f` on the locked session for `id`, or fails with `unknownRepo`.
+pub fn with_session<T>(
+    reg: &RepoRegistry,
+    id: RepoId,
+    f: impl FnOnce(&RepoSession) -> Result<T, GitError>,
+) -> Result<T, AppError> {
+    let session = reg.get(id).ok_or_else(|| AppError::unknown_repo(id))?;
+    // git2 writes the index through a lock file, so a panicked op leaves no torn state.
+    let guard = session.lock().unwrap_or_else(PoisonError::into_inner);
+    f(&guard).map_err(AppError::from)
 }

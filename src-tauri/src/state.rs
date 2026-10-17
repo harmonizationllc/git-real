@@ -1,11 +1,14 @@
 //! In-memory registry of open repository sessions.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry as MapEntry;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use git_real_core::RepoSession;
+
+use crate::watcher::RepoWatcher;
 
 /// Opaque handle the front end uses to refer to an open repository.
 pub type RepoId = u64;
@@ -90,5 +93,42 @@ impl RepoRegistry {
             .iter()
             .find(|(_, e)| e.path == path)
             .map(|(id, _)| *id)
+    }
+}
+
+/// One file watcher per open repository, keyed by [`RepoId`].
+#[derive(Default)]
+pub struct WatcherRegistry(Mutex<HashMap<RepoId, RepoWatcher>>);
+
+impl WatcherRegistry {
+    fn watchers(&self) -> MutexGuard<'_, HashMap<RepoId, RepoWatcher>> {
+        // Each critical section is a single lookup, insert or remove, so a poisoned map
+        // is still consistent.
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn contains(&self, id: RepoId) -> bool {
+        self.watchers().contains_key(&id)
+    }
+
+    /// Insert-if-absent: returns `true` if stored. Otherwise keeps the existing watcher and
+    /// drops `watcher` after the lock is released, since dropping joins its thread.
+    pub fn insert(&self, id: RepoId, watcher: RepoWatcher) -> bool {
+        let rejected = {
+            match self.watchers().entry(id) {
+                MapEntry::Occupied(_) => Some(watcher),
+                MapEntry::Vacant(slot) => {
+                    slot.insert(watcher);
+                    None
+                }
+            }
+        };
+        rejected.is_none()
+    }
+
+    /// Returns whether a watcher was registered. It is dropped after the lock is released.
+    pub fn remove(&self, id: RepoId) -> bool {
+        let removed = self.watchers().remove(&id);
+        removed.is_some()
     }
 }

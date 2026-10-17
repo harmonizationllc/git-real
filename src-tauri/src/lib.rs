@@ -3,13 +3,14 @@ pub mod error;
 pub mod events;
 pub mod recent_store;
 pub mod state;
+pub mod watcher;
 
 use std::sync::Arc;
 
 use tauri::Manager;
 
 use crate::recent_store::RecentStore;
-use crate::state::RepoRegistry;
+use crate::state::{RepoRegistry, WatcherRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(RepoRegistry::default()))
+        .manage(Arc::new(WatcherRegistry::default()))
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(Arc::new(RecentStore::load(dir.join("recent-repos.json"))));
@@ -30,6 +32,15 @@ pub fn run() {
             commands::repo::list_recent,
             commands::repo::remove_recent,
             commands::repo::check_git_cli,
+            commands::worktree::get_status,
+            commands::worktree::get_file_diff,
+            commands::worktree::stage_paths,
+            commands::worktree::unstage_paths,
+            commands::worktree::stage_all,
+            commands::worktree::unstage_all,
+            commands::worktree::discard_paths,
+            commands::worktree::apply_hunk,
+            commands::worktree::add_to_gitignore,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

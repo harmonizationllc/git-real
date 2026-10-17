@@ -85,6 +85,9 @@ fn app_error_kind_serializes_camel_case() {
         (AppErrorKind::Io, "io"),
         (AppErrorKind::Git, "git"),
         (AppErrorKind::UnknownRepo, "unknownRepo"),
+        (AppErrorKind::NoChanges, "noChanges"),
+        (AppErrorKind::BadSelection, "badSelection"),
+        (AppErrorKind::ApplyFailed, "applyFailed"),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
@@ -202,4 +205,44 @@ fn clone_failed_message_with_signal_and_noise_only_reports_signal() {
 fn clone_failed_message_prefers_fatal_lines_over_exit_code() {
     let message = clone_failed_message(Some(128), "fatal: nope\n");
     assert!(!message.contains("exit code"));
+}
+
+// Working-tree errors (GR-4): core variants get dedicated kinds and keep their Display text.
+#[test]
+fn no_changes_maps_to_no_changes_kind() {
+    let err = GitError::NoChanges("a.txt".into());
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        serde_json::to_value(app).unwrap(),
+        json!({"kind": "noChanges", "message": message})
+    );
+}
+
+#[test]
+fn bad_selection_maps() {
+    let err = GitError::BadSelection;
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        serde_json::to_value(app).unwrap(),
+        json!({"kind": "badSelection", "message": message})
+    );
+}
+
+#[test]
+fn apply_failed_maps() {
+    let err = GitError::ApplyFailed("hunk rejected".into());
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        serde_json::to_value(app).unwrap(),
+        json!({"kind": "applyFailed", "message": message})
+    );
+}
+
+#[test]
+fn apply_failed_message_includes_reason() {
+    let app: AppError = GitError::ApplyFailed("hunk rejected".into()).into();
+    assert!(app.message.contains("hunk rejected"));
 }
