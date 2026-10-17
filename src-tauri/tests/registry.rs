@@ -185,8 +185,11 @@ fn register_or_find_returns_existing_id_for_same_path() {
     let first = RepoSession::open(&path).expect("open fixture repo");
     let second = RepoSession::open(&path).expect("open fixture repo again");
     let registry = RepoRegistry::default();
-    let (first_id, _) = registry.register_or_find(first);
-    assert_eq!(registry.register_or_find(second), (first_id, false));
+    let (first_id, first_inserted) = registry.register_or_find(first);
+    assert_eq!(
+        (first_inserted, registry.register_or_find(second)),
+        (true, (first_id, false))
+    );
 }
 
 #[test]
@@ -235,11 +238,15 @@ fn register_or_find_inserts_new_path() {
 fn register_or_find_is_atomic_under_concurrency() {
     let (_dir, path) = common::temp_repo_with_commit();
     let registry = RepoRegistry::default();
+    let barrier = std::sync::Barrier::new(8);
     let results: Vec<(u64, bool)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..8)
             .map(|_| {
-                scope.spawn(|| {
-                    let s = RepoSession::open(&path).expect("open fixture repo");
+                let s = RepoSession::open(&path).expect("open fixture repo");
+                let barrier = &barrier;
+                let registry = &registry;
+                scope.spawn(move || {
+                    barrier.wait();
                     registry.register_or_find(s)
                 })
             })
@@ -260,11 +267,15 @@ fn register_or_find_leaves_single_entry_after_concurrent_calls() {
     let (_dir, path) = common::temp_repo_with_commit();
     let canonical = std::fs::canonicalize(&path).expect("canonicalize fixture");
     let registry = RepoRegistry::default();
+    let barrier = std::sync::Barrier::new(8);
     let ids: Vec<u64> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..8)
             .map(|_| {
-                scope.spawn(|| {
-                    let s = RepoSession::open(&path).expect("open fixture repo");
+                let s = RepoSession::open(&path).expect("open fixture repo");
+                let barrier = &barrier;
+                let registry = &registry;
+                scope.spawn(move || {
+                    barrier.wait();
                     registry.register_or_find(s).0
                 })
             })
