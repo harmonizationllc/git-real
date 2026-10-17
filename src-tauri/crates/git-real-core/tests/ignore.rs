@@ -337,3 +337,39 @@ fn add_to_gitignore_tolerates_crlf_existing_line() {
         "/a.txt\r\n"
     );
 }
+
+// --- filenames containing line breaks cannot be written as a gitignore line ---
+
+#[test]
+fn add_to_gitignore_newline_in_filename_is_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\nb.txt", "x\n");
+    let err = session(&path)
+        .add_to_gitignore("a\nb.txt")
+        .expect_err("newline");
+    assert!(
+        matches!(err, git_real_core::GitError::BadSelection),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn add_to_gitignore_carriage_return_in_filename_is_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\rb.txt", "x\n");
+    let err = session(&path)
+        .add_to_gitignore("a\rb.txt")
+        .expect_err("carriage return");
+    assert!(
+        matches!(err, git_real_core::GitError::BadSelection),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn add_to_gitignore_line_break_in_filename_writes_nothing() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\nb.txt", "x\n");
+    let _ = session(&path).add_to_gitignore("a\nb.txt");
+    assert!(!path.join(".gitignore").exists());
+}

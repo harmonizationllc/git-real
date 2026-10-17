@@ -1192,3 +1192,25 @@ fn apply_hunk_stage_whole_untracked_keeps_index_entry_added_through_another_hand
         (Some(ChangeKind::Added), Some(ChangeKind::Added))
     );
 }
+
+// RED: `apply_patch_text` must re-read the index (`read(true)`) before
+// `repo.apply(.., ApplyLocation::Index, ..)`, so an entry staged by another handle survives.
+#[test]
+fn apply_patch_text_stage_keeps_index_entry_added_through_another_handle() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# fixture\nsecond\n");
+    let patch = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # fixture\n+second\n";
+    common::write_file(&path, "ext.txt", "e\n");
+    let s = session(&path);
+    s.status().expect("status warms the cached index");
+    common::stage(&path, "ext.txt");
+    s.apply_patch_text(patch, HunkAction::Stage).expect("apply");
+    let status = session(&path).status().expect("status");
+    assert_eq!(
+        (
+            status_entry(&status, "README.md").index,
+            status_entry(&status, "ext.txt").index
+        ),
+        (Some(ChangeKind::Modified), Some(ChangeKind::Added))
+    );
+}

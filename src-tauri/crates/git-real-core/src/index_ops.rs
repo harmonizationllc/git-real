@@ -10,7 +10,7 @@ use git2::build::CheckoutBuilder;
 use git2::{Commit, ErrorCode, Index, IndexAddOption, ObjectType};
 
 use crate::error::GitError;
-use crate::paths::{escape_pathspec, repo_relative};
+use crate::paths::{checked_relative, escape_pathspec};
 use crate::repo::RepoSession;
 
 impl RepoSession {
@@ -20,30 +20,36 @@ impl RepoSession {
         if paths.is_empty() {
             return Ok(());
         }
-        let paths = normalise_all(paths)?;
         let workdir = self.workdir()?;
+        let paths = normalise_all(workdir, paths)?;
         let mut index = self.fresh_index()?;
-        for p in &paths {
-            let rel = Path::new(p);
-            if workdir.join(rel).symlink_metadata().is_ok() {
-                index.add_path(rel)?;
-            } else if in_index(&index, rel, 0..=3) {
-                index.remove_path(rel)?;
-            } else {
-                return Err(GitError::PathNotFound(PathBuf::from(p)));
+        let staged = (|| {
+            for p in &paths {
+                let rel = Path::new(p);
+                if workdir.join(rel).symlink_metadata().is_ok() {
+                    index.add_path(rel)?;
+                } else if in_index(&index, rel, 0..=3) {
+                    index.remove_path(rel)?;
+                } else {
+                    return Err(GitError::PathNotFound(PathBuf::from(p)));
+                }
             }
-        }
-        index.write()?;
-        Ok(())
+            index.write()?;
+            Ok(())
+        })();
+        reload_on_error(&mut index, staged)
     }
 
     /// Stages every change in the working tree, ignored files excepted.
     pub fn stage_all(&self) -> Result<(), GitError> {
         let mut index = self.fresh_index()?;
-        index.add_all(["*"], IndexAddOption::DEFAULT, None)?;
-        index.update_all(["*"], None)?;
-        index.write()?;
-        Ok(())
+        let staged = (|| {
+            index.add_all(["*"], IndexAddOption::DEFAULT, None)?;
+            index.update_all(["*"], None)?;
+            index.write()?;
+            Ok(())
+        })();
+        reload_on_error(&mut index, staged)
     }
 
     /// Resets each path's index entry to HEAD (or removes it when unborn).
@@ -51,7 +57,7 @@ impl RepoSession {
         if paths.is_empty() {
             return Ok(());
         }
-        let paths = normalise_all(paths)?;
+        let paths = normalise_all(self.workdir()?, paths)?;
         let mut index = self.fresh_index()?;
         let head = self.head_commit()?;
         let tree = head.as_ref().map(Commit::tree).transpose()?;
@@ -65,32 +71,39 @@ impl RepoSession {
                 return Err(GitError::PathNotFound(PathBuf::from(p)));
             }
         }
-        match head {
-            Some(commit) => self.repo().reset_default(
-                Some(commit.as_object()),
-                paths.iter().map(|p| escape_pathspec(p)),
-            )?,
-            None => {
+        let unstaged = match head {
+            Some(commit) => self
+                .repo()
+                .reset_default(
+                    Some(commit.as_object()),
+                    paths.iter().map(|p| escape_pathspec(p)),
+                )
+                .map_err(GitError::from),
+            None => (|| {
                 for p in &paths {
                     index.remove_path(Path::new(p))?;
                 }
                 index.write()?;
-            }
-        }
-        Ok(())
+                Ok(())
+            })(),
+        };
+        reload_on_error(&mut index, unstaged)
     }
 
     /// Resets the whole index to HEAD (or empties it when unborn).
     pub fn unstage_all(&self) -> Result<(), GitError> {
         let mut index = self.fresh_index()?;
-        match self.head_commit()? {
-            Some(commit) => self.repo().reset_default(Some(commit.as_object()), ["*"])?,
-            None => {
-                index.clear()?;
-                index.write()?;
-            }
-        }
-        Ok(())
+        let unstaged = match self.head_commit()? {
+            Some(commit) => self
+                .repo()
+                .reset_default(Some(commit.as_object()), ["*"])
+                .map_err(GitError::from),
+            None => index
+                .clear()
+                .and_then(|()| index.write())
+                .map_err(GitError::from),
+        };
+        reload_on_error(&mut index, unstaged)
     }
 
     /// Throws away unstaged changes: tracked paths are restored to their
@@ -102,8 +115,8 @@ impl RepoSession {
         if paths.is_empty() {
             return Ok(());
         }
-        let paths = normalise_all(paths)?;
         let workdir = self.workdir()?;
+        let paths = normalise_all(workdir, paths)?;
         let mut index = self.fresh_index()?;
 
         let mut tracked = Vec::new();
@@ -133,9 +146,13 @@ impl RepoSession {
 
         if !tracked.is_empty() {
             let mut checkout = CheckoutBuilder::new();
-            checkout.force().disable_pathspec_match(true);
+            checkout.force();
+            // Matched as escaped pathspecs: with matching disabled, libgit2
+            // cannot address a file whose name contains `\`. Tracked paths
+            // are files, so pathspec directory-prefix matching cannot widen
+            // the selection.
             for p in &tracked {
-                checkout.path(p);
+                checkout.path(escape_pathspec(p));
             }
             self.repo()
                 .checkout_index(Some(&mut index), Some(&mut checkout))?;
@@ -168,8 +185,18 @@ impl RepoSession {
 }
 
 /// Validates every path up front so a bad one aborts before any write.
-fn normalise_all(paths: &[String]) -> Result<Vec<String>, GitError> {
-    paths.iter().map(|p| repo_relative(p)).collect()
+fn normalise_all(workdir: &Path, paths: &[String]) -> Result<Vec<String>, GitError> {
+    paths.iter().map(|p| checked_relative(workdir, p)).collect()
+}
+
+/// Passes `result` through, but on error first re-reads `index` from disk so
+/// changes made before the failure do not linger in the repository's cached
+/// index, where the same session's later calls would see them.
+fn reload_on_error(index: &mut Index, result: Result<(), GitError>) -> Result<(), GitError> {
+    if result.is_err() {
+        let _ = index.read(true);
+    }
+    result
 }
 
 /// Whether the index has an entry for `path` at any of `stages`.

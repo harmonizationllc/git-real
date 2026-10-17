@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use crate::error::GitError;
-use crate::paths::{escape_pathspec, repo_relative};
+use crate::paths::{checked_relative, escape_glob};
 use crate::repo::RepoSession;
 
 /// Builds a rooted gitignore pattern matching exactly `path`.
@@ -17,7 +17,7 @@ pub fn gitignore_pattern(path: &str, is_dir: bool) -> String {
     let trailing_spaces = path.len() - body.len();
 
     let mut pattern = String::from("/");
-    pattern.push_str(&escape_pathspec(body));
+    pattern.push_str(&escape_glob(body));
     pattern.push_str(&"\\ ".repeat(trailing_spaces));
     if is_dir {
         pattern.push('/');
@@ -29,8 +29,12 @@ impl RepoSession {
     /// Appends a pattern for `path` to `<workdir>/.gitignore` unless the
     /// file already holds it, and returns the pattern.
     pub fn add_to_gitignore(&self, path: &str) -> Result<String, GitError> {
-        let rel = repo_relative(path)?;
         let workdir = self.workdir()?;
+        let rel = checked_relative(workdir, path)?;
+        // A gitignore pattern is one line, so a line break cannot be expressed.
+        if rel.contains(['\n', '\r']) {
+            return Err(GitError::BadSelection);
+        }
         let meta = workdir
             .join(&rel)
             .symlink_metadata()

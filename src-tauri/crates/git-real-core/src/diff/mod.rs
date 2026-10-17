@@ -89,6 +89,9 @@ impl RepoSession {
             HunkAction::Stage | HunkAction::Unstage => git2::ApplyLocation::Index,
             HunkAction::Discard => git2::ApplyLocation::WorkDir,
         };
+        // Re-read the cached index so entries written by other processes
+        // survive; `apply` writes the in-memory copy back to disk.
+        self.repo().index()?.read(true)?;
         self.repo().apply(&diff, location, None).map_err(failed)
     }
 

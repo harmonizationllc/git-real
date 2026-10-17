@@ -1011,3 +1011,195 @@ fn unstage_all_unborn_with_nested_staged_files_leaves_them_untracked() {
         )
     );
 }
+
+// --- RED: a failed call must not leave dirty state in the session's cached index ---
+
+#[test]
+fn stage_paths_failed_call_leaves_same_session_status_unchanged() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "a\n");
+    let s = session(&path);
+    let _ = s.stage_paths(&paths(&["a.txt", "nope.txt"]));
+    let status = s.status().expect("status");
+    let e = status.entries.iter().find(|e| e.path == "a.txt").unwrap();
+    assert_eq!((e.index, e.worktree), (None, Some(ChangeKind::Untracked)));
+}
+
+#[test]
+fn stage_paths_failed_call_does_not_leak_into_next_successful_write() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "a\n");
+    common::write_file(&path, "b.txt", "b\n");
+    let s = session(&path);
+    let _ = s.stage_paths(&paths(&["a.txt", "nope.txt"]));
+    s.stage_paths(&paths(&["b.txt"])).expect("stage b");
+    assert_eq!(sides(&path, "a.txt"), (None, Some(ChangeKind::Untracked)));
+}
+
+#[test]
+fn unstage_paths_failed_call_leaves_same_session_status_unchanged() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "a\n");
+    common::stage(&path, "a.txt");
+    let s = session(&path);
+    let _ = s.unstage_paths(&paths(&["a.txt", "nope.txt"]));
+    let status = s.status().expect("status");
+    let e = status.entries.iter().find(|e| e.path == "a.txt").unwrap();
+    assert_eq!((e.index, e.worktree), (Some(ChangeKind::Added), None));
+}
+
+#[test]
+fn discard_paths_failed_call_leaves_same_session_status_unchanged() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# scribble\n");
+    let s = session(&path);
+    let _ = s.discard_paths(&paths(&["README.md", "nope.txt"]));
+    let status = s.status().expect("status");
+    let e = status
+        .entries
+        .iter()
+        .find(|e| e.path == "README.md")
+        .unwrap();
+    assert_eq!((e.index, e.worktree), (None, Some(ChangeKind::Modified)));
+}
+
+// --- RED: a symlinked ancestor must never be followed out of the repository ---
+
+#[cfg(unix)]
+fn outside_dir_with_file() -> (tempfile::TempDir, std::path::PathBuf) {
+    let outside = tempfile::tempdir().expect("outside dir");
+    let file = outside.path().join("f");
+    std::fs::write(&file, "keep\n").unwrap();
+    (outside, file)
+}
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_through_symlinked_ancestor_is_path_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let (outside, _file) = outside_dir_with_file();
+    std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
+    let err = session(&path)
+        .discard_paths(&paths(&["link/f"]))
+        .expect_err("symlink ancestor");
+    assert!(matches!(err, GitError::PathNotFound(_)), "got {err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_through_symlinked_ancestor_keeps_outside_file() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let (outside, file) = outside_dir_with_file();
+    std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
+    let _ = session(&path).discard_paths(&paths(&["link/f"]));
+    assert!(file.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_paths_through_symlinked_ancestor_is_rejected() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let (outside, _file) = outside_dir_with_file();
+    std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
+    let err = session(&path)
+        .stage_paths(&paths(&["link/f"]))
+        .expect_err("symlink ancestor");
+    assert!(
+        matches!(err, GitError::PathNotFound(_) | GitError::Git2(_)),
+        "got {err:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_paths_through_symlinked_ancestor_stages_nothing() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let (outside, _file) = outside_dir_with_file();
+    std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
+    let _ = session(&path).stage_paths(&paths(&["link/f"]));
+    assert!(!status_of(&path).entries.iter().any(|e| e.path == "link/f"));
+}
+
+// --- path separators and special characters ---
+
+#[cfg(windows)]
+#[test]
+fn discard_paths_rejects_backslash_parent_path_on_windows() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let err = session(&path)
+        .discard_paths(&paths(&["..\\x"]))
+        .expect_err("outside repo");
+    assert!(matches!(err, GitError::PathNotFound(_)), "got {err:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn discard_paths_rejects_drive_relative_path_on_windows() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let err = session(&path)
+        .discard_paths(&paths(&["C:x"]))
+        .expect_err("drive relative");
+    assert!(matches!(err, GitError::PathNotFound(_)), "got {err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_paths_stages_file_named_with_backslash_on_unix() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "back\\slash.txt", "b\n");
+    session(&path)
+        .stage_paths(&paths(&["back\\slash.txt"]))
+        .expect("stage");
+    assert_eq!(
+        sides(&path, "back\\slash.txt"),
+        (Some(ChangeKind::Added), None)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_restores_file_named_with_backslash_on_unix() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "back\\slash.txt", "b\n");
+    common::commit_all(&path, "add backslash file");
+    common::write_file(&path, "back\\slash.txt", "changed\n");
+    session(&path)
+        .discard_paths(&paths(&["back\\slash.txt"]))
+        .expect("discard");
+    assert_eq!(
+        std::fs::read_to_string(path.join("back\\slash.txt")).unwrap(),
+        "b\n"
+    );
+}
+
+#[test]
+fn unstage_paths_unstages_file_with_leading_bang() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "!foo", "f\n");
+    common::stage(&path, "!foo");
+    session(&path)
+        .unstage_paths(&paths(&["!foo"]))
+        .expect("unstage");
+    assert_eq!(sides(&path, "!foo"), (None, Some(ChangeKind::Untracked)));
+}
+
+// --- unstage_all: staged deletion and modification together ---
+
+#[test]
+fn unstage_all_restores_staged_deletion_and_modification_to_worktree_only() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "keep.txt", "k\n");
+    common::commit_all(&path, "add keep");
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    common::write_file(&path, "keep.txt", "changed\n");
+    common::stage(&path, "README.md");
+    common::stage(&path, "keep.txt");
+    session(&path).unstage_all().expect("unstage all");
+    assert_eq!(
+        (sides(&path, "README.md"), sides(&path, "keep.txt")),
+        (
+            (None, Some(ChangeKind::Deleted)),
+            (None, Some(ChangeKind::Modified))
+        )
+    );
+}
