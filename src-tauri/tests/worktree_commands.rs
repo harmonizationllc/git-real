@@ -91,6 +91,100 @@ fn get_file_diff_inner_without_max_lines_is_not_truncated() {
     assert!(!full.truncated);
 }
 
+// Some(0) is pinned as implemented: nothing is collected and the diff reports truncation.
+#[test]
+fn get_file_diff_inner_zero_max_lines_is_an_empty_truncated_diff() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("README.md"), "# fixture\na\nb\n").unwrap();
+    let diff =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, Some(0)).unwrap();
+    let collected: usize = diff.hunks.iter().map(|h| h.lines.len()).sum();
+    assert_eq!((collected, diff.truncated), (0, true));
+}
+
+// None means the core default of 10_000 lines, so an explicit 10_000 is equivalent.
+#[test]
+fn get_file_diff_inner_none_matches_the_core_default_cap() {
+    let (_dir, path, reg, id) = open_fixture();
+    let body: String = (0..10_050).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(path.join("README.md"), body).unwrap();
+    let default =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
+    let explicit = get_file_diff_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        false,
+        Some(10_000),
+    )
+    .unwrap();
+    let count = |d: &git_real_core::FileDiff| d.hunks.iter().map(|h| h.lines.len()).sum::<usize>();
+    assert_eq!(
+        (
+            count(&default),
+            default.truncated,
+            count(&explicit),
+            explicit.truncated
+        ),
+        (10_000, true, 10_000, true)
+    );
+}
+
+// Every scope/side pair resolves to the documented source through the app layer.
+#[test]
+fn get_file_content_inner_staged_old_is_head_and_new_is_index() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    stage_paths_inner(&reg, id, &paths(&["README.md"])).unwrap();
+    std::fs::write(path.join("README.md"), "# fixture\nmore\nworktree only\n").unwrap();
+    let read = |scope, side| {
+        get_file_content_inner(&reg, id, "README.md", scope, side, MAX_PREVIEW_BYTES).unwrap()
+    };
+    assert_eq!(
+        (
+            read(DiffScope::Staged, DiffSide::Old),
+            read(DiffScope::Staged, DiffSide::New),
+        ),
+        (b"# fixture\n".to_vec(), b"# fixture\nmore\n".to_vec())
+    );
+}
+
+#[test]
+fn get_file_content_inner_unstaged_old_is_the_index_not_head() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    stage_paths_inner(&reg, id, &paths(&["README.md"])).unwrap();
+    std::fs::write(path.join("README.md"), "# fixture\nmore\nworktree only\n").unwrap();
+    let old = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
+    assert_eq!(old, b"# fixture\nmore\n");
+}
+
+#[test]
+fn get_file_content_inner_staged_old_of_a_new_file_maps_to_path_not_found() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("fresh.txt"), "x\n").unwrap();
+    stage_paths_inner(&reg, id, &paths(&["fresh.txt"])).unwrap();
+    let err = get_file_content_inner(
+        &reg,
+        id,
+        "fresh.txt",
+        DiffScope::Staged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("not in HEAD");
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
 // get_file_content_inner: raw bytes of one side of a file.
 #[test]
 fn get_file_content_inner_returns_old_bytes() {

@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDiffPrefs } from "./diffPrefs";
 
 beforeEach(() => {
   localStorage.clear();
   useDiffPrefs.setState({ mode: "split", ignoreWhitespace: false });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // Contract: viewer preferences default to split mode, persist, and rehydrate.
@@ -42,5 +46,19 @@ describe("useDiffPrefs", () => {
     );
     await useDiffPrefs.persist.rehydrate();
     expect(useDiffPrefs.getState()).toMatchObject({ mode: "unified", ignoreWhitespace: true });
+  });
+
+  it("should still update in memory when localStorage rejects writes", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota exceeded", "QuotaExceededError");
+    });
+    expect(() => useDiffPrefs.getState().setMode("unified")).not.toThrow();
+    expect(useDiffPrefs.getState().mode).toBe("unified");
+  });
+
+  it("should keep the defaults when rehydrating from corrupt storage", async () => {
+    localStorage.setItem("git-real.diffPrefs", "{not json");
+    await useDiffPrefs.persist.rehydrate();
+    expect(useDiffPrefs.getState()).toMatchObject({ mode: "split", ignoreWhitespace: false });
   });
 });

@@ -48,6 +48,12 @@ describe("queryKeys per-repo keys", () => {
     expect(queryKeys.fileDiff(3, "a", "staged", false, 1_000_000).at(-1)).toBe(1_000_000);
   });
 
+  it("should keep maxLines 0 and null as distinct fileDiff keys", () => {
+    expect(queryKeys.fileDiff(1, "a", "staged", false, 0)).not.toEqual(
+      queryKeys.fileDiff(1, "a", "staged", false, null),
+    );
+  });
+
   it("should differ between maxLines settings for the same file", () => {
     expect(queryKeys.fileDiff(1, "a", "staged", false)).not.toEqual(
       queryKeys.fileDiff(1, "a", "staged", false, 1_000_000),
