@@ -46,6 +46,8 @@ impl From<GitError> for AppError {
             GitError::GitCliMissing => AppErrorKind::GitCliMissing,
             GitError::CloneFailed { .. } => AppErrorKind::CloneFailed,
             GitError::Io(_) => AppErrorKind::Io,
+            // Task 6 gives this its own `noChanges` kind.
+            GitError::NoChanges(_) => AppErrorKind::Git,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

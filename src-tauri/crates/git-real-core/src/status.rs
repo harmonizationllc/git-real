@@ -60,7 +60,7 @@ impl RepoSession {
 }
 
 /// Reads a delta file's path as `/`-separated text, independent of platform.
-fn file_path(file: &DiffFile<'_>) -> String {
+pub(crate) fn file_path(file: &DiffFile<'_>) -> String {
     file.path_bytes()
         .map(|b| String::from_utf8_lossy(b).into_owned())
         .unwrap_or_default()

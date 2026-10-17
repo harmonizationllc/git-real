@@ -1,10 +1,14 @@
 //! Plain data types exchanged with the app layer.
 
+mod diff;
 mod progress;
 mod recent;
 mod repo;
 mod status;
 
+pub use diff::{
+    DiffLine, DiffLineKind, DiffOptions, DiffScope, FileDiff, Hunk, HunkAction, HunkSelection,
+};
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;
 pub use repo::RepoSummary;
