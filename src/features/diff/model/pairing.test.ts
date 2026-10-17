@@ -54,3 +54,28 @@ describe("pairLines", () => {
     expect(pairLines([])).toEqual([]);
   });
 });
+
+// Contract: an addition ends the deletion run, so a later deletion starts a new run that pairs afresh.
+describe("pairLines interrupted runs", () => {
+  it("should pair a second deletion/addition run independently of the first", () => {
+    const lines = [L("deletion", "a"), L("addition", "A"), L("deletion", "b"), L("addition", "B")];
+    expect(pairLines(lines)).toEqual([
+      { old: 0, new: 1 },
+      { old: 2, new: 3 },
+    ]);
+  });
+  it("should leave a trailing deletion after an addition one-sided", () => {
+    expect(pairLines([L("addition", "A"), L("deletion", "b")])).toEqual([
+      { old: null, new: 0 },
+      { old: 1, new: null },
+    ]);
+  });
+  it("should not pair deletions across a context line", () => {
+    const lines = [L("deletion", "a"), L("context", "c"), L("addition", "A")];
+    expect(pairLines(lines)).toEqual([
+      { old: 0, new: null },
+      { old: 1, new: 1 },
+      { old: null, new: 2 },
+    ]);
+  });
+});

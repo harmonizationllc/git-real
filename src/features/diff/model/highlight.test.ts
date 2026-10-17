@@ -94,6 +94,19 @@ describe("tokenize", () => {
     expect(a[0].className).toBe("tok-comment");
     expect(b[0].className).toBe("tok-comment");
   });
+  it("should keep a carriage return in the line text for CRLF content", () => {
+    const [a, b] = tokenize("let x;\r\nlet y;", parser);
+    expect(a.map((t) => t.text).join("")).toBe("let x;\r");
+    expect(b.map((t) => t.text).join("")).toBe("let y;");
+  });
+  it("should split a token spanning three lines into one token per line", () => {
+    const lines = tokenize("/* a\nb\nc */", parser);
+    expect(lines).toEqual([
+      [{ text: "/* a", className: "tok-comment" }],
+      [{ text: "b", className: "tok-comment" }],
+      [{ text: "c */", className: "tok-comment" }],
+    ]);
+  });
   it("should handle empty lines inside a block comment", () => {
     const lines = tokenize("/* x\n\ny */", parser);
     expect(lines.map((l) => l.length)).toEqual([1, 0, 1]);
@@ -148,5 +161,22 @@ describe("highlightHunk", () => {
     const ctx = hunk([L("deletion", "/*"), L("context", "x"), L("addition", "y")]);
     // old side opens a block comment around "x"; the new side does not.
     expect(highlightHunk(ctx, parser)[1]?.[0]?.className).not.toBe("tok-comment");
+  });
+});
+
+// Contract: a hunk with only one kind of change is highlighted from the side that has lines.
+describe("highlightHunk one-sided hunks", () => {
+  it("should highlight a deletion-only hunk", () => {
+    const out = highlightHunk(hunk([L("deletion", "// a"), L("deletion", "let x = 1;")]), parser);
+    expect(out[0]).toEqual([{ text: "// a", className: "tok-comment" }]);
+    expect(out[1]?.map((t) => t.text).join("")).toBe("let x = 1;");
+  });
+  it("should highlight an addition-only hunk", () => {
+    const out = highlightHunk(hunk([L("addition", "// a"), L("addition", "let x = 1;")]), parser);
+    expect(out[0]).toEqual([{ text: "// a", className: "tok-comment" }]);
+    expect(out[1]?.find((t) => t.text === "1")?.className).toBe("tok-number");
+  });
+  it("should return an empty array for a hunk with no lines", () => {
+    expect(highlightHunk(hunk([]), parser)).toEqual([]);
   });
 });

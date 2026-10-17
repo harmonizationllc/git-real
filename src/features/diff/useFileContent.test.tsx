@@ -82,3 +82,19 @@ describe("useFileContent errors", () => {
     await waitFor(() => expect(result.current.error?.kind).toBe("io"));
   });
 });
+
+// Contract: enabling a disabled hook triggers exactly one fetch.
+describe("useFileContent enable transition", () => {
+  it("should fetch exactly once after switching from disabled to enabled", async () => {
+    let enabled = false;
+    const { result, rerender } = renderHookWithProviders(() =>
+      useFileContent(1, "a.png", "unstaged", "new", enabled),
+    );
+    expect(getFileContent).not.toHaveBeenCalled();
+    enabled = true;
+    rerender();
+    await waitFor(() => expect(result.current.bytes).toBe(buffer));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getFileContent).toHaveBeenCalledExactlyOnceWith(1, "a.png", "unstaged", "new");
+  });
+});

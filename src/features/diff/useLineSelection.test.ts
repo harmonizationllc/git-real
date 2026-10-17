@@ -173,6 +173,38 @@ describe("useLineSelection clear", () => {
   });
 });
 
+// Contract: after clear, the next click starts a fresh selection with its own anchor.
+describe("useLineSelection after clear", () => {
+  it("should anchor a later shift-click range at the first click after clear", () => {
+    const { result } = setup(d);
+    act(() => result.current.click(0, 1, false));
+    act(() => result.current.clear());
+    act(() => result.current.click(0, 2, false));
+    act(() => result.current.click(0, 3, true));
+    expect(sorted(result.current.selected)).toEqual([2, 3]);
+    expect(result.current.hunkIndex).toBe(0);
+  });
+});
+
+// Contract: a shift-click range never spans context lines and is anchored in the clicked hunk only.
+describe("useLineSelection shift click across context", () => {
+  it("should select the changed lines on both sides of a context line, skipping it", () => {
+    const { result } = setup(gapped);
+    act(() => result.current.click(0, 2, false));
+    act(() => result.current.click(0, 0, true));
+    expect(sorted(result.current.selected)).toEqual([0, 2]);
+    expect(result.current.selected.has(1)).toBe(false);
+  });
+  it("should drop the previous hunk's lines when a shift-click lands in another hunk", () => {
+    const { result } = setup(d);
+    act(() => result.current.click(0, 1, false));
+    act(() => result.current.click(0, 2, false));
+    act(() => result.current.click(1, 0, true));
+    expect(sorted(result.current.selected)).toEqual([0]);
+    expect(result.current.hunkIndex).toBe(1);
+  });
+});
+
 // Contract: a new diff identity resets the selection; the same identity keeps it.
 describe("useLineSelection diff identity", () => {
   it("should reset when the diff changes identity", () => {
@@ -204,6 +236,22 @@ describe("useLineSelection referential updates", () => {
     const first = result.current.selected;
     act(() => result.current.click(0, 2, false));
     expect(result.current.selected).not.toBe(first);
+  });
+  it("should expose a new Set instance after a shift-click range", () => {
+    const { result } = setup(d);
+    act(() => result.current.click(0, 1, false));
+    const first = result.current.selected;
+    act(() => result.current.click(0, 3, true));
+    expect(result.current.selected).not.toBe(first);
+    expect(sorted(first)).toEqual([1]);
+  });
+  it("should expose a new Set instance after a deselect", () => {
+    const { result } = setup(d);
+    act(() => result.current.click(0, 1, false));
+    const first = result.current.selected;
+    act(() => result.current.click(0, 1, false));
+    expect(result.current.selected).not.toBe(first);
+    expect(first.has(1)).toBe(true);
   });
   it("should not mutate a previously exposed Set", () => {
     const { result } = setup(d);

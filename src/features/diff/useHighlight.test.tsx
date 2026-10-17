@@ -54,6 +54,15 @@ describe("useHighlight result", () => {
     await waitFor(() => expect(result.current).not.toBeNull());
     expect(result.current?.get(0)).toHaveLength(1);
   });
+  it("should stay null when the diff becomes undefined before the language loads", async () => {
+    const a = fileDiff([hunk([L("addition", "a")])], { path: "a.js" });
+    const { result, rerender } = renderHook(({ d }) => useHighlight(d), {
+      initialProps: { d: a as typeof a | undefined },
+    });
+    rerender({ d: undefined });
+    await settle();
+    expect(result.current).toBeNull();
+  });
   it("should return null for a new diff until its own highlight is ready", async () => {
     const a = fileDiff([hunk([L("addition", "a")])], { path: "a.js" });
     const b = fileDiff([hunk([L("addition", "b")])], { path: "b.js" });

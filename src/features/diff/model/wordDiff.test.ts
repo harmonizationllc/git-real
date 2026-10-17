@@ -67,3 +67,62 @@ describe("wordDiff", () => {
     expect(wordDiff("abc", "")).toEqual({ old: [{ start: 0, end: 3 }], new: [] });
   });
 });
+
+// Contract: with one side empty, an over-limit other side is one whole-line range and the empty side none.
+describe("wordDiff over the token limit against an empty side", () => {
+  const long = Array.from({ length: WORD_DIFF_MAX_TOKENS + 1 }, (_, i) => `t${i}`).join(" ");
+  it("should give an empty old side no range and the long new side one whole-line range", () => {
+    expect(wordDiff("", long)).toEqual({ old: [], new: [{ start: 0, end: long.length }] });
+  });
+  it("should give an empty new side no range and the long old side one whole-line range", () => {
+    expect(wordDiff(long, "")).toEqual({ old: [{ start: 0, end: long.length }], new: [] });
+  });
+});
+
+// Contract: offsets are UTF-16 code units, so ranges slice back to the changed text even for astral characters.
+describe("wordDiff with surrogate pairs", () => {
+  it("should slice an emoji change back to the emoji on both sides", () => {
+    const a = "a😀b";
+    const b = "a😁b";
+    const d = wordDiff(a, b);
+    expect(d.old).toEqual([{ start: 1, end: 3 }]);
+    expect(d.new).toEqual([{ start: 1, end: 3 }]);
+    expect(a.slice(d.old[0].start, d.old[0].end)).toBe("😀");
+    expect(b.slice(d.new[0].start, d.new[0].end)).toBe("😁");
+  });
+  it("should offset later ranges by the two code units of an unchanged emoji", () => {
+    const a = "😀 foo";
+    const b = "😀 bar";
+    const d = wordDiff(a, b);
+    expect(d.old).toEqual([{ start: 3, end: 6 }]);
+    expect(a.slice(d.old[0].start, d.old[0].end)).toBe("foo");
+    expect(b.slice(d.new[0].start, d.new[0].end)).toBe("bar");
+  });
+  it("should never split a surrogate pair when an emoji is inserted", () => {
+    const d = wordDiff("a(b)", "a(😀b)");
+    expect(d.old).toEqual([]);
+    expect(d.new).toEqual([{ start: 2, end: 4 }]);
+  });
+});
+
+// Contract: a difference at the very first or very last token is found without touching the rest.
+describe("wordDiff at the line boundaries", () => {
+  it("should mark only the first word when only the start differs", () => {
+    expect(wordDiff("foo bar baz", "qux bar baz")).toEqual({
+      old: [{ start: 0, end: 3 }],
+      new: [{ start: 0, end: 3 }],
+    });
+  });
+  it("should mark only the last word when only the end differs", () => {
+    expect(wordDiff("foo bar baz", "foo bar qux")).toEqual({
+      old: [{ start: 8, end: 11 }],
+      new: [{ start: 8, end: 11 }],
+    });
+  });
+  it("should mark a single-character difference at the last position", () => {
+    expect(wordDiff("a;", "a,")).toEqual({
+      old: [{ start: 1, end: 2 }],
+      new: [{ start: 1, end: 2 }],
+    });
+  });
+});
