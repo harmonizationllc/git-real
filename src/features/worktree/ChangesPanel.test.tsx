@@ -753,10 +753,12 @@ describe("ChangesPanel action errors", () => {
     vi.mocked(stagePaths).mockRejectedValue(failure);
     const { user } = await renderPanel(unstaged("a.txt"));
     await user.click(btn("Stage a.txt"));
-    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
-    const calls = vi.mocked(getStatus).mock.calls.length;
-    await new Promise((r) => setTimeout(r, 0));
-    expect(vi.mocked(getStatus).mock.calls.length).toBe(calls);
+    const dismiss = await screen.findByRole("button", { name: "Dismiss" });
+    // The failed action's own invalidation refetches once; wait for that to settle first.
+    await waitFor(() => expect(btn("Stage a.txt")).toBeEnabled());
+    const before = vi.mocked(getStatus).mock.calls.length;
+    await user.click(dismiss);
+    expect(vi.mocked(getStatus)).toHaveBeenCalledTimes(before);
   });
 
   it("should show an alert when a discard fails", async () => {
