@@ -928,7 +928,7 @@ fn apply_hunk_apply_failed_message_names_the_failure() {
 // --- build_patch: reverse no-newline, duplicates, delete header mode ---
 
 #[test]
-fn build_patch_reverse_flagged_pair_keeps_each_marker_with_its_line() {
+fn build_patch_reverse_flagged_pair_emits_removals_before_additions_with_markers() {
     let diff = hand_diff(
         ChangeKind::Modified,
         vec![
@@ -941,7 +941,7 @@ fn build_patch_reverse_flagged_pair_keeps_each_marker_with_its_line() {
     let patch = build_patch(&diff, &whole(), true, 0o100644).expect("patch");
     assert_eq!(
         patch,
-        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,1 +1,1 @@\n+x\n\\ No newline at end of file\n-y\n\\ No newline at end of file\n"
+        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,1 +1,1 @@\n-y\n\\ No newline at end of file\n+x\n\\ No newline at end of file\n"
     );
 }
 
@@ -1031,4 +1031,99 @@ fn build_patch_picked_index_in_later_hunk_does_not_leak_across_hunks() {
     };
     let err = build_patch(&diff, &selection, false, 0o100644).expect_err("out of range");
     assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn build_patch_reverse_marker_only_after_last_line_of_its_side() {
+    // Reverse with only the deletion picked: `+x` is followed by context `y`, so
+    // the restored x ends in a newline and must carry no marker; `y` keeps its own.
+    let diff = hand_diff(
+        ChangeKind::Modified,
+        vec![
+            line(DiffLineKind::Context, "a", false),
+            line(DiffLineKind::Deletion, "x", true),
+            line(DiffLineKind::Addition, "y", true),
+        ],
+        1,
+        1,
+    );
+    let patch = build_patch(&diff, &picked(&[1]), true, 0o100644).expect("patch");
+    assert_eq!(
+        patch,
+        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,3 @@\n a\n+x\n y\n\\ No newline at end of file\n"
+    );
+}
+
+#[test]
+fn apply_hunk_discard_deletion_before_unterminated_line_restores_with_newline() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "a\nx");
+    common::commit_all(&path, "no eol");
+    common::write_file(&path, "f.txt", "a\ny");
+    // Hunk: [ a, -x(flag), +y(flag)]; discarding only the deletion restores x.
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &picked(&[1]))
+        .expect("discard deletion only");
+    assert_eq!(read(&path, "f.txt"), "a\nx\ny");
+}
+
+// --- RED: pinned bugs awaiting the developer fix ---
+
+#[test]
+fn apply_hunk_stage_whole_untracked_non_utf8_file_adds_it() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::write(path.join("latin1.txt"), b"caf\xe9\n").expect("write");
+    let session = RepoSession::open(&path).expect("open");
+    let whole = HunkSelection {
+        hunk_index: 0,
+        lines: None,
+    };
+    session
+        .apply_hunk("latin1.txt", HunkAction::Stage, &whole)
+        .expect("a whole untracked file stages regardless of encoding");
+    let status = session.status().expect("status");
+    let entry = status
+        .entries
+        .iter()
+        .find(|e| e.path == "latin1.txt")
+        .expect("entry");
+    assert_eq!(entry.index, Some(ChangeKind::Added));
+}
+
+#[test]
+fn apply_hunk_discard_whole_hunk_restores_file_without_trailing_newline() {
+    // Reverse no-newline rule: -b(flag) +b +c(flag) must reverse to "a\nb" exactly.
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "a\nb");
+    common::commit_all(&path, "no eol");
+    common::write_file(&path, "f.txt", "a\nb\nc");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &whole())
+        .expect("discard");
+    assert_eq!(read(&path, "f.txt"), "a\nb");
+}
+
+#[test]
+fn apply_hunk_unstage_whole_hunk_restores_unterminated_line() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "a\nb");
+    common::commit_all(&path, "no eol");
+    common::write_file(&path, "f.txt", "a\nb\nc");
+    common::stage(&path, "f.txt");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Unstage, &whole())
+        .expect("unstage");
+    assert_eq!(index_blob(&path, "f.txt"), Some(b"a\nb".to_vec()));
+}
+
+#[test]
+fn apply_hunk_discard_replaced_unterminated_line_restores_it() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "x");
+    common::commit_all(&path, "no eol");
+    common::write_file(&path, "f.txt", "y");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &whole())
+        .expect("discard");
+    assert_eq!(read(&path, "f.txt"), "x");
 }

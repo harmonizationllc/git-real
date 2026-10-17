@@ -57,7 +57,7 @@ pub fn build_patch(
         }
     }
 
-    let ops = select_ops(&hunk.lines, selection.lines.as_deref(), reverse);
+    let mut ops = select_ops(&hunk.lines, selection.lines.as_deref(), reverse);
     if ops.iter().all(|(op, _)| *op == Op::Context) {
         return Err(GitError::BadSelection);
     }
@@ -98,12 +98,14 @@ pub fn build_patch(
     out.push_str(&format!(
         "@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
     ));
+    order_flagged_runs(&mut ops);
     render_lines(&mut out, &ops);
     Ok(out)
 }
 
 /// Maps each line to its patch op in original order, dropping unselected
 /// post-side lines and turning unselected pre-side lines into context.
+/// Indices in `picked` are already validated against `lines`.
 fn select_ops<'a>(
     lines: &'a [DiffLine],
     picked: Option<&[usize]>,
@@ -114,38 +116,55 @@ fn select_ops<'a>(
     } else {
         (DiffLineKind::Addition, DiffLineKind::Deletion)
     };
+    let mut selected = vec![picked.is_none(); lines.len()];
+    for &i in picked.unwrap_or_default() {
+        selected[i] = true;
+    }
     lines
         .iter()
-        .enumerate()
-        .filter_map(|(i, line)| {
-            let selected = picked.is_none_or(|p| p.contains(&i));
-            match line.kind {
-                DiffLineKind::Context => Some((Op::Context, line)),
-                k if k == post_only => selected.then_some((Op::Add, line)),
-                k if k == pre_only && selected => Some((Op::Remove, line)),
-                _ => Some((Op::Context, line)),
-            }
+        .zip(selected)
+        .filter_map(|(line, selected)| match line.kind {
+            DiffLineKind::Context => Some((Op::Context, line)),
+            k if k == post_only => selected.then_some((Op::Add, line)),
+            k if k == pre_only && selected => Some((Op::Remove, line)),
+            _ => Some((Op::Context, line)),
         })
         .collect()
 }
 
-/// Writes the hunk body. A flagged context line followed by an addition is
-/// written as a remove/add pair so the addition does not join its line.
+/// Within each run of changed lines that carries a no-newline flag, moves
+/// removals before additions: libgit2 rejects a `+` marker followed by `-`.
+/// Runs without a flag keep their order, which libgit2 accepts as is.
+fn order_flagged_runs(ops: &mut [(Op, &DiffLine)]) {
+    for run in ops.split_mut(|(op, _)| *op == Op::Context) {
+        if run.iter().any(|(_, line)| line.no_newline_at_eof) {
+            run.sort_by_key(|(op, _)| *op == Op::Add);
+        }
+    }
+}
+
+/// Writes the hunk body. A marker follows a flagged line only when it is the
+/// last line of its side; a flagged context line that ends the old side but
+/// is followed by additions is written as a remove/add pair.
 fn render_lines(out: &mut String, ops: &[(Op, &DiffLine)]) {
+    let last_of = |excluded: Op| ops.iter().rposition(|(op, _)| *op != excluded);
+    let last_old = last_of(Op::Add);
+    let last_new = last_of(Op::Remove);
     for (i, &(op, line)) in ops.iter().enumerate() {
         let content = &line.content;
-        let addition_follows = ops[i + 1..].iter().any(|(o, _)| *o == Op::Add);
-        if op == Op::Context && line.no_newline_at_eof && addition_follows {
-            out.push_str(&format!("-{content}\n{NO_NEWLINE_MARKER}+{content}\n"));
-            continue;
-        }
-        let sign = match op {
-            Op::Context => ' ',
-            Op::Add => '+',
-            Op::Remove => '-',
+        let ends_old = last_old == Some(i);
+        let ends_new = last_new == Some(i);
+        let (sign, marker) = match op {
+            Op::Context if line.no_newline_at_eof && ends_old && !ends_new => {
+                out.push_str(&format!("-{content}\n{NO_NEWLINE_MARKER}+{content}\n"));
+                continue;
+            }
+            Op::Context => (' ', ends_old && ends_new),
+            Op::Add => ('+', ends_new),
+            Op::Remove => ('-', ends_old),
         };
         out.push_str(&format!("{sign}{content}\n"));
-        if line.no_newline_at_eof {
+        if marker && line.no_newline_at_eof {
             out.push_str(NO_NEWLINE_MARKER);
         }
     }

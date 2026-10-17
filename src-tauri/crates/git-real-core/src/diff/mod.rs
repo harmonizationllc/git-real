@@ -58,17 +58,16 @@ impl RepoSession {
             context_lines: 3,
             max_lines: usize::MAX,
         };
-        let loaded = self.load_diff(path, scope, opts, LineMode::Exact)?;
-
-        let whole_untracked = action == HunkAction::Stage
-            && loaded.diff.change == Some(ChangeKind::Untracked)
-            && selection.lines.is_none();
+        // Decided before the exact load so any encoding stages whole.
+        let whole_untracked =
+            action == HunkAction::Stage && selection.lines.is_none() && self.is_untracked(path);
         if whole_untracked {
             if selection.hunk_index != 0 {
                 return Err(GitError::BadSelection);
             }
             return self.stage_untracked_file(path);
         }
+        let loaded = self.load_diff(path, scope, opts, LineMode::Exact)?;
 
         let (target, other) = if reverse {
             (loaded.new_mode, loaded.old_mode)
@@ -91,6 +90,13 @@ impl RepoSession {
             HunkAction::Discard => git2::ApplyLocation::WorkDir,
         };
         self.repo().apply(&diff, location, None).map_err(failed)
+    }
+
+    /// Whether `path` is an untracked (not ignored) worktree file.
+    fn is_untracked(&self, path: &str) -> bool {
+        self.repo()
+            .status_file(std::path::Path::new(path))
+            .is_ok_and(|s| s.contains(git2::Status::WT_NEW))
     }
 
     /// Adds a whole untracked file to the index; this covers empty, binary
