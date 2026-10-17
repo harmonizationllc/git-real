@@ -19,6 +19,10 @@ pub enum GitError {
     CloneFailed { code: Option<i32>, stderr: String },
     #[error("{0} has no changes in that scope")]
     NoChanges(String),
+    #[error("the selection does not match the file's changes")]
+    BadSelection,
+    #[error("the patch did not apply: {0}")]
+    ApplyFailed(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

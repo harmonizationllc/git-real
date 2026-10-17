@@ -48,6 +48,8 @@ impl From<GitError> for AppError {
             GitError::Io(_) => AppErrorKind::Io,
             // Task 6 gives this its own `noChanges` kind.
             GitError::NoChanges(_) => AppErrorKind::Git,
+            // Task 6 gives these their own `badSelection` / `applyFailed` kinds.
+            GitError::BadSelection | GitError::ApplyFailed(_) => AppErrorKind::Git,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
