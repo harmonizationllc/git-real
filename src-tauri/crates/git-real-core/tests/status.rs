@@ -335,3 +335,122 @@ fn status_bare_repo_errors() {
         .expect_err("should fail");
     assert!(matches!(err, GitError::Git2(_)), "got {err:?}");
 }
+
+// --- index-side type change ---
+
+#[test]
+#[cfg(unix)]
+fn status_staged_symlink_typechange() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "target.txt", "t\n");
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::os::unix::fs::symlink("target.txt", path.join("README.md")).unwrap();
+    common::stage(&path, "README.md");
+    let status = status_of(&path);
+    let e = entry(&status, "README.md");
+    assert_eq!((e.index, e.worktree), (Some(ChangeKind::TypeChange), None));
+}
+
+// --- HEAD errors other than unborn are propagated ---
+
+#[test]
+fn status_corrupt_head_errors_instead_of_reporting_unborn() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::write(path.join(".git").join("HEAD"), "garbage\n").unwrap();
+    let err = RepoSession::open(&path)
+        .expect("open succeeds with a corrupt HEAD")
+        .status()
+        .expect_err("corrupt HEAD must not look like an unborn branch");
+    assert!(matches!(err, GitError::Git2(_)), "got {err:?}");
+}
+
+// --- ordering: byte-wise, case-sensitive, nested ---
+
+#[test]
+fn status_entries_sorted_bytewise_with_mixed_case_and_nesting() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    for p in ["b.txt", "B.txt", "a/b.txt", "a.txt", "a-b.txt", "A/z.txt"] {
+        common::write_file(&path, p, "x\n");
+    }
+    let paths: Vec<_> = status_of(&path)
+        .entries
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    assert_eq!(
+        paths,
+        vec!["A/z.txt", "B.txt", "a-b.txt", "a.txt", "a/b.txt", "b.txt"]
+    );
+}
+
+// --- serialization round-trips ---
+
+#[test]
+fn change_kind_serde_names_round_trip_for_every_variant() {
+    let cases = [
+        (ChangeKind::Added, "added"),
+        (ChangeKind::Modified, "modified"),
+        (ChangeKind::Deleted, "deleted"),
+        (ChangeKind::Renamed, "renamed"),
+        (ChangeKind::TypeChange, "typeChange"),
+        (ChangeKind::Untracked, "untracked"),
+        (ChangeKind::Conflicted, "conflicted"),
+    ];
+    for (kind, name) in cases {
+        let value = serde_json::to_value(kind).unwrap();
+        assert_eq!(value, serde_json::json!(name));
+        let back: ChangeKind = serde_json::from_value(value).unwrap();
+        assert_eq!(back, kind);
+    }
+}
+
+#[test]
+fn change_kind_rejects_snake_case_name() {
+    assert!(serde_json::from_str::<ChangeKind>("\"type_change\"").is_err());
+}
+
+#[test]
+fn working_tree_status_deserializes_from_camel_case_json() {
+    let json = r#"{
+        "entries": [
+            {"path":"new.md","oldPath":"old.md","index":"renamed","worktree":"typeChange","conflicted":false},
+            {"path":"c.txt","oldPath":null,"index":null,"worktree":"conflicted","conflicted":true}
+        ],
+        "headUnborn": true
+    }"#;
+    let status: WorkingTreeStatus = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        status,
+        WorkingTreeStatus {
+            entries: vec![
+                StatusEntry {
+                    path: "new.md".into(),
+                    old_path: Some("old.md".into()),
+                    index: Some(ChangeKind::Renamed),
+                    worktree: Some(ChangeKind::TypeChange),
+                    conflicted: false,
+                },
+                StatusEntry {
+                    path: "c.txt".into(),
+                    old_path: None,
+                    index: None,
+                    worktree: Some(ChangeKind::Conflicted),
+                    conflicted: true,
+                },
+            ],
+            head_unborn: true,
+        }
+    );
+}
+
+#[test]
+fn working_tree_status_round_trips_through_json() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# staged\n");
+    common::stage(&path, "README.md");
+    common::write_file(&path, "u.txt", "u\n");
+    let status = status_of(&path);
+    let json = serde_json::to_string(&status).unwrap();
+    let back: WorkingTreeStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, status);
+}
