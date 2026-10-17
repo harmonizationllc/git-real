@@ -7,6 +7,9 @@
   --color-accent: #396cd8;
   --color-danger: #cf222e;
   --color-surface-hover: #ebebeb;
+  --color-added: #1a7f37;
+  --color-removed: #cf222e;
+  --color-modified: #9a6700;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,5 +22,8 @@
     --color-accent: #4f8cff;
     --color-danger: #f85149;
     --color-surface-hover: #333333;
+    --color-added: #3fb950;
+    --color-removed: #f85149;
+    --color-modified: #d29922;
   }
 }
