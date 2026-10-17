@@ -66,6 +66,9 @@ fn rejects_binary_and_invalid_utf8() {
         detect_encoding(&[b'a', 0, b'b', b'c', b'd', 0, b'e', b'f']),
         None
     );
+    // A NUL-only head has no complete pair to vote with: not UTF-16.
+    assert_eq!(detect_encoding(&[0x00]), None);
+    assert_eq!(detect_encoding(&[0x00, 0x00, 0x00]), None);
 }
 
 #[test]

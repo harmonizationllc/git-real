@@ -216,3 +216,17 @@ fn file_diff_serializes_encodings_camel_case() {
     assert_eq!(json["oldEncoding"], "utf16Le");
     assert_eq!(json["newEncoding"], "utf16Le");
 }
+
+#[test]
+fn utf16_text_containing_nul_stays_binary() {
+    // U+0000 inside UTF-16 text decodes to a NUL byte in UTF-8, so the rebuilt
+    // patch is binary again; the loader must not report it as a text diff.
+    let (_d, path) = repo_with_utf16_file();
+    let mut bytes = utf16le("one\n");
+    bytes.extend_from_slice(&[0x00, 0x00, b'\n', 0x00]); // U+0000 then '\n'
+    write_bytes(&path, "a.txt", &bytes);
+    let d = diff(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).unwrap();
+    assert!(d.is_binary);
+    assert!(d.hunks.is_empty());
+    assert_eq!((d.old_encoding, d.new_encoding), (None, None));
+}
