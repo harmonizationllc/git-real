@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -229,5 +230,85 @@ describe("ConfirmDialog focus restore", () => {
     view.rerender(ui(true));
     view.rerender(ui(false));
     expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+});
+
+// Contract: danger is an attribute that is absent unless explicitly true.
+describe("ConfirmDialog explicit danger false", () => {
+  it("should not render data-danger at all when danger is explicitly false", () => {
+    renderDialog({ danger: false });
+    expect(screen.getByRole("button", { name: "Confirm" })).not.toHaveAttribute("data-danger");
+  });
+});
+
+// Contract: keyboard and repeat-click behaviour on the buttons.
+describe("ConfirmDialog button interactions", () => {
+  it("should call onCancel once and not onConfirm when Escape is pressed on the Confirm button", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onCancel } = renderDialog();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect([onCancel.mock.calls.length, onConfirm.mock.calls.length]).toEqual([1, 0]);
+  });
+
+  it("should call onConfirm once per click; the parent, not the dialog, guards repeats", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderDialog();
+    const confirm = screen.getByRole("button", { name: "Confirm" });
+    await user.click(confirm);
+    await user.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Contract: focus restore targets the element focused before opening, even after re-renders.
+describe("ConfirmDialog re-render while open", () => {
+  const ui = (open: boolean, title: string) => (
+    <>
+      <button>Opener</button>
+      <ConfirmDialog open={open} title={title} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    </>
+  );
+
+  it("should keep focus on the focused button when re-rendered with new props", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(true, "One"));
+    await user.tab();
+    view.rerender(ui(true, "Two"));
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
+  });
+
+  it("should restore focus to the original opener, not a dialog button, after a re-render", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(false, "One"));
+    screen.getByRole("button", { name: "Opener" }).focus();
+    view.rerender(ui(true, "One"));
+    await user.tab();
+    view.rerender(ui(true, "Two"));
+    view.rerender(ui(false, "Two"));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+});
+
+// Contract: React StrictMode (double-invoked effects) must not double-fire callbacks or break focus.
+describe("ConfirmDialog under StrictMode", () => {
+  function renderStrict() {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <StrictMode>
+        <button>Opener</button>
+        <ConfirmDialog open title="T" onConfirm={onConfirm} onCancel={onCancel} />
+      </StrictMode>,
+    );
+    return { onConfirm, onCancel };
+  }
+
+  it("should call onConfirm once when Confirm is clicked", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderStrict();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
   });
 });

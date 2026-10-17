@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 function makeItems(overrides: Partial<MenuItem>[] = []): MenuItem[] {
@@ -408,5 +409,201 @@ describe("ContextMenu danger items", () => {
   it("should not mark a non-danger item with data-danger", () => {
     renderMenu(makeItems([{}, { danger: true }]));
     expect(screen.getByRole("menuitem", { name: "Alpha" })).not.toHaveAttribute("data-danger");
+  });
+});
+
+// Contract: re-rendering an open menu with new props must not steal, lose or re-capture focus.
+describe("ContextMenu re-render while open", () => {
+  function ui(open: boolean, items: MenuItem[], onClose = vi.fn()) {
+    return (
+      <>
+        <button>Opener</button>
+        <ContextMenu open={open} x={10} y={20} items={items} onClose={onClose} />
+      </>
+    );
+  }
+
+  it("should keep focus on the focused item when re-rendered with new items", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(true, makeItems()));
+    await user.keyboard("{ArrowDown}");
+    view.rerender(ui(true, makeItems()));
+    expect(screen.getByRole("menuitem", { name: "Bravo" })).toHaveFocus();
+  });
+
+  it("should restore focus to the original opener, not an element inside the menu, after a re-render", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(false, makeItems()));
+    screen.getByRole("button", { name: "Opener" }).focus();
+    view.rerender(ui(true, makeItems()));
+    await user.keyboard("{ArrowDown}");
+    view.rerender(ui(true, makeItems([{ label: "Renamed" }])));
+    view.rerender(ui(false, makeItems()));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+});
+
+// Contract: exactly one document mousedown listener exists while open, none after close.
+describe("ContextMenu document listener", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function netMouseDownListeners(add: MockInstance, remove: MockInstance) {
+    const count = (spy: MockInstance) =>
+      spy.mock.calls.filter((args: unknown[]) => args[0] === "mousedown").length;
+    return count(add) - count(remove);
+  }
+
+  it("should keep a single mousedown listener across re-renders with new onClose callbacks", () => {
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    const ui = (onClose: () => void) => (
+      <ContextMenu open x={10} y={20} items={makeItems()} onClose={onClose} />
+    );
+    const view = render(ui(vi.fn()));
+    view.rerender(ui(vi.fn()));
+    view.rerender(ui(vi.fn()));
+    expect(netMouseDownListeners(add, remove)).toBe(1);
+  });
+
+  it("should remove the mousedown listener when the menu closes", () => {
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    const ui = (open: boolean) => (
+      <ContextMenu open={open} x={10} y={20} items={makeItems()} onClose={vi.fn()} />
+    );
+    const view = render(ui(true));
+    view.rerender(ui(false));
+    expect(netMouseDownListeners(add, remove)).toBe(0);
+  });
+
+  it("should call only the latest onClose, once, on an outside mousedown after re-render", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const ui = (onClose: () => void) => (
+      <ContextMenu open x={10} y={20} items={makeItems()} onClose={onClose} />
+    );
+    const view = render(ui(first));
+    view.rerender(ui(second));
+    fireEvent.mouseDown(document.body);
+    expect([first.mock.calls.length, second.mock.calls.length]).toEqual([0, 1]);
+  });
+});
+
+// Contract: degenerate menus (one item, all disabled) behave predictably.
+describe("ContextMenu degenerate menus", () => {
+  it("should stay on the only item when ArrowDown is pressed", async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextMenu
+        open
+        x={0}
+        y={0}
+        items={[{ id: "only", label: "Only", onSelect: vi.fn() }]}
+        onClose={vi.fn()}
+      />,
+    );
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Only" })).toHaveFocus();
+  });
+
+  it("should stay on the only item when ArrowUp is pressed", async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextMenu
+        open
+        x={0}
+        y={0}
+        items={[{ id: "only", label: "Only", onSelect: vi.fn() }]}
+        onClose={vi.fn()}
+      />,
+    );
+    await user.keyboard("{ArrowUp}");
+    expect(screen.getByRole("menuitem", { name: "Only" })).toHaveFocus();
+  });
+
+  it("should do nothing when Enter is pressed and every item is disabled", async () => {
+    const user = userEvent.setup();
+    const items = makeItems([{ disabled: true }, { disabled: true }, { disabled: true }]);
+    const onClose = renderMenu(items);
+    await user.keyboard("{Enter}");
+    expect([
+      items.map((i) => (i.onSelect as ReturnType<typeof vi.fn>).mock.calls.length),
+      onClose.mock.calls.length,
+    ]).toEqual([[0, 0, 0], 0]);
+  });
+
+  it("should close on Escape when every item is disabled", async () => {
+    const user = userEvent.setup();
+    const onClose = renderMenu(
+      makeItems([{ disabled: true }, { disabled: true }, { disabled: true }]),
+    );
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should close on an outside mousedown when a disabled item exists", () => {
+    const onClose = renderMenu(makeItems([{ disabled: true }]));
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should not close on a mousedown on a disabled item", () => {
+    const onClose = renderMenu(makeItems([{ disabled: true }]));
+    fireEvent.mouseDown(screen.getByRole("menuitem", { name: "Alpha" }));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a menu larger than the viewport pins to the top-left corner, never negative.
+describe("ContextMenu oversized clamp", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should never position the menu at a negative left or top when larger than the viewport", () => {
+    window.innerWidth = 1024;
+    window.innerHeight = 768;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 2000,
+      height: 1500,
+    } as DOMRect);
+    render(<ContextMenu open x={300} y={400} items={makeItems()} onClose={vi.fn()} />);
+    expect(screen.getByRole("menu")).toHaveStyle({ left: "0px", top: "0px" });
+  });
+});
+
+// Contract: React StrictMode (double-invoked effects) must not double-fire callbacks or break focus.
+describe("ContextMenu under StrictMode", () => {
+  function renderStrict(items: MenuItem[], onClose = vi.fn()) {
+    render(
+      <StrictMode>
+        <button>Opener</button>
+        <ContextMenu open x={10} y={20} items={items} onClose={onClose} />
+      </StrictMode>,
+    );
+    return onClose;
+  }
+
+  it("should call onClose once on an outside mousedown", () => {
+    const onClose = renderStrict(makeItems());
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should call onSelect and onClose once each when an item is clicked", async () => {
+    const user = userEvent.setup();
+    const items = makeItems();
+    const onClose = renderStrict(items);
+    await user.click(screen.getByRole("menuitem", { name: "Bravo" }));
+    expect(
+      [items[1]?.onSelect, onClose].map((f) => (f as ReturnType<typeof vi.fn>).mock.calls.length),
+    ).toEqual([1, 1]);
+  });
+
+  it("should focus the first item on open", () => {
+    renderStrict(makeItems());
+    expect(screen.getByRole("menuitem", { name: "Alpha" })).toHaveFocus();
   });
 });
