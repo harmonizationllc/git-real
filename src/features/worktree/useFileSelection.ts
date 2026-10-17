@@ -6,7 +6,8 @@ export interface ClickModifiers {
 }
 
 export interface UseFileSelection {
-  selected: Set<string>;
+  /** Read-only view of the selected keys; never mutate it. */
+  selected: ReadonlySet<string>;
   click(key: string, modifiers: ClickModifiers): void;
   clear(): void;
   isSelected(key: string): boolean;
