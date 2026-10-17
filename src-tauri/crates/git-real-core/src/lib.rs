@@ -11,6 +11,7 @@
 //! `git2` are disabled for this reason.
 
 pub mod diff;
+pub mod encoding;
 pub mod error;
 pub mod ignore;
 pub mod index_ops;

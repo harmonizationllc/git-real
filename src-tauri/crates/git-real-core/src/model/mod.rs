@@ -7,7 +7,8 @@ mod repo;
 mod status;
 
 pub use diff::{
-    DiffLine, DiffLineKind, DiffOptions, DiffScope, FileDiff, Hunk, HunkAction, HunkSelection,
+    DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
+    HunkSelection, TextEncoding,
 };
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;

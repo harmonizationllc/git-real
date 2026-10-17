@@ -12,6 +12,27 @@ pub enum DiffScope {
     Unstaged,
 }
 
+/// Which version of a file a content request refers to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DiffSide {
+    /// HEAD for `Staged`, the index for `Unstaged`.
+    Old,
+    /// The index for `Staged`, the working tree for `Unstaged`.
+    New,
+}
+
+/// A text encoding the diff loader can transcode from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Utf32Le,
+    Utf32Be,
+}
+
 /// The role of one line inside a hunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
