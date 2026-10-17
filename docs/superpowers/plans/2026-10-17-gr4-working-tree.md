@@ -50,10 +50,12 @@
 ### Task 1: App — fix the double-open race in `RepoRegistry`
 
 **Files:**
+
 - Modify: `src-tauri/src/state.rs`, `src-tauri/src/commands/repo.rs` (`register_session`)
 - Test: `src-tauri/tests/registry.rs`
 
 **Interfaces:**
+
 - Produces: `impl RepoRegistry { pub fn register_or_find(&self, session: RepoSession) -> (RepoId, bool) }` — returns the existing id (`false`) when an entry with the same canonical path exists, else inserts and returns the new id (`true`). Lookup and insert happen under one `entries()` lock. `register` stays for callers that want no dedupe.
 
 **Behaviour:** `register_session` in `commands/repo.rs` calls `register_or_find` instead of `find_by_path` + `register`.
@@ -73,11 +75,13 @@
 ### Task 2: Core — status model and `RepoSession::status`
 
 **Files:**
+
 - Create: `src-tauri/crates/git-real-core/src/model/status.rs`, `src/status.rs`
 - Modify: `src/model/mod.rs`, `src/lib.rs`, `tests/common/mod.rs`
 - Test: `tests/status.rs`
 
 **Interfaces:**
+
 - Produces: `ChangeKind`, `StatusEntry`, `WorkingTreeStatus` exactly as in spec §3.2; `impl RepoSession { pub fn status(&self) -> Result<WorkingTreeStatus, GitError> }`.
 - Fixture helpers added to `tests/common/mod.rs` (used by Tasks 3–5): `write_file(root, rel, contents)`, `stage(root, rel)` (git2 `add_path` or `remove_path` when missing), `commit_all(root, message) -> Oid`, `temp_repo_with_conflict() -> (TempDir, PathBuf)` (branch `other` edits `README.md` line 1, `main` edits the same line, `repo.merge` leaves `README.md` conflicted), `temp_repo_unborn() -> (TempDir, PathBuf)` (init, no commit).
 
@@ -110,11 +114,13 @@
 ### Task 3: Core — diff model and `RepoSession::file_diff`
 
 **Files:**
+
 - Create: `src/model/diff.rs`, `src/diff/mod.rs`
 - Modify: `src/model/mod.rs`, `src/lib.rs`, `src/error.rs` (add `NoChanges(String)`)
 - Test: `tests/diff.rs`
 
 **Interfaces:**
+
 - Produces: `DiffScope`, `DiffLineKind`, `DiffLine`, `Hunk`, `FileDiff`, `DiffOptions` (with `Default` = `{ ignore_whitespace: false, context_lines: 3, max_lines: 10_000 }`) as in spec §3.2; `impl RepoSession { pub fn file_diff(&self, path: &str, scope: DiffScope, opts: DiffOptions) -> Result<FileDiff, GitError> }`.
 - `HunkSelection`/`HunkAction` are defined here too (DTOs) but used in Task 4.
 
@@ -146,14 +152,17 @@
 ### Task 4: Core — patch builder and `apply_hunk`
 
 **Files:**
+
 - Create: `src/diff/patch.rs`
 - Modify: `src/diff/mod.rs` (add `apply_hunk`), `src/error.rs` (add `BadSelection`, `ApplyFailed(String)`)
 - Test: inline `#[cfg(test)]` in `patch.rs`; `tests/patch_apply.rs`
 
 **Interfaces:**
+
 - Produces: `pub fn build_patch(diff: &FileDiff, selection: &HunkSelection, reverse: bool) -> Result<String, GitError>`; `impl RepoSession { pub fn apply_hunk(&self, path: &str, action: HunkAction, selection: &HunkSelection) -> Result<(), GitError> }`.
 
 **Behaviour:** spec §3.3 "build_patch" and "apply_hunk". Patch text format:
+
 ```
 --- a/README.md
 +++ b/README.md
@@ -161,6 +170,7 @@
  # fixture
 +second
 ```
+
 Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `--- a/<path>`, `+++ /dev/null`, `@@ -1,N +0,0 @@`. Reverse swaps headers (`a/` old becomes the new side) and line signs. Partial selection recomputes `old_lines`/`new_lines`; a hunk that ends up with no `+`/`-` lines → `BadSelection`.
 
 - [ ] **Step 1 (`architect` + `tdd-tester`):** unit tests in `patch.rs` building `FileDiff` values by hand:
@@ -172,7 +182,7 @@ Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `-
   - `build_patch_reverse_swaps_signs_and_counts`
   - `build_patch_no_newline_marker_follows_flagged_line`
   - `build_patch_out_of_range_hunk_is_bad_selection`, `build_patch_context_line_index_is_bad_selection`, `build_patch_empty_selection_is_bad_selection`
-  Integration tests in `tests/patch_apply.rs`:
+    Integration tests in `tests/patch_apply.rs`:
   - `apply_hunk_stage_whole_hunk` — append line → `apply_hunk(Stage, {0, None})` → `status` shows `index: Some(Modified)`, `worktree: None`.
   - `apply_hunk_stage_lines_leaves_worktree_untouched` — two separate edits in one hunk; stage one line → index has only that line (verify via `file_diff(Staged)` content), workdir file unchanged on disk.
   - `apply_hunk_unstage_whole_hunk` — stage all, unstage hunk 0 → `index: None`, `worktree: Some(Modified)`.
@@ -192,11 +202,13 @@ Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `-
 ### Task 5: Core — index operations and gitignore
 
 **Files:**
+
 - Create: `src/index_ops.rs`, `src/ignore.rs`
 - Modify: `src/lib.rs`
 - Test: `tests/index_ops.rs`, `tests/ignore.rs`, inline tests for `gitignore_pattern`
 
 **Interfaces:**
+
 - Produces: `impl RepoSession { pub fn stage_paths(&self, paths: &[String]) -> Result<(), GitError>; pub fn unstage_paths(&self, paths: &[String]) -> Result<(), GitError>; pub fn stage_all(&self) -> Result<(), GitError>; pub fn unstage_all(&self) -> Result<(), GitError>; pub fn discard_paths(&self, paths: &[String]) -> Result<(), GitError>; pub fn add_to_gitignore(&self, path: &str) -> Result<String, GitError> }`; `pub fn gitignore_pattern(path: &str, is_dir: bool) -> String`.
 
 **Behaviour:** spec §3.3 "Index operations" and "add_to_gitignore".
@@ -218,11 +230,13 @@ Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `-
 ### Task 6: App — watcher, events, error kinds, worktree commands
 
 **Files:**
+
 - Create: `src-tauri/src/watcher.rs`, `src-tauri/src/commands/worktree.rs`
 - Modify: `src-tauri/src/events.rs`, `src-tauri/src/error.rs`, `src-tauri/src/state.rs` (add `WatcherRegistry`), `src-tauri/src/commands/mod.rs`, `src-tauri/src/commands/repo.rs`, `src-tauri/src/lib.rs`, `src-tauri/tests/common/mod.rs`, `src-tauri/tests/error.rs`
 - Test: `src-tauri/tests/worktree_commands.rs`, `src-tauri/tests/watcher.rs`
 
 **Interfaces:**
+
 - Produces:
   ```rust
   // events.rs
@@ -261,11 +275,13 @@ Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `-
 ### Task 7: Front end — IPC types/wrappers/events, query keys, workspace store, hooks
 
 **Files:**
+
 - Modify: `src/lib/ipc/types.ts`, `src/lib/ipc/commands.ts`, `src/lib/ipc/events.ts`, `src/lib/query/keys.ts`
 - Create: `src/lib/store/workspace.ts`, `src/features/worktree/useStatus.ts`, `src/features/worktree/useWorktreeActions.ts`, `src/features/worktree/useFileSelection.ts`
 - Test: `commands.test.ts`, `events.test.ts`, `keys.test.ts` (extend), `workspace.test.ts`, `useStatus.test.tsx`, `useWorktreeActions.test.tsx`, `useFileSelection.test.ts`
 
 **Interfaces:**
+
 - Produces (TS):
   ```ts
   // types.ts: ChangeKind = "added"|"modified"|"deleted"|"renamed"|"typeChange"|"untracked"|"conflicted";
@@ -303,17 +319,41 @@ Added file: `--- /dev/null`, `+++ b/<path>`, `@@ -0,0 +1,N @@`. Deleted file: `-
 ### Task 8: Front end — shared `ContextMenu` and `ConfirmDialog`
 
 **Files:**
+
 - Create: `src/components/ContextMenu.tsx` (+ `.module.css`), `src/components/ConfirmDialog.tsx` (+ `.module.css`); delete `src/components/.gitkeep`
 - Test: `ContextMenu.test.tsx`, `ConfirmDialog.test.tsx`
 
 **Interfaces:**
+
 ```ts
-interface MenuItem { id: string; label: string; danger?: boolean; disabled?: boolean; onSelect(): void }
-function ContextMenu(props: { open: boolean; x: number; y: number; items: MenuItem[]; onClose(): void }): JSX.Element | null
+interface MenuItem {
+  id: string;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onSelect(): void;
+}
+function ContextMenu(props: {
+  open: boolean;
+  x: number;
+  y: number;
+  items: MenuItem[];
+  onClose(): void;
+}): JSX.Element | null;
 // role="menu", items role="menuitem"; first item focused on open; ArrowUp/Down cycle; Enter/Space select then onClose; Escape and outside mousedown → onClose; positioned fixed at (x, y)
-function ConfirmDialog(props: { open: boolean; title: string; body?: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean; onConfirm(): void; onCancel(): void }): JSX.Element | null
+function ConfirmDialog(props: {
+  open: boolean;
+  title: string;
+  body?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm(): void;
+  onCancel(): void;
+}): JSX.Element | null;
 // role="dialog" aria-modal aria-labelledby; cancel button focused on open; Escape → onCancel; backdrop click → onCancel; confirm button has data-danger when danger
 ```
+
 - [ ] **Step 1 (`architect` + `tdd-tester`):** tests for every behaviour listed in the interface comments, both components, incl. `renders nothing when closed`, `disabled item not selectable`, `danger styling attribute`.
 - [ ] **Steps 2–6** as usual. Commit: `feat(ui): shared context menu and confirm dialog`.
 
@@ -322,18 +362,29 @@ function ConfirmDialog(props: { open: boolean; title: string; body?: string; con
 ### Task 9: Front end — `ChangesPanel`, rows, badges, tokens, `RepoPane` layout
 
 **Files:**
+
 - Create: `src/features/worktree/StatusBadge.tsx`, `FileRow.tsx`, `ChangesPanel.tsx` (+ `.module.css` each); delete `src/features/worktree/.gitkeep`
 - Modify: `src/app/RepoPane.tsx`, `src/app/RepoPane.module.css`, `src/styles/tokens.css`
 - Test: `StatusBadge.test.tsx`, `FileRow.test.tsx`, `ChangesPanel.test.tsx`, `RepoPane.test.tsx` (extend)
 
 **Interfaces:**
+
 ```ts
-function StatusBadge({ kind }: { kind: ChangeKind }) // letter: added A, modified M, deleted D, renamed R, typeChange T, untracked U, conflicted C; aria-label = kind words ("type change")
-function FileRow(props: { entry: StatusEntry; section: "conflicts"|"staged"|"unstaged"; selected: boolean; disabled: boolean;
-  onClick(e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): void; onContextMenu(x: number, y: number): void; onPrimary(): void; onDiscard?(): void })
+function StatusBadge({ kind }: { kind: ChangeKind }); // letter: added A, modified M, deleted D, renamed R, typeChange T, untracked U, conflicted C; aria-label = kind words ("type change")
+function FileRow(props: {
+  entry: StatusEntry;
+  section: "conflicts" | "staged" | "unstaged";
+  selected: boolean;
+  disabled: boolean;
+  onClick(e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): void;
+  onContextMenu(x: number, y: number): void;
+  onPrimary(): void;
+  onDiscard?(): void;
+});
 // primary button label: "Stage <path>" in unstaged/conflicts, "Unstage <path>" in staged; discard button "Discard <path>" only in unstaged
-function ChangesPanel({ repoId }: { repoId: RepoId })
+function ChangesPanel({ repoId }: { repoId: RepoId });
 ```
+
 Tokens added to `tokens.css` (light / dark): `--color-added: #1a7f37 / #3fb950`, `--color-removed: #cf222e / #f85149`, `--color-modified: #9a6700 / #d29922`, `--color-danger: #cf222e / #f85149`, `--color-surface-hover: #ebebeb / #333333`.
 
 **Behaviour:** spec §5.2. `ChangesPanel` composes `useStatus`, `useWorktreeActions`, `useFileSelection` (ordered paths = conflicts, staged, unstaged in display order, keyed as `${section}:${path}` so a file in two sections selects independently), `useWorkspace.select(repoId, { path, scope })` on row click (`scope` "staged" for the staged section, else "unstaged"), `ConfirmDialog` for discard (title "Discard changes to <path>?" or, for untracked, "Delete <path>?"; with N selected: "Discard changes to N files?"), `ContextMenu` on right-click (untracked: "Add to .gitignore" + "Delete…"; unstaged tracked: "Stage", "Discard…"; staged: "Unstage"; conflicts: "Mark resolved (stage)"). Loading state `role="status"` "Loading changes…"; error via `RepoError` with `path={null}`.
