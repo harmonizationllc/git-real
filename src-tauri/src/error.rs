@@ -52,6 +52,8 @@ impl From<GitError> for AppError {
             GitError::NoChanges(_) => AppErrorKind::NoChanges,
             GitError::BadSelection => AppErrorKind::BadSelection,
             GitError::ApplyFailed(_) => AppErrorKind::ApplyFailed,
+            // Temporary until cycle 2 adds a dedicated kind.
+            GitError::TooLarge { .. } => AppErrorKind::Git,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

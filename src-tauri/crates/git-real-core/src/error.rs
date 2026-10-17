@@ -23,6 +23,8 @@ pub enum GitError {
     BadSelection,
     #[error("the patch did not apply: {0}")]
     ApplyFailed(String),
+    #[error("{path} is {size} bytes, above the {limit} byte preview limit")]
+    TooLarge { path: String, size: u64, limit: u64 },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
