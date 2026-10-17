@@ -366,3 +366,23 @@ fn watcher_registry_contains() {
     registry.remove(1);
     assert_eq!((before, during, registry.contains(1)), (false, true, false));
 }
+
+#[test]
+fn watcher_registry_insert_after_remove_stores_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WatcherRegistry::default();
+    let first = registry.insert(1, watcher(&dir));
+    registry.remove(1);
+    let again = registry.insert(1, watcher(&dir));
+    assert_eq!((first, again, registry.contains(1)), (true, true, true));
+}
+
+#[test]
+fn watcher_registry_ids_are_independent() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WatcherRegistry::default();
+    registry.insert(1, watcher(&dir));
+    registry.insert(2, watcher(&dir));
+    registry.remove(1);
+    assert_eq!((registry.contains(1), registry.contains(2)), (false, true));
+}

@@ -1,7 +1,9 @@
 //! Integration tests for the clone-progress event contract.
 
 use git_real_core::{Progress, ProgressPhase};
-use git_real_lib::events::{CLONE_PROGRESS, CloneProgressPayload};
+use git_real_lib::events::{
+    CLONE_PROGRESS, CloneProgressPayload, REPO_CHANGED, RepoChangedPayload,
+};
 use serde_json::json;
 
 // Event name: the front end subscribes to this exact string.
@@ -42,4 +44,18 @@ fn clone_progress_payload_serializes_missing_percent_as_null() {
     };
     let value = serde_json::to_value(payload).unwrap();
     assert_eq!(value["progress"]["percent"], json!(null));
+}
+
+// repo-changed: name and wire format the front end listens for.
+#[test]
+fn repo_changed_event_name() {
+    assert_eq!(REPO_CHANGED, "repo-changed");
+}
+
+#[test]
+fn repo_changed_payload_serializes_camel_case() {
+    assert_eq!(
+        serde_json::to_value(RepoChangedPayload { repo_id: 42 }).unwrap(),
+        json!({"repoId": 42})
+    );
 }
