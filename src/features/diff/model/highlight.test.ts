@@ -71,7 +71,7 @@ describe("tokenize", () => {
   });
   it("should classify comments", () => {
     const [line] = tokenize("// c", parser);
-    expect(line[0]).toEqual({ text: "// c", className: "tok-lineComment" });
+    expect(line[0]).toEqual({ text: "// c", className: "tok-comment" });
   });
   it("should keep plain text intact with string-or-null classes", () => {
     const [line] = tokenize("a", parser);
@@ -91,8 +91,8 @@ describe("tokenize", () => {
   });
   it("should span a block comment across lines", () => {
     const [a, b] = tokenize("/* x\ny */", parser);
-    expect(a[0].className).toBe("tok-blockComment");
-    expect(b[0].className).toBe("tok-blockComment");
+    expect(a[0].className).toBe("tok-comment");
+    expect(b[0].className).toBe("tok-comment");
   });
   it("should handle empty lines inside a block comment", () => {
     const lines = tokenize("/* x\n\ny */", parser);
@@ -135,18 +135,18 @@ describe("highlightHunk", () => {
   it("should tokenize deletions from the old side", () => {
     expect(highlightHunk(h, parser)[1]?.[0]).toEqual({
       text: "// old",
-      className: "tok-lineComment",
+      className: "tok-comment",
     });
   });
   it("should tokenize additions from the new side", () => {
     expect(highlightHunk(h, parser)[2]?.[0]).toEqual({
       text: "// new",
-      className: "tok-lineComment",
+      className: "tok-comment",
     });
   });
   it("should give context lines the new side's tokens", () => {
     const ctx = hunk([L("deletion", "/*"), L("context", "x"), L("addition", "y")]);
     // old side opens a block comment around "x"; the new side does not.
-    expect(highlightHunk(ctx, parser)[1]?.[0]?.className).not.toBe("tok-blockComment");
+    expect(highlightHunk(ctx, parser)[1]?.[0]?.className).not.toBe("tok-comment");
   });
 });

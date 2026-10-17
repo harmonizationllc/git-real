@@ -44,7 +44,7 @@ describe("useHighlight result", () => {
     expect(result.current).toBeNull();
     await waitFor(() => expect(result.current).not.toBeNull());
     expect(result.current?.get(0)?.[0]?.find((t) => t.text === "1")?.className).toBe("tok-number");
-    expect(result.current?.get(1)?.[0]?.[0]?.className).toBe("tok-lineComment");
+    expect(result.current?.get(1)?.[0]?.[0]?.className).toBe("tok-comment");
   });
   it("should ignore a load that finishes after the diff changed", async () => {
     const a = fileDiff([hunk([L("addition", "a"), L("addition", "b")])], { path: "a.js" });
