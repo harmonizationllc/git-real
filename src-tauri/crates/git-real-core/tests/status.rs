@@ -471,3 +471,59 @@ fn working_tree_status_round_trips_through_json() {
     let back: WorkingTreeStatus = serde_json::from_str(&json).unwrap();
     assert_eq!(back, status);
 }
+
+// --- renames whose content also changed (I1 part a) ---
+
+fn twenty_lines() -> String {
+    (1..=20).map(|n| format!("line {n}\n")).collect()
+}
+
+#[test]
+fn status_staged_rename_with_edit_is_renamed() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", &twenty_lines());
+    common::commit_all(&path, "twenty lines");
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    common::write_file(
+        &path,
+        "DOC.md",
+        &twenty_lines().replace("line 7\n", "line seven\n"),
+    );
+    common::stage(&path, "README.md");
+    common::stage(&path, "DOC.md");
+    let status = status_of(&path);
+    assert_eq!(
+        status.entries,
+        vec![StatusEntry {
+            path: "DOC.md".into(),
+            old_path: Some("README.md".into()),
+            index: Some(ChangeKind::Renamed),
+            worktree: None,
+            conflicted: false,
+        }]
+    );
+}
+
+#[test]
+fn status_unstaged_rename_with_edit_is_renamed() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", &twenty_lines());
+    common::commit_all(&path, "twenty lines");
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    common::write_file(
+        &path,
+        "DOC.md",
+        &twenty_lines().replace("line 7\n", "line seven\n"),
+    );
+    let status = status_of(&path);
+    assert_eq!(
+        status.entries,
+        vec![StatusEntry {
+            path: "DOC.md".into(),
+            old_path: Some("README.md".into()),
+            index: None,
+            worktree: Some(ChangeKind::Renamed),
+            conflicted: false,
+        }]
+    );
+}

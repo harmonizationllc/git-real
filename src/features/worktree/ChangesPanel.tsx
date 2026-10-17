@@ -58,27 +58,40 @@ function rowsBySection(entries: StatusEntry[]): Record<Section, Row[]> {
   return rows;
 }
 
-function discardCopy(paths: string[], anyUntracked: boolean): ConfirmState {
+/** A row's paths: a rename is one change made of its new path and then its old path. */
+const pathsOf = (row: Row): string[] =>
+  row.kind === "renamed" && row.entry.oldPath !== null
+    ? [row.entry.path, row.entry.oldPath]
+    : [row.entry.path];
+
+function discardCopy(targetRows: Row[]): ConfirmState {
   const irreversible = "This cannot be undone.";
-  if (paths.length === 1) {
-    const [path] = paths;
-    return anyUntracked
-      ? {
-          paths,
-          title: `Delete untracked file ${path}?`,
-          body: irreversible,
-          confirmLabel: "Delete",
-        }
-      : {
-          paths,
-          title: `Discard changes to ${path}?`,
-          body: irreversible,
-          confirmLabel: "Discard",
-        };
+  const paths = targetRows.flatMap(pathsOf);
+  if (targetRows.length === 1) {
+    const [{ entry, kind }] = targetRows;
+    if (kind === "untracked") {
+      const what = entry.path.endsWith("/") ? "folder" : "file";
+      return {
+        paths,
+        title: `Delete untracked ${what} ${entry.path}?`,
+        body: irreversible,
+        confirmLabel: "Delete",
+      };
+    }
+    return {
+      paths,
+      title: `Discard changes to ${entry.path}?`,
+      body:
+        kind === "renamed"
+          ? `${irreversible} The new file ${entry.path} will be deleted.`
+          : irreversible,
+      confirmLabel: "Discard",
+    };
   }
+  const anyUntracked = targetRows.some((r) => r.kind === "untracked");
   return {
     paths,
-    title: `Discard changes to ${paths.length} files?`,
+    title: `Discard changes to ${targetRows.length} files?`,
     body: anyUntracked ? `Untracked files will be deleted. ${irreversible}` : irreversible,
     confirmLabel: "Discard",
   };
@@ -96,22 +109,18 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  /** The selected paths of the row's section if the row is selected, else the row alone. */
-  const targets = (row: Row): string[] =>
+  /** The selected rows of the row's section if the row is selected, else the row alone. */
+  const targetRows = (row: Row): Row[] =>
     selection.isSelected(row.key)
-      ? rows[row.section].filter((r) => selection.isSelected(r.key)).map((r) => r.entry.path)
-      : [row.entry.path];
+      ? rows[row.section].filter((r) => selection.isSelected(r.key))
+      : [row];
+
+  const targets = (row: Row): string[] => targetRows(row).flatMap(pathsOf);
 
   const primary = (row: Row) =>
     row.section === "staged" ? actions.unstage(targets(row)) : actions.stage(targets(row));
 
-  const openDiscard = (row: Row) => {
-    const paths = targets(row);
-    const anyUntracked = rows.unstaged.some(
-      (r) => r.kind === "untracked" && paths.includes(r.entry.path),
-    );
-    setConfirm(discardCopy(paths, anyUntracked));
-  };
+  const openDiscard = (row: Row) => setConfirm(discardCopy(targetRows(row)));
 
   const menuItems = ({ row }: MenuState): MenuItem[] => {
     const stage: MenuItem = { id: "stage", label: "Stage", onSelect: () => primary(row) };

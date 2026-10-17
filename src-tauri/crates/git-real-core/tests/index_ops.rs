@@ -1466,3 +1466,103 @@ fn discard_paths_deletes_only_untracked_file_with_leading_newline() {
         .expect("discard");
     assert!(!path.join("\nx").exists() && path.join("other.txt").exists());
 }
+
+// --- discard_paths: refuses untracked directories holding a nested repository (C1) ---
+
+/// Initialises a nested repository at `rel` under `root` with one commit of
+/// `inner.txt`, and returns that commit's id.
+fn nested_repo_with_commit(root: &std::path::Path, rel: &str) -> git2::Oid {
+    let nested = root.join(rel);
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+    let repo = git2::Repository::init(&nested).expect("init nested repo");
+    std::fs::write(nested.join("inner.txt"), "inner\n").expect("write inner");
+    let mut index = repo.index().expect("nested index");
+    index
+        .add_path(std::path::Path::new("inner.txt"))
+        .expect("stage inner");
+    index.write().expect("write nested index");
+    let tree_id = index.write_tree().expect("write nested tree");
+    let tree = repo.find_tree(tree_id).expect("find nested tree");
+    let sig = git2::Signature::now("Test User", "test@example.com").expect("signature");
+    repo.commit(Some("HEAD"), &sig, &sig, "nested commit", &tree, &[])
+        .expect("nested commit")
+}
+
+fn nested_head(root: &std::path::Path, rel: &str) -> Option<git2::Oid> {
+    let repo = git2::Repository::open(root.join(rel)).ok()?;
+    let head = repo.head().ok()?;
+    head.target()
+}
+
+#[test]
+fn discard_paths_nested_repo_fixture_is_reported_as_untracked_dir() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    nested_repo_with_commit(&path, "vendor/lib");
+    assert_eq!(
+        status_of(&path).entries,
+        vec![StatusEntry {
+            path: "vendor/lib/".into(),
+            old_path: None,
+            index: None,
+            worktree: Some(ChangeKind::Untracked),
+            conflicted: false,
+        }]
+    );
+}
+
+#[test]
+fn discard_paths_refuses_untracked_dir_containing_nested_repo() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    nested_repo_with_commit(&path, "vendor/lib");
+    let err = session(&path)
+        .discard_paths(&paths(&["vendor/lib/"]))
+        .expect_err("nested repo must not be discarded");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn discard_paths_nested_repo_refusal_keeps_its_dot_git() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    nested_repo_with_commit(&path, "vendor/lib");
+    let _ = session(&path).discard_paths(&paths(&["vendor/lib/"]));
+    assert!(path.join("vendor/lib/.git").exists());
+}
+
+#[test]
+fn discard_paths_nested_repo_refusal_keeps_its_commit() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let oid = nested_repo_with_commit(&path, "vendor/lib");
+    let _ = session(&path).discard_paths(&paths(&["vendor/lib/"]));
+    assert_eq!(nested_head(&path, "vendor/lib"), Some(oid));
+}
+
+#[test]
+fn discard_paths_refuses_nested_repo_at_depth() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "scratch/notes.txt", "n\n");
+    nested_repo_with_commit(&path, "scratch/a/b");
+    let err = session(&path)
+        .discard_paths(&paths(&["scratch/"]))
+        .expect_err("dir holding a nested repo must not be discarded");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn discard_paths_nested_repo_at_depth_refusal_deletes_nothing() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "scratch/notes.txt", "n\n");
+    let oid = nested_repo_with_commit(&path, "scratch/a/b");
+    let _ = session(&path).discard_paths(&paths(&["scratch/"]));
+    assert!(
+        path.join("scratch/notes.txt").exists() && nested_head(&path, "scratch/a/b") == Some(oid)
+    );
+}
+
+#[test]
+fn discard_paths_nested_repo_refusal_happens_before_other_deletions() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "junk.txt", "j\n");
+    nested_repo_with_commit(&path, "vendor/lib");
+    let _ = session(&path).discard_paths(&paths(&["junk.txt", "vendor/lib/"]));
+    assert!(path.join("junk.txt").exists());
+}

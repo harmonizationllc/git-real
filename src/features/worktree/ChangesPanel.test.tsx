@@ -872,3 +872,92 @@ describe("ChangesPanel status error retry", () => {
     expect(getStatus).toHaveBeenCalledTimes(2);
   });
 });
+
+// Contract (final review I1b): actions on a renamed row target the new path and then the old path.
+describe("ChangesPanel rename targets", () => {
+  const unstagedRename = () =>
+    entry({ path: "DOC.md", oldPath: "README.md", index: null, worktree: "renamed" });
+  const stagedRename = () =>
+    entry({ path: "DOC.md", oldPath: "README.md", index: "renamed", worktree: null });
+
+  it("should stage both the new and the old path when an unstaged rename is staged", async () => {
+    const { user } = await renderPanel(unstagedRename());
+    await user.click(btn("Stage DOC.md"));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["DOC.md", "README.md"]);
+  });
+
+  it("should unstage both the new and the old path when a staged rename is unstaged", async () => {
+    const { user } = await renderPanel(stagedRename());
+    await user.click(btn("Unstage DOC.md"));
+    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["DOC.md", "README.md"]);
+  });
+
+  it("should discard both the new and the old path when an unstaged rename is discarded", async () => {
+    const { user } = await renderPanel(unstagedRename());
+    await user.click(btn("Discard DOC.md"));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(discardPaths).toHaveBeenCalledExactlyOnceWith(1, ["DOC.md", "README.md"]);
+  });
+
+  it("should warn that the new file will be deleted when an unstaged rename is discarded", async () => {
+    const { user } = await renderPanel(unstagedRename());
+    await user.click(btn("Discard DOC.md"));
+    expect(await screen.findByRole("dialog")).toHaveAccessibleDescription(
+      "This cannot be undone. The new file DOC.md will be deleted.",
+    );
+  });
+
+  it("should stage both paths of a rename from the context menu Stage item", async () => {
+    const { user } = await renderPanel(unstagedRename());
+    rightClick(btn("renamed README.md → DOC.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Stage" }));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["DOC.md", "README.md"]);
+  });
+
+  it("should not add an old path for a non-renamed row", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["a.txt"]);
+  });
+});
+
+// Contract (final review C1): an untracked folder row says "folder", and a refused discard is shown.
+describe("ChangesPanel untracked folder", () => {
+  const folder = () => unstaged("vendor/lib/", "untracked");
+
+  it("should title the delete dialog as an untracked folder when the path ends with a slash", async () => {
+    const { user } = await renderPanel(folder());
+    await user.click(btn("Discard vendor/lib/"));
+    expect(
+      await screen.findByRole("dialog", { name: "Delete untracked folder vendor/lib/?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("should keep the untracked file title for a path without a trailing slash", async () => {
+    const { user } = await renderPanel(unstaged("vendor/lib", "untracked"));
+    await user.click(btn("Discard vendor/lib"));
+    expect(
+      await screen.findByRole("dialog", { name: "Delete untracked file vendor/lib?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("should add an untracked folder to .gitignore from the context menu", async () => {
+    const { user } = await renderPanel(folder());
+    rightClick(btn("untracked vendor/lib/"));
+    await user.click(screen.getByRole("menuitem", { name: "Add to .gitignore" }));
+    expect(addToGitignore).toHaveBeenCalledExactlyOnceWith(1, "vendor/lib/");
+  });
+
+  it("should show a bad selection error from discarding a nested repository", async () => {
+    vi.mocked(discardPaths).mockRejectedValue({
+      kind: "badSelection",
+      message: "the selection does not match the file's changes",
+    });
+    const { user } = await renderPanel(folder());
+    await user.click(btn("Discard vendor/lib/"));
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "the selection does not match the file's changes",
+    );
+  });
+});

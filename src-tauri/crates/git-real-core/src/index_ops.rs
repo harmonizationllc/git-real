@@ -121,7 +121,8 @@ impl RepoSession {
     /// Throws away unstaged changes: tracked paths are restored to their
     /// index content, untracked files and directories are deleted.
     ///
-    /// Conflicted paths, directories holding tracked files and tracked names
+    /// Conflicted paths, directories holding tracked files or a nested
+    /// repository (a `.git` entry at any depth) and tracked names
     /// containing `\` are rejected with [`GitError::BadSelection`]. The index
     /// itself is never written.
     pub fn discard_paths(&self, paths: &[String]) -> Result<(), GitError> {
@@ -152,7 +153,9 @@ impl RepoSession {
             let full = workdir.join(rel);
             match full.symlink_metadata() {
                 Ok(meta) if meta.is_dir() => {
-                    if has_entries_under(&index, p) {
+                    // A nested repository (a `.git` at any depth) is
+                    // refused: deleting it would lose its history.
+                    if has_entries_under(&index, p) || contains_git_entry(&full)? {
                         return Err(GitError::BadSelection);
                     }
                     untracked_dirs.push(full);
@@ -227,4 +230,19 @@ fn in_index(index: &Index, path: &Path, stages: std::ops::RangeInclusive<i32>) -
 fn has_entries_under(index: &Index, dir: &str) -> bool {
     let prefix = format!("{dir}/");
     index.iter().any(|e| e.path.starts_with(prefix.as_bytes()))
+}
+
+/// Whether `dir` holds a `.git` file or directory at any depth, which marks
+/// a nested repository or worktree. Symlinks are not followed.
+fn contains_git_entry(dir: &Path) -> std::io::Result<bool> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_name() == ".git" {
+            return Ok(true);
+        }
+        if entry.file_type()?.is_dir() && contains_git_entry(&entry.path())? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

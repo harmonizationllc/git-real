@@ -73,12 +73,13 @@ fn kinds(s: Status) -> (Option<ChangeKind>, Option<ChangeKind>, bool) {
     }
     let index = if s.is_index_new() {
         Some(ChangeKind::Added)
+    } else if s.is_index_renamed() {
+        // An edited rename sets both RENAMED and MODIFIED; the rename wins.
+        Some(ChangeKind::Renamed)
     } else if s.is_index_modified() {
         Some(ChangeKind::Modified)
     } else if s.is_index_deleted() {
         Some(ChangeKind::Deleted)
-    } else if s.is_index_renamed() {
-        Some(ChangeKind::Renamed)
     } else if s.is_index_typechange() {
         Some(ChangeKind::TypeChange)
     } else {
@@ -86,12 +87,13 @@ fn kinds(s: Status) -> (Option<ChangeKind>, Option<ChangeKind>, bool) {
     };
     let worktree = if s.is_wt_new() {
         Some(ChangeKind::Untracked)
+    } else if s.is_wt_renamed() {
+        // An edited rename sets both RENAMED and MODIFIED; the rename wins.
+        Some(ChangeKind::Renamed)
     } else if s.is_wt_modified() {
         Some(ChangeKind::Modified)
     } else if s.is_wt_deleted() {
         Some(ChangeKind::Deleted)
-    } else if s.is_wt_renamed() {
-        Some(ChangeKind::Renamed)
     } else if s.is_wt_typechange() {
         Some(ChangeKind::TypeChange)
     } else {
