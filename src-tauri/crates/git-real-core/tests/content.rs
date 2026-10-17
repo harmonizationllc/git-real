@@ -29,6 +29,32 @@ fn assert_not_found(result: Result<Vec<u8>, GitError>) {
     );
 }
 
+/// Adds a gitlink (submodule) index entry at `rel`. Its commit lives in the
+/// submodule's own store, so it is absent from this repo's object database.
+fn add_gitlink(path: &Path, rel: &str) {
+    let repo = git2::Repository::open(path).expect("open repo");
+    let id = git2::Oid::from_str("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").unwrap();
+    assert!(repo.odb().unwrap().read_header(id).is_err());
+    let mut index = repo.index().unwrap();
+    index
+        .add(&git2::IndexEntry {
+            ctime: git2::IndexTime::new(0, 0),
+            mtime: git2::IndexTime::new(0, 0),
+            dev: 0,
+            ino: 0,
+            mode: 0o160000,
+            uid: 0,
+            gid: 0,
+            file_size: 0,
+            id,
+            flags: 0,
+            flags_extended: 0,
+            path: rel.as_bytes().to_vec(),
+        })
+        .expect("add gitlink");
+    index.write().expect("write index");
+}
+
 /// README.md: HEAD = "# fixture\n", index = "# staged\n", workdir = "# work\n".
 fn three_versions() -> (tempfile::TempDir, std::path::PathBuf) {
     let (dir, path) = common::temp_repo_with_commit();
@@ -199,4 +225,151 @@ fn too_large_display() {
         e.to_string(),
         "a.png is 30 bytes, above the 20 byte preview limit"
     );
+}
+
+#[test]
+fn gitlink_in_index_is_not_found_on_both_index_sides() {
+    let (_d, path) = common::temp_repo_with_commit();
+    add_gitlink(&path, "sub");
+    assert_not_found(content(&path, "sub", DiffScope::Unstaged, DiffSide::Old));
+    assert_not_found(content(&path, "sub", DiffScope::Staged, DiffSide::New));
+}
+
+#[test]
+fn gitlink_in_head_is_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    add_gitlink(&path, "sub");
+    let repo = git2::Repository::open(&path).unwrap();
+    let mut index = repo.index().unwrap();
+    let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+    let parent = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "add gitlink", &tree, &[&parent])
+        .unwrap();
+    assert_not_found(content(&path, "sub", DiffScope::Staged, DiffSide::Old));
+}
+
+#[test]
+fn tree_in_head_is_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "dir/inner.txt", "x");
+    common::commit_all(&path, "add dir");
+    assert_not_found(content(&path, "dir", DiffScope::Staged, DiffSide::Old));
+    assert_eq!(
+        content(&path, "dir/inner.txt", DiffScope::Staged, DiffSide::Old).unwrap(),
+        b"x"
+    );
+}
+
+#[test]
+fn unmerged_path_has_no_stage_zero_index_side() {
+    let (_d, path) = common::temp_repo_with_conflict();
+    assert_not_found(content(
+        &path,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::Old,
+    ));
+}
+
+#[test]
+fn blob_paths_are_validated_like_workdir_paths() {
+    let (_d, path) = common::temp_repo_with_commit();
+    for bad in ["", "/README.md", "a/../README.md", ".git/config", "a//b"] {
+        assert_not_found(content(&path, bad, DiffScope::Staged, DiffSide::Old));
+        assert_not_found(content(&path, bad, DiffScope::Unstaged, DiffSide::Old));
+    }
+}
+
+#[test]
+fn workdir_file_far_above_limit_is_too_large_without_full_read() {
+    let (_d, path) = common::temp_repo_with_commit();
+    std::fs::write(path.join("big.bin"), vec![b'x'; 1000]).unwrap();
+    match content_with(&path, "big.bin", DiffScope::Unstaged, DiffSide::New, 9) {
+        Err(GitError::TooLarge {
+            path: p,
+            size,
+            limit,
+        }) => {
+            assert_eq!((p.as_str(), limit), ("big.bin", 9));
+            assert!(size > limit, "reported size {size} must exceed the limit");
+        }
+        other => panic!("expected TooLarge, got {other:?}"),
+    }
+}
+
+#[test]
+fn zero_limit_admits_only_empty_files() {
+    let (_d, path) = common::temp_repo_with_commit();
+    std::fs::write(path.join("empty.txt"), b"").unwrap();
+    assert_eq!(
+        content_with(&path, "empty.txt", DiffScope::Unstaged, DiffSide::New, 0).unwrap(),
+        b""
+    );
+    std::fs::write(path.join("one.txt"), b"x").unwrap();
+    assert!(matches!(
+        content_with(&path, "one.txt", DiffScope::Unstaged, DiffSide::New, 0),
+        Err(GitError::TooLarge { .. })
+    ));
+}
+
+#[test]
+fn maximum_limit_does_not_overflow() {
+    let (_d, path) = common::temp_repo_with_commit();
+    assert_eq!(
+        content_with(
+            &path,
+            "README.md",
+            DiffScope::Unstaged,
+            DiffSide::New,
+            u64::MAX
+        )
+        .unwrap(),
+        b"# fixture\n"
+    );
+}
+
+#[test]
+fn blob_at_exact_limit_is_returned_and_one_below_is_too_large() {
+    let (_d, path) = common::temp_repo_with_commit(); // README.md is 10 bytes in HEAD
+    assert_eq!(
+        content_with(&path, "README.md", DiffScope::Staged, DiffSide::Old, 10)
+            .unwrap()
+            .len(),
+        10
+    );
+    assert!(matches!(
+        content_with(&path, "README.md", DiffScope::Staged, DiffSide::Old, 9),
+        Err(GitError::TooLarge {
+            size: 10,
+            limit: 9,
+            ..
+        })
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn dangling_symlink_returns_its_target_string() {
+    let (_d, path) = common::temp_repo_with_commit();
+    std::os::unix::fs::symlink("nowhere/at/all", path.join("dangling")).unwrap();
+    assert_eq!(
+        content(&path, "dangling", DiffScope::Unstaged, DiffSide::New).unwrap(),
+        b"nowhere/at/all"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_workdir_file_is_an_io_error_not_not_found() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_d, path) = common::temp_repo_with_commit();
+    let file = path.join("secret.txt");
+    std::fs::write(&file, "s").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::File::open(&file).is_ok() {
+        return; // running as root: permissions are not enforced
+    }
+    let result = content(&path, "secret.txt", DiffScope::Unstaged, DiffSide::New);
+    assert!(matches!(result, Err(GitError::Io(_))), "{result:?}");
 }
