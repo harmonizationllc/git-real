@@ -59,8 +59,8 @@ pub(crate) fn escape_glob(p: &str) -> String {
 /// plus a leading `!` (negation) or `#` (comment), either of which would
 /// otherwise change or empty the pattern.
 ///
-/// Every character of `p` is kept, so a non-empty path never parses to an
-/// empty pattern.
+/// Control whitespace (`\n \r \t \x0b \x0c`) cannot be escaped: libgit2
+/// ends the pattern there, so callers must reject such paths first.
 pub(crate) fn escape_pathspec(p: &str) -> String {
     let escaped = escape_glob(p);
     if escaped.starts_with(['!', '#']) {

@@ -1383,3 +1383,86 @@ fn stage_paths_hash_prefixed_name_stages_only_that_file() {
         (None, Some(ChangeKind::Modified))
     );
 }
+
+// --- unstage_paths: control whitespace truncates libgit2 pathspecs ---
+
+#[test]
+fn unstage_paths_newline_leading_name_is_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "\nx", "x\n");
+    common::write_file(&path, "other.txt", "o\n");
+    common::stage(&path, "\nx");
+    common::stage(&path, "other.txt");
+    let err = session(&path)
+        .unstage_paths(&paths(&["\nx"]))
+        .expect_err("newline name");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn unstage_paths_newline_name_leaves_other_staged_files_staged() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "\nx", "x\n");
+    common::write_file(&path, "other.txt", "o\n");
+    common::stage(&path, "\nx");
+    common::stage(&path, "other.txt");
+    let _ = session(&path).unstage_paths(&paths(&["\nx"]));
+    assert_eq!(sides(&path, "other.txt"), (Some(ChangeKind::Added), None));
+}
+
+#[test]
+fn unstage_paths_tab_name_is_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\tb", "t\n");
+    common::stage(&path, "a\tb");
+    let err = session(&path)
+        .unstage_paths(&paths(&["a\tb"]))
+        .expect_err("tab name");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn unstage_paths_tab_name_leaves_staged_sibling_untouched() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\tb", "t\n");
+    common::write_file(&path, "a/c.txt", "c\n");
+    common::stage(&path, "a\tb");
+    common::stage(&path, "a/c.txt");
+    let _ = session(&path).unstage_paths(&paths(&["a\tb"]));
+    assert_eq!(sides(&path, "a/c.txt"), (Some(ChangeKind::Added), None));
+}
+
+#[test]
+fn unstage_paths_carriage_return_name_is_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a\rb", "r\n");
+    common::stage(&path, "a\rb");
+    let err = session(&path)
+        .unstage_paths(&paths(&["a\rb"]))
+        .expect_err("cr name");
+    assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+}
+
+#[test]
+fn unstage_paths_vertical_tab_and_form_feed_names_are_bad_selection() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    for name in ["a\x0bb", "a\x0cb"] {
+        common::write_file(&path, name, "v\n");
+        common::stage(&path, name);
+        let err = session(&path)
+            .unstage_paths(&paths(&[name]))
+            .expect_err("control name");
+        assert!(matches!(err, GitError::BadSelection), "{name:?}: {err:?}");
+    }
+}
+
+#[test]
+fn discard_paths_deletes_only_untracked_file_with_leading_newline() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "\nx", "x\n");
+    common::write_file(&path, "other.txt", "o\n");
+    session(&path)
+        .discard_paths(&paths(&["\nx"]))
+        .expect("discard");
+    assert!(!path.join("\nx").exists() && path.join("other.txt").exists());
+}
