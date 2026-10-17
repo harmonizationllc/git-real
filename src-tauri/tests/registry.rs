@@ -274,3 +274,43 @@ fn register_or_find_leaves_single_entry_after_concurrent_calls() {
     let removed = registry.remove(ids[0]);
     assert_eq!((removed, registry.find_by_path(&canonical)), (true, None));
 }
+
+// Canonicalisation: a `..`-containing or trailing-slash spelling dedupes against the canonical one.
+#[test]
+fn register_or_find_dedupes_non_canonical_spellings_of_the_same_path() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let dir_name = path.file_name().expect("temp dir name").to_owned();
+    let dotdot = path.join("..").join(&dir_name);
+    let trailing_slash = PathBuf::from(format!("{}/", path.display()));
+    let registry = RepoRegistry::default();
+    let (id, _) = registry.register_or_find(RepoSession::open(&path).expect("open canonical"));
+    let via_dotdot = registry.register_or_find(RepoSession::open(&dotdot).expect("open dotdot"));
+    let via_slash =
+        registry.register_or_find(RepoSession::open(&trailing_slash).expect("open slash"));
+    assert_eq!((via_dotdot, via_slash), ((id, false), (id, false)));
+}
+
+// The duplicate session is dropped after the guard is released; a deadlock would hang `get`.
+#[test]
+fn register_or_find_duplicate_does_not_block_later_lookups() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let registry = RepoRegistry::default();
+    let (id, _) = registry.register_or_find(RepoSession::open(&path).expect("open first"));
+    let (dup_id, inserted) =
+        registry.register_or_find(RepoSession::open(&path).expect("open duplicate"));
+    assert_eq!(
+        (dup_id, inserted, registry.get(id).is_some()),
+        (id, false, true)
+    );
+}
+
+// After the entry is removed the path is free again: a fresh id is issued, never the old one.
+#[test]
+fn register_or_find_after_remove_inserts_with_a_fresh_id() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let registry = RepoRegistry::default();
+    let (old_id, _) = registry.register_or_find(RepoSession::open(&path).expect("open first"));
+    registry.remove(old_id);
+    let again = registry.register_or_find(RepoSession::open(&path).expect("reopen"));
+    assert_eq!(again, (old_id + 1, true));
+}
