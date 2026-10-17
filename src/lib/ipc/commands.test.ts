@@ -1,16 +1,25 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  addToGitignore,
+  applyHunk,
   checkGitCli,
   cloneRepo,
   closeRepo,
+  discardPaths,
+  getFileDiff,
+  getStatus,
   initRepo,
   listRecent,
   openRepo,
   removeRecent,
+  stageAll,
+  stagePaths,
+  unstageAll,
+  unstagePaths,
 } from "./commands";
 import { isAppError } from "./errors";
-import type { GitCliInfo, OpenedRepo, RecentEntry } from "./types";
+import type { FileDiff, GitCliInfo, OpenedRepo, RecentEntry, WorkingTreeStatus } from "./types";
 
 interface Call {
   cmd: string;
@@ -128,6 +137,122 @@ describe("command rejections", () => {
     ["checkGitCli", () => checkGitCli()],
   ])("%s rejection passes through", async (_name, call) => {
     const err = { kind: "io", message: "boom" };
+    mockThrowing(err);
+    await expect(call()).rejects.toBe(err);
+  });
+});
+
+// Contract: worktree wrappers invoke the pinned Rust command names with camelCase args.
+describe("worktree command wrappers", () => {
+  const status: WorkingTreeStatus = { entries: [], headUnborn: false };
+  const diff: FileDiff = {
+    path: "a.txt",
+    oldPath: null,
+    scope: "unstaged",
+    change: "modified",
+    isBinary: false,
+    hunks: [],
+    truncated: false,
+  };
+
+  it("getStatus sends get_status with id and returns the status", async () => {
+    const calls = mockWith(status);
+    const result = await getStatus(1);
+    expect(calls).toEqual([{ cmd: "get_status", args: { id: 1 } }]);
+    expect(result).toEqual(status);
+  });
+
+  it("getFileDiff sends get_file_diff with id, path, scope and ignoreWhitespace", async () => {
+    const calls = mockWith(diff);
+    const result = await getFileDiff(1, "a.txt", "staged", true);
+    expect(calls).toEqual([
+      {
+        cmd: "get_file_diff",
+        args: { id: 1, path: "a.txt", scope: "staged", ignoreWhitespace: true },
+      },
+    ]);
+    expect(result).toEqual(diff);
+  });
+
+  it("stagePaths sends stage_paths with id and paths", async () => {
+    const calls = mockWith(null);
+    await stagePaths(1, ["a", "b"]);
+    expect(calls).toEqual([{ cmd: "stage_paths", args: { id: 1, paths: ["a", "b"] } }]);
+  });
+
+  it("unstagePaths sends unstage_paths with id and paths", async () => {
+    const calls = mockWith(null);
+    await unstagePaths(1, ["a"]);
+    expect(calls).toEqual([{ cmd: "unstage_paths", args: { id: 1, paths: ["a"] } }]);
+  });
+
+  it("stageAll sends stage_all with id only", async () => {
+    const calls = mockWith(null);
+    await stageAll(2);
+    expect(calls).toEqual([{ cmd: "stage_all", args: { id: 2 } }]);
+  });
+
+  it("unstageAll sends unstage_all with id only", async () => {
+    const calls = mockWith(null);
+    await unstageAll(2);
+    expect(calls).toEqual([{ cmd: "unstage_all", args: { id: 2 } }]);
+  });
+
+  it("discardPaths sends discard_paths with id and paths", async () => {
+    const calls = mockWith(null);
+    await discardPaths(1, ["a"]);
+    expect(calls).toEqual([{ cmd: "discard_paths", args: { id: 1, paths: ["a"] } }]);
+  });
+
+  it("applyHunk sends apply_hunk with id, path, action and a hunkIndex selection", async () => {
+    const calls = mockWith(null);
+    await applyHunk(1, "a.txt", "stage", { hunkIndex: 2, lines: [0, 3] });
+    expect(calls).toEqual([
+      {
+        cmd: "apply_hunk",
+        args: { id: 1, path: "a.txt", action: "stage", selection: { hunkIndex: 2, lines: [0, 3] } },
+      },
+    ]);
+  });
+
+  it("applyHunk sends lines null when the whole hunk is selected", async () => {
+    const calls = mockWith(null);
+    await applyHunk(1, "a.txt", "discard", { hunkIndex: 0, lines: null });
+    expect(calls[0]?.args).toEqual({
+      id: 1,
+      path: "a.txt",
+      action: "discard",
+      selection: { hunkIndex: 0, lines: null },
+    });
+  });
+
+  it("addToGitignore sends add_to_gitignore with id and path and returns the pattern", async () => {
+    const calls = mockWith("/a.txt");
+    const result = await addToGitignore(1, "a.txt");
+    expect(calls).toEqual([{ cmd: "add_to_gitignore", args: { id: 1, path: "a.txt" } }]);
+    expect(result).toBe("/a.txt");
+  });
+
+  it("applyHunk rejection is recognised by isAppError", async () => {
+    mockThrowing({ kind: "applyFailed", message: "patch rejected" });
+    const caught = await applyHunk(1, "a", "stage", { hunkIndex: 0, lines: null }).catch(
+      (e: unknown) => e,
+    );
+    expect(isAppError(caught)).toBe(true);
+  });
+
+  it.each([
+    ["getStatus", () => getStatus(1)],
+    ["getFileDiff", () => getFileDiff(1, "a", "staged", false)],
+    ["stagePaths", () => stagePaths(1, [])],
+    ["unstagePaths", () => unstagePaths(1, [])],
+    ["stageAll", () => stageAll(1)],
+    ["unstageAll", () => unstageAll(1)],
+    ["discardPaths", () => discardPaths(1, [])],
+    ["applyHunk", () => applyHunk(1, "a", "stage", { hunkIndex: 0, lines: null })],
+    ["addToGitignore", () => addToGitignore(1, "a")],
+  ])("%s rejection passes through", async (_name, call) => {
+    const err = { kind: "noChanges", message: "nothing" };
     mockThrowing(err);
     await expect(call()).rejects.toBe(err);
   });

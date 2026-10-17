@@ -64,6 +64,18 @@ impl RepoSession {
         &self.root
     }
 
+    /// The underlying repository, for sibling domain modules.
+    pub(crate) fn repo(&self) -> &Repository {
+        &self.repo
+    }
+
+    /// The working directory, or `NotARepository` for a bare repository.
+    pub(crate) fn workdir(&self) -> Result<&Path, GitError> {
+        self.repo
+            .workdir()
+            .ok_or_else(|| GitError::NotARepository(self.root.clone()))
+    }
+
     fn from_repo(repo: Repository) -> Result<Self, GitError> {
         let root = std::fs::canonicalize(repo.workdir().unwrap_or_else(|| repo.path()))?;
         Ok(Self { repo, root })

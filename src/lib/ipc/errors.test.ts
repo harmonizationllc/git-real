@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAppError } from "./errors";
+import { isAppError, toAppError } from "./errors";
 import type { AppErrorKind } from "./types";
 
 const kinds: AppErrorKind[] = [
@@ -56,4 +56,27 @@ describe("isAppError", () => {
       expect(isAppError({ kind, message: "m" })).toBe(false);
     },
   );
+});
+
+// Contract: the worktree error kinds are recognised by the guard.
+describe("isAppError worktree kinds", () => {
+  it.each(["noChanges", "badSelection", "applyFailed"])("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+});
+
+// Contract: toAppError coerces any thrown value into an AppError.
+describe("toAppError", () => {
+  it("should return an AppError unchanged", () => {
+    const err = { kind: "noChanges", message: "m" } as const;
+    expect(toAppError(err)).toBe(err);
+  });
+
+  it("should map an Error to an io error with its message", () => {
+    expect(toAppError(new Error("boom"))).toEqual({ kind: "io", message: "boom" });
+  });
+
+  it("should map a non-Error to an io error with its string form", () => {
+    expect(toAppError("x")).toEqual({ kind: "io", message: "x" });
+  });
 });

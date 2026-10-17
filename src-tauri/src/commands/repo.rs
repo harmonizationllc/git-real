@@ -6,13 +6,14 @@ use std::sync::Arc;
 use git_real_core::remote::{clone::clone, git_cli};
 use git_real_core::{ProgressSink, RecentEntry, RepoSession, RepoSummary};
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use super::run_blocking;
 use crate::error::AppError;
-use crate::events::EventProgressSink;
+use crate::events::{EventProgressSink, REPO_CHANGED, RepoChangedPayload};
 use crate::recent_store::RecentStore;
-use crate::state::{RepoId, RepoRegistry};
+use crate::state::{RepoId, RepoRegistry, WatcherRegistry};
+use crate::watcher::{RepoWatcher, WATCH_DEBOUNCE};
 
 /// A registered repository: its handle plus a snapshot summary.
 #[derive(Debug, Clone, Serialize)]
@@ -42,10 +43,7 @@ impl GitCliInfo {
 /// Registers the session (reusing the id of an already-open repo) and records it as recent.
 fn register_session(reg: &RepoRegistry, recent: &RecentStore, session: RepoSession) -> OpenedRepo {
     let summary = session.summary();
-    let id = match reg.find_by_path(session.path()) {
-        Some(id) => id,
-        None => reg.register(session),
-    };
+    let (id, _) = reg.register_or_find(session);
     recent.touch(summary.path.clone(), summary.name.clone());
     OpenedRepo { id, summary }
 }
@@ -100,24 +98,61 @@ pub fn check_git_cli_inner() -> GitCliInfo {
     GitCliInfo::from_located(git_cli::locate().ok())
 }
 
+/// Starts a watcher emitting [`REPO_CHANGED`] for `id`, unless one already runs.
+/// Blocking (a recursive watch walks the tree); a failure is logged and the repo stays open.
+fn ensure_watcher(app: &AppHandle, watchers: &WatcherRegistry, id: RepoId, path: &Path) {
+    if watchers.contains(id) {
+        return;
+    }
+    let app = app.clone();
+    let on_change = move || {
+        // Best-effort: a closed window must not stop the watcher thread.
+        let _ = app.emit(REPO_CHANGED, RepoChangedPayload { repo_id: id });
+    };
+    match RepoWatcher::start(path, WATCH_DEBOUNCE, on_change) {
+        Ok(watcher) => {
+            watchers.insert(id, watcher);
+        }
+        Err(e) => eprintln!("could not watch {}: {e}", path.display()),
+    }
+}
+
+/// Starts the repo's watcher once the command has opened it.
+fn watch_opened(
+    app: &AppHandle,
+    watchers: &WatcherRegistry,
+    opened: Result<OpenedRepo, AppError>,
+) -> Result<OpenedRepo, AppError> {
+    if let Ok(repo) = &opened {
+        ensure_watcher(app, watchers, repo.id, &repo.summary.path);
+    }
+    opened
+}
+
 #[tauri::command]
 pub async fn open_repo(
+    app: AppHandle,
     reg: State<'_, Arc<RepoRegistry>>,
     recent: State<'_, Arc<RecentStore>>,
+    watchers: State<'_, Arc<WatcherRegistry>>,
     path: String,
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
-    run_blocking(move || open_repo_inner(&reg, &recent, &path)).await
+    let watchers = Arc::clone(watchers.inner());
+    run_blocking(move || watch_opened(&app, &watchers, open_repo_inner(&reg, &recent, &path))).await
 }
 
 #[tauri::command]
 pub async fn init_repo(
+    app: AppHandle,
     reg: State<'_, Arc<RepoRegistry>>,
     recent: State<'_, Arc<RecentStore>>,
+    watchers: State<'_, Arc<WatcherRegistry>>,
     path: String,
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
-    run_blocking(move || init_repo_inner(&reg, &recent, &path)).await
+    let watchers = Arc::clone(watchers.inner());
+    run_blocking(move || watch_opened(&app, &watchers, init_repo_inner(&reg, &recent, &path))).await
 }
 
 #[tauri::command]
@@ -125,22 +160,34 @@ pub async fn clone_repo(
     app: AppHandle,
     reg: State<'_, Arc<RepoRegistry>>,
     recent: State<'_, Arc<RecentStore>>,
+    watchers: State<'_, Arc<WatcherRegistry>>,
     url: String,
     dest: String,
     clone_id: u64,
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
+    let watchers = Arc::clone(watchers.inner());
     run_blocking(move || {
-        let mut sink = EventProgressSink::new(app, clone_id);
-        clone_repo_inner(&reg, &recent, &url, &dest, &mut sink)
+        let mut sink = EventProgressSink::new(app.clone(), clone_id);
+        let opened = clone_repo_inner(&reg, &recent, &url, &dest, &mut sink);
+        watch_opened(&app, &watchers, opened)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn close_repo(reg: State<'_, Arc<RepoRegistry>>, id: RepoId) -> Result<(), AppError> {
-    let reg = Arc::clone(reg.inner());
-    run_blocking(move || close_repo_inner(&reg, id)).await
+pub async fn close_repo(
+    reg: State<'_, Arc<RepoRegistry>>,
+    watchers: State<'_, Arc<WatcherRegistry>>,
+    id: RepoId,
+) -> Result<(), AppError> {
+    let (reg, watchers) = (Arc::clone(reg.inner()), Arc::clone(watchers.inner()));
+    run_blocking(move || {
+        // Dropping the watcher joins its thread, so this stays on the blocking pool.
+        watchers.remove(id);
+        close_repo_inner(&reg, id)
+    })
+    .await
 }
 
 #[tauri::command]

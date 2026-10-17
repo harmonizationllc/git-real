@@ -43,7 +43,10 @@ export type AppErrorKind =
   | "cloneFailed"
   | "io"
   | "git"
-  | "unknownRepo";
+  | "unknownRepo"
+  | "noChanges"
+  | "badSelection"
+  | "applyFailed";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -53,4 +56,63 @@ export interface AppError {
 export interface GitCliInfo {
   available: boolean;
   path: string | null;
+}
+
+export type ChangeKind =
+  "added" | "modified" | "deleted" | "renamed" | "typeChange" | "untracked" | "conflicted";
+
+export interface StatusEntry {
+  path: string;
+  oldPath: string | null;
+  index: ChangeKind | null;
+  worktree: ChangeKind | null;
+  conflicted: boolean;
+}
+
+export interface WorkingTreeStatus {
+  entries: StatusEntry[];
+  headUnborn: boolean;
+}
+
+export type DiffScope = "staged" | "unstaged";
+
+export type DiffLineKind = "context" | "addition" | "deletion";
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  oldLineno: number | null;
+  newLineno: number | null;
+  content: string;
+  noNewlineAtEof: boolean;
+}
+
+export interface Hunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  header: string;
+  lines: DiffLine[];
+}
+
+export interface FileDiff {
+  path: string;
+  oldPath: string | null;
+  scope: DiffScope;
+  change: ChangeKind | null;
+  isBinary: boolean;
+  hunks: Hunk[];
+  truncated: boolean;
+}
+
+export interface HunkSelection {
+  hunkIndex: number;
+  /** Line indices within the hunk; null selects the whole hunk. */
+  lines: number[] | null;
+}
+
+export type HunkAction = "stage" | "unstage" | "discard";
+
+export interface RepoChangedPayload {
+  repoId: RepoId;
 }

@@ -17,6 +17,9 @@ pub enum AppErrorKind {
     Io,
     Git,
     UnknownRepo,
+    NoChanges,
+    BadSelection,
+    ApplyFailed,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -46,6 +49,9 @@ impl From<GitError> for AppError {
             GitError::GitCliMissing => AppErrorKind::GitCliMissing,
             GitError::CloneFailed { .. } => AppErrorKind::CloneFailed,
             GitError::Io(_) => AppErrorKind::Io,
+            GitError::NoChanges(_) => AppErrorKind::NoChanges,
+            GitError::BadSelection => AppErrorKind::BadSelection,
+            GitError::ApplyFailed(_) => AppErrorKind::ApplyFailed,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

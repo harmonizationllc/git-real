@@ -6,13 +6,16 @@ import {
   checkGitCli,
   cloneRepo,
   closeRepo,
+  getStatus,
   listRecent,
   onCloneProgress,
+  onRepoChanged,
   openRepo,
   pickFolder,
 } from "../lib/ipc";
 import type { OpenedRepo } from "../lib/ipc";
 import { useRepoTabs } from "../lib/store/repoTabs";
+import { useWorkspace } from "../lib/store/workspace";
 import App from "./App";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
@@ -26,6 +29,8 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pickFolder: vi.fn(),
   checkGitCli: vi.fn(),
   onCloneProgress: vi.fn(),
+  getStatus: vi.fn(),
+  onRepoChanged: vi.fn(),
 }));
 
 const repo = (id: number, name: string, headBranch: string | null = "main"): OpenedRepo => ({
@@ -39,11 +44,14 @@ const heading = (name: string) => ({ level: 1, name });
 beforeEach(() => {
   vi.resetAllMocks();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
+  useWorkspace.setState(useWorkspace.getInitialState(), true);
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
   vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
   vi.mocked(onCloneProgress).mockResolvedValue(vi.fn());
+  vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
+  vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
 });
 
 function renderApp(...seed: OpenedRepo[]) {
@@ -97,6 +105,23 @@ describe("App repo pane", () => {
   });
 });
 
+// Contract: the repo pane hosts the changes panel and the detail placeholder.
+describe("App changes panel", () => {
+  it("renders the changes panel for the active repo", async () => {
+    renderApp(repo(1, "alpha"));
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(getStatus).toHaveBeenCalledWith(1);
+  });
+
+  it("renders the detail placeholder next to the panel", async () => {
+    renderApp(repo(1, "alpha"));
+    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
+      "Select a file to view its diff",
+    );
+    await screen.findByRole("region", { name: "Changes" });
+  });
+});
+
 // Contract: closing a tab calls closeRepo, falls back to a neighbour or the start screen.
 describe("App closing tabs", () => {
   it("closing the active tab calls closeRepo and returns to the neighbour", async () => {
@@ -139,6 +164,21 @@ describe("App closing tabs", () => {
     expect(closeRepo).toHaveBeenCalledExactlyOnceWith(1);
     expect(screen.getByRole("heading", heading("beta"))).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "beta" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("closing a tab clears that repo's workspace selection", async () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "unstaged" });
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
+    await user.click(screen.getByRole("button", { name: "Close alpha" }));
+    expect(useWorkspace.getState().selected).not.toHaveProperty("1");
+  });
+
+  it("closing a tab keeps other repos' workspace selections", async () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "unstaged" });
+    useWorkspace.getState().select(2, { path: "b.txt", scope: "staged" });
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
+    await user.click(screen.getByRole("button", { name: "Close alpha" }));
+    expect(useWorkspace.getState().selected[2]).toEqual({ path: "b.txt", scope: "staged" });
   });
 
   it("closeRepo rejection with unknownRepo still closes the tab and logs nothing", async () => {

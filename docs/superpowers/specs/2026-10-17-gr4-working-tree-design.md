@@ -45,7 +45,7 @@ has landed the controls.
 
 - **Two-column status model.** Each entry carries `index` (HEAD → index
   change) and `worktree` (index → workdir change), like `git status
-  --porcelain=2`. A file modified in both appears in both the Staged and
+--porcelain=2`. A file modified in both appears in both the Staged and
   Unstaged sections. Conflicted entries carry `conflicted: true` and sit in
   their own section.
 - **Hunk and line staging apply a patch through git2** (`Repository::apply`
@@ -195,12 +195,12 @@ ApplyFailed(String),
 `recurse_untracked_dirs`, `renames_head_to_index`, `renames_index_to_workdir`,
 `exclude_submodules(false)`, ignored files excluded. Mapping of git2 flags:
 
-| git2 flag | field |
-|---|---|
-| `INDEX_NEW / MODIFIED / DELETED / RENAMED / TYPECHANGE` | `index = Some(Added/Modified/Deleted/Renamed/TypeChange)` |
-| `WT_NEW` | `worktree = Some(Untracked)` |
-| `WT_MODIFIED / DELETED / RENAMED / TYPECHANGE` | `worktree = Some(Modified/Deleted/Renamed/TypeChange)` |
-| `CONFLICTED` | `conflicted = true`, `worktree = Some(Conflicted)`, `index = None` |
+| git2 flag                                               | field                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------ |
+| `INDEX_NEW / MODIFIED / DELETED / RENAMED / TYPECHANGE` | `index = Some(Added/Modified/Deleted/Renamed/TypeChange)`          |
+| `WT_NEW`                                                | `worktree = Some(Untracked)`                                       |
+| `WT_MODIFIED / DELETED / RENAMED / TYPECHANGE`          | `worktree = Some(Modified/Deleted/Renamed/TypeChange)`             |
+| `CONFLICTED`                                            | `conflicted = true`, `worktree = Some(Conflicted)`, `index = None` |
 
 `path` is the new path (`head_to_index().new_file()` or
 `index_to_workdir().new_file()`), `old_path` the old one when it differs.
@@ -241,11 +241,11 @@ by `path`.
 
 **`apply_hunk(path, action, selection)`**:
 
-| action | diff scope | reverse | apply location |
-|---|---|---|---|
-| Stage | Unstaged | no | Index |
-| Unstage | Staged | yes | Index |
-| Discard | Unstaged | yes | WorkDir |
+| action  | diff scope | reverse | apply location |
+| ------- | ---------- | ------- | -------------- |
+| Stage   | Unstaged   | no      | Index          |
+| Unstage | Staged     | yes     | Index          |
+| Discard | Unstaged   | yes     | WorkDir        |
 
 always with `DiffOptions { ignore_whitespace: false, .. }`. git2 apply errors
 map to `ApplyFailed(message)`. For an untracked file, `Stage` with
@@ -294,17 +294,17 @@ least one positive and one negative test.
 - `commands/worktree.rs` (each is a thin wrapper over an `*_inner` fn that
   takes `&RepoRegistry` and locks the session; unknown id → `unknownRepo`):
 
-| command | args | returns |
-|---|---|---|
-| `get_status` | `id` | `WorkingTreeStatus` |
-| `get_file_diff` | `id, path, scope, ignoreWhitespace: bool` | `FileDiff` |
-| `stage_paths` | `id, paths: Vec<String>` | `()` |
-| `unstage_paths` | `id, paths` | `()` |
-| `stage_all` | `id` | `()` |
-| `unstage_all` | `id` | `()` |
-| `discard_paths` | `id, paths` | `()` |
-| `apply_hunk` | `id, path, action: HunkAction, selection: HunkSelection` | `()` |
-| `add_to_gitignore` | `id, path` | `String` (pattern written) |
+| command            | args                                                     | returns                    |
+| ------------------ | -------------------------------------------------------- | -------------------------- |
+| `get_status`       | `id`                                                     | `WorkingTreeStatus`        |
+| `get_file_diff`    | `id, path, scope, ignoreWhitespace: bool`                | `FileDiff`                 |
+| `stage_paths`      | `id, paths: Vec<String>`                                 | `()`                       |
+| `unstage_paths`    | `id, paths`                                              | `()`                       |
+| `stage_all`        | `id`                                                     | `()`                       |
+| `unstage_all`      | `id`                                                     | `()`                       |
+| `discard_paths`    | `id, paths`                                              | `()`                       |
+| `apply_hunk`       | `id, path, action: HunkAction, selection: HunkSelection` | `()`                       |
+| `add_to_gitignore` | `id, path`                                               | `String` (pattern written) |
 
 All run through `run_blocking`. Mutating commands do not emit events
 themselves; the watcher does.
