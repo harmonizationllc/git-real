@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { GitCliInfo, OpenedRepo, RecentEntry, RepoId } from "./types";
+import type {
+  DiffScope,
+  FileDiff,
+  GitCliInfo,
+  HunkAction,
+  HunkSelection,
+  OpenedRepo,
+  RecentEntry,
+  RepoId,
+  WorkingTreeStatus,
+} from "./types";
 
 export function openRepo(path: string): Promise<OpenedRepo> {
   return invoke<OpenedRepo>("open_repo", { path });
@@ -27,4 +37,51 @@ export function removeRecent(path: string): Promise<RecentEntry[]> {
 
 export function checkGitCli(): Promise<GitCliInfo> {
   return invoke<GitCliInfo>("check_git_cli");
+}
+
+export function getStatus(id: RepoId): Promise<WorkingTreeStatus> {
+  return invoke<WorkingTreeStatus>("get_status", { id });
+}
+
+export function getFileDiff(
+  id: RepoId,
+  path: string,
+  scope: DiffScope,
+  ignoreWhitespace: boolean,
+): Promise<FileDiff> {
+  return invoke<FileDiff>("get_file_diff", { id, path, scope, ignoreWhitespace });
+}
+
+export function stagePaths(id: RepoId, paths: string[]): Promise<void> {
+  return invoke<void>("stage_paths", { id, paths });
+}
+
+export function unstagePaths(id: RepoId, paths: string[]): Promise<void> {
+  return invoke<void>("unstage_paths", { id, paths });
+}
+
+export function stageAll(id: RepoId): Promise<void> {
+  return invoke<void>("stage_all", { id });
+}
+
+export function unstageAll(id: RepoId): Promise<void> {
+  return invoke<void>("unstage_all", { id });
+}
+
+export function discardPaths(id: RepoId, paths: string[]): Promise<void> {
+  return invoke<void>("discard_paths", { id, paths });
+}
+
+export function applyHunk(
+  id: RepoId,
+  path: string,
+  action: HunkAction,
+  selection: HunkSelection,
+): Promise<void> {
+  return invoke<void>("apply_hunk", { id, path, action, selection });
+}
+
+/** Resolves the `.gitignore` pattern for `path` (appended unless already present). */
+export function addToGitignore(id: RepoId, path: string): Promise<string> {
+  return invoke<string>("add_to_gitignore", { id, path });
 }

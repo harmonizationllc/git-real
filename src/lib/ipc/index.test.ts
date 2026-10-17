@@ -14,6 +14,17 @@ describe("ipc barrel", () => {
     "onCloneProgress",
     "pickFolder",
     "isAppError",
+    "toAppError",
+    "getStatus",
+    "getFileDiff",
+    "stagePaths",
+    "unstagePaths",
+    "stageAll",
+    "unstageAll",
+    "discardPaths",
+    "applyHunk",
+    "addToGitignore",
+    "onRepoChanged",
   ])("barrel exposes %s as a function", (name) => {
     expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
   });

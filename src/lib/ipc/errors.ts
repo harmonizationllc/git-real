@@ -10,6 +10,9 @@ const KINDS: Record<AppErrorKind, true> = {
   io: true,
   git: true,
   unknownRepo: true,
+  noChanges: true,
+  badSelection: true,
+  applyFailed: true,
 };
 
 export function isAppError(e: unknown): e is AppError {
@@ -20,4 +23,9 @@ export function isAppError(e: unknown): e is AppError {
     Object.prototype.hasOwnProperty.call(KINDS, kind) &&
     typeof message === "string"
   );
+}
+
+/** Passes an AppError through unchanged; anything else becomes an `io` error. */
+export function toAppError(e: unknown): AppError {
+  return isAppError(e) ? e : { kind: "io", message: e instanceof Error ? e.message : String(e) };
 }

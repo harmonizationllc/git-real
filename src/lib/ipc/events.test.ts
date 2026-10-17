@@ -1,7 +1,7 @@
 import { listen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { onCloneProgress } from "./events";
-import type { CloneProgressPayload, Progress } from "./types";
+import { onCloneProgress, onRepoChanged } from "./events";
+import type { CloneProgressPayload, Progress, RepoChangedPayload } from "./types";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
@@ -80,5 +80,47 @@ describe("onCloneProgress", () => {
     vi.mocked(listen).mockReset();
     vi.mocked(listen).mockRejectedValue(err);
     await expect(onCloneProgress(7, vi.fn())).rejects.toBe(err);
+  });
+});
+
+// Contract: onRepoChanged wraps the repo-changed event and filters by repoId.
+describe("onRepoChanged", () => {
+  function emitChanged(payload: RepoChangedPayload): void {
+    if (!captured) throw new Error("listen was never called");
+    (captured as unknown as (e: Event<RepoChangedPayload>) => void)({
+      event: "repo-changed",
+      id: 1,
+      payload,
+    });
+  }
+
+  it("subscribes to the repo-changed event", async () => {
+    await onRepoChanged(1, vi.fn());
+    expect(vi.mocked(listen).mock.calls[0]?.[0]).toBe("repo-changed");
+  });
+
+  it("invokes handler for a matching repoId", async () => {
+    const handler = vi.fn();
+    await onRepoChanged(1, handler);
+    emitChanged({ repoId: 1 });
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("ignores events for other repoIds", async () => {
+    const handler = vi.fn();
+    await onRepoChanged(1, handler);
+    emitChanged({ repoId: 2 });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("returns the unlisten function", async () => {
+    await expect(onRepoChanged(1, vi.fn())).resolves.toBe(unlisten);
+  });
+
+  it("rejects when listen rejects", async () => {
+    const err = new Error("no bridge");
+    vi.mocked(listen).mockReset();
+    vi.mocked(listen).mockRejectedValue(err);
+    await expect(onRepoChanged(1, vi.fn())).rejects.toBe(err);
   });
 });

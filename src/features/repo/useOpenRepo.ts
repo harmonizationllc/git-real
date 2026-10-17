@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { cloneRepo, initRepo, isAppError, openRepo } from "../../lib/ipc";
+import { cloneRepo, initRepo, openRepo, toAppError } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useRepoTabs } from "../../lib/store/repoTabs";
@@ -18,10 +18,6 @@ export interface UseOpenRepo {
   error: AppError | null;
   errorPath: string | null;
   clearError(): void;
-}
-
-function toAppError(e: unknown): AppError {
-  return isAppError(e) ? e : { kind: "io", message: e instanceof Error ? e.message : String(e) };
 }
 
 function execute(req: OpenRequest) {
