@@ -1,0 +1,38 @@
+.menu {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  padding: 4px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-text) 20%, transparent);
+}
+
+.item {
+  padding: 6px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--color-surface-hover);
+  outline: none;
+}
+
+.item:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.item[data-danger] {
+  color: var(--color-danger);
+}
