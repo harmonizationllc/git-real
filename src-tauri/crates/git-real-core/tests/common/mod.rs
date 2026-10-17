@@ -98,11 +98,11 @@ pub fn write_file(root: &Path, rel: &str, contents: &str) {
     std::fs::write(&full, contents).expect("write file");
 }
 
-/// Stages `rel`: adds it when present on disk, removes it from the index when missing.
+/// Stages `rel`: adds it when present on disk (a dangling symlink counts as present), removes it from the index when missing.
 pub fn stage(root: &Path, rel: &str) {
     let repo = Repository::open(root).expect("open repo");
     let mut index = repo.index().expect("open index");
-    if root.join(rel).exists() {
+    if root.join(rel).symlink_metadata().is_ok() {
         index.add_path(Path::new(rel)).expect("add path");
     } else {
         index.remove_path(Path::new(rel)).expect("remove path");

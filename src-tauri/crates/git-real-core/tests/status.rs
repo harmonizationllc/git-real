@@ -141,11 +141,15 @@ fn status_staged_rename() {
     common::stage(&path, "README.md");
     common::stage(&path, "DOC.md");
     let status = status_of(&path);
-    assert_eq!(status.entries.len(), 1);
-    let e = &status.entries[0];
     assert_eq!(
-        (e.path.as_str(), e.old_path.as_deref(), e.index),
-        ("DOC.md", Some("README.md"), Some(ChangeKind::Renamed))
+        status.entries,
+        vec![StatusEntry {
+            path: "DOC.md".into(),
+            old_path: Some("README.md".into()),
+            index: Some(ChangeKind::Renamed),
+            worktree: None,
+            conflicted: false,
+        }]
     );
 }
 
@@ -345,6 +349,19 @@ fn status_staged_symlink_typechange() {
     common::write_file(&path, "target.txt", "t\n");
     std::fs::remove_file(path.join("README.md")).unwrap();
     std::os::unix::fs::symlink("target.txt", path.join("README.md")).unwrap();
+    common::stage(&path, "README.md");
+    let status = status_of(&path);
+    let e = entry(&status, "README.md");
+    assert_eq!((e.index, e.worktree), (Some(ChangeKind::TypeChange), None));
+}
+
+// A dangling symlink must be staged as a symlink, not treated as a missing file.
+#[test]
+#[cfg(unix)]
+fn status_staged_dangling_symlink_typechange() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::os::unix::fs::symlink("missing-target", path.join("README.md")).unwrap();
     common::stage(&path, "README.md");
     let status = status_of(&path);
     let e = entry(&status, "README.md");
