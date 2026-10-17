@@ -113,6 +113,16 @@ describe("onRepoChanged", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it("delivers only matching events when several repos change", async () => {
+    const handler = vi.fn();
+    await onRepoChanged(1, handler);
+    emitChanged({ repoId: 2 });
+    emitChanged({ repoId: 1 });
+    emitChanged({ repoId: 3 });
+    emitChanged({ repoId: 1 });
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
   it("returns the unlisten function", async () => {
     await expect(onRepoChanged(1, vi.fn())).resolves.toBe(unlisten);
   });

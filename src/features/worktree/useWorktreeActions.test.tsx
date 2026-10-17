@@ -26,14 +26,10 @@ type Actions = ReturnType<typeof useWorktreeActions>;
 
 const noChanges: AppError = { kind: "noChanges", message: "nothing to do" };
 
-// Runs an action inside act and swallows a rejection, so tests assert on hook state instead.
+// Runs an action inside act; actions never reject, failures surface through hook state.
 async function run(call: () => unknown): Promise<void> {
   await act(async () => {
-    try {
-      await call();
-    } catch {
-      /* state is asserted by the tests */
-    }
+    await call();
   });
 }
 
@@ -169,7 +165,7 @@ describe("useWorktreeActions errors", () => {
     vi.mocked(stagePaths).mockRejectedValue(noChanges);
     const { result } = renderHookWithProviders(() => useWorktreeActions(1));
     await run(() => result.current.stage(["a"]));
-    await waitFor(() => expect(result.current.error).toEqual(noChanges));
+    await waitFor(() => expect(result.current.error).toBe(noChanges));
   });
 
   it("should expose an AppError from discard as error", async () => {
@@ -210,6 +206,35 @@ describe("useWorktreeActions errors", () => {
     await waitFor(() => expect(result.current.error).not.toBeNull());
     await run(() => result.current.stage(["a"]));
     await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it("should clear a previous error as soon as the next action starts", async () => {
+    vi.mocked(stagePaths).mockRejectedValueOnce(noChanges);
+    vi.mocked(stageAll).mockReturnValue(new Promise<void>(() => {}));
+    const { result } = renderHookWithProviders(() => useWorktreeActions(1));
+    await run(() => result.current.stage(["a"]));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    act(() => result.current.stageAll());
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    expect(result.current.error).toBeNull();
+  });
+});
+
+// Contract: pending stays true until the repo invalidation triggered on settle has resolved.
+describe("useWorktreeActions pending until invalidated", () => {
+  it("should stay pending until the invalidation promise resolves", async () => {
+    let release!: () => void;
+    const { result, queryClient } = renderHookWithProviders(() => useWorktreeActions(1));
+    const spy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockReturnValue(new Promise<void>((r) => (release = r)));
+    act(() => result.current.stage(["a"]));
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(result.current.pending).toBe(true);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(result.current.pending).toBe(false));
   });
 });
 

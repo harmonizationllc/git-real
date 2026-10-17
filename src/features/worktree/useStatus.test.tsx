@@ -67,8 +67,8 @@ describe("useStatus query", () => {
   it("should refetch when refetch is called", async () => {
     const { result } = renderHookWithProviders(() => useStatus(1));
     await waitFor(() => expect(result.current.status).toBeDefined());
-    await result.current.refetch();
-    expect(getStatus).toHaveBeenCalledTimes(2);
+    result.current.refetch();
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
   });
 });
 
