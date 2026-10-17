@@ -16,6 +16,7 @@ pub mod progress;
 pub mod recent;
 pub mod remote;
 pub mod repo;
+pub mod status;
 
 pub use error::GitError;
 pub use model::*;

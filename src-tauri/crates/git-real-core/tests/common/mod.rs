@@ -88,3 +88,103 @@ pub fn fake_git(dir: &Path, script: &str) -> PathBuf {
     }
     path
 }
+
+/// Writes `contents` to `rel` under `root`, creating parent directories.
+pub fn write_file(root: &Path, rel: &str, contents: &str) {
+    let full = root.join(rel);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dirs");
+    }
+    std::fs::write(&full, contents).expect("write file");
+}
+
+/// Stages `rel`: adds it when present on disk, removes it from the index when missing.
+pub fn stage(root: &Path, rel: &str) {
+    let repo = Repository::open(root).expect("open repo");
+    let mut index = repo.index().expect("open index");
+    if root.join(rel).exists() {
+        index.add_path(Path::new(rel)).expect("add path");
+    } else {
+        index.remove_path(Path::new(rel)).expect("remove path");
+    }
+    index.write().expect("write index");
+}
+
+/// Stages every change (including deletions) and commits it on HEAD.
+pub fn commit_all(root: &Path, message: &str) -> git2::Oid {
+    let repo = Repository::open(root).expect("open repo");
+    let mut index = repo.index().expect("open index");
+    index
+        .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .expect("add all");
+    index.update_all(["*"].iter(), None).expect("update all");
+    index.write().expect("write index");
+    let tree_id = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_id).expect("find tree");
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+    let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+        .expect("commit")
+}
+
+/// Creates a repo whose index holds a conflict on `README.md` (line 1 edited
+/// differently on `other` and on the original branch, then merged).
+pub fn temp_repo_with_conflict() -> (TempDir, PathBuf) {
+    let (dir, path) = temp_repo_with_commit();
+    let base_ref = {
+        let repo = Repository::open(&path).expect("open repo");
+        let name = repo
+            .head()
+            .expect("head")
+            .name()
+            .expect("utf-8")
+            .to_string();
+        let commit = repo.head().unwrap().peel_to_commit().expect("head commit");
+        repo.branch("other", &commit, false).expect("create other");
+        name
+    };
+
+    {
+        let repo = Repository::open(&path).expect("open repo");
+        repo.set_head("refs/heads/other").expect("switch to other");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout other");
+    }
+    write_file(&path, "README.md", "# other\n");
+    commit_all(&path, "change on other");
+
+    {
+        let repo = Repository::open(&path).expect("open repo");
+        repo.set_head(&base_ref).expect("switch back");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout base");
+    }
+    write_file(&path, "README.md", "# main\n");
+    commit_all(&path, "change on base");
+
+    let repo = Repository::open(&path).expect("open repo");
+    let other = repo
+        .find_branch("other", git2::BranchType::Local)
+        .expect("find other");
+    let annotated = repo
+        .reference_to_annotated_commit(other.get())
+        .expect("annotated commit");
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.allow_conflicts(true);
+    repo.merge(&[&annotated], None, Some(&mut checkout))
+        .expect("merge");
+    assert!(repo.index().expect("index").has_conflicts());
+    drop(annotated);
+    drop(other);
+    drop(repo);
+    (dir, path)
+}
+
+/// Creates an initialised repo with no commits (unborn HEAD).
+pub fn temp_repo_unborn() -> (TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    (dir, path)
+}
