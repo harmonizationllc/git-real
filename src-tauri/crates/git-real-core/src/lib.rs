@@ -12,7 +12,10 @@
 
 pub mod diff;
 pub mod error;
+pub mod ignore;
+pub mod index_ops;
 pub mod model;
+mod paths;
 pub mod progress;
 pub mod recent;
 pub mod remote;
@@ -20,6 +23,7 @@ pub mod repo;
 pub mod status;
 
 pub use error::GitError;
+pub use ignore::gitignore_pattern;
 pub use model::*;
 pub use progress::ProgressSink;
 pub use recent::RecentRepos;

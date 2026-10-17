@@ -101,12 +101,8 @@ impl RepoSession {
 
     /// Adds a whole untracked file to the index; this covers empty, binary
     /// and executable files that a patch cannot express.
-    // Task 5: route this through `stage_paths` once it exists.
     fn stage_untracked_file(&self, path: &str) -> Result<(), GitError> {
-        let mut index = self.repo().index()?;
-        index.add_path(std::path::Path::new(path))?;
-        index.write()?;
-        Ok(())
+        self.stage_paths(&[path.to_owned()])
     }
 
     /// Diffs one file in `scope` with line text decoded per `mode`.

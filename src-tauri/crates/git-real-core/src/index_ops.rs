@@ -1,0 +1,186 @@
+//! Whole-file index operations: stage, unstage and discard.
+//!
+//! Every operation validates all of its paths before it writes anything, and
+//! starts from an index freshly re-read from disk so changes made by other
+//! processes (such as `git add` in a terminal) are never clobbered.
+
+use std::path::{Path, PathBuf};
+
+use git2::build::CheckoutBuilder;
+use git2::{Commit, ErrorCode, Index, IndexAddOption, ObjectType};
+
+use crate::error::GitError;
+use crate::paths::{escape_pathspec, repo_relative};
+use crate::repo::RepoSession;
+
+impl RepoSession {
+    /// Stages the working tree state of each path, including deletions and
+    /// conflict resolutions.
+    pub fn stage_paths(&self, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let paths = normalise_all(paths)?;
+        let workdir = self.workdir()?;
+        let mut index = self.fresh_index()?;
+        for p in &paths {
+            let rel = Path::new(p);
+            if workdir.join(rel).symlink_metadata().is_ok() {
+                index.add_path(rel)?;
+            } else if in_index(&index, rel, 0..=3) {
+                index.remove_path(rel)?;
+            } else {
+                return Err(GitError::PathNotFound(PathBuf::from(p)));
+            }
+        }
+        index.write()?;
+        Ok(())
+    }
+
+    /// Stages every change in the working tree, ignored files excepted.
+    pub fn stage_all(&self) -> Result<(), GitError> {
+        let mut index = self.fresh_index()?;
+        index.add_all(["*"], IndexAddOption::DEFAULT, None)?;
+        index.update_all(["*"], None)?;
+        index.write()?;
+        Ok(())
+    }
+
+    /// Resets each path's index entry to HEAD (or removes it when unborn).
+    pub fn unstage_paths(&self, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let paths = normalise_all(paths)?;
+        let mut index = self.fresh_index()?;
+        let head = self.head_commit()?;
+        let tree = head.as_ref().map(Commit::tree).transpose()?;
+        for p in &paths {
+            let rel = Path::new(p);
+            let in_head = tree.as_ref().is_some_and(|t| {
+                t.get_path(rel)
+                    .is_ok_and(|e| e.kind() != Some(ObjectType::Tree))
+            });
+            if !in_head && !in_index(&index, rel, 0..=3) {
+                return Err(GitError::PathNotFound(PathBuf::from(p)));
+            }
+        }
+        match head {
+            Some(commit) => self.repo().reset_default(
+                Some(commit.as_object()),
+                paths.iter().map(|p| escape_pathspec(p)),
+            )?,
+            None => {
+                for p in &paths {
+                    index.remove_path(Path::new(p))?;
+                }
+                index.write()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Resets the whole index to HEAD (or empties it when unborn).
+    pub fn unstage_all(&self) -> Result<(), GitError> {
+        let mut index = self.fresh_index()?;
+        match self.head_commit()? {
+            Some(commit) => self.repo().reset_default(Some(commit.as_object()), ["*"])?,
+            None => {
+                index.clear()?;
+                index.write()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Throws away unstaged changes: tracked paths are restored to their
+    /// index content, untracked files and directories are deleted.
+    ///
+    /// Conflicted paths and directories holding tracked files are rejected
+    /// with [`GitError::BadSelection`]. The index itself is never written.
+    pub fn discard_paths(&self, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let paths = normalise_all(paths)?;
+        let workdir = self.workdir()?;
+        let mut index = self.fresh_index()?;
+
+        let mut tracked = Vec::new();
+        let mut untracked_files = Vec::new();
+        let mut untracked_dirs = Vec::new();
+        for p in &paths {
+            let rel = Path::new(p);
+            if in_index(&index, rel, 1..=3) {
+                return Err(GitError::BadSelection);
+            }
+            if in_index(&index, rel, 0..=0) {
+                tracked.push(p.as_str());
+                continue;
+            }
+            let full = workdir.join(rel);
+            match full.symlink_metadata() {
+                Ok(meta) if meta.is_dir() => {
+                    if has_entries_under(&index, p) {
+                        return Err(GitError::BadSelection);
+                    }
+                    untracked_dirs.push(full);
+                }
+                Ok(_) => untracked_files.push(full),
+                Err(_) => return Err(GitError::PathNotFound(PathBuf::from(p))),
+            }
+        }
+
+        if !tracked.is_empty() {
+            let mut checkout = CheckoutBuilder::new();
+            checkout.force().disable_pathspec_match(true);
+            for p in &tracked {
+                checkout.path(p);
+            }
+            self.repo()
+                .checkout_index(Some(&mut index), Some(&mut checkout))?;
+        }
+        for file in &untracked_files {
+            std::fs::remove_file(file)?;
+        }
+        for dir in &untracked_dirs {
+            std::fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+
+    /// The repository's index, re-read from disk so neither external writes
+    /// nor dirty state left by an earlier failed call can leak in.
+    fn fresh_index(&self) -> Result<Index, GitError> {
+        let mut index = self.repo().index()?;
+        index.read(true)?;
+        Ok(index)
+    }
+
+    /// The commit HEAD points at, or `None` for an unborn branch.
+    fn head_commit(&self) -> Result<Option<Commit<'_>>, GitError> {
+        match self.repo().head() {
+            Ok(head) => Ok(Some(head.peel_to_commit()?)),
+            Err(e) if e.code() == ErrorCode::UnbornBranch => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+/// Validates every path up front so a bad one aborts before any write.
+fn normalise_all(paths: &[String]) -> Result<Vec<String>, GitError> {
+    paths.iter().map(|p| repo_relative(p)).collect()
+}
+
+/// Whether the index has an entry for `path` at any of `stages`.
+fn in_index(index: &Index, path: &Path, stages: std::ops::RangeInclusive<i32>) -> bool {
+    stages
+        .into_iter()
+        .any(|stage| index.get_path(path, stage).is_some())
+}
+
+/// Whether any index entry lives below the directory `dir`.
+fn has_entries_under(index: &Index, dir: &str) -> bool {
+    let prefix = format!("{dir}/");
+    index.iter().any(|e| e.path.starts_with(prefix.as_bytes()))
+}
