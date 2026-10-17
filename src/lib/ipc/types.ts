@@ -46,7 +46,8 @@ export type AppErrorKind =
   | "unknownRepo"
   | "noChanges"
   | "badSelection"
-  | "applyFailed";
+  | "applyFailed"
+  | "tooLarge";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -76,6 +77,10 @@ export interface WorkingTreeStatus {
 
 export type DiffScope = "staged" | "unstaged";
 
+export type DiffSide = "old" | "new";
+
+export type TextEncoding = "utf8" | "utf16Le" | "utf16Be" | "utf32Le" | "utf32Be";
+
 export type DiffLineKind = "context" | "addition" | "deletion";
 
 export interface DiffLine {
@@ -103,6 +108,8 @@ export interface FileDiff {
   isBinary: boolean;
   hunks: Hunk[];
   truncated: boolean;
+  oldEncoding: TextEncoding | null;
+  newEncoding: TextEncoding | null;
 }
 
 export interface HunkSelection {

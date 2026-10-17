@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addToGitignore,
+  applyHunk,
   discardPaths,
   stageAll,
   stagePaths,
@@ -8,7 +9,7 @@ import {
   unstageAll,
   unstagePaths,
 } from "../../lib/ipc";
-import type { AppError, RepoId } from "../../lib/ipc";
+import type { AppError, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 
 type WorktreeRequest =
@@ -17,7 +18,8 @@ type WorktreeRequest =
   | { action: "stageAll" }
   | { action: "unstageAll" }
   | { action: "discard"; paths: string[] }
-  | { action: "addToGitignore"; path: string };
+  | { action: "addToGitignore"; path: string }
+  | { action: "applyHunk"; path: string; hunkAction: HunkAction; selection: HunkSelection };
 
 /** Actions are fire-and-forget: failures surface through `error`, never as rejections. */
 export interface UseWorktreeActions {
@@ -27,6 +29,7 @@ export interface UseWorktreeActions {
   unstageAll(): void;
   discard(paths: string[]): void;
   addToGitignore(path: string): void;
+  applyHunk(path: string, action: HunkAction, selection: HunkSelection): void;
   pending: boolean;
   error: AppError | null;
   clearError(): void;
@@ -46,6 +49,8 @@ function execute(repoId: RepoId, req: WorktreeRequest): Promise<unknown> {
       return discardPaths(repoId, req.paths);
     case "addToGitignore":
       return addToGitignore(repoId, req.path);
+    case "applyHunk":
+      return applyHunk(repoId, req.path, req.hunkAction, req.selection);
   }
 }
 
@@ -69,6 +74,8 @@ export function useWorktreeActions(repoId: RepoId): UseWorktreeActions {
     unstageAll: () => mutate({ action: "unstageAll" }),
     discard: (paths) => mutate({ action: "discard", paths }),
     addToGitignore: (path) => mutate({ action: "addToGitignore", path }),
+    applyHunk: (path, action, selection) =>
+      mutate({ action: "applyHunk", path, hunkAction: action, selection }),
     pending: mutation.isPending,
     error: mutation.error,
     clearError: mutation.reset,

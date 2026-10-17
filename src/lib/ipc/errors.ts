@@ -13,6 +13,7 @@ const KINDS: Record<AppErrorKind, true> = {
   noChanges: true,
   badSelection: true,
   applyFailed: true,
+  tooLarge: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

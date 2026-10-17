@@ -1,0 +1,87 @@
+/* Global on purpose: @lezer/highlight classHighlighter emits fixed tok-* class names. */
+.tok-keyword,
+.tok-modifier,
+.tok-controlKeyword,
+.tok-definitionKeyword,
+.tok-moduleKeyword,
+.tok-operatorKeyword {
+  color: var(--syntax-keyword);
+}
+.tok-string,
+.tok-string2,
+.tok-character,
+.tok-regexp,
+.tok-escape,
+.tok-special {
+  color: var(--syntax-string);
+}
+.tok-number,
+.tok-bool,
+.tok-atom,
+.tok-null,
+.tok-literal {
+  color: var(--syntax-number);
+}
+.tok-comment,
+.tok-lineComment,
+.tok-blockComment,
+.tok-docComment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+.tok-variableName,
+.tok-propertyName,
+.tok-attributeName,
+.tok-labelName {
+  color: var(--syntax-variable);
+}
+.tok-typeName,
+.tok-className,
+.tok-namespace,
+.tok-tagName,
+.tok-standard {
+  color: var(--syntax-type);
+}
+.tok-function,
+.tok-definition.tok-variableName,
+.tok-definition.tok-propertyName {
+  color: var(--syntax-function);
+}
+.tok-operator,
+.tok-arithmeticOperator,
+.tok-logicOperator,
+.tok-compareOperator,
+.tok-updateOperator,
+.tok-definitionOperator {
+  color: var(--syntax-operator);
+}
+.tok-punctuation,
+.tok-bracket,
+.tok-paren,
+.tok-brace,
+.tok-separator,
+.tok-angleBracket,
+.tok-squareBracket {
+  color: var(--syntax-punctuation);
+}
+.tok-meta,
+.tok-processingInstruction,
+.tok-annotation,
+.tok-heading,
+.tok-url,
+.tok-link {
+  color: var(--syntax-meta);
+}
+.tok-invalid {
+  color: var(--syntax-invalid);
+  text-decoration: underline wavy;
+}
+.tok-strong {
+  font-weight: 600;
+}
+.tok-emphasis {
+  font-style: italic;
+}
+.tok-strikethrough {
+  text-decoration: line-through;
+}
