@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStatus, onRepoChanged } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
@@ -68,5 +68,25 @@ describe("RepoPane", () => {
     rerender(<RepoPane tab={tab(2)} />);
     await screen.findByRole("region", { name: "Changes" });
     expect(getStatus).toHaveBeenCalledWith(2);
+  });
+
+  it("should reset panel-local state when the active tab changes", async () => {
+    vi.mocked(getStatus).mockResolvedValue({
+      entries: [
+        { path: "a.txt", oldPath: null, index: null, worktree: "modified", conflicted: false },
+      ],
+      headUnborn: false,
+    });
+    const { rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    const row = await screen.findByRole("button", { name: "modified a.txt" });
+    fireEvent.click(row);
+    fireEvent.contextMenu(row, { clientX: 10, clientY: 10 });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(row).toHaveAttribute("aria-pressed", "true");
+
+    rerender(<RepoPane tab={tab(2)} />);
+    const next = await screen.findByRole("button", { name: "modified a.txt" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(next).toHaveAttribute("aria-pressed", "false");
   });
 });

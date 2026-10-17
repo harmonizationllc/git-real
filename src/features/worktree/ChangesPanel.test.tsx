@@ -772,3 +772,101 @@ describe("ChangesPanel action errors", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+// Contract: a shift range follows the global display order, but actions stay within the row's section.
+describe("ChangesPanel cross-section behaviour", () => {
+  const crossEntries = () => [
+    staged("s1.txt"),
+    staged("s2.txt"),
+    unstaged("u1.txt"),
+    unstaged("u2.txt"),
+  ];
+
+  async function selectAcrossBoundary() {
+    const view = await renderPanel(...crossEntries());
+    await view.user.click(btn("modified s1.txt"));
+    await modClick(view.user, btn("modified u1.txt"), "Shift");
+    return view;
+  }
+
+  it("should extend a shift range across the section boundary in display order", async () => {
+    await selectAcrossBoundary();
+    const pressed = ["s1.txt", "s2.txt", "u1.txt", "u2.txt"].map((p) =>
+      screen.getAllByRole("button", { name: `modified ${p}` })[0].getAttribute("aria-pressed"),
+    );
+    expect(pressed).toEqual(["true", "true", "true", "false"]);
+  });
+
+  it("should stage only the unstaged part of a cross-section selection", async () => {
+    const { user } = await selectAcrossBoundary();
+    await user.click(btn("Stage u1.txt"));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["u1.txt"]);
+  });
+
+  it("should unstage only the staged part of a cross-section selection", async () => {
+    const { user } = await selectAcrossBoundary();
+    await user.click(btn("Unstage s1.txt"));
+    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["s1.txt", "s2.txt"]);
+  });
+});
+
+// Contract: header buttons act on the whole repo and ignore the selection.
+describe("ChangesPanel header buttons with a selection", () => {
+  it("should call stageAll with the repo id only even when a row is selected", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"), unstaged("b.txt"));
+    await user.click(btn("modified a.txt"));
+    await user.click(btn("Stage all"));
+    expect(stageAll).toHaveBeenCalledExactlyOnceWith(1);
+    expect(stagePaths).not.toHaveBeenCalled();
+  });
+
+  it("should call unstageAll with the repo id only even when a row is selected", async () => {
+    const { user } = await renderPanel(staged("a.txt"), staged("b.txt"));
+    await user.click(btn("modified a.txt"));
+    await user.click(btn("Unstage all"));
+    expect(unstageAll).toHaveBeenCalledExactlyOnceWith(1);
+    expect(unstagePaths).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: menu items use the same selection-aware targets as the row buttons.
+describe("ChangesPanel menu targets", () => {
+  it("should unstage the whole selection from the menu when the row is selected", async () => {
+    const { user } = await renderPanel(staged("a.txt"), staged("b.txt"), staged("c.txt"));
+    await user.click(btn("modified a.txt"));
+    await modClick(user, btn("modified b.txt"), "Control");
+    rightClick(btn("modified b.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Unstage" }));
+    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["a.txt", "b.txt"]);
+  });
+
+  it("should stage every selected conflict from Mark resolved (stage)", async () => {
+    const { user } = await renderPanel(conflict("x.txt"), conflict("y.txt"));
+    await user.click(btn("conflicted x.txt"));
+    await modClick(user, btn("conflicted y.txt"), "Control");
+    rightClick(btn("conflicted y.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Mark resolved (stage)" }));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["x.txt", "y.txt"]);
+  });
+
+  it("should act on the right-clicked row alone when it is not selected", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"), unstaged("b.txt"));
+    await user.click(btn("modified a.txt"));
+    rightClick(btn("modified b.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Stage" }));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["b.txt"]);
+  });
+});
+
+// Contract: dismissing a status error retries the query.
+describe("ChangesPanel status error retry", () => {
+  it("should call getStatus a second time when the status error is dismissed", async () => {
+    vi.mocked(getStatus)
+      .mockRejectedValueOnce({ kind: "io", message: "status exploded" })
+      .mockResolvedValue(status());
+    const { user } = renderWithProviders(<ChangesPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    await screen.findByText("No changes");
+    expect(getStatus).toHaveBeenCalledTimes(2);
+  });
+});

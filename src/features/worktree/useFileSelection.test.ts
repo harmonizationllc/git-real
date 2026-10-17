@@ -12,7 +12,7 @@ function setup(initial: string[] = paths) {
   return renderHook(({ list }) => useFileSelection(list), { initialProps: { list: initial } });
 }
 
-const sorted = (s: Set<string>): string[] => [...s].sort();
+const sorted = (s: ReadonlySet<string>): string[] => [...s].sort();
 
 describe("useFileSelection initial state", () => {
   it("should start with nothing selected", () => {
