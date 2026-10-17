@@ -96,8 +96,15 @@ fn get_file_diff_inner_without_max_lines_is_not_truncated() {
 fn get_file_content_inner_returns_old_bytes() {
     let (_dir, path, reg, id) = open_fixture();
     modify_readme(&path);
-    let old =
-        get_file_content_inner(&reg, id, "README.md", DiffScope::Unstaged, DiffSide::Old).unwrap();
+    let old = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
     assert_eq!(old, b"# fixture\n");
 }
 
@@ -105,25 +112,55 @@ fn get_file_content_inner_returns_old_bytes() {
 fn get_file_content_inner_returns_new_bytes() {
     let (_dir, path, reg, id) = open_fixture();
     modify_readme(&path);
-    let new =
-        get_file_content_inner(&reg, id, "README.md", DiffScope::Unstaged, DiffSide::New).unwrap();
+    let new = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
     assert_eq!(new, b"# fixture\nmore\n");
 }
 
 #[test]
 fn get_file_content_inner_missing_file_maps_to_path_not_found() {
     let (_dir, _path, reg, id) = open_fixture();
-    let missing = get_file_content_inner(&reg, id, "nope.txt", DiffScope::Unstaged, DiffSide::New)
-        .expect_err("missing file");
+    let missing = get_file_content_inner(
+        &reg,
+        id,
+        "nope.txt",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("missing file");
     assert_eq!(missing.kind, AppErrorKind::PathNotFound);
 }
 
 #[test]
 fn get_file_content_inner_unknown_repo_errors() {
     let (_dir, _path, reg, _id) = open_fixture();
-    let bad = get_file_content_inner(&reg, 999, "README.md", DiffScope::Unstaged, DiffSide::New)
-        .expect_err("unknown repo");
+    let bad = get_file_content_inner(
+        &reg,
+        999,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("unknown repo");
     assert_eq!(bad.kind, AppErrorKind::UnknownRepo);
+}
+
+#[test]
+fn get_file_content_inner_over_limit_maps_to_too_large() {
+    let (_dir, _path, reg, id) = open_fixture();
+    let err = get_file_content_inner(&reg, id, "README.md", DiffScope::Unstaged, DiffSide::New, 1)
+        .expect_err("file above the limit");
+    assert_eq!(err.kind, AppErrorKind::TooLarge);
+    assert!(err.message.contains("above the 1 byte preview limit"));
 }
 
 #[test]
