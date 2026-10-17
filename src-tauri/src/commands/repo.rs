@@ -42,10 +42,7 @@ impl GitCliInfo {
 /// Registers the session (reusing the id of an already-open repo) and records it as recent.
 fn register_session(reg: &RepoRegistry, recent: &RecentStore, session: RepoSession) -> OpenedRepo {
     let summary = session.summary();
-    let id = match reg.find_by_path(session.path()) {
-        Some(id) => id,
-        None => reg.register(session),
-    };
+    let (id, _) = reg.register_or_find(session);
     recent.touch(summary.path.clone(), summary.name.clone());
     OpenedRepo { id, summary }
 }

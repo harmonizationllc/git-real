@@ -177,3 +177,100 @@ fn registry_find_by_path_distinguishes_sessions() {
         (Some(id1), Some(id2))
     );
 }
+
+// register_or_find: atomic dedupe by canonical path (GR-4 Task 1).
+#[test]
+fn register_or_find_returns_existing_id_for_same_path() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let first = RepoSession::open(&path).expect("open fixture repo");
+    let second = RepoSession::open(&path).expect("open fixture repo again");
+    let registry = RepoRegistry::default();
+    let (first_id, _) = registry.register_or_find(first);
+    assert_eq!(registry.register_or_find(second), (first_id, false));
+}
+
+#[test]
+fn register_or_find_same_path_keeps_find_by_path_pointing_at_first_id() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let first = RepoSession::open(&path).expect("open fixture repo");
+    let canonical = first.path().to_path_buf();
+    let second = RepoSession::open(&path).expect("open fixture repo again");
+    let registry = RepoRegistry::default();
+    let (first_id, _) = registry.register_or_find(first);
+    registry.register_or_find(second);
+    assert_eq!(registry.find_by_path(&canonical), Some(first_id));
+}
+
+// A dedupe hit must not consume an id: insert A, dedupe A, insert B => B is 2.
+#[test]
+fn register_or_find_dedupe_hit_does_not_burn_an_id() {
+    let (_dir_a, path_a) = common::temp_repo_with_commit();
+    let (_dir_b, path_b) = common::temp_repo_with_commit();
+    let registry = RepoRegistry::default();
+    registry.register_or_find(RepoSession::open(&path_a).expect("open a"));
+    registry.register_or_find(RepoSession::open(&path_a).expect("open a again"));
+    let (id_b, inserted) = registry.register_or_find(RepoSession::open(&path_b).expect("open b"));
+    assert_eq!((id_b, inserted), (2, true));
+}
+
+#[test]
+fn register_or_find_distinct_paths_get_distinct_ids() {
+    let (_d1, s1) = session();
+    let (_d2, s2) = session();
+    let registry = RepoRegistry::default();
+    let (id1, _) = registry.register_or_find(s1);
+    let (id2, inserted) = registry.register_or_find(s2);
+    assert_eq!((id1, id2, inserted), (1, 2, true));
+}
+
+#[test]
+fn register_or_find_inserts_new_path() {
+    let (_dir, s) = session();
+    let registry = RepoRegistry::default();
+    let (id, inserted) = registry.register_or_find(s);
+    assert_eq!((id, inserted, registry.get(id).is_some()), (1, true, true));
+}
+
+#[test]
+fn register_or_find_is_atomic_under_concurrency() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let registry = RepoRegistry::default();
+    let results: Vec<(u64, bool)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    let s = RepoSession::open(&path).expect("open fixture repo");
+                    registry.register_or_find(s)
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let first_id = results[0].0;
+    let all_same = results.iter().all(|(id, _)| *id == first_id);
+    let inserted = results.iter().filter(|(_, new)| *new).count();
+    assert_eq!(
+        (all_same, inserted, registry.get(first_id).is_some()),
+        (true, 1, true)
+    );
+}
+
+#[test]
+fn register_or_find_leaves_single_entry_after_concurrent_calls() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let canonical = std::fs::canonicalize(&path).expect("canonicalize fixture");
+    let registry = RepoRegistry::default();
+    let ids: Vec<u64> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    let s = RepoSession::open(&path).expect("open fixture repo");
+                    registry.register_or_find(s).0
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let removed = registry.remove(ids[0]);
+    assert_eq!((removed, registry.find_by_path(&canonical)), (true, None));
+}

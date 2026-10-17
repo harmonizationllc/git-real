@@ -33,7 +33,8 @@ impl Default for RepoRegistry {
 
 impl RepoRegistry {
     fn entries(&self) -> MutexGuard<'_, HashMap<RepoId, Entry>> {
-        // Each critical section is a single map operation, so a poisoned map is still consistent.
+        // Each critical section is a lookup and at most one insert, so it never leaves the map
+        // half-mutated and a poisoned map is still consistent.
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -46,6 +47,32 @@ impl RepoRegistry {
         };
         self.entries().insert(id, entry);
         id
+    }
+
+    /// Returns the id of the session already registered at this session's path (`false`),
+    /// or registers it and returns a fresh id (`true`). Lookup and insert share one lock.
+    pub fn register_or_find(&self, session: RepoSession) -> (RepoId, bool) {
+        let path = session.path().to_path_buf();
+        let outcome = {
+            let mut entries = self.entries();
+            match entries.iter().find(|(_, e)| e.path == path) {
+                Some((id, _)) => Err((*id, session)),
+                None => {
+                    let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+                    let entry = Entry {
+                        path,
+                        session: Arc::new(Mutex::new(session)),
+                    };
+                    entries.insert(id, entry);
+                    Ok(id)
+                }
+            }
+        };
+        match outcome {
+            Ok(id) => (id, true),
+            // The guard is released, so the duplicate session drops outside the registry lock.
+            Err((id, _duplicate)) => (id, false),
+        }
     }
 
     pub fn get(&self, id: RepoId) -> Option<Arc<Mutex<RepoSession>>> {
