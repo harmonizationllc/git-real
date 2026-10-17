@@ -28,6 +28,9 @@ controls that GR-4 deferred here.
 7. Intraline (word-level) change highlighting inside paired modified lines.
 8. Hunk and line stage / unstage / discard controls (GR-4 criterion 3 and the
    hunk half of criterion 4).
+9. UTF-16 and UTF-32 text files, which libgit2 flags as binary, decode to a
+   text diff with an encoding notice; an encoding-only change is reported as
+   such rather than as "no changes".
 
 ### Out of scope
 
@@ -78,6 +81,21 @@ controls that GR-4 deferred here.
   `tooLarge` error kind so the UI can show the size instead of loading it.
   The CSP `img-src` gains `blob:`; the front end shows previews through
   `URL.createObjectURL`.
+- **UTF-16 and UTF-32 files are decoded in the backend.** libgit2 marks any
+  file with a NUL byte in its first 8 KB as binary, which covers every UTF-16
+  file. When a diff is flagged binary, both sides are sniffed (byte-order
+  mark first, then a NUL-pattern heuristic for BOM-less UTF-16). If every
+  present side is UTF-8, UTF-16 or UTF-32 and no side exceeds
+  `max_decode_bytes` (default 20 MiB), the sides are transcoded to UTF-8 and
+  the hunks are built from the decoded buffers. `FileDiff` carries
+  `old_encoding` / `new_encoding` so the viewer can say "Decoded from UTF-16
+  LE" or "Encoding changed from UTF-8 to UTF-16 LE". Hunk and line actions
+  are disabled for decoded files because a patch built from decoded text
+  cannot apply to the raw bytes; whole-file actions in the Changes panel
+  still work. Single-byte encodings (Latin-1, Windows-1252) are unchanged:
+  they diff as text with lossy UTF-8 display, a known limitation. Git's
+  `working-tree-encoding` attribute is not honoured by libgit2 and is not
+  consulted.
 - **Workdir content follows git semantics for symlinks**: the bytes of a
   symlink are its link target string, never the target file's contents. This
   stops a symlink from previewing files outside the repository.
@@ -110,6 +128,30 @@ pub enum DiffSide {
     New,
 }
 ```
+
+```rust
+/// A text encoding the diff loader can transcode from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Utf32Le,
+    Utf32Be,
+}
+```
+
+`FileDiff` gains two fields, both `None` for an ordinary diff and set only
+when the loader decoded the sides (an absent side stays `None`):
+
+```rust
+pub old_encoding: Option<TextEncoding>,
+pub new_encoding: Option<TextEncoding>,
+```
+
+`DiffOptions` gains `pub max_decode_bytes: u64` (default `20 * 1024 * 1024`);
+a side larger than this is not decoded and the diff stays binary.
 
 New in `error.rs`:
 
@@ -157,6 +199,52 @@ target; directory → `PathNotFound`; `..` path → `PathNotFound`; a file one
 byte over the limit → `TooLarge` with the right size and limit; exactly at
 the limit succeeds; binary bytes (including `\0`) round-trip unchanged.
 
+New module `encoding.rs`:
+
+```rust
+/// Sniffs `bytes`: BOM first (UTF-32 before UTF-16, since `FF FE 00 00`
+/// starts with the UTF-16 LE mark), then valid UTF-8 without NUL, then the
+/// BOM-less UTF-16 heuristic. `None` means "not text we can decode".
+pub fn detect_encoding(bytes: &[u8]) -> Option<TextEncoding>;
+
+/// Transcodes `bytes` to a `String`, dropping a leading BOM and replacing
+/// malformed sequences with U+FFFD. Odd trailing bytes become one U+FFFD.
+pub fn decode(bytes: &[u8], encoding: TextEncoding) -> String;
+```
+
+Heuristic for BOM-less UTF-16: look at the first 8192 bytes as pairs. If at
+least 90 % of pairs have a zero high byte and a non-zero low byte, the
+encoding is UTF-16 LE (zero at odd offsets) or UTF-16 BE (zero at even
+offsets). Empty input is `Some(Utf8)`. UTF-32 without a BOM is not detected.
+
+`load_diff` changes (Display mode only; Exact mode, used by `apply_hunk`,
+never decodes, so a hunk action on such a file fails with `BadSelection`):
+
+1. After `is_binary` is computed true, fetch the bytes of each present side
+   through the same resolution `file_content` uses (old: HEAD or index; new:
+   index or workdir), with `opts.max_decode_bytes` as the cap. A `TooLarge`
+   result leaves the diff binary.
+2. Detect each present side. If any present side is `None`, or every present
+   side is `Utf8`, the diff stays binary (a UTF-8 file with a NUL is binary).
+3. Otherwise decode each side, build `git2::Patch::from_buffers(old, old_path,
+new, new_path, opts)` with the same context and whitespace options, and
+   collect hunks with the existing collector. Set `is_binary = false`, the
+   two encoding fields, and `truncated` as usual.
+4. The `no_visible_change` rule is skipped when decoding happened: a file
+   whose only change is its encoding returns a diff with zero hunks and two
+   different encodings, not `NoChanges`.
+
+Tests in `tests/encoding.rs`: BOMs for all four UTF-16/32 variants; BOM-less
+LE and BE; ASCII and multibyte UTF-8 → `Utf8`; a PNG header → `None`; empty →
+`Some(Utf8)`; decode strips the BOM; an odd trailing byte decodes to one
+U+FFFD; an unpaired surrogate decodes to U+FFFD. In `tests/diff.rs`: a UTF-16
+LE file edited in place yields text hunks with both encodings `Utf16Le`; UTF-8
+→ UTF-16 LE with identical text yields zero hunks, `Utf8`/`Utf16Le`, no error;
+a real binary stays `is_binary`; a UTF-16 side above `max_decode_bytes` stays
+binary; `ignore_whitespace` applies to the decoded diff; `apply_hunk` on a
+UTF-16 file fails with `BadSelection`; an added UTF-16 file has
+`old_encoding == None`.
+
 ### 3.2 Tauri app
 
 - `error.rs`: `AppErrorKind::TooLarge` (`"tooLarge"`), mapped from
@@ -191,8 +279,10 @@ language import never triggers a dev-server re-optimisation reload.
 
 ### 4.2 IPC seam (`src/lib/ipc`)
 
-- `types.ts`: `export type DiffSide = "old" | "new";` and `"tooLarge"` added
-  to `AppErrorKind`.
+- `types.ts`: `export type DiffSide = "old" | "new";`,
+  `export type TextEncoding = "utf8" | "utf16Le" | "utf16Be" | "utf32Le" | "utf32Be";`,
+  `oldEncoding: TextEncoding | null` and `newEncoding: TextEncoding | null` on
+  `FileDiff`, and `"tooLarge"` added to `AppErrorKind`.
 - `errors.ts`: `tooLarge: true` in `KINDS`.
 - `commands.ts`:
   - `getFileDiff(id, path, scope, ignoreWhitespace, maxLines?: number)` passes
@@ -232,6 +322,7 @@ Pure model, no React, in `model/`:
 | `model/wordDiff.ts`  | `wordDiff(a: string, b: string): { old: Range[]; new: Range[] }`, `Range = { start: number; end: number }` in UTF-16 offsets. Tokens match `/[\p{L}\p{N}_]+\|\s+\|./gu`. LCS over tokens; adjacent changed tokens merge into one range. Over `WORD_DIFF_MAX_TOKENS` tokens on either side → one range covering the whole line each. Identical lines → empty ranges.                                                                                                                                                                                                                                           |
 | `model/highlight.ts` | `languageFor(path: string): LanguageDescription \| null` (`LanguageDescription.matchFilename(languages, basename)`); `tokenize(text: string, parser: Parser): Token[][]` (`Token = { text: string; className: string \| null }`, one array per line, lines split on `\n`); `sideText(hunk, side): { text: string; lineIndices: number[] }` (old = context + deletions, new = context + additions, in order); `highlightHunk(hunk, parser): (Token[] \| null)[]` indexed by `hunk.lines`; context lines take the new side's tokens. Class names come from `classHighlighter` (`tok-keyword`, `tok-string`, …). |
 | `model/images.ts`    | `IMAGE_EXTENSIONS = ["png","jpg","jpeg","gif","webp","bmp","ico","avif"]`, `isImagePath(path)`, `mimeFor(path)`. SVG is not listed: it diffs as text.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `model/encoding.ts`  | `encodingLabel(e: TextEncoding): string` ("UTF-8", "UTF-16 LE", "UTF-16 BE", "UTF-32 LE", "UTF-32 BE"); `encodingNotice(diff): string \| null` → `null` when both fields are null, "Decoded from {label}" when equal or one side absent, "Encoding changed from {old} to {new}" otherwise; `isDecoded(diff)`.                                                                                                                                                                                                                                                                                                 |
 | `model/limits.ts`    | `HIGHLIGHT_LIMIT = 20_000`, `FULL_DIFF_LINES = 1_000_000`, `WORD_DIFF_MAX_TOKENS = 400`, `totalLines(diff)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 Hooks:
@@ -245,16 +336,16 @@ Hooks:
 
 Components:
 
-| File                              | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DetailPane.tsx`                  | Replaces the placeholder in `RepoPane`. Props `{ repoId }`. Reads `useWorkspace` selection, `useDiffPrefs`, `useFileDiff`, `useWorktreeActions`. States in order: no selection → "Select a file to view its diff"; loading → "Loading diff…" (`role="status"`); `noChanges` → "No {staged\|unstaged} changes in {path}"; other error → `RepoError` with Retry and Dismiss; binary image → `ImageDiff`; other binary → `BinaryPlaceholder`; else `DiffToolbar` + `DiffViewer`. Owns `maxLines` state (`null` until "Load full diff", reset on file change), the discard `ConfirmDialog`, and action errors (`RepoError` above the viewer with Dismiss). |
-| `DiffToolbar.tsx`                 | File path (`oldPath → path` for renames), mode radio group ("Side by side" / "Unified"), "Hide whitespace changes" checkbox, line count summary (`+a −d`), and the truncation banner `"Showing the first N lines"` with a "Load full diff" button when `diff.truncated`.                                                                                                                                                                                                                                                                                                                                                                               |
-| `DiffViewer.tsx`                  | Props `{ diff; mode; highlight: HighlightMap \| null; selection?: UseLineSelection; onHunkAction?(action: HunkAction, selection: HunkSelection): void; actionsDisabledReason?: string }`. Builds rows with `buildRows`, virtualizes with `useVirtualizer({ count, getScrollElement, estimateSize: () => 22, measureElement })`, and renders `HunkHeader`, `UnifiedRow` or `SplitRow`. Omitting `onHunkAction` and `selection` makes it read-only (GR-9).                                                                                                                                                                                               |
-| `HunkHeader.tsx`                  | Header text plus buttons. Unstaged scope: "Stage hunk", "Discard hunk…"; staged: "Unstage hunk". With `n` lines selected in this hunk the labels become "Stage {n} lines" / "Discard {n} lines…" / "Unstage {n} lines". Buttons are `disabled` with `title={actionsDisabledReason}` when a reason is given.                                                                                                                                                                                                                                                                                                                                            |
-| `UnifiedRow.tsx` / `SplitRow.tsx` | Gutters are `<button aria-pressed>` for changed lines (toggle selection; shift handled via the event) and plain cells for context. Line numbers right-aligned, `font-variant-numeric: tabular-nums`. The line body is `LineContent`.                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `LineContent.tsx`                 | Renders `tokens ?? [{ text, className: null }]` as spans, splitting spans at word-diff range boundaries and wrapping changed segments in `<mark className={styles.word}>`. Appends the `⏎` "No newline at end of file" marker when `noNewlineAtEof`.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `ImageDiff.tsx`                   | Fetches old and new bytes with `useFileContent` (old path = `oldPath ?? path`; sides enabled per `change`: added → new only, deleted → old only). Shows two figures with captions "Old {w}×{h}" / "New {w}×{h}" (dimensions read from the `<img>` on load). `tooLarge` → "Image too large to preview" plus the error message per side. Blob URLs revoked on cleanup.                                                                                                                                                                                                                                                                                   |
-| `BinaryPlaceholder.tsx`           | "Binary file — no preview available" with the change kind.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| File                              | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DetailPane.tsx`                  | Replaces the placeholder in `RepoPane`. Props `{ repoId }`. Reads `useWorkspace` selection, `useDiffPrefs`, `useFileDiff`, `useWorktreeActions`. States in order: no selection → "Select a file to view its diff"; loading → "Loading diff…" (`role="status"`); `noChanges` → "No {staged\|unstaged} changes in {path}"; other error → `RepoError` with Retry and Dismiss; binary image → `ImageDiff`; other binary → `BinaryPlaceholder`; decoded with zero hunks → `DiffToolbar` + "Only the encoding changed"; else `DiffToolbar` + `DiffViewer`. Owns `maxLines` state (`null` until "Load full diff", reset on file change), the discard `ConfirmDialog`, and action errors (`RepoError` above the viewer with Dismiss). |
+| `DiffToolbar.tsx`                 | File path (`oldPath → path` for renames), mode radio group ("Side by side" / "Unified"), "Hide whitespace changes" checkbox, line count summary (`+a −d`), the encoding notice from `encodingNotice` when present, and the truncation banner `"Showing the first N lines"` with a "Load full diff" button when `diff.truncated`.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `DiffViewer.tsx`                  | Props `{ diff; mode; highlight: HighlightMap \| null; selection?: UseLineSelection; onHunkAction?(action: HunkAction, selection: HunkSelection): void; actionsDisabledReason?: string }`. Builds rows with `buildRows`, virtualizes with `useVirtualizer({ count, getScrollElement, estimateSize: () => 22, measureElement })`, and renders `HunkHeader`, `UnifiedRow` or `SplitRow`. Omitting `onHunkAction` and `selection` makes it read-only (GR-9).                                                                                                                                                                                                                                                                      |
+| `HunkHeader.tsx`                  | Header text plus buttons. Unstaged scope: "Stage hunk", "Discard hunk…"; staged: "Unstage hunk". With `n` lines selected in this hunk the labels become "Stage {n} lines" / "Discard {n} lines…" / "Unstage {n} lines". Buttons are `disabled` with `title={actionsDisabledReason}` when a reason is given.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `UnifiedRow.tsx` / `SplitRow.tsx` | Gutters are `<button aria-pressed>` for changed lines (toggle selection; shift handled via the event) and plain cells for context. Line numbers right-aligned, `font-variant-numeric: tabular-nums`. The line body is `LineContent`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `LineContent.tsx`                 | Renders `tokens ?? [{ text, className: null }]` as spans, splitting spans at word-diff range boundaries and wrapping changed segments in `<mark className={styles.word}>`. Appends the `⏎` "No newline at end of file" marker when `noNewlineAtEof`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ImageDiff.tsx`                   | Fetches old and new bytes with `useFileContent` (old path = `oldPath ?? path`; sides enabled per `change`: added → new only, deleted → old only). Shows two figures with captions "Old {w}×{h}" / "New {w}×{h}" (dimensions read from the `<img>` on load). `tooLarge` → "Image too large to preview" plus the error message per side. Blob URLs revoked on cleanup.                                                                                                                                                                                                                                                                                                                                                          |
+| `BinaryPlaceholder.tsx`           | "Binary file — no preview available" with the change kind.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Styling: CSS Modules per component; new tokens in `src/styles/tokens.css`
 (`--color-added-bg`, `--color-removed-bg`, `--color-added-word-bg`,
@@ -283,6 +374,9 @@ display: flex; flex-direction: column` so the viewer scrolls inside it.
 - Action errors (`badSelection`, `applyFailed`, …) show above the viewer
   with Dismiss; the refetch triggered by `onSettled` already refreshes the
   stale diff.
+- For a decoded file (`isDecoded(diff)`) hunk and line buttons disable with
+  the reason "Hunk actions are unavailable for files decoded from UTF-16 or
+  UTF-32; stage or discard the whole file from the Changes panel".
 - Mode and whitespace preferences apply to every repository tab.
 - Switching tabs or files resets line selection and `maxLines`.
 
@@ -310,7 +404,8 @@ display: flex; flex-direction: column` so the viewer scrolls inside it.
    highlighting on a `.ts` and a `.rs` file, line numbers on both sides,
    whitespace toggle hides a whitespace-only hunk, PNG preview and a
    non-image binary placeholder, a 50 000-line file scrolls with fewer than
-   200 rows in the DOM, word highlights on an edited line, stage one hunk,
+   200 rows in the DOM, word highlights on an edited line, a UTF-16 LE file shows a text diff with
+   the encoding notice and disabled hunk buttons, stage one hunk,
    stage two lines, unstage one hunk, discard one hunk with confirmation.
 4. Jira GR-5 transitions to Done with the walk results and any decisions
    worth revisiting in a comment.
