@@ -1127,3 +1127,68 @@ fn apply_hunk_discard_replaced_unterminated_line_restores_it() {
         .expect("discard");
     assert_eq!(read(&path, "f.txt"), "x");
 }
+
+// --- coverage audit: the session's cached index must not clobber external index writes ---
+
+#[test]
+fn apply_hunk_stage_keeps_index_entry_added_through_another_handle() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# fixture\nsecond\n");
+    common::write_file(&path, "ext.txt", "e\n");
+    let s = session(&path);
+    s.status().expect("status warms the cached index");
+    common::stage(&path, "ext.txt");
+    s.apply_hunk("README.md", HunkAction::Stage, &whole())
+        .expect("stage hunk");
+    let status = session(&path).status().expect("status");
+    assert_eq!(
+        (
+            status_entry(&status, "README.md").index,
+            status_entry(&status, "ext.txt").index
+        ),
+        (Some(ChangeKind::Modified), Some(ChangeKind::Added))
+    );
+}
+
+#[test]
+fn apply_hunk_unstage_keeps_index_entry_added_through_another_handle() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# fixture\nsecond\n");
+    common::stage(&path, "README.md");
+    common::write_file(&path, "ext.txt", "e\n");
+    let s = session(&path);
+    s.status().expect("status warms the cached index");
+    common::stage(&path, "ext.txt");
+    s.apply_hunk("README.md", HunkAction::Unstage, &whole())
+        .expect("unstage hunk");
+    let status = session(&path).status().expect("status");
+    assert_eq!(
+        (
+            status_entry(&status, "README.md").index,
+            status_entry(&status, "ext.txt").index
+        ),
+        (None, Some(ChangeKind::Added))
+    );
+}
+
+// --- coverage audit: whole-untracked stage goes through stage_paths ---
+
+#[test]
+fn apply_hunk_stage_whole_untracked_keeps_index_entry_added_through_another_handle() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "new.txt", "n\n");
+    common::write_file(&path, "ext.txt", "e\n");
+    let s = session(&path);
+    s.status().expect("status warms the cached index");
+    common::stage(&path, "ext.txt");
+    s.apply_hunk("new.txt", HunkAction::Stage, &whole())
+        .expect("stage untracked");
+    let status = session(&path).status().expect("status");
+    assert_eq!(
+        (
+            status_entry(&status, "new.txt").index,
+            status_entry(&status, "ext.txt").index
+        ),
+        (Some(ChangeKind::Added), Some(ChangeKind::Added))
+    );
+}

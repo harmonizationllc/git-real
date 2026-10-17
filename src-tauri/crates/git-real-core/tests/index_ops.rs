@@ -729,3 +729,285 @@ fn unstage_all_sees_index_changed_through_another_handle() {
     s.unstage_all().expect("unstage all");
     assert_eq!(sides(&path, "ext.txt"), (None, Some(ChangeKind::Untracked)));
 }
+
+// --- coverage audit: path guard edge cases (repo_relative is private, so tested through the API) ---
+
+/// Spellings `repo_relative` must reject even though the file they hint at exists.
+const MALFORMED_PATHS: [&str; 9] = [
+    "a//b",
+    "./a",
+    "a/./b",
+    "a/../b",
+    ".GIT",
+    ".Git/config",
+    ".git/",
+    "",
+    "/",
+];
+
+fn repo_with_lookalike_files() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a/b", "b\n");
+    common::write_file(&path, "b", "b\n");
+    (dir, path)
+}
+
+#[test]
+fn stage_paths_rejects_malformed_paths_and_stages_nothing() {
+    let (_dir, path) = repo_with_lookalike_files();
+    for bad in MALFORMED_PATHS {
+        let err = session(&path).stage_paths(&paths(&[bad])).expect_err(bad);
+        assert!(matches!(err, GitError::PathNotFound(_)), "{bad:?}: {err:?}");
+    }
+    assert_eq!(sides(&path, "a/b"), (None, Some(ChangeKind::Untracked)));
+}
+
+#[test]
+fn unstage_paths_rejects_malformed_paths() {
+    let (_dir, path) = repo_with_lookalike_files();
+    for bad in MALFORMED_PATHS {
+        let err = session(&path).unstage_paths(&paths(&[bad])).expect_err(bad);
+        assert!(matches!(err, GitError::PathNotFound(_)), "{bad:?}: {err:?}");
+    }
+}
+
+#[test]
+fn discard_paths_rejects_malformed_paths_and_deletes_nothing() {
+    let (_dir, path) = repo_with_lookalike_files();
+    for bad in MALFORMED_PATHS {
+        let err = session(&path).discard_paths(&paths(&[bad])).expect_err(bad);
+        assert!(matches!(err, GitError::PathNotFound(_)), "{bad:?}: {err:?}");
+    }
+    assert!(path.join("a/b").exists() && path.join("b").exists());
+    assert!(path.join(".git").exists());
+}
+
+#[test]
+fn path_guard_error_carries_the_raw_input() {
+    let (_dir, path) = repo_with_lookalike_files();
+    let err = session(&path)
+        .stage_paths(&paths(&["./a"]))
+        .expect_err("dot component");
+    assert!(
+        matches!(&err, GitError::PathNotFound(p) if p == std::path::Path::new("./a")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn stage_paths_allows_dot_git_lookalike_names() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, ".gitignore", "target\n");
+    common::write_file(&path, ".github/ci.yml", "on: push\n");
+    session(&path)
+        .stage_paths(&paths(&[".gitignore", ".github/ci.yml"]))
+        .expect("lookalikes are not .git");
+    assert_eq!(
+        (sides(&path, ".gitignore"), sides(&path, ".github/ci.yml")),
+        (
+            (Some(ChangeKind::Added), None),
+            (Some(ChangeKind::Added), None)
+        )
+    );
+}
+
+#[test]
+fn discard_paths_allows_dot_git_lookalike_names() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, ".gitignore", "target\n");
+    session(&path)
+        .discard_paths(&paths(&[".gitignore"]))
+        .expect("untracked .gitignore is discardable");
+    assert!(!path.join(".gitignore").exists());
+}
+
+#[test]
+fn stage_paths_strips_repeated_trailing_slashes() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "a.txt", "a\n");
+    session(&path)
+        .stage_paths(&paths(&["a.txt///"]))
+        .expect("stage");
+    assert_eq!(sides(&path, "a.txt"), (Some(ChangeKind::Added), None));
+}
+
+// --- coverage audit: symlinks ---
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_untracked_symlink_to_outside_dir_removes_only_the_link() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let outside = tempfile::tempdir().expect("outside dir");
+    std::fs::write(outside.path().join("precious.txt"), "keep\n").unwrap();
+    std::os::unix::fs::symlink(outside.path(), path.join("link")).unwrap();
+    session(&path)
+        .discard_paths(&paths(&["link"]))
+        .expect("discard link");
+    assert!(path.join("link").symlink_metadata().is_err());
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("precious.txt")).unwrap(),
+        "keep\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn discard_paths_dangling_untracked_symlink_is_removed() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::os::unix::fs::symlink("nowhere", path.join("dangling")).unwrap();
+    session(&path)
+        .discard_paths(&paths(&["dangling"]))
+        .expect("discard dangling");
+    assert!(path.join("dangling").symlink_metadata().is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn stage_paths_stages_dangling_symlink() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    std::os::unix::fs::symlink("nowhere", path.join("dangling")).unwrap();
+    session(&path)
+        .stage_paths(&paths(&["dangling"]))
+        .expect("stage dangling");
+    assert_eq!(sides(&path, "dangling"), (Some(ChangeKind::Added), None));
+}
+
+// --- coverage audit: conflicts ---
+
+#[test]
+fn stage_paths_resolves_conflict_to_a_modified_index_entry() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    common::write_file(&path, "README.md", "# resolved\n");
+    session(&path)
+        .stage_paths(&paths(&["README.md"]))
+        .expect("stage");
+    let e = entry(&path, "README.md");
+    assert_eq!((e.conflicted, e.index), (false, Some(ChangeKind::Modified)));
+}
+
+#[test]
+fn stage_paths_resolves_conflict_by_deletion() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    session(&path)
+        .stage_paths(&paths(&["README.md"]))
+        .expect("stage deletion");
+    let e = entry(&path, "README.md");
+    assert_eq!((e.conflicted, e.index), (false, Some(ChangeKind::Deleted)));
+}
+
+#[test]
+fn unstage_paths_on_conflicted_path_resets_it_to_head() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    session(&path)
+        .unstage_paths(&paths(&["README.md"]))
+        .expect("unstage conflicted");
+    assert!(
+        !status_of(&path)
+            .entries
+            .iter()
+            .any(|e| e.path == "README.md" && e.conflicted)
+    );
+}
+
+// --- coverage audit: renames ---
+
+fn repo_with_staged_rename() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    std::fs::rename(path.join("README.md"), path.join("MOVED.md")).unwrap();
+    common::stage(&path, "README.md");
+    common::stage(&path, "MOVED.md");
+    (dir, path)
+}
+
+#[test]
+fn unstage_paths_of_both_sides_of_a_staged_rename_undoes_it() {
+    let (_dir, path) = repo_with_staged_rename();
+    let staged = entry(&path, "MOVED.md");
+    assert_eq!(
+        (staged.index, staged.old_path.as_deref()),
+        (Some(ChangeKind::Renamed), Some("README.md"))
+    );
+    session(&path)
+        .unstage_paths(&paths(&["README.md", "MOVED.md"]))
+        .expect("unstage rename");
+    // Nothing is staged any more; the move is now an unstaged rename.
+    let status = status_of(&path);
+    assert!(
+        status.entries.iter().all(|e| e.index.is_none()),
+        "{status:?}"
+    );
+    let moved = entry(&path, "MOVED.md");
+    assert_eq!(
+        (moved.worktree, moved.old_path.as_deref()),
+        (Some(ChangeKind::Renamed), Some("README.md"))
+    );
+}
+
+#[test]
+fn unstage_paths_of_only_the_new_side_leaves_the_deletion_staged() {
+    let (_dir, path) = repo_with_staged_rename();
+    session(&path)
+        .unstage_paths(&paths(&["MOVED.md"]))
+        .expect("unstage new side");
+    assert_eq!(
+        (sides(&path, "README.md"), sides(&path, "MOVED.md")),
+        (
+            (Some(ChangeKind::Deleted), None),
+            (None, Some(ChangeKind::Untracked))
+        )
+    );
+}
+
+// --- coverage audit: stage_all / unstage_all ---
+
+#[test]
+fn stage_all_stages_nested_untracked_directory_and_deletion_together() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "deep/er/leaf.txt", "leaf\n");
+    common::write_file(&path, "deep/top.txt", "top\n");
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    session(&path).stage_all().expect("stage all");
+    assert_eq!(
+        (
+            sides(&path, "deep/er/leaf.txt"),
+            sides(&path, "deep/top.txt"),
+            sides(&path, "README.md")
+        ),
+        (
+            (Some(ChangeKind::Added), None),
+            (Some(ChangeKind::Added), None),
+            (Some(ChangeKind::Deleted), None)
+        )
+    );
+}
+
+#[test]
+fn stage_all_skips_ignored_files() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, ".gitignore", "*.log\n");
+    common::write_file(&path, "debug.log", "noise\n");
+    session(&path).stage_all().expect("stage all");
+    let listed: Vec<_> = status_of(&path)
+        .entries
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    assert!(!listed.contains(&"debug.log".to_string()), "{listed:?}");
+}
+
+#[test]
+fn unstage_all_unborn_with_nested_staged_files_leaves_them_untracked() {
+    let (_dir, path) = common::temp_repo_unborn();
+    common::write_file(&path, "d/a.txt", "a\n");
+    common::write_file(&path, "b.txt", "b\n");
+    session(&path).stage_all().expect("stage all");
+    session(&path).unstage_all().expect("unstage all");
+    assert_eq!(
+        (sides(&path, "d/a.txt"), sides(&path, "b.txt")),
+        (
+            (None, Some(ChangeKind::Untracked)),
+            (None, Some(ChangeKind::Untracked))
+        )
+    );
+}
