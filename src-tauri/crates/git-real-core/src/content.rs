@@ -82,8 +82,9 @@ impl RepoSession {
     }
 }
 
-/// Reads at most `max_bytes` of the working-tree file, so a file that grows
-/// after its metadata was read still cannot exceed the cap.
+/// Reads the working-tree file, refusing it when its size is above `max_bytes`.
+/// The read itself is bounded too, so a file that grows after its metadata was
+/// read still cannot exceed the cap.
 fn workdir_bytes(workdir: &Path, rel: &str, max_bytes: u64) -> Result<Vec<u8>, GitError> {
     let full = workdir.join(rel);
     let meta = std::fs::symlink_metadata(&full).map_err(|_| not_found(rel))?;
@@ -95,6 +96,10 @@ fn workdir_bytes(workdir: &Path, rel: &str, max_bytes: u64) -> Result<Vec<u8>, G
     if !meta.is_file() {
         return Err(not_found(rel));
     }
+    if meta.len() > max_bytes {
+        return Err(too_large(rel, meta.len(), max_bytes));
+    }
+    // The file may have grown since its metadata was read.
     let mut bytes = Vec::new();
     std::fs::File::open(&full)?
         .take(max_bytes.saturating_add(1))
