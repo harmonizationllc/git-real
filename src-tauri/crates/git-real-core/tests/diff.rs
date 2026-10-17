@@ -609,6 +609,8 @@ fn diff_file_diff_serializes_camel_case() {
             "change",
             "hunks",
             "isBinary",
+            "newEncoding",
+            "oldEncoding",
             "oldPath",
             "path",
             "scope",
