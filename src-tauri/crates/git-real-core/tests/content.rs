@@ -373,3 +373,17 @@ fn unreadable_workdir_file_is_an_io_error_not_not_found() {
     let result = content(&path, "secret.txt", DiffScope::Unstaged, DiffSide::New);
     assert!(matches!(result, Err(GitError::Io(_))), "{result:?}");
 }
+
+#[test]
+fn too_large_workdir_file_reports_its_real_length() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "ten.txt", "0123456789");
+    match content_with(&path, "ten.txt", DiffScope::Unstaged, DiffSide::New, 3) {
+        Err(GitError::TooLarge {
+            path: p,
+            size,
+            limit,
+        }) => assert_eq!((p.as_str(), size, limit), ("ten.txt", 10, 3)),
+        other => panic!("expected TooLarge with the real size, got {other:?}"),
+    }
+}

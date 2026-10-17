@@ -582,3 +582,105 @@ fn exact_mode_still_rejects_utf16_unstage() {
         Err(GitError::BadSelection)
     ));
 }
+
+#[test]
+fn staged_rename_edit_of_utf16_file_decodes_old_side_by_old_path() {
+    let (_d, path) = repo_with_utf16_file();
+    std::fs::remove_file(path.join("a.txt")).unwrap();
+    write_bytes(&path, "b.txt", &utf16le("one\nTWO\n"));
+    common::stage(&path, "a.txt");
+    common::stage(&path, "b.txt");
+    let d = diff(&path, "b.txt", DiffScope::Staged, DiffOptions::default()).unwrap();
+    assert_eq!(d.old_path.as_deref(), Some("a.txt"));
+    assert!(!d.is_binary);
+    assert_eq!(
+        (d.old_encoding, d.new_encoding),
+        (Some(TextEncoding::Utf16Le), Some(TextEncoding::Utf16Le))
+    );
+    assert_eq!(d.hunks.len(), 1);
+    assert_eq!(
+        line_summary(&d),
+        vec![
+            (DiffLineKind::Context, "one"),
+            (DiffLineKind::Deletion, "two"),
+            (DiffLineKind::Addition, "TWO"),
+        ]
+    );
+}
+
+#[test]
+fn deleted_utf16_file_shows_only_deletions() {
+    let (_d, path) = repo_with_utf16_file();
+    std::fs::remove_file(path.join("a.txt")).unwrap();
+    let d = diff(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).unwrap();
+    assert!(!d.is_binary);
+    assert_eq!(
+        (d.old_encoding, d.new_encoding),
+        (Some(TextEncoding::Utf16Le), None)
+    );
+    assert_eq!(
+        line_summary(&d),
+        vec![
+            (DiffLineKind::Deletion, "one"),
+            (DiffLineKind::Deletion, "two")
+        ]
+    );
+}
+
+#[test]
+fn utf16_be_with_bom_edited_in_place_is_decoded() {
+    let (_d, path) = common::temp_repo_with_commit();
+    write_bytes(&path, "a.txt", &utf16be("one\ntwo\n"));
+    common::commit_all(&path, "utf16 be");
+    write_bytes(&path, "a.txt", &utf16be("one\nTWO\n"));
+    let d = diff(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).unwrap();
+    assert!(!d.is_binary);
+    assert_eq!(
+        (d.old_encoding, d.new_encoding),
+        (Some(TextEncoding::Utf16Be), Some(TextEncoding::Utf16Be))
+    );
+    assert_eq!(
+        line_summary(&d),
+        vec![
+            (DiffLineKind::Context, "one"),
+            (DiffLineKind::Deletion, "two"),
+            (DiffLineKind::Addition, "TWO"),
+        ]
+    );
+}
+
+#[test]
+fn utf32_le_with_bom_edited_in_place_is_decoded() {
+    let (_d, path) = common::temp_repo_with_commit();
+    write_bytes(&path, "w.txt", &utf32le("one\ntwo\n"));
+    common::commit_all(&path, "utf32 le");
+    write_bytes(&path, "w.txt", &utf32le("one\nTWO\n"));
+    let d = diff(&path, "w.txt", DiffScope::Unstaged, DiffOptions::default()).unwrap();
+    assert!(!d.is_binary);
+    assert_eq!(
+        (d.old_encoding, d.new_encoding),
+        (Some(TextEncoding::Utf32Le), Some(TextEncoding::Utf32Le))
+    );
+    assert_eq!(
+        line_summary(&d),
+        vec![
+            (DiffLineKind::Context, "one"),
+            (DiffLineKind::Deletion, "two"),
+            (DiffLineKind::Addition, "TWO"),
+        ]
+    );
+}
+
+#[test]
+fn only_new_side_above_max_decode_bytes_stays_binary() {
+    let (_d, path) = repo_with_utf16_file(); // old side is 18 bytes
+    write_bytes(&path, "a.txt", &utf16le("one\ntwo\nthree\nfour\n")); // 2 + 36 bytes
+    let opts = DiffOptions {
+        max_decode_bytes: 20, // old fits, new does not
+        ..DiffOptions::default()
+    };
+    let d = diff(&path, "a.txt", DiffScope::Unstaged, opts).unwrap();
+    assert!(d.is_binary);
+    assert!(d.hunks.is_empty());
+    assert_eq!((d.old_encoding, d.new_encoding), (None, None));
+}
