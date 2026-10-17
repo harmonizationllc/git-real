@@ -563,6 +563,8 @@ fn hand_diff(
             lines,
         }],
         truncated: false,
+        old_encoding: None,
+        new_encoding: None,
     }
 }
 
