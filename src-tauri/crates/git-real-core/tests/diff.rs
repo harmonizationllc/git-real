@@ -122,11 +122,18 @@ fn diff_hunk_header_has_range_markers() {
         DiffOptions::default(),
     )
     .expect("diff");
-    assert!(
-        diff.hunks[0].header.starts_with("@@ -1 +1,2 @@"),
-        "header was {:?}",
-        diff.hunks[0].header
-    );
+    assert_eq!(diff.hunks[0].header, "@@ -1 +1,2 @@");
+}
+
+#[test]
+fn diff_hunk_header_keeps_section_text_without_newline() {
+    let (_dir, path) = ten_line_fixture();
+    let opts = DiffOptions {
+        context_lines: 1,
+        ..Default::default()
+    };
+    let diff = diff_of(&path, "ten.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!(diff.hunks[0].header, "@@ -4,3 +4,3 @@ l3");
 }
 
 // --- untracked files ---
@@ -353,13 +360,13 @@ fn diff_no_newline_at_eof_flag() {
     let (_dir, path) = common::temp_repo_with_commit();
     common::write_file(&path, "a.txt", "x");
     common::stage(&path, "a.txt");
-    common::write_file(&path, "a.txt", "y\n");
+    common::write_file(&path, "a.txt", "y");
     let diff = diff_of(&path, "a.txt", DiffScope::Unstaged, DiffOptions::default()).expect("diff");
     assert_eq!(
         diff.hunks[0].lines,
         vec![
             line(DiffLineKind::Deletion, Some(1), None, "x", true),
-            line(DiffLineKind::Addition, None, Some(1), "y", false),
+            line(DiffLineKind::Addition, None, Some(1), "y", true),
         ]
     );
 }
@@ -1233,4 +1240,37 @@ fn file_diff_deserializes_from_frontend_shaped_json() {
         diff.hunks[0].lines[0],
         line(DiffLineKind::Context, Some(1), Some(1), "x", true)
     );
+}
+
+// --- fix round 1 ---
+
+#[test]
+fn diff_single_line_without_newline_at_max_lines_one_is_not_truncated() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "x.txt", "x");
+    let opts = DiffOptions {
+        max_lines: 1,
+        ..Default::default()
+    };
+    let diff = diff_of(&path, "x.txt", DiffScope::Unstaged, opts).expect("diff");
+    assert_eq!(
+        (diff.truncated, diff.hunks[0].lines.clone()),
+        (
+            false,
+            vec![line(DiffLineKind::Addition, None, Some(1), "x", true)]
+        )
+    );
+}
+
+// Expected RED until the developer fixes it: the whitespace-only check must not
+// look at the already-truncated hunk list.
+#[test]
+fn diff_max_lines_zero_is_ok_truncated_with_no_hunks() {
+    let (_dir, path) = twenty_line_fixture(two_replacements);
+    let opts = DiffOptions {
+        max_lines: 0,
+        ..Default::default()
+    };
+    let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("Ok, not NoChanges");
+    assert_eq!((diff.truncated, diff.hunks.is_empty()), (true, true));
 }

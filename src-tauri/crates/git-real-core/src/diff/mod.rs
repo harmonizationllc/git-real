@@ -30,7 +30,7 @@ impl RepoSession {
 
         let no_visible_change = change == ChangeKind::Modified
             && !is_binary
-            && hunks.is_empty()
+            && patch.num_hunks() == 0
             && delta.old_file().mode() == delta.new_file().mode();
         if no_visible_change {
             return Err(no_changes());
