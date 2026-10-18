@@ -130,6 +130,41 @@ describe("DetailPane no changes", () => {
     expect(await screen.findByText("No staged changes in a.ts")).toBeInTheDocument();
   });
 
+  it("should offer to turn off whitespace hiding when it is on", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockRejectedValue(noChanges);
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    expect(screen.getByRole("checkbox", { name: "Hide whitespace changes" })).toBeChecked();
+  });
+
+  it("should turn whitespace hiding off from the empty state", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockRejectedValue(noChanges);
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    expect(useDiffPrefs.getState().ignoreWhitespace).toBe(false);
+  });
+
+  it("should refetch without ignoreWhitespace after turning it off from the empty state", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockRejectedValue(noChanges);
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    await waitFor(() =>
+      expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", false, undefined),
+    );
+  });
+
+  it("should render no whitespace control in the plain empty state", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(noChanges);
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    expect(screen.queryByRole("checkbox", { name: "Hide whitespace changes" })).toBeNull();
+  });
+
   it("should not show an alert for noChanges", async () => {
     vi.mocked(getFileDiff).mockRejectedValue(noChanges);
     setup();
@@ -491,6 +526,7 @@ describe("DetailPane stale discard", () => {
     vi.mocked(getFileDiff).mockResolvedValue(changed);
     await act(() => queryClient.invalidateQueries());
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
     expect(applyHunk).not.toHaveBeenCalled();
   });
 

@@ -90,7 +90,7 @@ describe("LineContent word-diff ranges", () => {
 describe("LineContent empty line", () => {
   it("should render a non-breaking space when the text is empty", () => {
     const { container } = setup("");
-    expect(container.querySelector("code")?.textContent).toBe(" ");
+    expect(container.querySelector("code")?.textContent).toBe("\u00a0");
   });
 
   it("should not render a placeholder when the text is not empty", () => {

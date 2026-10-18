@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getFileContent } from "../../lib/ipc";
@@ -347,5 +348,23 @@ describe("ImageDiff per-side state", () => {
     setup(imageDiff({ change: "deleted" }));
     await screen.findByAltText("Old image");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+// Contract: StrictMode's double-invoked effects must not leave a revoked URL on a live image.
+describe("ImageDiff under StrictMode", () => {
+  it("should not revoke the URL of any image that is still shown", async () => {
+    let n = 0;
+    createObjectURL.mockImplementation(() => `blob:${++n}`);
+    renderWithProviders(
+      <StrictMode>
+        <ImageDiff repoId={1} diff={imageDiff()} />
+      </StrictMode>,
+    );
+    const oldImg = await screen.findByAltText("Old image");
+    const newImg = await screen.findByAltText("New image");
+    const revoked = revokeObjectURL.mock.calls.map(([url]) => url);
+    expect(revoked).not.toContain(oldImg.getAttribute("src"));
+    expect(revoked).not.toContain(newImg.getAttribute("src"));
   });
 });
