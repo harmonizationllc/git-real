@@ -1176,3 +1176,30 @@ describe("BranchesPanel busy state after failure", () => {
     for (const item of items) expect(item).toBeDisabled();
   });
 });
+
+// Contract: New branch… is unavailable while any action is pending, and on an unborn HEAD.
+describe("BranchesPanel New branch… while pending", () => {
+  const busy = () => screen.getByRole("region", { name: "Branches" });
+
+  it("should disable New branch… while an action is pending and enable it once it settles", async () => {
+    const d = deferred();
+    vi.mocked(checkoutBranch).mockReturnValue(d.promise);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await waitFor(() => expect(busy()).toHaveAttribute("aria-busy", "true"));
+    expect(screen.getByRole("button", { name: "New branch…" })).toBeDisabled();
+    d.resolve();
+    await waitFor(() => expect(busy()).not.toHaveAttribute("aria-busy"));
+    expect(screen.getByRole("button", { name: "New branch…" })).toBeEnabled();
+  });
+
+  it("should keep New branch… disabled with its title on an unborn HEAD", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      list({ head: { kind: "unborn", name: "main" }, local: [] }),
+    );
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    const button = await screen.findByRole("button", { name: "New branch…" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAttribute("title", "Make a commit first");
+  });
+});
