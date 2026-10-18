@@ -6,6 +6,8 @@ interface Props {
   scope: DiffScope;
   selectedCount: number;
   disabledReason?: string;
+  /** Disables only the whole-hunk form of each button; selected-line actions stay enabled. */
+  wholeHunkDisabledReason?: string;
   /** Absent for a read-only viewer: no buttons are rendered. */
   onAction?(action: HunkAction): void;
 }
@@ -16,7 +18,16 @@ function label(verb: string, n: number, ellipsis = ""): string {
   return `${verb} ${n} ${n === 1 ? "line" : "lines"}${ellipsis}`;
 }
 
-export function HunkHeader({ header, scope, selectedCount, disabledReason, onAction }: Props) {
+export function HunkHeader({
+  header,
+  scope,
+  selectedCount,
+  disabledReason,
+  wholeHunkDisabledReason,
+  onAction,
+}: Props) {
+  // A global reason wins; the whole-hunk reason applies only while no lines are selected.
+  const reason = disabledReason ?? (selectedCount === 0 ? wholeHunkDisabledReason : undefined);
   return (
     <div className={styles.root} data-kind="header">
       <code className={styles.text}>{header}</code>
@@ -24,7 +35,7 @@ export function HunkHeader({ header, scope, selectedCount, disabledReason, onAct
         <Actions
           scope={scope}
           selectedCount={selectedCount}
-          disabledReason={disabledReason}
+          disabledReason={reason}
           onAction={onAction}
         />
       )}

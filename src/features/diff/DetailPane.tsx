@@ -115,7 +115,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
       )}
       {diff.hunks.length === 0 ? (
         <Empty>
-          {isDecoded(diff) ? "Only the encoding changed" : "No line changes in this file"}
+          {encodingChanged(diff) ? "Only the encoding changed" : "No line changes in this file"}
         </Empty>
       ) : (
         <DiffViewer
@@ -145,6 +145,11 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
       />
     </div>
   );
+}
+
+/** Both sides were decoded, from different encodings; anything else changed no lines. */
+function encodingChanged({ oldEncoding, newEncoding }: FileDiff): boolean {
+  return oldEncoding !== null && newEncoding !== null && oldEncoding !== newEncoding;
 }
 
 function Empty({ children, role }: { children: React.ReactNode; role?: string }) {

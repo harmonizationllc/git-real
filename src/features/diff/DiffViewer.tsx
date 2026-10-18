@@ -10,6 +10,9 @@ import { UnifiedRow } from "./UnifiedRow";
 import type { UseLineSelection } from "./useLineSelection";
 import styles from "./DiffViewer.module.css";
 
+/** apply_hunk acts on the whole hunk, but a truncated diff shows only part of its last one. */
+const TRUNCATED_REASON = "Load the full diff to stage, unstage or discard this hunk";
+
 export interface DiffViewerProps {
   diff: FileDiff;
   mode: DiffMode;
@@ -57,6 +60,9 @@ export function DiffViewer({
           scope={diff.scope}
           selectedCount={selection?.hunkIndex === row.hunkIndex ? selection.selected.size : 0}
           disabledReason={actionsDisabledReason}
+          wholeHunkDisabledReason={
+            diff.truncated && row.hunkIndex === diff.hunks.length - 1 ? TRUNCATED_REASON : undefined
+          }
           onAction={onHunkAction && ((action) => onHunkAction(action, selectionFor(row.hunkIndex)))}
         />
       );
