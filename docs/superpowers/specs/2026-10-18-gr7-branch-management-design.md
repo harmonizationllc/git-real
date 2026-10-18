@@ -51,7 +51,7 @@ only has to call it with a commit id.
   would be the one write path that silently diverges from the terminal.
   `git switch` needs git 2.23 (2019); the app already requires the CLI.
 - **Deleting a remote branch shells out to `git push <remote> --delete
-<name>`.** It is a network operation (ADR 0001). Credentials come from the
+heads/<name>`.** It is a network operation (ADR 0001). Credentials come from the
   user's agent or credential helper; `GIT_TERMINAL_PROMPT=0` turns a prompt
   into an error instead of a hang.
 - **Everything else is git2**: listing (with upstream and ahead/behind),
@@ -156,7 +156,7 @@ pub struct BranchList {
 // refs/switch.rs
 pub enum SwitchTarget<'a> {
     Local(&'a str),                                    // git switch <name>
-    NewTracking { name: &'a str, upstream: &'a str },  // git switch -c <name> --track <upstream>
+    NewTracking { name: &'a str, upstream: &'a str },  // git switch -c <name> --track refs/remotes/<remote>/<name>
 }
 ```
 
@@ -201,7 +201,9 @@ Local(name))`.
 (remote)` NotFound → `RemoteNotFound(remote)`; `find_branch("remote/name",
 Remote)` NotFound → `BranchNotFound("remote/name")`; if `find_branch(name,
 Local)` is `Ok` → `switch::run(Local(name))`, else `switch::run
-(NewTracking { name, upstream: "remote/name" })`.
+(NewTracking { name, upstream: "refs/remotes/remote/name" })` (the full
+  refname, so a local branch literally named `remote/name` cannot be tracked
+  by mistake).
 - `prepare_remote_delete(remote, name) -> PushDelete`: validate `name`;
   `find_remote` NotFound → `RemoteNotFound`; `find_branch("remote/name",
 Remote)` NotFound → `BranchNotFound`; returns the validated arguments
