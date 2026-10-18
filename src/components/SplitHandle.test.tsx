@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { KEY_STEP } from "../app/layout";
 import { SplitHandle } from "./SplitHandle";
 
 type Props = Partial<React.ComponentProps<typeof SplitHandle>>;
@@ -15,15 +14,15 @@ function renderHandle(props: Props = {}) {
       value={300}
       min={160}
       max={500}
+      step={16}
       onChange={onChange}
       onReset={onReset}
       {...props}
     />,
   );
   const handle = screen.getByRole("separator");
-  const setPointerCapture = vi.fn();
-  const releasePointerCapture = vi.fn();
-  Object.assign(handle, { setPointerCapture, releasePointerCapture });
+  const setPointerCapture = vi.spyOn(handle, "setPointerCapture");
+  const releasePointerCapture = vi.spyOn(handle, "releasePointerCapture");
   return { handle, onChange, onReset, setPointerCapture, releasePointerCapture };
 }
 
@@ -84,14 +83,14 @@ describe("SplitHandle keyboard", () => {
     const { handle, onChange } = renderHandle();
     handle.focus();
     await userEvent.keyboard("{ArrowRight}");
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 + KEY_STEP);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 + 16);
   });
 
   it("should narrow by one step on ArrowLeft", async () => {
     const { handle, onChange } = renderHandle();
     handle.focus();
     await userEvent.keyboard("{ArrowLeft}");
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 - KEY_STEP);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 - 16);
   });
 
   it("should jump to min on Home", async () => {
@@ -127,6 +126,32 @@ describe("SplitHandle keyboard", () => {
     handle.focus();
     await userEvent.keyboard("a{ArrowUp}{ArrowDown}{Enter}");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("should step by the step prop", async () => {
+    const { handle, onChange } = renderHandle({ step: 5 });
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(305);
+  });
+
+  it("should do nothing on End when max is not finite", async () => {
+    const { handle, onChange } = renderHandle({ max: Infinity });
+    handle.focus();
+    await userEvent.keyboard("{End}");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("should still step with ArrowRight when max is not finite", async () => {
+    const { handle, onChange } = renderHandle({ max: Infinity });
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(316);
+  });
+
+  it("should omit aria-valuemax when max is not finite", () => {
+    const { handle } = renderHandle({ max: Infinity });
+    expect(handle).not.toHaveAttribute("aria-valuemax");
   });
 
   it("should prevent the default action of a handled key", () => {
@@ -184,6 +209,14 @@ describe("SplitHandle pointer drag", () => {
     const { handle, setPointerCapture } = renderHandle();
     fireEvent.pointerDown(handle, { clientX: 100, pointerId: 7 });
     expect(setPointerCapture).toHaveBeenCalledExactlyOnceWith(7);
+  });
+
+  it("should hold pointer capture between pointerdown and pointerup", () => {
+    const { handle } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 7 });
+    expect(handle.hasPointerCapture(7)).toBe(true);
+    fireEvent.pointerUp(handle, { clientX: 100, pointerId: 7 });
+    expect(handle.hasPointerCapture(7)).toBe(false);
   });
 
   it("should release the pointer on pointerup", () => {

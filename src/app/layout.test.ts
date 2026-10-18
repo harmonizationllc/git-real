@@ -9,6 +9,7 @@ import {
   clampWidths,
   maxWidth,
 } from "./layout";
+import * as storeDefaults from "../lib/store/layoutPrefs";
 
 // Contract: the layout constants are pinned by the spec.
 describe("layout constants", () => {
@@ -21,6 +22,16 @@ describe("layout constants", () => {
       SIDEBAR_DEFAULT: 320,
       KEY_STEP: 16,
     });
+  });
+});
+
+// Contract: the defaults live in the store and are re-exported here.
+describe("layout default re-exports", () => {
+  it("should re-export the store's defaults", () => {
+    expect([REFS_DEFAULT, SIDEBAR_DEFAULT]).toEqual([
+      storeDefaults.REFS_DEFAULT,
+      storeDefaults.SIDEBAR_DEFAULT,
+    ]);
   });
 });
 

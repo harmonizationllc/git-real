@@ -8,6 +8,7 @@ import {
   getStatus,
   onRepoChanged,
 } from "../lib/ipc";
+import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useWorkspace } from "../lib/store/workspace";
@@ -212,5 +213,29 @@ describe("RepoPane commit box state per tab", () => {
     rerender(<RepoPane tab={tab(2)} />);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByLabelText("Subject")).toHaveValue("");
+  });
+});
+
+// Contract: RepoPane owns the single repo-changed subscription for its tab.
+describe("RepoPane repo-changed subscription", () => {
+  it("should subscribe to repo-changed once per tab", async () => {
+    const { rerender } = renderWithProviders(<RepoPane tab={tab(5)} />);
+    await waitFor(() => expect(onRepoChanged).toHaveBeenCalledOnce());
+    rerender(<RepoPane tab={tab(5)} />);
+    expect(onRepoChanged).toHaveBeenCalledOnce();
+    expect(vi.mocked(onRepoChanged).mock.calls[0]?.[0]).toBe(5);
+  });
+
+  it("should invalidate the repo prefix when the captured handler fires", async () => {
+    let handler: (() => void) | undefined;
+    vi.mocked(onRepoChanged).mockImplementation(async (_id, h) => {
+      handler = h;
+      return vi.fn();
+    });
+    const { queryClient } = renderWithProviders(<RepoPane tab={tab(5)} />);
+    await waitFor(() => expect(handler).toBeDefined());
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    handler?.();
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.repo(5) });
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AppError } from "../lib/ipc";
@@ -306,5 +306,70 @@ describe("PromptDialog pending", () => {
   it("should enable the input and confirm when not pending", () => {
     renderDialog({ pending: false, initialValue: "x" });
     expect(screen.getByRole("textbox", { name: "Name" })).toBeEnabled();
+  });
+});
+
+// Contract: the body mounts per open, so state re-initialises from initialValue each time.
+describe("PromptDialog reopening", () => {
+  const ui = (open: boolean, initialValue: string) => (
+    <PromptDialog
+      open={open}
+      title="T"
+      label="Name"
+      initialValue={initialValue}
+      error={null}
+      pending={false}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  );
+
+  it("should re-initialise the value from initialValue on each open", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(true, "one"));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "X");
+    view.rerender(ui(false, "one"));
+    view.rerender(ui(true, "two"));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("two");
+  });
+
+  it("should discard typed text when closed and reopened with the same initialValue", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(true, "one"));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "X");
+    view.rerender(ui(false, "one"));
+    view.rerender(ui(true, "one"));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("one");
+  });
+});
+
+// Contract: submit prevents the browser default and ignores pending or blank values.
+describe("PromptDialog submit guards", () => {
+  it("should prevent the default form submission", () => {
+    renderDialog({ initialValue: "x" });
+    const form = screen.getByRole("dialog").querySelector("form") as HTMLFormElement;
+    expect(fireEvent.submit(form)).toBe(false);
+  });
+
+  it("should do nothing when a whitespace-only value is submitted", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onCancel } = renderDialog();
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "   {Enter}");
+    expect([onConfirm.mock.calls.length, onCancel.mock.calls.length]).toEqual([0, 0]);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("should do nothing when the form is submitted while pending", () => {
+    const { onConfirm } = renderDialog({ pending: true, initialValue: "x" });
+    const form = screen.getByRole("dialog").querySelector("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing when the form is submitted with a blank value", () => {
+    const { onConfirm } = renderDialog();
+    const form = screen.getByRole("dialog").querySelector("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });

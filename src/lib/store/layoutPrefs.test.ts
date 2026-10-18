@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLayoutPrefs } from "./layoutPrefs";
+import { REFS_DEFAULT, SIDEBAR_DEFAULT, useLayoutPrefs } from "./layoutPrefs";
 
 beforeEach(() => {
   localStorage.clear();
@@ -14,6 +14,10 @@ afterEach(() => {
 describe("useLayoutPrefs", () => {
   it("should default to a 240px refs column and a 320px sidebar", () => {
     expect(useLayoutPrefs.getInitialState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
+  });
+
+  it("should export the defaults 240 and 320", () => {
+    expect([REFS_DEFAULT, SIDEBAR_DEFAULT]).toEqual([240, 320]);
   });
 
   it("should update refsWidth when setRefsWidth is called", () => {
