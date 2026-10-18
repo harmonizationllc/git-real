@@ -204,13 +204,13 @@ pub struct CommitOutcome { pub oid: String, pub summary: String } // full hex oi
 interface CommitDraft {
   subject: string;
   body: string;
+  /** Discriminated: amend on always carries the stash, amend off never does. */
   amend: boolean;
   /** What was typed before amend was turned on; restored when it is turned off. */
   stash: { subject: string; body: string } | null;
 }
 interface CommitDraftState {
-  drafts: Record<RepoId, CommitDraft>;
-  draft(repoId): CommitDraft; // EMPTY_DRAFT when absent
+  drafts: Record<RepoId, CommitDraft>; // components select drafts[id] ?? EMPTY_DRAFT
   setSubject(repoId, subject): void;
   setBody(repoId, body): void;
   setAmend(repoId, on, head: CommitMessage | null): void; // stash/prefill or restore
