@@ -211,7 +211,9 @@ Remote)` NotFound → `BranchNotFound`; returns the validated arguments
 - `switch::run`: `git -C <workdir> switch <name>` or `git -C <workdir> switch
 -c <name> --track <upstream>`, stdin null, stdout and stderr captured.
   Non-zero → `GitError::CheckoutFailed { code, stdout, stderr }`.
-- `push_delete::run`: `git -C <workdir> push <remote> --delete <name>`,
+- `push_delete::run`: `git -C <workdir> push <remote> --delete heads/<name>`
+  (`heads/` so a same-named tag is never deleted and a missing branch still
+  fails),
   same capture. Non-zero → `GitError::PushFailed { code, stdout, stderr }`.
 
 ### 3.4 Errors
