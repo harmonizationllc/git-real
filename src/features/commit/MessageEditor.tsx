@@ -12,8 +12,24 @@ export interface MessageEditorProps {
   onSubmit(): void;
 }
 
-const isSubmitKey = (e: React.KeyboardEvent): boolean =>
-  e.key === "Enter" && (e.ctrlKey || e.metaKey);
+/**
+ * Ctrl/Cmd+Enter submits; plain Enter runs `onPlainEnter` when given, else keeps its default.
+ * An Enter that confirms an IME composition is left untouched in both fields.
+ */
+function handleEnter(
+  e: React.KeyboardEvent,
+  onSubmit: () => void,
+  onPlainEnter: (() => void) | null,
+): void {
+  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    onSubmit();
+  } else if (onPlainEnter !== null) {
+    e.preventDefault();
+    onPlainEnter();
+  }
+}
 
 export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
   const { subject, body, disabled, onSubjectChange, onBodyChange, onSubmit } = props;
@@ -23,21 +39,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const over = subject.length > SUBJECT_LIMIT;
 
-  const onSubjectKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isSubmitKey(e)) {
-      e.preventDefault();
-      onSubmit();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      bodyRef.current?.focus();
-    }
-  };
-  const onBodyKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isSubmitKey(e)) {
-      e.preventDefault();
-      onSubmit();
-    }
-  };
+  const focusBody = () => bodyRef.current?.focus();
 
   return (
     <div className={styles.root}>
@@ -58,7 +60,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
         disabled={disabled}
         aria-describedby={over ? hintId : undefined}
         onChange={(e) => onSubjectChange(e.target.value)}
-        onKeyDown={onSubjectKeyDown}
+        onKeyDown={(e) => handleEnter(e, onSubmit, focusBody)}
       />
       {over && (
         <p id={hintId} className={styles.hint}>
@@ -77,7 +79,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
         rows={4}
         disabled={disabled}
         onChange={(e) => onBodyChange(e.target.value)}
-        onKeyDown={onBodyKeyDown}
+        onKeyDown={(e) => handleEnter(e, onSubmit, null)}
       />
     </div>
   );

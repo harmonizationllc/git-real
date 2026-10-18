@@ -64,8 +64,11 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
           {pending ? "Committing…" : draft.amend ? "Amend commit" : "Commit"}
         </button>
       </div>
-      {error && <RepoError error={error} path={null} onDismiss={clearError} />}
-      {configError && <RepoError error={configError} path={null} onDismiss={refetchConfig} />}
+      {/* Capped so verbose hook output scrolls here instead of squeezing the editor. */}
+      <div className={styles.alerts}>
+        {error && <RepoError error={error} path={null} onDismiss={clearError} />}
+        {configError && <RepoError error={configError} path={null} onDismiss={refetchConfig} />}
+      </div>
     </section>
   );
 }
