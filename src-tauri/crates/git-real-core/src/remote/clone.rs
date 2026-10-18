@@ -2,7 +2,7 @@
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::error::GitError;
 use crate::progress::ProgressSink;
@@ -22,12 +22,10 @@ pub fn clone_with(
     dest: &Path,
     sink: &mut dyn ProgressSink,
 ) -> Result<PathBuf, GitError> {
-    let mut child = Command::new(git)
+    let mut child = git_cli::command(git)
         .args(["clone", "--progress", "--"])
         .arg(url)
         .arg(dest)
-        .env("LC_ALL", "C")
-        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
