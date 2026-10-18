@@ -3,7 +3,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 
 use crate::error::GitError;
 
@@ -51,4 +51,12 @@ pub fn locate_in(path_var: impl AsRef<OsStr>) -> Option<PathBuf> {
         .filter(|dir| dir.is_absolute())
         .flat_map(|dir| CANDIDATES.iter().map(move |name| dir.join(name)))
         .find(|candidate| candidate.is_file())
+}
+
+/// Runs `cmd` with stdin closed and stdout and stderr captured.
+pub(crate) fn capture(cmd: &mut Command) -> std::io::Result<Output> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
 }

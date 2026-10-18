@@ -5,3 +5,4 @@
 
 pub mod clone;
 pub mod progress_parser;
+pub mod push_delete;

@@ -1,9 +1,14 @@
-//! Branch listing and local branch operations through git2.
+//! Branch listing and local branch operations through git2; checkout and
+//! remote deletion shell out (see [`switch`] and [`crate::remote::push_delete`]).
+
+mod switch;
 
 use git2::{Branch, BranchType, Commit, ErrorCode, Repository};
 
 use crate::error::GitError;
+use crate::git_cli;
 use crate::model::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
+use crate::remote::push_delete::PushDelete;
 use crate::repo::RepoSession;
 
 /// Accepts names git accepts for a branch that can never be read as a
@@ -124,6 +129,89 @@ impl RepoSession {
         }
         branch.delete()?;
         Ok(())
+    }
+
+    /// Creates `name` and switches to it, all or nothing: when git refuses the
+    /// switch (a dirty tree, a hook) the new branch is deleted again and the
+    /// `CheckoutFailed` error is returned.
+    pub fn create_and_checkout_branch(
+        &self,
+        name: &str,
+        start_point: Option<&str>,
+    ) -> Result<LocalBranch, GitError> {
+        let commit = self.new_branch_target(name, start_point)?;
+        let git = git_cli::locate()?;
+        let workdir = self.workdir()?;
+        let repo = self.repo();
+        let mut branch = repo.branch(name, &commit, false)?;
+        if let Err(e) = switch::run(&git, workdir, switch::SwitchTarget::Local(name)) {
+            // The switch error is the one worth reporting.
+            let _ = branch.delete();
+            return Err(e);
+        }
+        Ok(LocalBranch {
+            name: name.to_owned(),
+            oid: commit.id().to_string(),
+            is_head: true,
+            tracking: None,
+        })
+    }
+
+    /// Switches to a local branch through `git switch`.
+    pub fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
+        validate_branch_name(name)?;
+        find_local(self.repo(), name)?;
+        let git = git_cli::locate()?;
+        switch::run(&git, self.workdir()?, switch::SwitchTarget::Local(name))
+    }
+
+    /// Checks out `<remote>/<name>`: switches to the local branch `name` when
+    /// one exists (whatever its upstream), otherwise creates it tracking the
+    /// remote branch.
+    pub fn checkout_remote_branch(&self, remote: &str, name: &str) -> Result<(), GitError> {
+        let upstream = self.remote_branch_ref(remote, name)?;
+        let git = git_cli::locate()?;
+        let workdir = self.workdir()?;
+        let target = if self.repo().find_branch(name, BranchType::Local).is_ok() {
+            switch::SwitchTarget::Local(name)
+        } else {
+            switch::SwitchTarget::NewTracking {
+                name,
+                upstream: &upstream,
+            }
+        };
+        switch::run(&git, workdir, target)
+    }
+
+    /// Validates a remote branch deletion and returns the push to run after
+    /// the session lock is released.
+    pub fn prepare_remote_delete(&self, remote: &str, name: &str) -> Result<PushDelete, GitError> {
+        self.remote_branch_ref(remote, name)?;
+        Ok(PushDelete::new(
+            git_cli::locate()?,
+            self.workdir()?.to_path_buf(),
+            remote.to_owned(),
+            name.to_owned(),
+        ))
+    }
+
+    /// Validates `name`, checks that `remote` exists and that `<remote>/<name>`
+    /// is a remote branch. Returns its full refname, so git can never resolve
+    /// it to a local branch that happens to be called `<remote>/<name>`.
+    fn remote_branch_ref(&self, remote: &str, name: &str) -> Result<String, GitError> {
+        validate_branch_name(name)?;
+        let repo = self.repo();
+        match repo.find_remote(remote) {
+            Ok(_) => {}
+            Err(e) if is_not_found(&e) => return Err(GitError::RemoteNotFound(remote.to_owned())),
+            Err(e) => return Err(e.into()),
+        }
+        let short = format!("{remote}/{name}");
+        match repo.find_branch(&short, BranchType::Remote) {
+            Ok(_) => Ok(format!("refs/remotes/{short}")),
+            Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(short)),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// The pre-checks for a new branch: a valid, free name and a start point
