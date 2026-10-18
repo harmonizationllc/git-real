@@ -17,7 +17,10 @@ fn command_sets_locale_and_clears_repo_env() {
 
     assert_eq!(cmd.get_program(), OsStr::new("/usr/bin/git"));
     assert_eq!(env_of(&cmd, "LC_ALL"), Some(Some("C".to_string())));
-    assert_eq!(env_of(&cmd, "GIT_TERMINAL_PROMPT"), Some(Some("0".to_string())));
+    assert_eq!(
+        env_of(&cmd, "GIT_TERMINAL_PROMPT"),
+        Some(Some("0".to_string()))
+    );
     for key in [
         "GIT_DIR",
         "GIT_WORK_TREE",

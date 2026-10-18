@@ -189,7 +189,6 @@ pub fn temp_repo_unborn() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-
 /// Sets a repo-local identity and turns signing off, so the developer's
 /// global config (which may sign every commit) never reaches the test.
 pub fn configure_identity(root: &Path) {
@@ -199,7 +198,9 @@ pub fn configure_identity(root: &Path) {
     config
         .set_str("user.email", "test@example.com")
         .expect("set email");
-    config.set_bool("commit.gpgsign", false).expect("set gpgsign");
+    config
+        .set_bool("commit.gpgsign", false)
+        .expect("set gpgsign");
 }
 
 /// Installs an executable `.git/hooks/<name>` with the given body.

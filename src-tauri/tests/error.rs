@@ -272,10 +272,12 @@ fn apply_failed_message_includes_reason() {
     assert!(app.message.contains("hunk rejected"));
 }
 
-
 #[test]
 fn empty_message_and_nothing_to_commit_map_to_their_kinds() {
-    assert_eq!(AppError::from(GitError::EmptyMessage).kind, AppErrorKind::EmptyMessage);
+    assert_eq!(
+        AppError::from(GitError::EmptyMessage).kind,
+        AppErrorKind::EmptyMessage
+    );
     assert_eq!(
         AppError::from(GitError::NothingToCommit).kind,
         AppErrorKind::NothingToCommit
@@ -321,7 +323,16 @@ fn commit_failed_message_falls_back_to_exit_code_or_signal() {
 
 #[test]
 fn new_kinds_serialize_camel_case() {
-    assert_eq!(serde_json::to_value(AppErrorKind::EmptyMessage).unwrap(), "emptyMessage");
-    assert_eq!(serde_json::to_value(AppErrorKind::NothingToCommit).unwrap(), "nothingToCommit");
-    assert_eq!(serde_json::to_value(AppErrorKind::CommitFailed).unwrap(), "commitFailed");
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::EmptyMessage).unwrap(),
+        "emptyMessage"
+    );
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::NothingToCommit).unwrap(),
+        "nothingToCommit"
+    );
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::CommitFailed).unwrap(),
+        "commitFailed"
+    );
 }

@@ -2,10 +2,10 @@ mod common;
 
 use std::path::Path;
 
-use git2::Repository;
 use git_real_core::commit::git_commit;
 use git_real_core::remote::git_cli;
 use git_real_core::{CommitMessage, GitError, RepoSession, SigningFormat};
+use git2::Repository;
 
 fn git_available() -> bool {
     if git_cli::locate().is_err() {
@@ -31,7 +31,12 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf, RepoSession) {
 }
 
 fn head_oid(path: &Path) -> git2::Oid {
-    Repository::open(path).unwrap().head().unwrap().target().unwrap()
+    Repository::open(path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
 }
 
 fn head_raw_message(path: &Path) -> String {
@@ -72,18 +77,30 @@ fn commit_config_reports_ssh_signing_when_gpgsign_true() {
     let (_d, path, session) = fixture();
     set_config(&path, "commit.gpgsign", "true");
     set_config(&path, "gpg.format", "ssh");
-    assert_eq!(session.commit_config().unwrap().signing, Some(SigningFormat::Ssh));
+    assert_eq!(
+        session.commit_config().unwrap().signing,
+        Some(SigningFormat::Ssh)
+    );
 }
 
 #[test]
 fn commit_config_signing_defaults_to_openpgp_and_is_case_insensitive() {
     let (_d, path, session) = fixture();
     set_config(&path, "commit.gpgsign", "true");
-    assert_eq!(session.commit_config().unwrap().signing, Some(SigningFormat::OpenPgp));
+    assert_eq!(
+        session.commit_config().unwrap().signing,
+        Some(SigningFormat::OpenPgp)
+    );
     set_config(&path, "gpg.format", "X509");
-    assert_eq!(session.commit_config().unwrap().signing, Some(SigningFormat::X509));
+    assert_eq!(
+        session.commit_config().unwrap().signing,
+        Some(SigningFormat::X509)
+    );
     set_config(&path, "gpg.format", "something-new");
-    assert_eq!(session.commit_config().unwrap().signing, Some(SigningFormat::OpenPgp));
+    assert_eq!(
+        session.commit_config().unwrap().signing,
+        Some(SigningFormat::OpenPgp)
+    );
 }
 
 #[test]
@@ -128,7 +145,11 @@ fn head_message_with_invalid_utf8_is_lossy_not_panic() {
     let mut raw: Vec<u8> = buf.to_vec();
     let pos = raw.windows(11).position(|w| w == b"placeholder").unwrap();
     raw.splice(pos..pos + 11, [b'c', b'a', b'f', 0xE9]);
-    let oid = repo.odb().unwrap().write(git2::ObjectType::Commit, &raw).unwrap();
+    let oid = repo
+        .odb()
+        .unwrap()
+        .write(git2::ObjectType::Commit, &raw)
+        .unwrap();
     repo.set_head_detached(oid).unwrap();
     let m = session.head_message().unwrap().unwrap();
     assert!(m.subject.starts_with("caf"));
@@ -153,7 +174,14 @@ fn commit_on_unborn_head_creates_root_commit() {
     assert_eq!(out.oid, head_oid(&path).to_string());
     assert_eq!(head_raw_message(&path), "First\n");
     let repo = Repository::open(&path).unwrap();
-    assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().parent_count(), 0);
+    assert_eq!(
+        repo.head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .parent_count(),
+        0
+    );
 }
 
 #[test]
@@ -166,7 +194,9 @@ fn commit_records_subject_and_body_and_advances_head() {
     common::write_file(&path, "b.txt", "b\n");
     common::stage(&path, "b.txt");
 
-    let out = session.commit(&msg("Add b", "Because.\n\nMore."), false).unwrap();
+    let out = session
+        .commit(&msg("Add b", "Because.\n\nMore."), false)
+        .unwrap();
 
     let after = head_oid(&path);
     assert_ne!(before, after);
@@ -188,7 +218,9 @@ fn commit_keeps_hash_lines_in_body() {
     common::write_file(&path, "c.txt", "c\n");
     common::stage(&path, "c.txt");
 
-    session.commit(&msg("Hash", "# not a comment\nline"), false).unwrap();
+    session
+        .commit(&msg("Hash", "# not a comment\nline"), false)
+        .unwrap();
 
     assert_eq!(head_raw_message(&path), "Hash\n\n# not a comment\nline\n");
 }
@@ -203,7 +235,13 @@ fn amend_replaces_message_and_keeps_parent() {
     common::stage(&path, "d.txt");
     session.commit(&msg("Typo", ""), false).unwrap();
     let repo = Repository::open(&path).unwrap();
-    let parent = repo.head().unwrap().peel_to_commit().unwrap().parent_id(0).unwrap();
+    let parent = repo
+        .head()
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .parent_id(0)
+        .unwrap();
 
     let out = session.commit(&msg("Fixed", "body"), true).unwrap();
 
@@ -221,7 +259,9 @@ fn amend_with_nothing_staged_is_allowed() {
     let (_d, path, session) = fixture();
     let before = head_oid(&path);
 
-    let out = session.commit(&msg("initial commit, reworded", ""), true).unwrap();
+    let out = session
+        .commit(&msg("initial commit, reworded", ""), true)
+        .unwrap();
 
     assert_ne!(out.oid, before.to_string());
     assert_eq!(head_raw_message(&path), "initial commit, reworded\n");
@@ -241,7 +281,14 @@ fn amend_includes_newly_staged_changes() {
     let repo = Repository::open(&path).unwrap();
     let tree = repo.head().unwrap().peel_to_tree().unwrap();
     assert!(tree.get_name("e.txt").is_some());
-    assert_eq!(repo.head().unwrap().peel_to_commit().unwrap().parent_count(), 0);
+    assert_eq!(
+        repo.head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .parent_count(),
+        0
+    );
 }
 
 // --- commit: pre-checks (no git needed) ---
@@ -362,7 +409,10 @@ exit 0
         std::fs::read_to_string(dir.path().join("stdin")).unwrap(),
         "Subject\n\nBody\n"
     );
-    assert_eq!(std::fs::read_to_string(dir.path().join("env")).unwrap(), "C|0\n");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("env")).unwrap(),
+        "C|0\n"
+    );
 }
 
 #[cfg(unix)]
@@ -420,7 +470,10 @@ fn run_signal_killed_child_has_no_exit_code() {
     let dir = tempfile::tempdir().unwrap();
     let git = common::fake_git(dir.path(), "cat >/dev/null; kill -9 $$");
     let err = git_commit::run(&git, dir.path(), "S\n", false).unwrap_err();
-    assert!(matches!(err, GitError::CommitFailed { code: None, .. }), "{err:?}");
+    assert!(
+        matches!(err, GitError::CommitFailed { code: None, .. }),
+        "{err:?}"
+    );
 }
 
 #[test]

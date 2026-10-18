@@ -72,7 +72,10 @@ fn join_separates_subject_and_body_with_blank_line() {
 
 #[test]
 fn join_flattens_newlines_in_subject() {
-    assert_eq!(join(&msg("Line one\nLine two\r\nThree", "")), "Line one Line two Three\n");
+    assert_eq!(
+        join(&msg("Line one\nLine two\r\nThree", "")),
+        "Line one Line two Three\n"
+    );
 }
 
 #[test]
@@ -82,7 +85,10 @@ fn join_trims_subject() {
 
 #[test]
 fn join_trims_body_edges_and_normalises_crlf() {
-    assert_eq!(join(&msg("S", "\n\nfirst\r\nsecond  \n\n")), "S\n\nfirst\nsecond\n");
+    assert_eq!(
+        join(&msg("S", "\n\nfirst\r\nsecond  \n\n")),
+        "S\n\nfirst\nsecond\n"
+    );
 }
 
 #[test]
@@ -114,7 +120,10 @@ fn commit_message_serializes_camel_case() {
 
 #[test]
 fn signing_format_serializes_as_spec_names() {
-    assert_eq!(serde_json::to_value(SigningFormat::OpenPgp).unwrap(), "openPgp");
+    assert_eq!(
+        serde_json::to_value(SigningFormat::OpenPgp).unwrap(),
+        "openPgp"
+    );
     assert_eq!(serde_json::to_value(SigningFormat::X509).unwrap(), "x509");
     assert_eq!(serde_json::to_value(SigningFormat::Ssh).unwrap(), "ssh");
 }
@@ -148,12 +157,21 @@ fn commit_outcome_serializes_camel_case() {
 
 #[test]
 fn new_error_variants_have_messages() {
-    assert_eq!(GitError::EmptyMessage.to_string(), "the commit message has no subject");
-    assert_eq!(GitError::NothingToCommit.to_string(), "nothing is staged to commit");
+    assert_eq!(
+        GitError::EmptyMessage.to_string(),
+        "the commit message has no subject"
+    );
+    assert_eq!(
+        GitError::NothingToCommit.to_string(),
+        "nothing is staged to commit"
+    );
     let failed = GitError::CommitFailed {
         code: Some(1),
         stdout: String::new(),
         stderr: "hook says no".into(),
     };
-    assert_eq!(failed.to_string(), "git commit failed (exit code Some(1)): hook says no");
+    assert_eq!(
+        failed.to_string(),
+        "git commit failed (exit code Some(1)): hook says no"
+    );
 }

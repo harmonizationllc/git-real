@@ -3,7 +3,9 @@
 mod common;
 
 use git_real_core::{CommitMessage, RepoSession, SigningFormat};
-use git_real_lib::commands::commit::{commit_inner, get_commit_config_inner, get_head_message_inner};
+use git_real_lib::commands::commit::{
+    commit_inner, get_commit_config_inner, get_head_message_inner,
+};
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::state::{RepoId, RepoRegistry};
 use tempfile::TempDir;
@@ -104,16 +106,27 @@ fn commit_inner_amend_rewords_head() {
     let (_d, _p, reg, id) = open_fixture();
     let out = commit_inner(&reg, id, &msg("Reworded", ""), true).unwrap();
     assert_eq!(out.summary, "Reworded");
-    assert_eq!(get_head_message_inner(&reg, id).unwrap(), Some(msg("Reworded", "")));
+    assert_eq!(
+        get_head_message_inner(&reg, id).unwrap(),
+        Some(msg("Reworded", ""))
+    );
 }
 
 #[test]
 fn commit_commands_unknown_repo() {
     let reg = RepoRegistry::default();
-    assert_eq!(get_commit_config_inner(&reg, 99).unwrap_err().kind, AppErrorKind::UnknownRepo);
-    assert_eq!(get_head_message_inner(&reg, 99).unwrap_err().kind, AppErrorKind::UnknownRepo);
     assert_eq!(
-        commit_inner(&reg, 99, &msg("S", ""), false).unwrap_err().kind,
+        get_commit_config_inner(&reg, 99).unwrap_err().kind,
+        AppErrorKind::UnknownRepo
+    );
+    assert_eq!(
+        get_head_message_inner(&reg, 99).unwrap_err().kind,
+        AppErrorKind::UnknownRepo
+    );
+    assert_eq!(
+        commit_inner(&reg, 99, &msg("S", ""), false)
+            .unwrap_err()
+            .kind,
         AppErrorKind::UnknownRepo
     );
 }
