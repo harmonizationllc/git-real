@@ -31,18 +31,29 @@
   font-family: ui-monospace, monospace;
 }
 
+/* grid-template-columns is set inline from the clamped column widths. */
 .body {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: 320px 1fr;
+}
+
+/* The split handles draw the column dividers. */
+.refs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--color-border);
+  min-width: 0;
 }
 
 .detail {

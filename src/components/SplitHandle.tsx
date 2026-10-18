@@ -2,6 +2,9 @@ import { useRef } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 import styles from "./SplitHandle.module.css";
 
+/** The handle's width in pixels; layouts subtract it from the space the columns share. */
+export const SPLIT_HANDLE_WIDTH = 6;
+
 export interface SplitHandleProps {
   label: string;
   value: number;
@@ -57,6 +60,7 @@ export function SplitHandle({ label, value, min, max, step, onChange, onReset }:
       aria-valuemax={Number.isFinite(max) ? max : undefined}
       tabIndex={0}
       className={styles.handle}
+      style={{ width: SPLIT_HANDLE_WIDTH }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}

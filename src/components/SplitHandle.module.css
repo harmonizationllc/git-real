@@ -1,7 +1,6 @@
-/* A 6px hit area drawing a 1px line in its middle. */
+/* A hit area (width set inline from SPLIT_HANDLE_WIDTH) drawing a 1px line in its middle. */
 .handle {
   flex: none;
-  width: 6px;
   cursor: col-resize;
   touch-action: none;
   background: linear-gradient(
