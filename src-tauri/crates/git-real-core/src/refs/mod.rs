@@ -198,7 +198,13 @@ impl RepoSession {
     /// Validates `name`, checks that `remote` exists and that `<remote>/<name>`
     /// is a remote branch. Returns its full refname, so git can never resolve
     /// it to a local branch that happens to be called `<remote>/<name>`.
+    ///
+    /// A remote whose name starts with `-` is refused outright: it would be
+    /// read as a flag by `git push`, and git itself never creates one.
     fn remote_branch_ref(&self, remote: &str, name: &str) -> Result<String, GitError> {
+        if remote.starts_with('-') {
+            return Err(GitError::RemoteNotFound(remote.to_owned()));
+        }
         validate_branch_name(name)?;
         let repo = self.repo();
         match repo.find_remote(remote) {
