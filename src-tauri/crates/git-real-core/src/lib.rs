@@ -10,7 +10,9 @@
 //! operations shell out to the system `git` CLI. Network default features of
 //! `git2` are disabled for this reason.
 
+pub mod content;
 pub mod diff;
+pub mod encoding;
 pub mod error;
 pub mod ignore;
 pub mod index_ops;

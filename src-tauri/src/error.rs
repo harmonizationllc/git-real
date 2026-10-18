@@ -20,6 +20,7 @@ pub enum AppErrorKind {
     NoChanges,
     BadSelection,
     ApplyFailed,
+    TooLarge,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -52,6 +53,7 @@ impl From<GitError> for AppError {
             GitError::NoChanges(_) => AppErrorKind::NoChanges,
             GitError::BadSelection => AppErrorKind::BadSelection,
             GitError::ApplyFailed(_) => AppErrorKind::ApplyFailed,
+            GitError::TooLarge { .. } => AppErrorKind::TooLarge,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

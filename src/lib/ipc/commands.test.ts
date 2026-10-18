@@ -7,6 +7,7 @@ import {
   cloneRepo,
   closeRepo,
   discardPaths,
+  getFileContent,
   getFileDiff,
   getStatus,
   initRepo,
@@ -153,6 +154,8 @@ describe("worktree command wrappers", () => {
     isBinary: false,
     hunks: [],
     truncated: false,
+    oldEncoding: null,
+    newEncoding: null,
   };
 
   it("getStatus sends get_status with id and returns the status", async () => {
@@ -168,10 +171,38 @@ describe("worktree command wrappers", () => {
     expect(calls).toEqual([
       {
         cmd: "get_file_diff",
-        args: { id: 1, path: "a.txt", scope: "staged", ignoreWhitespace: true },
+        args: { id: 1, path: "a.txt", scope: "staged", ignoreWhitespace: true, maxLines: null },
       },
     ]);
     expect(result).toEqual(diff);
+  });
+
+  it("getFileDiff forwards maxLines when given", async () => {
+    const calls = mockWith(diff);
+    await getFileDiff(1, "a.txt", "unstaged", false, 1_000_000);
+    expect(calls[0]?.args).toEqual({
+      id: 1,
+      path: "a.txt",
+      scope: "unstaged",
+      ignoreWhitespace: false,
+      maxLines: 1_000_000,
+    });
+  });
+
+  it("getFileContent sends get_file_content with id, path, scope and side", async () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const calls = mockWith(bytes);
+    await getFileContent(1, "img.png", "unstaged", "new");
+    expect(calls).toEqual([
+      { cmd: "get_file_content", args: { id: 1, path: "img.png", scope: "unstaged", side: "new" } },
+    ]);
+  });
+
+  it("getFileContent returns the bytes the backend answered with", async () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    mockWith(bytes);
+    const result = await getFileContent(1, "img.png", "unstaged", "new");
+    expect(result).toBe(bytes);
   });
 
   it("stagePaths sends stage_paths with id and paths", async () => {
@@ -244,6 +275,7 @@ describe("worktree command wrappers", () => {
   it.each([
     ["getStatus", () => getStatus(1)],
     ["getFileDiff", () => getFileDiff(1, "a", "staged", false)],
+    ["getFileContent", () => getFileContent(1, "a", "staged", "old")],
     ["stagePaths", () => stagePaths(1, [])],
     ["unstagePaths", () => unstagePaths(1, [])],
     ["stageAll", () => stageAll(1)],

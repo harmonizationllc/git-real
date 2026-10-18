@@ -5,11 +5,12 @@ mod common;
 use std::path::Path;
 
 use git_real_core::{
-    ChangeKind, DiffScope, HunkAction, HunkSelection, RepoSession, WorkingTreeStatus,
+    ChangeKind, DiffScope, DiffSide, HunkAction, HunkSelection, RepoSession, WorkingTreeStatus,
 };
 use git_real_lib::commands::worktree::{
-    add_to_gitignore_inner, apply_hunk_inner, discard_paths_inner, get_file_diff_inner,
-    get_status_inner, stage_all_inner, stage_paths_inner, unstage_all_inner, unstage_paths_inner,
+    MAX_PREVIEW_BYTES, add_to_gitignore_inner, apply_hunk_inner, discard_paths_inner,
+    get_file_content_inner, get_file_diff_inner, get_status_inner, stage_all_inner,
+    stage_paths_inner, unstage_all_inner, unstage_paths_inner,
 };
 use git_real_lib::error::{AppError, AppErrorKind};
 use git_real_lib::state::{RepoId, RepoRegistry};
@@ -54,7 +55,8 @@ fn get_file_diff_inner_returns_hunks() {
     let (_dir, path, reg, id) = open_fixture();
     modify_readme(&path);
 
-    let diff = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false).unwrap();
+    let diff =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
 
     assert_eq!(diff.hunks.len(), 1);
 }
@@ -63,10 +65,201 @@ fn get_file_diff_inner_returns_hunks() {
 fn get_file_diff_inner_no_changes_errors() {
     let (_dir, _path, reg, id) = open_fixture();
 
-    let err = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false)
+    let err = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None)
         .expect_err("clean file has no diff");
 
     assert_eq!(err.kind, AppErrorKind::NoChanges);
+}
+
+// max_lines: the optional cap is forwarded to the diff options.
+#[test]
+fn get_file_diff_inner_honours_max_lines() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("README.md"), "# fixture\na\nb\nc\nd\n").unwrap();
+    let capped =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, Some(2)).unwrap();
+    assert!(capped.truncated);
+    assert_eq!(capped.hunks[0].lines.len(), 2);
+}
+
+#[test]
+fn get_file_diff_inner_without_max_lines_is_not_truncated() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("README.md"), "# fixture\na\nb\nc\nd\n").unwrap();
+    let full =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
+    assert!(!full.truncated);
+}
+
+// Some(0) is pinned as implemented: nothing is collected and the diff reports truncation.
+#[test]
+fn get_file_diff_inner_zero_max_lines_is_an_empty_truncated_diff() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("README.md"), "# fixture\na\nb\n").unwrap();
+    let diff =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, Some(0)).unwrap();
+    let collected: usize = diff.hunks.iter().map(|h| h.lines.len()).sum();
+    assert_eq!((collected, diff.truncated), (0, true));
+}
+
+// None means the core default of 10_000 lines, so an explicit 10_000 is equivalent.
+#[test]
+fn get_file_diff_inner_none_matches_the_core_default_cap() {
+    let (_dir, path, reg, id) = open_fixture();
+    let body: String = (0..10_050).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(path.join("README.md"), body).unwrap();
+    let default =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
+    let explicit = get_file_diff_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        false,
+        Some(10_000),
+    )
+    .unwrap();
+    let count = |d: &git_real_core::FileDiff| d.hunks.iter().map(|h| h.lines.len()).sum::<usize>();
+    assert_eq!(
+        (
+            count(&default),
+            default.truncated,
+            count(&explicit),
+            explicit.truncated
+        ),
+        (10_000, true, 10_000, true)
+    );
+}
+
+// Every scope/side pair resolves to the documented source through the app layer.
+#[test]
+fn get_file_content_inner_staged_old_is_head_and_new_is_index() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    stage_paths_inner(&reg, id, &paths(&["README.md"])).unwrap();
+    std::fs::write(path.join("README.md"), "# fixture\nmore\nworktree only\n").unwrap();
+    let read = |scope, side| {
+        get_file_content_inner(&reg, id, "README.md", scope, side, MAX_PREVIEW_BYTES).unwrap()
+    };
+    assert_eq!(
+        (
+            read(DiffScope::Staged, DiffSide::Old),
+            read(DiffScope::Staged, DiffSide::New),
+        ),
+        (b"# fixture\n".to_vec(), b"# fixture\nmore\n".to_vec())
+    );
+}
+
+#[test]
+fn get_file_content_inner_unstaged_old_is_the_index_not_head() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    stage_paths_inner(&reg, id, &paths(&["README.md"])).unwrap();
+    std::fs::write(path.join("README.md"), "# fixture\nmore\nworktree only\n").unwrap();
+    let old = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
+    assert_eq!(old, b"# fixture\nmore\n");
+}
+
+#[test]
+fn get_file_content_inner_staged_old_of_a_new_file_maps_to_path_not_found() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("fresh.txt"), "x\n").unwrap();
+    stage_paths_inner(&reg, id, &paths(&["fresh.txt"])).unwrap();
+    let err = get_file_content_inner(
+        &reg,
+        id,
+        "fresh.txt",
+        DiffScope::Staged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("not in HEAD");
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+// get_file_content_inner: raw bytes of one side of a file.
+#[test]
+fn get_file_content_inner_returns_old_bytes() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    let old = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
+    assert_eq!(old, b"# fixture\n");
+}
+
+#[test]
+fn get_file_content_inner_returns_new_bytes() {
+    let (_dir, path, reg, id) = open_fixture();
+    modify_readme(&path);
+    let new = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
+    assert_eq!(new, b"# fixture\nmore\n");
+}
+
+#[test]
+fn get_file_content_inner_missing_file_maps_to_path_not_found() {
+    let (_dir, _path, reg, id) = open_fixture();
+    let missing = get_file_content_inner(
+        &reg,
+        id,
+        "nope.txt",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("missing file");
+    assert_eq!(missing.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn get_file_content_inner_unknown_repo_errors() {
+    let (_dir, _path, reg, _id) = open_fixture();
+    let bad = get_file_content_inner(
+        &reg,
+        999,
+        "README.md",
+        DiffScope::Unstaged,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .expect_err("unknown repo");
+    assert_eq!(bad.kind, AppErrorKind::UnknownRepo);
+}
+
+#[test]
+fn get_file_content_inner_over_limit_maps_to_too_large() {
+    let (_dir, _path, reg, id) = open_fixture();
+    let err = get_file_content_inner(&reg, id, "README.md", DiffScope::Unstaged, DiffSide::New, 1)
+        .expect_err("file above the limit");
+    assert_eq!(err.kind, AppErrorKind::TooLarge);
+    assert!(err.message.contains("above the 1 byte preview limit"));
+}
+
+#[test]
+fn max_preview_bytes_is_twenty_mebibytes() {
+    assert_eq!(MAX_PREVIEW_BYTES, 20 * 1024 * 1024);
 }
 
 // Staging commands: each changes the index/worktree as documented.
@@ -229,7 +422,8 @@ fn unknown_repo_id_errors_for_every_command() {
         ("get_status", get_status_inner(&reg, 999).map(|_| ())),
         (
             "get_file_diff",
-            get_file_diff_inner(&reg, 999, "README.md", DiffScope::Unstaged, false).map(|_| ()),
+            get_file_diff_inner(&reg, 999, "README.md", DiffScope::Unstaged, false, None)
+                .map(|_| ()),
         ),
         ("stage_paths", stage_paths_inner(&reg, 999, &p)),
         ("unstage_paths", unstage_paths_inner(&reg, 999, &p)),
@@ -266,7 +460,8 @@ fn get_file_diff_inner_ignore_whitespace_false_shows_indent_change() {
     let (_dir, path, reg, id) = open_fixture();
     indent_readme(&path);
 
-    let diff = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false).unwrap();
+    let diff =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
 
     assert_eq!(diff.hunks.len(), 1);
 }
@@ -276,7 +471,7 @@ fn get_file_diff_inner_ignore_whitespace_true_hides_indent_change() {
     let (_dir, path, reg, id) = open_fixture();
     indent_readme(&path);
 
-    let err = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, true)
+    let err = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, true, None)
         .expect_err("indent-only change is invisible when whitespace is ignored");
 
     assert_eq!(err.kind, AppErrorKind::NoChanges);
@@ -288,8 +483,9 @@ fn get_file_diff_inner_staged_scope_shows_staged_change() {
     modify_readme(&path);
     stage_paths_inner(&reg, id, &paths(&["README.md"])).unwrap();
 
-    let staged = get_file_diff_inner(&reg, id, "README.md", DiffScope::Staged, false).unwrap();
-    let unstaged = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false)
+    let staged =
+        get_file_diff_inner(&reg, id, "README.md", DiffScope::Staged, false, None).unwrap();
+    let unstaged = get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None)
         .expect_err("everything is staged, nothing left unstaged");
 
     assert_eq!(

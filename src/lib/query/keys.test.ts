@@ -31,7 +31,54 @@ describe("queryKeys per-repo keys", () => {
       "a.txt",
       "staged",
       true,
+      null,
     ]);
+  });
+
+  it("should default fileDiff maxLines to null and include it when given", () => {
+    expect(queryKeys.fileDiff(3, "a", "staged", false)).toEqual([
+      "repo",
+      3,
+      "diff",
+      "a",
+      "staged",
+      false,
+      null,
+    ]);
+    expect(queryKeys.fileDiff(3, "a", "staged", false, 1_000_000).at(-1)).toBe(1_000_000);
+  });
+
+  it("should keep maxLines 0 and null as distinct fileDiff keys", () => {
+    expect(queryKeys.fileDiff(1, "a", "staged", false, 0)).not.toEqual(
+      queryKeys.fileDiff(1, "a", "staged", false, null),
+    );
+  });
+
+  it("should differ between maxLines settings for the same file", () => {
+    expect(queryKeys.fileDiff(1, "a", "staged", false)).not.toEqual(
+      queryKeys.fileDiff(1, "a", "staged", false, 1_000_000),
+    );
+  });
+
+  it("should define fileContent under the repo prefix", () => {
+    expect(queryKeys.fileContent(3, "a.png", "unstaged", "old")).toEqual([
+      "repo",
+      3,
+      "content",
+      "a.png",
+      "unstaged",
+      "old",
+    ]);
+  });
+
+  it("should differ between sides for the same file content", () => {
+    expect(queryKeys.fileContent(1, "a", "unstaged", "old")).not.toEqual(
+      queryKeys.fileContent(1, "a", "unstaged", "new"),
+    );
+  });
+
+  it("should make repo(id) a prefix of fileContent(id, ...)", () => {
+    expect(queryKeys.fileContent(3, "a", "staged", "new").slice(0, 2)).toEqual(queryKeys.repo(3));
   });
 
   it("should make repo(id) a prefix of status(id)", () => {

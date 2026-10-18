@@ -1,0 +1,126 @@
+import { renderHook, waitFor } from "@testing-library/react";
+import { javascriptLanguage } from "@codemirror/lang-javascript";
+import type { Parser } from "@lezer/common";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fileDiff, hunk, L } from "../../test/diffFixtures";
+import { loadParser } from "./model/highlight";
+import { HIGHLIGHT_LIMIT } from "./model/limits";
+import { useHighlight } from "./useHighlight";
+
+vi.mock(import("./model/highlight"), async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, loadParser: vi.fn(actual.loadParser) };
+});
+
+beforeEach(() => {
+  vi.mocked(loadParser).mockClear();
+});
+
+const settle = () => new Promise((r) => setTimeout(r, 20));
+
+// Contract: no highlight map, and no language load, when there is nothing to highlight.
+describe("useHighlight eligibility", () => {
+  it("should not load a language without a diff", async () => {
+    const { result } = renderHook(() => useHighlight(undefined));
+    await settle();
+    expect(loadParser).not.toHaveBeenCalled();
+    expect(result.current).toBeNull();
+  });
+  it("should not load a language for a binary diff", async () => {
+    const diff = fileDiff([hunk([L("context", "x")])], { path: "a.js", isBinary: true });
+    const { result } = renderHook(() => useHighlight(diff));
+    await settle();
+    expect(loadParser).not.toHaveBeenCalled();
+    expect(result.current).toBeNull();
+  });
+  it("should not load a language for an unknown language", async () => {
+    const diff = fileDiff([hunk([L("context", "x")])], { path: "noext" });
+    const { result } = renderHook(() => useHighlight(diff));
+    await settle();
+    expect(loadParser).not.toHaveBeenCalled();
+    expect(result.current).toBeNull();
+  });
+  it("should not load a language above HIGHLIGHT_LIMIT lines", async () => {
+    const lines = Array.from({ length: HIGHLIGHT_LIMIT + 1 }, () => L("context", "x"));
+    const diff = fileDiff([hunk(lines)], { path: "a.js" });
+    const { result } = renderHook(() => useHighlight(diff));
+    await settle();
+    expect(loadParser).not.toHaveBeenCalled();
+    expect(result.current).toBeNull();
+  });
+  it("should load the language for an eligible diff", async () => {
+    const diff = fileDiff([hunk([L("context", "x")])], { path: "a.js" });
+    const { result } = renderHook(() => useHighlight(diff));
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(loadParser).toHaveBeenCalledOnce();
+  });
+});
+
+// Contract: once the language loads, every hunk gets tokens keyed by hunk index.
+describe("useHighlight result", () => {
+  it("should be null until the language loads, then highlight every hunk", async () => {
+    const diff = fileDiff([hunk([L("addition", "const a = 1;")]), hunk([L("deletion", "// c")])], {
+      path: "a.js",
+    });
+    const { result } = renderHook(() => useHighlight(diff));
+    expect(result.current).toBeNull();
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current?.get(0)?.[0]?.find((t) => t.text === "1")?.className).toBe("tok-number");
+    expect(result.current?.get(1)?.[0]?.[0]?.className).toBe("tok-comment");
+  });
+  it("should ignore a load that finishes after the diff changed", async () => {
+    let resolveA: (p: Parser) => void = () => undefined;
+    let resolveB: (p: Parser) => void = () => undefined;
+    vi.mocked(loadParser)
+      .mockReturnValueOnce(new Promise<Parser>((r) => (resolveA = r)))
+      .mockReturnValueOnce(new Promise<Parser>((r) => (resolveB = r)));
+    const a = fileDiff([hunk([L("addition", "a"), L("addition", "b")])], { path: "a.js" });
+    const b = fileDiff([hunk([L("addition", "c")])], { path: "b.js" });
+    const { result, rerender } = renderHook(({ d }) => useHighlight(d), { initialProps: { d: a } });
+    rerender({ d: b });
+    resolveB(javascriptLanguage.parser);
+    await waitFor(() => expect(result.current).not.toBeNull());
+    resolveA(javascriptLanguage.parser);
+    await settle();
+    expect(result.current?.get(0)).toHaveLength(1);
+  });
+  it("should stay null when the diff becomes undefined before the language loads", async () => {
+    const a = fileDiff([hunk([L("addition", "a")])], { path: "a.js" });
+    const { result, rerender } = renderHook(({ d }) => useHighlight(d), {
+      initialProps: { d: a as typeof a | undefined },
+    });
+    rerender({ d: undefined });
+    await settle();
+    expect(result.current).toBeNull();
+  });
+  it("should return null for a new diff until its own highlight is ready", async () => {
+    const a = fileDiff([hunk([L("addition", "a")])], { path: "a.js" });
+    const b = fileDiff([hunk([L("addition", "b")])], { path: "b.js" });
+    const { result, rerender } = renderHook(({ d }) => useHighlight(d), { initialProps: { d: a } });
+    await waitFor(() => expect(result.current).not.toBeNull());
+    rerender({ d: b });
+    expect(result.current).toBeNull();
+  });
+});
+
+// Contract: a failed language load is logged and leaves highlighting off.
+describe("useHighlight failure", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  it("should return null when a language fails to load", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(loadParser).mockRejectedValueOnce(new Error("offline"));
+    const diff = fileDiff([hunk([L("context", "x")])], { path: "z.js" });
+    const { result } = renderHook(() => useHighlight(diff));
+    await settle();
+    expect(result.current).toBeNull();
+  });
+  it("should log the load failure", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(loadParser).mockRejectedValueOnce(new Error("offline"));
+    const diff = fileDiff([hunk([L("context", "x")])], { path: "z.js" });
+    renderHook(() => useHighlight(diff));
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+  });
+});

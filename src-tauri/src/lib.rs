@@ -34,6 +34,7 @@ pub fn run() {
             commands::repo::check_git_cli,
             commands::worktree::get_status,
             commands::worktree::get_file_diff,
+            commands::worktree::get_file_content,
             commands::worktree::stage_paths,
             commands::worktree::unstage_paths,
             commands::worktree::stage_all,

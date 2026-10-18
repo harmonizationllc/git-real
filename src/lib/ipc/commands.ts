@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   DiffScope,
+  DiffSide,
   FileDiff,
   GitCliInfo,
   HunkAction,
@@ -48,8 +49,25 @@ export function getFileDiff(
   path: string,
   scope: DiffScope,
   ignoreWhitespace: boolean,
+  maxLines?: number,
 ): Promise<FileDiff> {
-  return invoke<FileDiff>("get_file_diff", { id, path, scope, ignoreWhitespace });
+  return invoke<FileDiff>("get_file_diff", {
+    id,
+    path,
+    scope,
+    ignoreWhitespace,
+    maxLines: maxLines ?? null,
+  });
+}
+
+/** Raw bytes of one side of a file; the backend answers with a binary IPC response. */
+export function getFileContent(
+  id: RepoId,
+  path: string,
+  scope: DiffScope,
+  side: DiffSide,
+): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("get_file_content", { id, path, scope, side });
 }
 
 export function stagePaths(id: RepoId, paths: string[]): Promise<void> {

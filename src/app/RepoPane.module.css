@@ -39,7 +39,8 @@
 }
 
 .detail {
-  display: grid;
-  place-items: center;
-  color: var(--color-text-muted);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
 }

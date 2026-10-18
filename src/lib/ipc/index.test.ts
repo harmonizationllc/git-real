@@ -17,6 +17,7 @@ describe("ipc barrel", () => {
     "toAppError",
     "getStatus",
     "getFileDiff",
+    "getFileContent",
     "stagePaths",
     "unstagePaths",
     "stageAll",

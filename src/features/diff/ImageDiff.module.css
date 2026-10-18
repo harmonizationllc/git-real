@@ -1,0 +1,33 @@
+.root {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+
+.figure {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+
+.img {
+  max-width: 100%;
+  height: auto;
+  /* A checkerboard shows transparent pixels. */
+  background: repeating-conic-gradient(var(--color-surface-hover) 0 25%, transparent 0 50%) 0 0 /
+    16px 16px;
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  text-align: center;
+}

@@ -249,6 +249,8 @@ mod tests {
             is_binary: false,
             hunks,
             truncated: false,
+            old_encoding: None,
+            new_encoding: None,
         }
     }
 

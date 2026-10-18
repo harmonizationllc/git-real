@@ -81,11 +81,15 @@ describe("worktree DTO shapes", () => {
       isBinary: false,
       hunks: [],
       truncated: false,
+      oldEncoding: null,
+      newEncoding: null,
     };
     expect(Object.keys(diff).sort()).toEqual([
       "change",
       "hunks",
       "isBinary",
+      "newEncoding",
+      "oldEncoding",
       "oldPath",
       "path",
       "scope",

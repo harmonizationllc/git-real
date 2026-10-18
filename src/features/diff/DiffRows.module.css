@@ -1,0 +1,75 @@
+/* Shared by UnifiedRow, SplitRow and Gutter: they draw one row grid. */
+.row {
+  display: grid;
+  grid-template-columns: 3.5em 3.5em 1.2em 1fr;
+  align-items: start;
+}
+
+.row[data-kind="addition"],
+.cell[data-kind="addition"] {
+  background: var(--color-added-bg);
+  --word-bg: var(--color-added-word-bg);
+}
+
+.row[data-kind="deletion"],
+.cell[data-kind="deletion"] {
+  background: var(--color-removed-bg);
+  --word-bg: var(--color-removed-word-bg);
+}
+
+.cell[data-kind="empty"] {
+  background: var(--color-surface-hover);
+}
+
+.row[data-selected],
+.cell[data-selected] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  background: var(--color-line-selected);
+}
+
+.gutter,
+.gutterButton {
+  text-align: right;
+  padding: 0 6px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.gutterButton {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.gutterButton:hover {
+  color: var(--color-text);
+}
+
+.sign {
+  text-align: center;
+  color: var(--color-text-muted);
+  /* Same metrics as the line content, so a changed row is no taller than a context row. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.cell {
+  display: grid;
+  grid-template-columns: 3.5em 1fr;
+  align-items: start;
+  min-width: 0;
+}

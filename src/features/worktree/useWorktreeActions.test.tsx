@@ -2,6 +2,7 @@ import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addToGitignore,
+  applyHunk,
   discardPaths,
   stageAll,
   stagePaths,
@@ -20,6 +21,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   unstageAll: vi.fn(),
   discardPaths: vi.fn(),
   addToGitignore: vi.fn(),
+  applyHunk: vi.fn(),
 }));
 
 type Actions = ReturnType<typeof useWorktreeActions>;
@@ -41,6 +43,7 @@ beforeEach(() => {
   vi.mocked(unstageAll).mockResolvedValue(undefined);
   vi.mocked(discardPaths).mockResolvedValue(undefined);
   vi.mocked(addToGitignore).mockResolvedValue("/a.txt");
+  vi.mocked(applyHunk).mockResolvedValue(undefined);
 });
 
 // Contract: each action calls its wrapper with the repo id and the given arguments.
@@ -80,6 +83,22 @@ describe("useWorktreeActions wrapper calls", () => {
     await run(() => result.current.addToGitignore("a.txt"));
     expect(addToGitignore).toHaveBeenCalledExactlyOnceWith(4, "a.txt");
   });
+
+  it("should call applyHunk with repo id, path, action and selection", async () => {
+    const { result } = renderHookWithProviders(() => useWorktreeActions(4));
+    await run(() => result.current.applyHunk("a.ts", "stage", { hunkIndex: 1, lines: [2, 3] }));
+    expect(applyHunk).toHaveBeenCalledExactlyOnceWith(4, "a.ts", "stage", {
+      hunkIndex: 1,
+      lines: [2, 3],
+    });
+  });
+
+  it("should surface applyHunk failures through error", async () => {
+    vi.mocked(applyHunk).mockRejectedValue({ kind: "badSelection", message: "stale" });
+    const { result } = renderHookWithProviders(() => useWorktreeActions(4));
+    await run(() => result.current.applyHunk("a.ts", "discard", { hunkIndex: 0, lines: null }));
+    await waitFor(() => expect(result.current.error?.kind).toBe("badSelection"));
+  });
 });
 
 // Contract: every action invalidates the repo key once it settles, on success and on failure.
@@ -91,6 +110,7 @@ describe("useWorktreeActions invalidation", () => {
     ["unstageAll", (a) => a.unstageAll()],
     ["discard", (a) => a.discard(["a"])],
     ["addToGitignore", (a) => a.addToGitignore("a")],
+    ["applyHunk", (a) => a.applyHunk("a", "stage", { hunkIndex: 0, lines: null })],
   ];
 
   it.each(cases)("should invalidate the repo key when %s succeeds", async (_n, call) => {
@@ -107,6 +127,7 @@ describe("useWorktreeActions invalidation", () => {
     vi.mocked(unstageAll).mockRejectedValue(noChanges);
     vi.mocked(discardPaths).mockRejectedValue(noChanges);
     vi.mocked(addToGitignore).mockRejectedValue(noChanges);
+    vi.mocked(applyHunk).mockRejectedValue(noChanges);
     const { result, queryClient } = renderHookWithProviders(() => useWorktreeActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => call(result.current));

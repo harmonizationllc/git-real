@@ -49,6 +49,15 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::Git,
             None,
         ),
+        (
+            GitError::TooLarge {
+                path: "a.png".into(),
+                size: 2,
+                limit: 1,
+            },
+            AppErrorKind::TooLarge,
+            None,
+        ),
     ];
     for (err, expected, reduced) in cases {
         let message = reduced.map_or_else(|| err.to_string(), str::to_string);
@@ -88,10 +97,26 @@ fn app_error_kind_serializes_camel_case() {
         (AppErrorKind::NoChanges, "noChanges"),
         (AppErrorKind::BadSelection, "badSelection"),
         (AppErrorKind::ApplyFailed, "applyFailed"),
+        (AppErrorKind::TooLarge, "tooLarge"),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
     }
+}
+
+// TooLarge: the wire kind is camelCase so the front end can branch on it.
+#[test]
+fn too_large_serializes_camel_case() {
+    let err: AppError = GitError::TooLarge {
+        path: "a.png".into(),
+        size: 2,
+        limit: 1,
+    }
+    .into();
+    assert_eq!(
+        serde_json::to_value(&err).unwrap()["kind"],
+        json!("tooLarge")
+    );
 }
 
 #[test]

@@ -3,12 +3,15 @@
 pub mod patch;
 pub use patch::build_patch;
 
+use std::path::Path;
+
 use git2::ErrorCode;
 
+use crate::encoding::{decode, detect_encoding};
 use crate::error::GitError;
 use crate::model::{
-    ChangeKind, DiffLine, DiffLineKind, DiffOptions, DiffScope, FileDiff, Hunk, HunkAction,
-    HunkSelection,
+    ChangeKind, DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk,
+    HunkAction, HunkSelection, TextEncoding,
 };
 use crate::repo::RepoSession;
 use crate::status::file_path;
@@ -57,6 +60,7 @@ impl RepoSession {
             ignore_whitespace: false,
             context_lines: 3,
             max_lines: usize::MAX,
+            ..DiffOptions::default()
         };
         // Decided before the exact load so any encoding stages whole.
         let whole_untracked =
@@ -98,7 +102,7 @@ impl RepoSession {
     /// Whether `path` is an untracked (not ignored) worktree file.
     fn is_untracked(&self, path: &str) -> bool {
         self.repo()
-            .status_file(std::path::Path::new(path))
+            .status_file(Path::new(path))
             .is_ok_and(|s| s.contains(git2::Status::WT_NEW))
     }
 
@@ -126,10 +130,25 @@ impl RepoSession {
         let patch = git2::Patch::from_diff(&diff, idx)?.ok_or_else(no_changes)?;
         let delta = patch.delta();
         let change = change_kind(delta.status()).ok_or_else(no_changes)?;
-        let is_binary = delta.flags().is_binary();
-        let (hunks, truncated) = collect_hunks(&patch, opts.max_lines, mode, path)?;
+        let raw_binary = delta.flags().is_binary();
+        let decoded = if raw_binary && mode == LineMode::Display {
+            self.decode_sides(&delta, scope, opts, path)?
+        } else {
+            None
+        };
+        let (hunks, truncated, is_binary, old_encoding, new_encoding) = match decoded {
+            Some(d) => (d.hunks, d.truncated, false, d.old_encoding, d.new_encoding),
+            None => {
+                let (hunks, truncated) = collect_hunks(&patch, opts.max_lines, mode, path)?;
+                (hunks, truncated, raw_binary, None, None)
+            }
+        };
 
-        let no_visible_change = change == ChangeKind::Modified
+        // A decoded diff may have no hunks yet still differ in bytes (an
+        // encoding-only change), so it is never reported as `NoChanges`.
+        let no_visible_change = old_encoding.is_none()
+            && new_encoding.is_none()
+            && change == ChangeKind::Modified
             && !is_binary
             && patch.num_hunks() == 0
             && delta.old_file().mode() == delta.new_file().mode();
@@ -148,6 +167,8 @@ impl RepoSession {
                 is_binary,
                 hunks,
                 truncated,
+                old_encoding,
+                new_encoding,
             },
             old_mode: u32::from(delta.old_file().mode()),
             new_mode: u32::from(delta.new_file().mode()),
@@ -187,6 +208,109 @@ impl RepoSession {
                 Ok(diff)
             }
         }
+    }
+}
+
+/// Hunks rebuilt from transcoded text, with the encoding found on each side.
+struct DecodedSides {
+    hunks: Vec<Hunk>,
+    truncated: bool,
+    old_encoding: Option<TextEncoding>,
+    new_encoding: Option<TextEncoding>,
+}
+
+/// One side of a delta, read and sniffed for decoding.
+enum Sniffed {
+    /// The side does not exist (an added or deleted file).
+    Absent,
+    /// Readable text in a known encoding.
+    Text(Vec<u8>, TextEncoding),
+}
+
+impl Sniffed {
+    fn encoding(&self) -> Option<TextEncoding> {
+        match self {
+            Sniffed::Absent => None,
+            Sniffed::Text(_, encoding) => Some(*encoding),
+        }
+    }
+
+    /// The decoded text; an absent side is empty.
+    fn text(&self) -> String {
+        match self {
+            Sniffed::Absent => String::new(),
+            Sniffed::Text(bytes, encoding) => decode(bytes, *encoding),
+        }
+    }
+}
+
+impl RepoSession {
+    /// For a delta libgit2 called binary: when every present side is UTF-8,
+    /// UTF-16 or UTF-32 (and at least one is not UTF-8), rebuilds the hunks
+    /// from the decoded text. `None` leaves the diff binary.
+    fn decode_sides(
+        &self,
+        delta: &git2::DiffDelta<'_>,
+        scope: DiffScope,
+        opts: DiffOptions,
+        path: &str,
+    ) -> Result<Option<DecodedSides>, GitError> {
+        let Some(old) = self.sniff_side(delta.old_file(), scope, DiffSide::Old, opts)? else {
+            return Ok(None);
+        };
+        let Some(new) = self.sniff_side(delta.new_file(), scope, DiffSide::New, opts)? else {
+            return Ok(None);
+        };
+        let (old_encoding, new_encoding) = (old.encoding(), new.encoding());
+        let any_non_utf8 = [old_encoding, new_encoding]
+            .into_iter()
+            .flatten()
+            .any(|e| e != TextEncoding::Utf8);
+        if !any_non_utf8 {
+            return Ok(None); // UTF-8 with a NUL byte really is binary
+        }
+        let (old_text, new_text) = (old.text(), new.text());
+        let mut o = git2::DiffOptions::new();
+        o.ignore_whitespace(opts.ignore_whitespace)
+            .context_lines(opts.context_lines);
+        let old_path = file_path(&delta.old_file());
+        let patch = git2::Patch::from_buffers(
+            old_text.as_bytes(),
+            Some(Path::new(&old_path)),
+            new_text.as_bytes(),
+            Some(Path::new(path)),
+            Some(&mut o),
+        )?;
+        if patch.delta().flags().is_binary() {
+            return Ok(None); // the decoded text holds U+0000, so it is binary after all
+        }
+        let (hunks, truncated) = collect_hunks(&patch, opts.max_lines, LineMode::Display, path)?;
+        Ok(Some(DecodedSides {
+            hunks,
+            truncated,
+            old_encoding,
+            new_encoding,
+        }))
+    }
+
+    /// Reads and sniffs one side of a delta. `None` keeps the diff binary: the
+    /// side exists but is unreadable, above `max_decode_bytes`, or not text.
+    fn sniff_side(
+        &self,
+        file: git2::DiffFile<'_>,
+        scope: DiffScope,
+        side: DiffSide,
+        opts: DiffOptions,
+    ) -> Result<Option<Sniffed>, GitError> {
+        if !file.exists() {
+            return Ok(Some(Sniffed::Absent));
+        }
+        let bytes = match self.file_content(&file_path(&file), scope, side, opts.max_decode_bytes) {
+            Ok(bytes) => bytes,
+            Err(GitError::TooLarge { .. } | GitError::PathNotFound(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        Ok(detect_encoding(&bytes).map(|encoding| Sniffed::Text(bytes, encoding)))
     }
 }
 

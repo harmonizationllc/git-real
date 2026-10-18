@@ -45,6 +45,7 @@ fn diff_options_default_values() {
         (opts.ignore_whitespace, opts.context_lines, opts.max_lines),
         (false, 3, 10_000)
     );
+    assert_eq!(opts.max_decode_bytes, 20 * 1024 * 1024);
 }
 
 // --- unstaged modifications ---
@@ -608,6 +609,8 @@ fn diff_file_diff_serializes_camel_case() {
             "change",
             "hunks",
             "isBinary",
+            "newEncoding",
+            "oldEncoding",
             "oldPath",
             "path",
             "scope",

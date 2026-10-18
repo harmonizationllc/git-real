@@ -90,3 +90,56 @@ describe("RepoError other kinds", () => {
     },
   );
 });
+
+// Contract: Retry is offered only when a handler is given, sits before Dismiss and calls it.
+describe("RepoError retry", () => {
+  it("should render a Retry button when onRetry is given", () => {
+    render(<RepoError error={missing} path={null} onRetry={vi.fn()} onDismiss={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("should call onRetry once and not onDismiss when Retry is clicked", async () => {
+    const onRetry = vi.fn();
+    const onDismiss = vi.fn();
+    const user = userEvent.setup();
+    render(<RepoError error={missing} path={null} onRetry={onRetry} onDismiss={onDismiss} />);
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("should render no Retry button when onRetry is omitted", () => {
+    render(<RepoError error={missing} path="/r" onDismiss={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("should place Retry before Dismiss", () => {
+    render(<RepoError error={missing} path={null} onRetry={vi.fn()} onDismiss={vi.fn()} />);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Retry", "Dismiss"]);
+  });
+
+  it("should offer init, Retry and Dismiss together in that order", () => {
+    render(
+      <RepoError
+        error={notARepo}
+        path="/r"
+        onInitHere={vi.fn()}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Initialize repository here",
+      "Retry",
+      "Dismiss",
+    ]);
+  });
+
+  it("should not call onRetry when Dismiss is clicked", async () => {
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    render(<RepoError error={missing} path={null} onRetry={onRetry} onDismiss={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+});
