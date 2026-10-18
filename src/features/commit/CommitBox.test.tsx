@@ -128,8 +128,17 @@ describe("CommitBox", () => {
     vi.mocked(getHeadMessage).mockResolvedValue(null);
     renderWithProviders(<CommitBox repoId={1} />);
     const amend = screen.getByRole("checkbox", { name: "Amend last commit" });
-    await waitFor(() => expect(amend).toBeDisabled());
-    expect(amend).toHaveAttribute("title", "No commit to amend");
+    await waitFor(() => expect(amend).toHaveAttribute("title", "No commit to amend"));
+    expect(amend).toBeDisabled();
+  });
+
+  it("disables the amend checkbox without a title while HEAD is still loading", async () => {
+    vi.mocked(getHeadMessage).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    const amend = screen.getByRole("checkbox", { name: "Amend last commit" });
+    expect(amend).toBeDisabled();
+    expect(amend).not.toHaveAttribute("title");
   });
 
   it("disables everything and says Committing… while pending", async () => {
@@ -171,6 +180,16 @@ describe("CommitBox", () => {
     vi.mocked(getCommitConfig).mockRejectedValue({ kind: "git", message: "config broken" });
     renderWithProviders(<CommitBox repoId={1} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("config broken");
+  });
+
+  it("refetches the config when the config error is dismissed", async () => {
+    vi.mocked(getCommitConfig).mockRejectedValueOnce({ kind: "git", message: "config broken" });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(getCommitConfig).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(await screen.findByText("Ada <ada@x.org>")).toBeInTheDocument();
   });
 
   it("shows the identity reason when the author is not configured", async () => {

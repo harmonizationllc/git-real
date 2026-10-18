@@ -1,4 +1,4 @@
-import { waitFor } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCommitConfig } from "../../lib/ipc";
 import type { AppError, CommitConfig } from "../../lib/ipc";
@@ -37,5 +37,13 @@ describe("useCommitConfig", () => {
     vi.mocked(getCommitConfig).mockRejectedValue(new Error("boom"));
     const { result } = renderHookWithProviders(() => useCommitConfig(1));
     await waitFor(() => expect(result.current.error).toEqual({ kind: "io", message: "boom" }));
+  });
+
+  it("refetch calls getCommitConfig again", async () => {
+    vi.mocked(getCommitConfig).mockResolvedValue(cfg);
+    const { result } = renderHookWithProviders(() => useCommitConfig(1));
+    await waitFor(() => expect(result.current.config).toEqual(cfg));
+    act(() => result.current.refetch());
+    await waitFor(() => expect(getCommitConfig).toHaveBeenCalledTimes(2));
   });
 });
