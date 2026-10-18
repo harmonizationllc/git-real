@@ -172,3 +172,48 @@ describe("useRepoChanged multi-repo isolation", () => {
     expect(spy).toHaveBeenCalledExactlyOnceWith({ queryKey: queryKeys.repo(2) });
   });
 });
+
+// Coverage audit: multiple hooks and ordering of unsubscribe on repo switch.
+describe("useRepoChanged multiple subscribers and switching", () => {
+  it("should subscribe twice when two hooks for the same repo are mounted", async () => {
+    renderHookWithProviders(() => {
+      useRepoChanged(5);
+      useRepoChanged(5);
+    });
+    await waitFor(() => expect(onRepoChanged).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(onRepoChanged).mock.calls.map((c) => c[0])).toEqual([5, 5]);
+  });
+
+  it("should unlisten both subscriptions when two hooks unmount", async () => {
+    const view = renderHookWithProviders(() => {
+      useRepoChanged(5);
+      useRepoChanged(5);
+    });
+    await waitFor(() => expect(onRepoChanged).toHaveBeenCalledTimes(2));
+    view.unmount();
+    await waitFor(() => expect(unlisten).toHaveBeenCalledTimes(2));
+  });
+
+  it("should release the old subscription on repoId change before the new one resolves", async () => {
+    const oldUnlisten = vi.fn();
+    const newUnlisten = vi.fn();
+    let resolveNew: (u: () => void) => void = () => undefined;
+    vi.mocked(onRepoChanged)
+      .mockImplementationOnce(async () => oldUnlisten as unknown as () => void)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNew = resolve;
+          }),
+      );
+    let id = 1;
+    const { rerender } = renderHookWithProviders(() => useRepoChanged(id));
+    await waitFor(() => expect(onRepoChanged).toHaveBeenCalledTimes(1));
+    id = 2;
+    rerender();
+    await waitFor(() => expect(onRepoChanged).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(oldUnlisten).toHaveBeenCalledOnce());
+    expect(newUnlisten).not.toHaveBeenCalled();
+    resolveNew(newUnlisten as unknown as () => void);
+  });
+});

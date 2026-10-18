@@ -302,3 +302,114 @@ describe("SplitHandle reset", () => {
     expect(onReset).not.toHaveBeenCalled();
   });
 });
+
+// Coverage audit: pointer sequences and keyboard edges.
+describe("SplitHandle pointer sequence edges", () => {
+  it("should reset the drag origin on a second pointerdown without a pointerup", () => {
+    const { handle, onChange } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerDown(handle, { clientX: 400, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 410, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(310);
+  });
+
+  it("should ignore a pointermove that follows pointerup even after an earlier drag moved", () => {
+    const { handle, onChange } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 110, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 110, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 200, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("should report exactly min when a drag lands precisely on the minimum", () => {
+    const { handle, onChange } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 500, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 360, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(160);
+  });
+
+  it("should report a zero-delta move as the current value", () => {
+    const { handle, onChange } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 100, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300);
+  });
+
+  it("should pass fractional pointer deltas through unrounded", () => {
+    const { handle, onChange } = renderHandle();
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 100.5, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300.5);
+  });
+
+  it("should start the next drag from the value prop current at pointerdown", () => {
+    const onChange = vi.fn();
+    const props = { label: "L", min: 160, max: 500, step: 16, onChange, onReset: vi.fn() };
+    const { rerender } = render(<SplitHandle {...props} value={200} />);
+    const handle = screen.getByRole("separator");
+    rerender(<SplitHandle {...props} value={250} />);
+    fireEvent.pointerDown(handle, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 10, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(260);
+  });
+});
+
+describe("SplitHandle keyboard edges", () => {
+  it("should still report min on ArrowLeft when the value is already at min", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 160 });
+    handle.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(160);
+  });
+
+  it("should still report max on ArrowRight when the value is already at max", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 500 });
+    handle.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(500);
+  });
+
+  it("should report min on Home when the value is already at min", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 160 });
+    handle.focus();
+    await user.keyboard("{Home}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(160);
+  });
+
+  it("should report max on End when the value is already at max", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 500 });
+    handle.focus();
+    await user.keyboard("{End}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(500);
+  });
+
+  it("should clamp to max when a step overshoots it", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 495 });
+    handle.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(500);
+  });
+
+  it("should ignore vertical arrow keys", async () => {
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle();
+    handle.focus();
+    await user.keyboard("{ArrowUp}{ArrowDown}");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("should clamp to max when max is below min (min wins as the lower bound only)", async () => {
+    // clamp is min(max, max(min, px)); with max < min the result is max. Pin the behaviour.
+    const user = userEvent.setup();
+    const { handle, onChange } = renderHandle({ value: 300, min: 400, max: 350 });
+    handle.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(350);
+  });
+});

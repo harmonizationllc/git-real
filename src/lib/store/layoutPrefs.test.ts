@@ -92,3 +92,46 @@ describe("useLayoutPrefs", () => {
     expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
   });
 });
+
+// Coverage audit: rehydration pins current behaviour for out-of-range and non-numeric values.
+// The store does not validate; clampWidths floors numbers and RepoPane must tolerate the rest.
+describe("useLayoutPrefs rehydration of unexpected values", () => {
+  const store = (state: unknown) =>
+    localStorage.setItem("git-real.layoutPrefs", JSON.stringify({ state, version: 0 }));
+
+  it("should pass through a stored width below the column minimum (clamping is the layout's job)", async () => {
+    store({ refsWidth: 10, sidebarWidth: 20 });
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 10, sidebarWidth: 20 });
+  });
+
+  it("should pass a stored null through unchanged (current behaviour)", async () => {
+    store({ refsWidth: null, sidebarWidth: 410 });
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: null, sidebarWidth: 410 });
+  });
+
+  it("should pass a stored non-number through unchanged (current behaviour)", async () => {
+    store({ refsWidth: "wide", sidebarWidth: 410 });
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().refsWidth).toBe("wide");
+  });
+
+  it("should keep a default for a width missing from storage", async () => {
+    store({ refsWidth: 200 });
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 200, sidebarWidth: 320 });
+  });
+
+  it("should keep the setters working after rehydrating", async () => {
+    store({ refsWidth: 200, sidebarWidth: 410 });
+    await useLayoutPrefs.persist.rehydrate();
+    useLayoutPrefs.getState().reset("refs");
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 410 });
+  });
+
+  it("should rehydrate empty storage as the defaults", async () => {
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
+  });
+});

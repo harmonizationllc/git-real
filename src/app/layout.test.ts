@@ -76,3 +76,51 @@ describe("maxWidth", () => {
   it("treats a below-minimum other column as its minimum", () =>
     expect(maxWidth(1200, "refs", 10)).toBe(1200 - DETAIL_MIN - SIDEBAR_MIN));
 });
+
+// Coverage audit: boundary and degenerate containers.
+describe("clampWidths boundaries", () => {
+  const fit = REFS_MIN + SIDEBAR_MIN + DETAIL_MIN;
+
+  it("keeps the minimums untouched when the container exactly equals the sum of minimums", () =>
+    expect(clampWidths(fit, REFS_MIN, SIDEBAR_MIN)).toEqual({ refs: 160, sidebar: 240 }));
+
+  it("shrinks the sidebar by exactly the overflow when the container is one pixel too small", () =>
+    expect(clampWidths(879, 240, 320)).toEqual({ refs: 240, sidebar: 319 }));
+
+  it("cuts the refs column only once the sidebar is exhausted, one pixel at a time", () =>
+    expect(clampWidths(759, 240, 320)).toEqual({ refs: 199, sidebar: 240 }));
+
+  it("lands exactly on the minimums when the overflow equals the available slack", () =>
+    expect(clampWidths(fit, 240, 320)).toEqual({ refs: 160, sidebar: 240 }));
+
+  it("treats a negative container as unmeasured and passes widths through", () =>
+    expect(clampWidths(-5, 10, 10)).toEqual({ refs: 10, sidebar: 10 }));
+
+  it("handles fractional widths without rounding", () =>
+    expect(clampWidths(879.5, 240.25, 320.5)).toEqual({ refs: 240.25, sidebar: 319.25 }));
+
+  it("returns the sum of both columns plus the detail minimum within the container whenever possible", () => {
+    const { refs, sidebar } = clampWidths(1000, 400, 500);
+    expect(refs + sidebar + DETAIL_MIN).toBe(1000);
+  });
+});
+
+describe("maxWidth boundaries", () => {
+  it("is unbounded for a negative container", () =>
+    expect(maxWidth(-1, "sidebar", 240)).toBe(Infinity));
+
+  it("equals the column minimum exactly when the container is the sum of minimums", () => {
+    const fit = REFS_MIN + SIDEBAR_MIN + DETAIL_MIN;
+    expect(maxWidth(fit, "refs", SIDEBAR_MIN)).toBe(REFS_MIN);
+    expect(maxWidth(fit, "sidebar", REFS_MIN)).toBe(SIDEBAR_MIN);
+  });
+
+  it("grows by one pixel when the container grows by one pixel past the minimums", () =>
+    expect(maxWidth(721, "refs", SIDEBAR_MIN)).toBe(161));
+
+  it("treats a below-minimum sidebar as its minimum when computing the refs maximum", () =>
+    expect(maxWidth(1000, "refs", 0)).toBe(1000 - DETAIL_MIN - SIDEBAR_MIN));
+
+  it("treats a below-minimum refs column as its minimum when computing the sidebar maximum", () =>
+    expect(maxWidth(1000, "sidebar", 0)).toBe(1000 - DETAIL_MIN - REFS_MIN));
+});

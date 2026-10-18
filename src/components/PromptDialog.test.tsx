@@ -373,3 +373,121 @@ describe("PromptDialog submit guards", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });
+
+// Coverage audit: whitespace, pending and focus edge cases.
+describe("PromptDialog edge cases", () => {
+  it("should trim surrounding whitespace from initialValue on submit", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderDialog({ initialValue: "  topic  " });
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith("topic");
+  });
+
+  it("should keep interior whitespace when trimming", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderDialog({ initialValue: " a b " });
+    await user.keyboard("{Enter}");
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith("a b");
+  });
+
+  it("should call onCancel on Escape even while pending (current behaviour)", async () => {
+    const user = userEvent.setup();
+    const { onCancel } = renderDialog({ pending: true, initialValue: "x" });
+    screen.getByRole("dialog").focus();
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should call onCancel when Cancel is clicked while pending (current behaviour)", async () => {
+    const user = userEvent.setup();
+    const { onCancel } = renderDialog({ pending: true, initialValue: "x" });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should not call checkbox.onChange when the checkbox is clicked while pending", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderDialog({
+      pending: true,
+      checkbox: { label: "Switch", checked: false, onChange },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "Switch" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("should not call onConfirm when confirm is clicked while pending", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderDialog({ pending: true, initialValue: "x" });
+    await user.click(screen.getByRole("button", { name: "Working…" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("should not throw when the previously focused element was removed before close", () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const view = renderDialog();
+    opener.remove();
+    expect(() => view.unmount()).not.toThrow();
+  });
+
+  it("should enable confirm again when the error clears and pending ends", () => {
+    const error: AppError = { kind: "branchExists", message: "exists" };
+    const ui = (pending: boolean, e: AppError | null) => (
+      <PromptDialog
+        open
+        title="T"
+        label="Name"
+        initialValue="x"
+        error={e}
+        pending={pending}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const view = render(ui(true, null));
+    view.rerender(ui(false, error));
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("exists");
+  });
+
+  it("should keep typed text when pending toggles on and off", async () => {
+    const user = userEvent.setup();
+    const ui = (pending: boolean) => (
+      <PromptDialog
+        open
+        title="T"
+        label="Name"
+        error={null}
+        pending={pending}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const view = render(ui(false));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "topic");
+    view.rerender(ui(true));
+    view.rerender(ui(false));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("topic");
+  });
+
+  it("should reflect checkbox prop changes from the parent", () => {
+    const base = { label: "Switch", onChange: vi.fn() };
+    const ui = (checked: boolean) => (
+      <PromptDialog
+        open
+        title="T"
+        label="Name"
+        checkbox={{ ...base, checked }}
+        error={null}
+        pending={false}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    expect(screen.getByRole("checkbox", { name: "Switch" })).toBeChecked();
+  });
+});
