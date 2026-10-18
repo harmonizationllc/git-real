@@ -634,3 +634,19 @@ describe("ContextMenu under StrictMode", () => {
     expect(screen.getByRole("menuitem", { name: "Alpha" })).toHaveFocus();
   });
 });
+
+// Contract: an item may carry a title that explains what it does (GR-7 remote Checkout).
+describe("ContextMenu item title", () => {
+  it("should render the title attribute of an item that has one", () => {
+    renderMenu(makeItems([{ title: "Creates a local branch" }]));
+    expect(screen.getByRole("menuitem", { name: "Alpha" })).toHaveAttribute(
+      "title",
+      "Creates a local branch",
+    );
+  });
+
+  it("should render no title attribute on an item without one", () => {
+    renderMenu(makeItems());
+    expect(screen.getByRole("menuitem", { name: "Bravo" })).not.toHaveAttribute("title");
+  });
+});

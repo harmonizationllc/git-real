@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type {
   AppErrorKind,
+  BranchList,
+  HeadState,
+  LocalBranch,
+  RemoteBranch,
+  RemoteGroup,
+  Tracking,
   CommitConfig,
   CommitMessage,
   CommitOutcome,
@@ -146,5 +152,53 @@ describe("commit DTO shapes", () => {
     const kinds: AppErrorKind[] = ["emptyMessage", "nothingToCommit", "commitFailed"];
     expect(Object.keys(formats)).toHaveLength(3);
     expect(kinds).toHaveLength(3);
+  });
+});
+
+// Compile-time parity with the Rust branch DTOs; `tsc` fails until the types exist.
+describe("branch DTO shapes", () => {
+  it("should accept a Tracking and a LocalBranch carrying every field", () => {
+    const tracking: Tracking = { upstream: "origin/main", ahead: 1, behind: null };
+    const branch: LocalBranch = { name: "main", oid: "abc", isHead: true, tracking };
+    expect(Object.keys(tracking).sort()).toEqual(["ahead", "behind", "upstream"]);
+    expect(Object.keys(branch).sort()).toEqual(["isHead", "name", "oid", "tracking"]);
+  });
+
+  it("should accept a RemoteBranch, RemoteGroup and BranchList carrying every field", () => {
+    const remote: RemoteBranch = { remote: "origin", name: "main", oid: "abc" };
+    const group: RemoteGroup = { remote: "origin", branches: [remote] };
+    const list: BranchList = {
+      head: { kind: "branch", name: "main" },
+      local: [],
+      remotes: [group],
+    };
+    expect(Object.keys(remote).sort()).toEqual(["name", "oid", "remote"]);
+    expect(Object.keys(group).sort()).toEqual(["branches", "remote"]);
+    expect(Object.keys(list).sort()).toEqual(["head", "local", "remotes"]);
+  });
+
+  it("should cover every HeadState variant", () => {
+    const heads: HeadState[] = [
+      { kind: "branch", name: "main" },
+      { kind: "detached", oid: "abc" },
+      { kind: "unborn", name: "main" },
+    ];
+    expect(heads.map((h) => h.kind)).toEqual(["branch", "detached", "unborn"]);
+  });
+
+  it("should cover the ten branch AppErrorKind members", () => {
+    const kinds: AppErrorKind[] = [
+      "invalidBranchName",
+      "branchExists",
+      "branchNotFound",
+      "branchNotMerged",
+      "cannotDeleteCurrent",
+      "unbornHead",
+      "revisionNotFound",
+      "remoteNotFound",
+      "checkoutFailed",
+      "pushFailed",
+    ];
+    expect(kinds).toHaveLength(10);
   });
 });

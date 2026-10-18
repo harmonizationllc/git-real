@@ -45,6 +45,13 @@ pub fn run() {
             commands::commit::get_commit_config,
             commands::commit::get_head_message,
             commands::commit::commit,
+            commands::refs::list_branches,
+            commands::refs::create_branch,
+            commands::refs::rename_branch,
+            commands::refs::delete_branch,
+            commands::refs::checkout_branch,
+            commands::refs::checkout_remote_branch,
+            commands::refs::delete_remote_branch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

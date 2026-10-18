@@ -7,6 +7,8 @@ export interface MenuItem {
   label: string;
   danger?: boolean;
   disabled?: boolean;
+  /** Tooltip explaining what the item does. */
+  title?: string;
   onSelect(): void;
 }
 
@@ -105,6 +107,7 @@ function ContextMenuBody({ x, y, items, onClose }: Omit<ContextMenuProps, "open"
           tabIndex={-1}
           className={styles.item}
           disabled={item.disabled}
+          title={item.title}
           data-danger={item.danger ? "true" : undefined}
           onClick={() => {
             item.onSelect();

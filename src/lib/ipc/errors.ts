@@ -17,6 +17,16 @@ const KINDS: Record<AppErrorKind, true> = {
   emptyMessage: true,
   nothingToCommit: true,
   commitFailed: true,
+  invalidBranchName: true,
+  branchExists: true,
+  branchNotFound: true,
+  branchNotMerged: true,
+  cannotDeleteCurrent: true,
+  unbornHead: true,
+  revisionNotFound: true,
+  remoteNotFound: true,
+  checkoutFailed: true,
+  pushFailed: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

@@ -72,6 +72,30 @@ describe("isAppError worktree kinds", () => {
   });
 });
 
+// Contract: the ten branch-management error kinds are recognised by the guard.
+describe("isAppError branch kinds", () => {
+  const branchKinds: AppErrorKind[] = [
+    "invalidBranchName",
+    "branchExists",
+    "branchNotFound",
+    "branchNotMerged",
+    "cannotDeleteCurrent",
+    "unbornHead",
+    "revisionNotFound",
+    "remoteNotFound",
+    "checkoutFailed",
+    "pushFailed",
+  ];
+
+  it.each(branchKinds)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it("isAppError still rejects a near-miss kind", () => {
+    expect(isAppError({ kind: "branchexists", message: "m" })).toBe(false);
+  });
+});
+
 // Contract: toAppError coerces any thrown value into an AppError.
 describe("toAppError", () => {
   it("should return an AppError unchanged", () => {

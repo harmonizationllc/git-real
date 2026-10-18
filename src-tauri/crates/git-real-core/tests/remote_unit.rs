@@ -1,4 +1,4 @@
-use git_real_core::remote::git_cli::locate_in;
+use git_real_core::git_cli::locate_in;
 use git_real_core::remote::progress_parser::{LineBuffer, parse_line, split_chunks};
 use git_real_core::{Progress, ProgressPhase};
 

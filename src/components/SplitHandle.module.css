@@ -1,0 +1,23 @@
+/* A hit area (width set inline from SPLIT_HANDLE_WIDTH) drawing a 1px line in its middle. */
+.handle {
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--color-border) 2px 3px,
+    transparent 3px
+  );
+}
+
+.handle:hover,
+.handle:focus-visible {
+  outline: none;
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--color-accent) 2px 3px,
+    transparent 3px
+  );
+}

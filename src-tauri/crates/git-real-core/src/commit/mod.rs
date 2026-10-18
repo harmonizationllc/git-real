@@ -10,8 +10,8 @@ pub mod message;
 use git2::{Config, ErrorCode};
 
 use crate::error::GitError;
+use crate::git_cli;
 use crate::model::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
-use crate::remote::git_cli;
 use crate::repo::RepoSession;
 
 impl RepoSession {

@@ -1,0 +1,23 @@
+.group {
+  padding: 8px 0;
+}
+
+.heading {
+  margin: 0;
+  padding: 0 8px 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.empty {
+  margin: 4px 16px;
+  color: var(--color-text-muted);
+}

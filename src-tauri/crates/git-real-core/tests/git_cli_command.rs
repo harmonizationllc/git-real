@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 use std::path::Path;
 
-use git_real_core::remote::git_cli::command;
+use git_real_core::git_cli::command;
 
 fn env_of(cmd: &std::process::Command, key: &str) -> Option<Option<String>> {
     cmd.get_envs()

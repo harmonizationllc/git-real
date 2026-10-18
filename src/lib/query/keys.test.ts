@@ -154,3 +154,30 @@ describe("commit query keys", () => {
     expect(queryKeys.commitConfig(4)).not.toEqual(queryKeys.headMessage(4));
   });
 });
+
+// Contract: the branch list lives under the repo prefix so repo-changed refreshes it.
+describe("branch query keys", () => {
+  it("should define branches(id) as ['repo', id, 'branches']", () => {
+    expect(queryKeys.branches(3)).toEqual(["repo", 3, "branches"]);
+  });
+
+  it("should make repo(id) a prefix of branches(id)", () => {
+    expect(queryKeys.branches(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+  });
+
+  it("should differ between repo ids and from the status key", () => {
+    expect(queryKeys.branches(3)).not.toEqual(queryKeys.branches(4));
+    expect(queryKeys.branches(3)).not.toEqual(queryKeys.status(3));
+  });
+
+  it("should be invalidated by repo(id) invalidation of that repo only", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.branches(1), 1);
+    qc.setQueryData(queryKeys.branches(2), 1);
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect([
+      qc.getQueryState(queryKeys.branches(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.branches(2))?.isInvalidated,
+    ]).toEqual([true, false]);
+  });
+});

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use git_real_core::remote::git_cli;
+use git_real_core::git_cli;
 use git_real_core::{Progress, ProgressSink};
 use git_real_lib::recent_store::RecentStore;
 use git_real_lib::state::RepoRegistry;
@@ -98,4 +98,81 @@ pub fn configure_identity(root: &Path) {
     config
         .set_bool("commit.gpgsign", false)
         .expect("set gpgsign");
+}
+
+/// Writes `name` with `content`, stages it and commits on HEAD; returns the new oid.
+pub fn commit_file(path: &Path, name: &str, content: &str, message: &str) -> git2::Oid {
+    let repo = Repository::open(path).expect("open repo");
+    std::fs::write(path.join(name), content).expect("write file");
+    let mut index = repo.index().expect("open index");
+    index.add_path(Path::new(name)).expect("stage file");
+    index.write().expect("write index");
+    let tree = repo
+        .find_tree(index.write_tree().expect("write tree"))
+        .expect("find tree");
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+    let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+        .expect("commit")
+}
+
+/// Adds `bare` (a local path, no network) as remote `origin` and fetches it.
+pub fn add_remote_and_fetch(path: &Path, bare: &Path) {
+    {
+        let repo = Repository::open(path).expect("open repo");
+        repo.remote("origin", bare.to_str().expect("utf-8 path"))
+            .expect("add remote");
+    }
+    fetch_origin(path);
+}
+
+/// Fetches every branch of `origin` into `refs/remotes/origin/*`.
+pub fn fetch_origin(path: &Path) {
+    let repo = Repository::open(path).expect("open repo");
+    let mut remote = repo.find_remote("origin").expect("find origin");
+    remote
+        .fetch(&["+refs/heads/*:refs/remotes/origin/*"], None, None)
+        .expect("fetch");
+}
+
+/// Pushes local branch `branch` to `origin` over the local path (no network).
+pub fn push_branch(path: &Path, branch: &str) {
+    let repo = Repository::open(path).expect("open repo");
+    let mut remote = repo.find_remote("origin").expect("find origin");
+    let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    remote.push(&[spec.as_str()], None).expect("push");
+}
+
+/// Creates `branch` at HEAD, commits `file` on it, then returns the working
+/// tree to the original branch. Returns the new commit's oid.
+pub fn branch_with_commit(path: &Path, branch: &str, file: &str, content: &str) -> git2::Oid {
+    let original = {
+        let repo = Repository::open(path).expect("open repo");
+        let head = repo.head().expect("head");
+        let original = head.name().expect("utf-8 ref").to_string();
+        let commit = head.peel_to_commit().expect("head commit");
+        repo.branch(branch, &commit, false).expect("create branch");
+        repo.set_head(&format!("refs/heads/{branch}"))
+            .expect("switch to branch");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout branch");
+        original
+    };
+    let oid = commit_file(path, file, content, &format!("commit on {branch}"));
+    let repo = Repository::open(path).expect("open repo");
+    repo.set_head(&original).expect("switch back");
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+        .expect("checkout original");
+    oid
+}
+
+/// The short name of the branch HEAD points at (the fixtures do not assume `main`).
+pub fn head_branch_name(path: &Path) -> String {
+    let repo = Repository::open(path).expect("open repo");
+    let head = repo.find_reference("HEAD").expect("HEAD");
+    head.symbolic_target()
+        .and_then(|t| t.strip_prefix("refs/heads/"))
+        .expect("HEAD is symbolic")
+        .to_string()
 }

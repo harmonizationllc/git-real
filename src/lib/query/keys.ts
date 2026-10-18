@@ -17,4 +17,5 @@ export const queryKeys = {
     ["repo", id, "content", path, scope, side] as const,
   commitConfig: (id: RepoId) => ["repo", id, "commitConfig"] as const,
   headMessage: (id: RepoId) => ["repo", id, "headMessage"] as const,
+  branches: (id: RepoId) => ["repo", id, "branches"] as const,
 };

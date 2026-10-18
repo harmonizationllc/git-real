@@ -6,7 +6,7 @@ use std::process::{ChildStdin, Stdio};
 use std::thread;
 
 use crate::error::GitError;
-use crate::remote::git_cli;
+use crate::git_cli;
 
 /// Runs `git -C <workdir> commit --cleanup=whitespace -F - [--amend]` with
 /// `message` on stdin. Hooks, signing and identity fallback are git's.
