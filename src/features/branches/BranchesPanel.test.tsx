@@ -1044,3 +1044,135 @@ describe("BranchesPanel body states", () => {
     expect(screen.queryByText("No branches")).toBeNull();
   });
 });
+
+// Contract: the detached/unborn leading row is informational only.
+describe("BranchesPanel leading row", () => {
+  it("should open no context menu on a right-click of the detached row", async () => {
+    await renderPanel(list({ head: { kind: "detached", oid: "0123abcdef".padEnd(40, "0") } }));
+    rightClick(screen.getByText("Detached at 0123abc"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should open no context menu on a right-click of the unborn row", async () => {
+    await renderPanel(list({ head: { kind: "unborn", name: "main" }, local: [] }));
+    rightClick(screen.getByText("main (no commits yet)"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+// Contract: names are passed to the backend verbatim; its validation errors stay in the dialog.
+describe("BranchesPanel dialog name handling", () => {
+  it("should create a branch whose name contains a slash with the name unchanged", async () => {
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const dialog = await dialogNamed("New branch");
+    await user.type(within(dialog).getByLabelText("Name"), "feature/login");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    expect(createBranch).toHaveBeenCalledExactlyOnceWith(1, "feature/login", null, true);
+  });
+
+  it("should keep the create dialog open with the invalid-name message and the typed value", async () => {
+    vi.mocked(createBranch).mockRejectedValue({
+      kind: "invalidBranchName",
+      message: "'a..b' is not a valid branch name",
+    });
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const dialog = await dialogNamed("New branch");
+    await user.type(within(dialog).getByLabelText("Name"), "a..b");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "'a..b' is not a valid branch name",
+    );
+    expect(screen.getByRole("dialog", { name: "New branch" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("a..b");
+    expect(within(dialog).getByRole("button", { name: "Create" })).toBeEnabled();
+  });
+
+  it("should keep the rename dialog open with the invalid-name message", async () => {
+    vi.mocked(renameBranch).mockRejectedValue({
+      kind: "invalidBranchName",
+      message: "'bad name' is not a valid branch name",
+    });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rename…"));
+    const dialog = await dialogNamed("Rename feature");
+    const input = within(dialog).getByLabelText("New name");
+    await user.clear(input);
+    await user.type(input, "bad name");
+    await user.click(within(dialog).getByRole("button", { name: "Rename" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("not a valid branch name");
+    expect(input).toHaveValue("bad name");
+  });
+
+  it("should send the unchanged name to the backend and surface its refusal inline", async () => {
+    vi.mocked(renameBranch).mockRejectedValue({ kind: "branchExists", message: "already exists" });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rename…"));
+    const dialog = await dialogNamed("Rename feature");
+    await user.click(within(dialog).getByRole("button", { name: "Rename" }));
+    expect(renameBranch).toHaveBeenCalledExactlyOnceWith(1, "feature", "feature");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("already exists");
+  });
+});
+
+// Contract: cancelling the force dialog changes nothing.
+describe("BranchesPanel cancelled force delete", () => {
+  it("should leave the branch listed and not retry the delete", async () => {
+    vi.mocked(deleteBranch).mockRejectedValueOnce(notMerged);
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Delete…"));
+    const first = await dialogNamed("Delete branch feature?");
+    await user.click(within(first).getByRole("button", { name: "Delete" }));
+    const force = await dialogNamed("Force delete feature?");
+    await user.click(within(force).getByRole("button", { name: "Cancel" }));
+    expect(localRow("feature")).toBeInTheDocument();
+    expect(deleteBranch).toHaveBeenCalledExactlyOnceWith(1, "feature", false);
+  });
+});
+
+// Contract: the filter is local view state and survives a list refetch.
+describe("BranchesPanel filter across refetch", () => {
+  it("should keep the query and the narrowed rows after the list is refetched", async () => {
+    const { user } = await renderPanel();
+    const filter = screen.getByRole("searchbox", { name: "Filter branches" });
+    await user.type(filter, "feat");
+    await user.dblClick(localRow("feature"));
+    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
+    );
+    expect(filter).toHaveValue("feat");
+    expect(localRow("feature")).toBeInTheDocument();
+    expect(screen.queryByTitle("refs/heads/main")).toBeNull();
+  });
+});
+
+// Contract: busy state follows the action, including a failed one.
+describe("BranchesPanel busy state after failure", () => {
+  it("should clear aria-busy once a failed action has settled", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await screen.findByRole("alert");
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
+    );
+  });
+
+  it("should disable every item of a remote branch's menu while an action is pending", async () => {
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+    );
+    rightClick(remoteRow("origin", "other"));
+    const items = screen.getAllByRole("menuitem");
+    expect(items).toHaveLength(2);
+    for (const item of items) expect(item).toBeDisabled();
+  });
+});

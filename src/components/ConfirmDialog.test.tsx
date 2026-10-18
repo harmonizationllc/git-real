@@ -383,3 +383,13 @@ describe("ConfirmDialog pending", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
   });
 });
+
+// Contract: pending keeps the danger styling on the disabled confirm button.
+describe("ConfirmDialog pending with danger", () => {
+  it("should keep data-danger on the Working… confirm button", () => {
+    renderDialog({ pending: true, danger: true, confirmLabel: "Delete" });
+    const confirm = screen.getByRole("button", { name: "Working…" });
+    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute("data-danger", "true");
+  });
+});

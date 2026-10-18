@@ -517,3 +517,71 @@ describe("RepoPane resize observer", () => {
     expect(observer().disconnect).not.toHaveBeenCalled();
   });
 });
+
+// Contract: stored widths below the minimums display clamped once the container is measured.
+describe("RepoPane minimum widths", () => {
+  it("should display the minimums after an observation when the stored widths are smaller", async () => {
+    useLayoutPrefs.setState({ refsWidth: 100, sidebarWidth: 100 });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => observer().fire(2000));
+    expect(body().style.gridTemplateColumns).toBe("160px auto 240px auto 1fr");
+    expect(handle("Resize branches column")).toHaveAttribute("aria-valuenow", "160");
+    expect(handle("Resize changes column")).toHaveAttribute("aria-valuenow", "240");
+  });
+
+  it("should leave the stored widths untouched while displaying the minimums", async () => {
+    useLayoutPrefs.setState({ refsWidth: 100, sidebarWidth: 100 });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => observer().fire(2000));
+    expect(useLayoutPrefs.getState().refsWidth).toBe(100);
+    expect(useLayoutPrefs.getState().sidebarWidth).toBe(100);
+  });
+});
+
+// Contract: each handle's maximum leaves the detail minimum and the other column's width.
+describe("RepoPane handle maximums", () => {
+  it("should set each maximum from the body width minus both handle tracks", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => observer().fire(1000));
+    // available = 1000 - 12 = 988; detail minimum 320
+    expect(handle("Resize branches column")).toHaveAttribute(
+      "aria-valuemax",
+      String(988 - 320 - 320),
+    );
+    expect(handle("Resize changes column")).toHaveAttribute(
+      "aria-valuemax",
+      String(988 - 320 - 240),
+    );
+  });
+
+  it("should grow the branches maximum when the sidebar is narrower", async () => {
+    useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 260 });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => observer().fire(1000));
+    expect(handle("Resize branches column")).toHaveAttribute(
+      "aria-valuemax",
+      String(988 - 320 - 260),
+    );
+  });
+});
+
+// Contract: both handles move by the keyboard step in either direction.
+describe("RepoPane handle step", () => {
+  it("should move the changes column right by 16", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
+    expect(useLayoutPrefs.getState().sidebarWidth).toBe(336);
+  });
+
+  it("should move the branches column left by 16", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowLeft" });
+    expect(useLayoutPrefs.getState().refsWidth).toBe(224);
+  });
+});

@@ -267,3 +267,64 @@ describe("useBranchActions pending", () => {
     await waitFor(() => expect(result.current.pending).toBe(false));
   });
 });
+
+// Contract: with overlapping runs, `error` and `pending` follow the most recent run.
+describe("useBranchActions overlapping runs", () => {
+  const other: AppError = { kind: "checkoutFailed", message: "dirty tree" };
+
+  function gate<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it("should expose the error of the latest run when an earlier run settles afterwards", async () => {
+    const first = gate<undefined>();
+    vi.mocked(checkoutBranch).mockReturnValueOnce(first.promise).mockRejectedValueOnce(other);
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    let firstResult: AppError | null | undefined;
+    act(() => {
+      void result.current.run({ action: "checkout", name: "a" }).then((e) => (firstResult = e));
+    });
+    await run(() => result.current, { action: "checkout", name: "b" });
+    await waitFor(() => expect(result.current.error).toEqual(other));
+    await act(async () => {
+      first.resolve(undefined);
+      await first.promise;
+    });
+    expect(firstResult).toBeNull();
+    expect(result.current.error).toEqual(other);
+  });
+
+  it("should resolve each run with its own outcome", async () => {
+    const first = gate<undefined>();
+    vi.mocked(checkoutBranch).mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    let firstResult: AppError | null | undefined;
+    act(() => {
+      void result.current.run({ action: "checkout", name: "a" }).then((e) => (firstResult = e));
+    });
+    const second = await run(() => result.current, { action: "checkout", name: "b" });
+    expect(second).toBeNull();
+    await act(async () => {
+      first.reject(exists);
+      await first.promise.catch(() => undefined);
+    });
+    expect(firstResult).toEqual(exists);
+  });
+});
+
+// Contract: clearError only resets the mutation state; it never fails or alters a success.
+describe("useBranchActions clearError after success", () => {
+  it("should leave the error null and not throw when cleared after a success", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkout", name: "a" });
+    act(() => result.current.clearError());
+    expect(result.current.error).toBeNull();
+    expect(result.current.pending).toBe(false);
+  });
+});

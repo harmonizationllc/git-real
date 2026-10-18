@@ -234,3 +234,42 @@ describe("BranchRow keyboard default handling", () => {
     expect(notPrevented).toBe(true);
   });
 });
+
+// Contract: the badge always shows both counts unless the upstream is gone.
+describe("BranchRow tracking badge counts", () => {
+  it("should show an ahead-only branch as ↑3 ↓0 with a matching label", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: 3, behind: 0 }) }) });
+    expect(screen.getByLabelText("3 ahead, 0 behind")).toHaveTextContent("↑3 ↓0");
+  });
+
+  it("should show a behind-only branch as ↑0 ↓4 with a matching label", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: 0, behind: 4 }) }) });
+    expect(screen.getByLabelText("0 ahead, 4 behind")).toHaveTextContent("↑0 ↓4");
+  });
+
+  it("should show an in-sync branch as ↑0 ↓0 rather than gone", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: 0, behind: 0 }) }) });
+    expect(screen.getByText("↑0 ↓0")).toBeInTheDocument();
+    expect(screen.queryByText("gone")).toBeNull();
+  });
+
+  it("should show gone when only one count is null", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: null, behind: 2 }) }) });
+    expect(screen.getByText("gone")).toBeInTheDocument();
+    expect(screen.queryByText(/↑/)).toBeNull();
+  });
+
+  it("should not label the gone badge with counts", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: null, behind: null }) }) });
+    expect(screen.getByText("gone")).not.toHaveAttribute("aria-label");
+  });
+});
+
+// Contract: the row reports Enter even when current; the panel decides whether to act.
+describe("BranchRow Enter on the current branch", () => {
+  it("should still call onActivate once so the container owns the current-branch rule", () => {
+    const { onActivate } = renderRow({ target: local({ isHead: true }), current: true });
+    fireEvent.keyDown(rowButton(), { key: "Enter" });
+    expect(onActivate).toHaveBeenCalledTimes(1);
+  });
+});

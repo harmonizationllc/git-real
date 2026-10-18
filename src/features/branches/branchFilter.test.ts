@@ -104,3 +104,36 @@ describe("filterBranches remote branches", () => {
     expect(filterBranches(list, "origin/f").local).toEqual([]);
   });
 });
+
+// Contract: matching is a literal, locale-independent substring test on the lowercased text.
+describe("filterBranches literal matching", () => {
+  const accented: BranchList = {
+    head: { kind: "branch", name: "main" },
+    local: [
+      { name: "Éclair", oid: "a".repeat(40), isHead: false, tracking: null },
+      { name: "feature-x", oid: "b".repeat(40), isHead: false, tracking: null },
+      { name: "feature login", oid: "c".repeat(40), isHead: false, tracking: null },
+    ],
+    remotes: [],
+  };
+
+  it("should fold non-ASCII case so a lowercase query matches an uppercase accented name", () => {
+    expect(filterBranches(accented, "éc").local.map((b) => b.name)).toEqual(["Éclair"]);
+  });
+
+  it("should fold non-ASCII case so an uppercase query matches a lowercase accented name", () => {
+    expect(filterBranches(accented, "ÉCL").local.map((b) => b.name)).toEqual(["Éclair"]);
+  });
+
+  it("should treat regex metacharacters in the query literally", () => {
+    expect(filterBranches(accented, "feature.x").local).toEqual([]);
+    expect(filterBranches(accented, "feature-x").local.map((b) => b.name)).toEqual(["feature-x"]);
+  });
+
+  it("should keep whitespace inside the query significant", () => {
+    expect(filterBranches(accented, "feature login").local.map((b) => b.name)).toEqual([
+      "feature login",
+    ]);
+    expect(filterBranches(accented, "feature  login").local).toEqual([]);
+  });
+});
