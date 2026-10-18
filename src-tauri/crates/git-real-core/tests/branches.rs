@@ -762,3 +762,328 @@ fn delete_a_branch_with_slashes_removes_it_from_the_listing() {
     session.delete_branch("feature/x", false).unwrap();
     assert!(!local_names(&session.list_branches().unwrap()).contains(&"feature/x".to_string()));
 }
+
+// --- GR-7 cycle 1 coverage: wire format ---
+
+#[test]
+fn head_state_serializes_each_variant_with_a_camel_case_kind_tag() {
+    use serde_json::json;
+    assert_eq!(
+        serde_json::to_value(HeadState::Branch {
+            name: "main".into()
+        })
+        .unwrap(),
+        json!({"kind": "branch", "name": "main"})
+    );
+    assert_eq!(
+        serde_json::to_value(HeadState::Detached {
+            oid: "abc123".into()
+        })
+        .unwrap(),
+        json!({"kind": "detached", "oid": "abc123"})
+    );
+    assert_eq!(
+        serde_json::to_value(HeadState::Unborn {
+            name: "trunk".into()
+        })
+        .unwrap(),
+        json!({"kind": "unborn", "name": "trunk"})
+    );
+}
+
+#[test]
+fn branch_list_serializes_with_camel_case_field_names_and_null_counts() {
+    use serde_json::json;
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let oid = head_oid(&path).to_string();
+    // A configured upstream whose ref is gone: counts are unknown, not zero.
+    Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .set_str(&format!("branch.{head}.merge"), "refs/heads/nope")
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("plain", None).unwrap();
+    let value = serde_json::to_value(session.list_branches().unwrap()).unwrap();
+    assert_eq!(
+        value,
+        json!({
+            "head": {"kind": "branch", "name": head},
+            "local": [
+                {
+                    "name": head,
+                    "oid": oid,
+                    "isHead": true,
+                    "tracking": {"upstream": "origin/nope", "ahead": null, "behind": null}
+                },
+                {"name": "plain", "oid": oid, "isHead": false, "tracking": null}
+            ],
+            "remotes": [
+                {
+                    "remote": "origin",
+                    "branches": [{"remote": "origin", "name": head, "oid": oid}]
+                }
+            ]
+        })
+    );
+}
+
+#[test]
+fn tracking_serializes_numeric_counts_when_the_upstream_exists() {
+    use serde_json::json;
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    common::commit_file(&path, "a.txt", "a", "ahead");
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    let value = serde_json::to_value(&list.local[0]).unwrap();
+    assert_eq!(
+        value["tracking"],
+        json!({"upstream": format!("origin/{head}"), "ahead": 1, "behind": 0})
+    );
+}
+
+// --- GR-7 cycle 1 coverage: tracking edge cases ---
+
+#[test]
+fn list_reads_a_malformed_upstream_ref_as_untracked_and_keeps_the_other_branches() {
+    // `refs/remotes/origin/ba..d` is not a legal refname, so libgit2 fails the
+    // upstream lookup with a non-NotFound error. One bad config entry must not
+    // fail the whole listing.
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .set_str(&format!("branch.{head}.merge"), "refs/heads/ba..d")
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("other", None).unwrap();
+    let list = session.list_branches().unwrap();
+    assert_eq!(local_names(&list), vec![head.clone(), "other".to_string()]);
+    assert_eq!(list.local[0].tracking, None);
+    assert_eq!(list.remotes.len(), 1);
+}
+
+#[test]
+fn list_reads_an_upstream_that_is_a_symbolic_ref_as_untracked() {
+    // A symbolic upstream ref has no direct target to count against.
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.reference_symbolic(
+            "refs/remotes/origin/alias",
+            &format!("refs/remotes/origin/{head}"),
+            true,
+            "test",
+        )
+        .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str(&format!("branch.{head}.merge"), "refs/heads/alias")
+            .unwrap();
+    }
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    assert_eq!(list.local[0].tracking, None);
+    // The alias is skipped like `origin/HEAD`; the real branch is listed once.
+    assert_eq!(list.remotes[0].branches.len(), 1);
+}
+
+#[test]
+fn list_reports_a_local_branch_upstream_without_a_remote_prefix() {
+    let (_d, path, session, head) = fixture();
+    session.create_branch("base", None).unwrap();
+    let repo = Repository::open(&path).unwrap();
+    repo.find_branch(&head, BranchType::Local)
+        .unwrap()
+        .set_upstream(Some("base"))
+        .unwrap();
+    common::commit_file(&path, "a.txt", "a", "ahead of base");
+    let list = session.list_branches().unwrap();
+    let tracking = list.local.iter().find(|b| b.name == head).unwrap();
+    let tracking = tracking.tracking.clone().unwrap();
+    assert_eq!(tracking.upstream, "base");
+    assert_eq!((tracking.ahead, tracking.behind), (Some(1), Some(0)));
+}
+
+// --- GR-7 cycle 1 coverage: remote listing edge cases ---
+
+#[test]
+fn list_skips_a_remote_tracking_ref_whose_remote_is_not_configured() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let oid = repo.head().unwrap().target().unwrap();
+        repo.reference("refs/remotes/ghost/stale", oid, false, "test")
+            .unwrap();
+    }
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    assert_eq!(list.remotes.len(), 1);
+    assert_eq!(list.remotes[0].remote, "origin");
+    assert_eq!(list.remotes[0].branches[0].name, head);
+}
+
+#[test]
+fn list_keeps_the_full_ref_name_when_the_fetch_refspec_uses_another_namespace() {
+    // `origin` fetches into refs/remotes/mirror/*, so the short name does not
+    // start with `origin/` and cannot be stripped.
+    let (dir, path) = common::temp_repo_with_commit();
+    let head = common::head_branch_name(&path);
+    let (_bd, bare) = common::temp_bare_clone(&path);
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.remote_with_fetch(
+            "origin",
+            bare.to_str().unwrap(),
+            "+refs/heads/*:refs/remotes/mirror/*",
+        )
+        .unwrap();
+        let oid = repo.head().unwrap().target().unwrap();
+        repo.reference(&format!("refs/remotes/mirror/{head}"), oid, false, "test")
+            .unwrap();
+    }
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    assert_eq!(list.remotes.len(), 1);
+    assert_eq!(list.remotes[0].remote, "origin");
+    assert_eq!(list.remotes[0].branches[0].name, format!("mirror/{head}"));
+    drop(dir);
+}
+
+#[test]
+fn list_fails_with_a_git2_error_when_two_remotes_claim_the_same_tracking_ref() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.remote_with_fetch(
+            "twin",
+            "/nonexistent/twin.git",
+            "+refs/heads/*:refs/remotes/origin/*",
+        )
+        .unwrap();
+    }
+    let session = RepoSession::open(&path).unwrap();
+    let err = session.list_branches().unwrap_err();
+    assert!(matches!(err, GitError::Git2(_)), "{err:?} for {head}");
+}
+
+// --- GR-7 cycle 1 coverage: HEAD edge cases ---
+
+#[test]
+fn list_reports_the_full_target_for_an_unborn_head_outside_refs_heads() {
+    let (_d, path) = common::temp_repo_unborn();
+    std::fs::write(path.join(".git").join("HEAD"), "ref: refs/other/odd\n").unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    assert_eq!(
+        session.list_branches().unwrap().head,
+        HeadState::Unborn {
+            name: "refs/other/odd".to_string()
+        }
+    );
+}
+
+fn corrupt_head(path: &Path) {
+    std::fs::write(path.join(".git").join("HEAD"), "not a valid head\n").unwrap();
+}
+
+#[test]
+fn list_fails_with_a_git2_error_when_head_is_corrupt() {
+    let (_d, path, session, _head) = fixture();
+    corrupt_head(&path);
+    assert!(matches!(
+        session.list_branches().unwrap_err(),
+        GitError::Git2(_)
+    ));
+}
+
+#[test]
+fn create_from_head_fails_with_a_git2_error_when_head_is_corrupt() {
+    let (_d, path, session, _head) = fixture();
+    corrupt_head(&path);
+    assert!(matches!(
+        session.create_branch("topic", None).unwrap_err(),
+        GitError::Git2(_)
+    ));
+    assert!(!branch_exists(&path, "topic"));
+}
+
+#[test]
+fn delete_without_force_fails_with_a_git2_error_when_head_is_corrupt() {
+    let (_d, path, session, _head) = fixture();
+    session.create_branch("topic", None).unwrap();
+    corrupt_head(&path);
+    assert!(matches!(
+        session.delete_branch("topic", false).unwrap_err(),
+        GitError::Git2(_)
+    ));
+    assert!(branch_exists(&path, "topic"));
+}
+
+// --- GR-7 cycle 1 coverage: unexpected libgit2 errors surface as Git2 ---
+
+#[test]
+fn validate_rejects_a_name_with_a_nul_byte_with_a_git2_error() {
+    assert!(matches!(
+        validate_branch_name("a\0b").unwrap_err(),
+        GitError::Git2(_)
+    ));
+}
+
+#[test]
+fn create_from_a_tree_revision_fails_and_creates_nothing() {
+    let (_d, path, session, _head) = fixture();
+    assert!(matches!(
+        session
+            .create_branch("topic", Some("HEAD^{tree}"))
+            .unwrap_err(),
+        GitError::Git2(_)
+    ));
+    assert!(!branch_exists(&path, "topic"));
+}
+
+#[test]
+fn create_from_a_malformed_revision_is_not_reported_as_an_unknown_revision() {
+    let (_d, path, session, _head) = fixture();
+    assert!(matches!(
+        session
+            .create_branch("topic", Some("HEAD@{bogus"))
+            .unwrap_err(),
+        GitError::Git2(_)
+    ));
+    assert!(!branch_exists(&path, "topic"));
+}
+
+#[test]
+fn delete_with_an_illegal_ref_name_fails_without_deleting_anything() {
+    let (_d, path, session, head) = fixture();
+    assert!(session.delete_branch("a..b", true).is_err());
+    assert!(branch_exists(&path, &head));
+}
+
+#[test]
+fn rename_from_an_illegal_ref_name_fails_without_renaming_anything() {
+    let (_d, path, session, head) = fixture();
+    assert!(session.rename_branch("a..b", "fresh").is_err());
+    assert!(branch_exists(&path, &head));
+    assert!(!branch_exists(&path, "fresh"));
+}
+
+#[test]
+fn checkout_remote_with_an_illegal_remote_name_fails_with_a_git2_error() {
+    let (_d, _path, session, _head) = fixture();
+    assert!(matches!(
+        session.checkout_remote_branch("bad name", "x").unwrap_err(),
+        GitError::Git2(_)
+    ));
+}
+
+#[test]
+fn prepare_remote_delete_with_an_illegal_remote_name_fails_with_a_git2_error() {
+    let (_d, _path, session, _head) = fixture();
+    assert!(matches!(
+        session.prepare_remote_delete("bad name", "x").unwrap_err(),
+        GitError::Git2(_)
+    ));
+}

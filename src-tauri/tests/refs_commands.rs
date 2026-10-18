@@ -456,3 +456,124 @@ fn delete_remote_branch_inner_maps_unknown_repo() {
     let err = delete_remote_branch_inner(&reg, MISSING_ID, "origin", "a").unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
+
+// --- GR-7 cycle 1 coverage ---
+
+#[test]
+fn create_branch_inner_maps_an_unexpected_libgit2_error_to_git() {
+    let (_d, path, reg, id, _head) = open_fixture();
+    let err = create_branch_inner(&reg, id, "topic", Some("HEAD^{tree}"), false).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::Git);
+    assert!(!local_exists(&path, "topic"));
+}
+
+#[test]
+fn create_branch_inner_without_checkout_does_not_need_the_git_cli() {
+    // Plain creation stays on git2: it must work with no git on PATH at all.
+    let (_d, path, reg, id, head) = open_fixture();
+    let branch = create_branch_inner(&reg, id, "topic", None, false).unwrap();
+    assert!(!branch.is_head);
+    assert_eq!(common::head_branch_name(&path), head);
+}
+
+#[test]
+fn create_branch_inner_with_checkout_maps_unborn_head() {
+    let dir = tempfile::tempdir().unwrap();
+    Repository::init(dir.path()).unwrap();
+    let reg = RepoRegistry::default();
+    let id = reg.register(RepoSession::open(dir.path()).expect("open"));
+    let err = create_branch_inner(&reg, id, "topic", None, true).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnbornHead);
+}
+
+#[test]
+fn delete_branch_inner_force_still_maps_current_branch() {
+    let (_d, _p, reg, id, head) = open_fixture();
+    let err = delete_branch_inner(&reg, id, &head, true).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::CannotDeleteCurrent);
+}
+
+#[test]
+fn rename_branch_inner_renames_the_current_branch_and_head_follows() {
+    let (_d, path, reg, id, head) = open_fixture();
+    rename_branch_inner(&reg, id, &head, "renamed").unwrap();
+    assert_eq!(common::head_branch_name(&path), "renamed");
+    assert!(!local_exists(&path, &head));
+}
+
+#[test]
+fn rename_branch_inner_maps_an_invalid_new_name() {
+    let (_d, path, reg, id, head) = open_fixture();
+    let err = rename_branch_inner(&reg, id, &head, "bad name").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
+    assert!(local_exists(&path, &head));
+}
+
+#[test]
+fn checkout_branch_inner_maps_a_leading_dash_name_to_invalid_branch_name() {
+    let (_d, _p, reg, id, _head) = open_fixture();
+    let err = checkout_branch_inner(&reg, id, "--detach").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
+}
+
+#[test]
+fn checkout_remote_branch_inner_maps_unknown_remote_branch() {
+    let (_d, _b, _p, _bare, reg, id) = remote_fixture();
+    let err = checkout_remote_branch_inner(&reg, id, "origin", "ghost").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::BranchNotFound);
+}
+
+#[test]
+fn checkout_remote_branch_inner_switches_to_an_existing_local_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, _bare, reg, id) = remote_fixture();
+    // `feature` still exists locally from the fixture.
+    checkout_remote_branch_inner(&reg, id, "origin", "feature").unwrap();
+    assert_eq!(common::head_branch_name(&path), "feature");
+}
+
+#[test]
+fn checkout_remote_branch_inner_maps_git_refusal_to_checkout_failed() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, _bare, reg, id) = remote_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .find_branch("feature", BranchType::Local)
+        .unwrap()
+        .delete()
+        .unwrap();
+    // HEAD moves on, so switching to `feature` must rewrite README.md, which
+    // has an uncommitted edit.
+    common::commit_file(&path, "README.md", "# v2\n", "v2");
+    std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
+    let err = checkout_remote_branch_inner(&reg, id, "origin", "feature").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
+    assert!(!local_exists(&path, "feature"));
+}
+
+#[test]
+fn delete_remote_branch_inner_maps_an_invalid_name() {
+    let (_d, _b, _p, _bare, reg, id) = remote_fixture();
+    let err = delete_remote_branch_inner(&reg, id, "origin", "--all").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
+}
+
+#[test]
+fn delete_remote_branch_inner_keeps_the_local_branch_of_the_same_name() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, reg, id) = remote_fixture();
+    delete_remote_branch_inner(&reg, id, "origin", "feature").unwrap();
+    assert!(local_exists(&path, "feature"));
+    assert!(
+        Repository::open_bare(&bare)
+            .unwrap()
+            .find_branch("feature", BranchType::Local)
+            .is_err()
+    );
+}
