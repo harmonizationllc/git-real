@@ -333,12 +333,13 @@ describe("DetailPane disabled hunk actions", () => {
     expect(screen.getByRole("button", { name: "Discard hunk…" })).toBeDisabled();
   });
 
-  it("should apply a double-clicked hunk action only once", async () => {
+  it("should apply a repeated hunk click only once while the action is pending", async () => {
     vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
     setup();
     await diffRegion();
     const stage = screen.getByRole("button", { name: "Stage hunk" });
     fireEvent.click(stage);
+    await waitFor(() => expect(stage).toBeDisabled());
     fireEvent.click(stage);
     expect(applyHunk).toHaveBeenCalledTimes(1);
   });
@@ -350,7 +351,9 @@ describe("DetailPane staging", () => {
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", { hunkIndex: 0, lines: null });
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", { hunkIndex: 0, lines: null }),
+    );
   });
 
   it("should unstage the whole hunk of a staged file", async () => {
@@ -358,7 +361,12 @@ describe("DetailPane staging", () => {
     setup("a.ts", "staged");
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Unstage hunk" }));
-    expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "unstage", { hunkIndex: 0, lines: null });
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "unstage", {
+        hunkIndex: 0,
+        lines: null,
+      }),
+    );
   });
 
   it("should stage the two selected lines", async () => {
@@ -367,7 +375,12 @@ describe("DetailPane staging", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
     fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
     fireEvent.click(screen.getByRole("button", { name: "Stage 2 lines" }));
-    expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", { hunkIndex: 0, lines: [1, 2] });
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", {
+        hunkIndex: 0,
+        lines: [1, 2],
+      }),
+    );
   });
 });
 
@@ -403,7 +416,12 @@ describe("DetailPane discard", () => {
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Discard" }));
-    expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", { hunkIndex: 0, lines: null });
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", {
+        hunkIndex: 0,
+        lines: null,
+      }),
+    );
   });
 
   it("should close the dialog once Discard is confirmed", async () => {
@@ -438,10 +456,12 @@ describe("DetailPane discard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard 2 lines…" }));
     fireEvent.click(within(dialog()).getByRole("button", { name: "Discard" }));
-    expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", {
-      hunkIndex: 0,
-      lines: [1, 2],
-    });
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", {
+        hunkIndex: 0,
+        lines: [1, 2],
+      }),
+    );
   });
 });
 
