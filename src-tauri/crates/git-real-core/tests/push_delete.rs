@@ -234,3 +234,21 @@ fn run_keeps_the_remote_tracking_ref_when_the_push_fails() {
     let _ = push.run();
     assert!(tracking_ref_exists(&path, "feature"));
 }
+
+// --- a remote named like a flag must never reach argv ---
+
+#[test]
+fn prepare_rejects_a_remote_whose_name_starts_with_a_dash() {
+    let (_d, _b, path, bare) = fixture();
+    let head = common::head_branch_name(&path);
+    Repository::open(&path)
+        .unwrap()
+        .remote("-x", bare.to_str().unwrap())
+        .unwrap();
+    common::fetch_remote(&path, "-x");
+    let session = RepoSession::open(&path).unwrap();
+    assert!(matches!(
+        session.prepare_remote_delete("-x", &head).unwrap_err(),
+        GitError::RemoteNotFound(name) if name == "-x"
+    ));
+}

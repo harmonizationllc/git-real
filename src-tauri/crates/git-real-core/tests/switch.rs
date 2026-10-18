@@ -435,3 +435,18 @@ fn create_and_checkout_with_an_unknown_revision_fails() {
         .unwrap_err();
     assert!(matches!(err, GitError::RevisionNotFound(n) if n == "nope"));
 }
+
+// --- a remote named like a flag must never reach argv ---
+
+#[test]
+fn checkout_remote_rejects_a_remote_whose_name_starts_with_a_dash() {
+    let (_d, _b, path, _bare, head) = remote_fixture(false);
+    let url = config_string(&path, "remote.origin.url").unwrap();
+    Repository::open(&path).unwrap().remote("-x", &url).unwrap();
+    common::fetch_remote(&path, "-x");
+    let session = RepoSession::open(&path).unwrap();
+    assert!(matches!(
+        session.checkout_remote_branch("-x", &head).unwrap_err(),
+        GitError::RemoteNotFound(name) if name == "-x"
+    ));
+}

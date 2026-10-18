@@ -577,3 +577,24 @@ fn delete_remote_branch_inner_keeps_the_local_branch_of_the_same_name() {
             .is_err()
     );
 }
+
+#[test]
+fn remote_branch_commands_reject_a_remote_whose_name_starts_with_a_dash() {
+    let (_d, _b, path, bare, reg, id) = remote_fixture();
+    let head = common::head_branch_name(&path);
+    Repository::open(&path)
+        .unwrap()
+        .remote("-x", bare.to_str().unwrap())
+        .unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut remote = repo.find_remote("-x").unwrap();
+        remote
+            .fetch(&["+refs/heads/*:refs/remotes/-x/*"], None, None)
+            .unwrap();
+    }
+    let err = delete_remote_branch_inner(&reg, id, "-x", &head).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
+    let err = checkout_remote_branch_inner(&reg, id, "-x", &head).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
+}
