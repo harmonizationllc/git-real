@@ -2,6 +2,8 @@ import type { Token } from "./model/highlight";
 import type { Range } from "./model/wordDiff";
 import styles from "./LineContent.module.css";
 
+const NBSP = "\u00a0";
+
 interface Props {
   text: string;
   tokens: Token[] | null;
@@ -53,7 +55,7 @@ export function LineContent({ text, tokens, ranges, noNewlineAtEof }: Props) {
   return (
     <code className={styles.code}>
       {/* A non-breaking space keeps an empty line at full height. */}
-      {parts.length === 0 ? " " : null}
+      {parts.length === 0 ? NBSP : null}
       {parts.map((p, i) => {
         const className = p.className ?? undefined;
         return p.marked ? (

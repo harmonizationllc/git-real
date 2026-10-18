@@ -7,9 +7,23 @@
 
 .empty {
   flex: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 16px;
   color: var(--color-text-muted);
   text-align: center;
+}
+
+.message {
+  margin: 0;
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text);
 }

@@ -9,7 +9,9 @@ export function BinaryPlaceholder({ diff }: { diff: FileDiff }) {
       {diff.change && (
         <p className={styles.change}>
           <StatusBadge kind={diff.change} />
-          <span className={styles.word}>{KIND_WORDS[diff.change]}</span>
+          <span className={styles.word} aria-hidden="true">
+            {KIND_WORDS[diff.change]}
+          </span>
         </p>
       )}
     </div>

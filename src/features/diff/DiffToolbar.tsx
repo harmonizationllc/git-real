@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import type { FileDiff } from "../../lib/ipc";
 import type { DiffMode } from "../../lib/store/diffPrefs";
 import { encodingNotice } from "./model/encoding";
@@ -25,14 +25,17 @@ export function DiffToolbar({
   onLoadFull,
 }: Props) {
   const groupName = useId();
-  let additions = 0;
-  let deletions = 0;
-  for (const h of diff.hunks) {
-    for (const l of h.lines) {
-      if (l.kind === "addition") additions++;
-      else if (l.kind === "deletion") deletions++;
+  const { additions, deletions } = useMemo(() => {
+    let additions = 0;
+    let deletions = 0;
+    for (const h of diff.hunks) {
+      for (const l of h.lines) {
+        if (l.kind === "addition") additions++;
+        else if (l.kind === "deletion") deletions++;
+      }
     }
-  }
+    return { additions, deletions };
+  }, [diff]);
   const notice = encodingNotice(diff);
   return (
     <div className={styles.root}>

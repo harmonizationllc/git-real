@@ -49,7 +49,20 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const actions = useWorktreeActions(repoId);
   const [pending, setPending] = useState<PendingDiscard | null>(null);
 
-  if (noChanges) return <Empty>{`No ${file.scope} changes in ${file.path}`}</Empty>;
+  if (noChanges) {
+    // Hiding whitespace can empty a diff; keep the only control that caused it reachable.
+    return (
+      <Empty>
+        <p className={styles.message}>{`No ${file.scope} changes in ${file.path}`}</p>
+        {ignoreWhitespace && (
+          <label className={styles.option}>
+            <input type="checkbox" checked onChange={() => setIgnoreWhitespace(false)} />
+            Hide whitespace changes
+          </label>
+        )}
+      </Empty>
+    );
+  }
   if (error) {
     return (
       <div className={styles.root}>
@@ -83,6 +96,8 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
     else actions.applyHunk(diff.path, action, sel);
   };
   // A discard chosen on an older diff is dropped: its indices may name other lines now.
+  // Cleared during render (R2), so the stale request never reaches the dialog.
+  if (pending !== null && pending.diff !== diff) setPending(null);
   const confirmOpen = pending !== null && pending.diff === diff;
   const n = pending?.selection.lines?.length ?? 0;
   return (
