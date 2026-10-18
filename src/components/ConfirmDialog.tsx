@@ -9,6 +9,8 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** Disables both buttons and ignores Escape and backdrop clicks; confirm reads "Working…". */
+  pending?: boolean;
   onConfirm(): void;
   onCancel(): void;
 }
@@ -23,6 +25,7 @@ function ConfirmDialogBody({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   danger,
+  pending = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -40,11 +43,11 @@ function ConfirmDialogBody({
   }, []);
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") onCancel();
+    if (e.key === "Escape" && !pending) onCancel();
   };
 
   const onBackdropClick = (e: MouseEvent) => {
-    if (e.target === e.currentTarget) onCancel();
+    if (e.target === e.currentTarget && !pending) onCancel();
   };
 
   // No focus trap yet, consistent with the clone dialog; tracked as a GR-3 follow-up.
@@ -63,16 +66,17 @@ function ConfirmDialogBody({
         </h2>
         {body !== undefined && <p id={bodyId}>{body}</p>}
         <div className={styles.actions}>
-          <button ref={cancelRef} type="button" onClick={onCancel}>
+          <button ref={cancelRef} type="button" disabled={pending} onClick={onCancel}>
             {cancelLabel}
           </button>
           <button
             type="button"
             className={styles.confirm}
             data-danger={danger ? "true" : undefined}
+            disabled={pending}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {pending ? "Working…" : confirmLabel}
           </button>
         </div>
       </div>

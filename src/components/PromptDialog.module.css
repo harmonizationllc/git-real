@@ -34,5 +34,6 @@
 
 .error {
   margin: 0;
+  white-space: pre-wrap;
   color: var(--color-danger);
 }

@@ -35,6 +35,7 @@ function PromptDialogBody({
 }: PromptDialogProps) {
   const titleId = useId();
   const inputId = useId();
+  const errorId = useId();
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,11 +58,11 @@ function PromptDialogBody({
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") onCancel();
+    if (e.key === "Escape" && !pending) onCancel();
   };
 
   const onBackdropClick = (e: MouseEvent) => {
-    if (e.target === e.currentTarget) onCancel();
+    if (e.target === e.currentTarget && !pending) onCancel();
   };
 
   // No focus trap yet, consistent with ConfirmDialog; tracked as a GR-3 follow-up.
@@ -86,6 +87,7 @@ function PromptDialogBody({
               type="text"
               value={value}
               disabled={pending}
+              aria-describedby={error ? errorId : undefined}
               spellCheck={false}
               autoComplete="off"
               onChange={(e) => setValue(e.target.value)}
@@ -103,12 +105,12 @@ function PromptDialogBody({
             </label>
           )}
           {error && (
-            <p role="alert" className={styles.error}>
+            <p id={errorId} role="alert" className={styles.error}>
               {error.message}
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" onClick={onCancel}>
+            <button type="button" disabled={pending} onClick={onCancel}>
               Cancel
             </button>
             <button type="submit" disabled={pending || blank}>
