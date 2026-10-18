@@ -24,6 +24,16 @@ pub enum AppErrorKind {
     EmptyMessage,
     NothingToCommit,
     CommitFailed,
+    InvalidBranchName,
+    BranchExists,
+    BranchNotFound,
+    BranchNotMerged,
+    CannotDeleteCurrent,
+    UnbornHead,
+    RevisionNotFound,
+    RemoteNotFound,
+    CheckoutFailed,
+    PushFailed,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -60,6 +70,16 @@ impl From<GitError> for AppError {
             GitError::EmptyMessage => AppErrorKind::EmptyMessage,
             GitError::NothingToCommit => AppErrorKind::NothingToCommit,
             GitError::CommitFailed { .. } => AppErrorKind::CommitFailed,
+            GitError::InvalidBranchName(_) => AppErrorKind::InvalidBranchName,
+            GitError::BranchExists(_) => AppErrorKind::BranchExists,
+            GitError::BranchNotFound(_) => AppErrorKind::BranchNotFound,
+            GitError::BranchNotMerged(_) => AppErrorKind::BranchNotMerged,
+            GitError::CannotDeleteCurrent(_) => AppErrorKind::CannotDeleteCurrent,
+            GitError::UnbornHead => AppErrorKind::UnbornHead,
+            GitError::RevisionNotFound(_) => AppErrorKind::RevisionNotFound,
+            GitError::RemoteNotFound(_) => AppErrorKind::RemoteNotFound,
+            GitError::CheckoutFailed { .. } => AppErrorKind::CheckoutFailed,
+            GitError::PushFailed { .. } => AppErrorKind::PushFailed,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
@@ -68,7 +88,17 @@ impl From<GitError> for AppError {
                 code,
                 stdout,
                 stderr,
-            } => commit_failure_message(*code, stdout, stderr),
+            } => cli_failure_message("commit", *code, stdout, stderr),
+            GitError::CheckoutFailed {
+                code,
+                stdout,
+                stderr,
+            } => cli_failure_message("switch", *code, stdout, stderr),
+            GitError::PushFailed {
+                code,
+                stdout,
+                stderr,
+            } => cli_failure_message("push", *code, stdout, stderr),
             _ => error.to_string(),
         };
         Self { kind, message }
@@ -92,8 +122,8 @@ fn clone_failure_message(code: Option<i32>, stderr: &str) -> String {
 }
 
 /// Hook and git output is what the user needs to read, so it is kept whole:
-/// stderr first, then stdout, then a generic exit-status line.
-fn commit_failure_message(code: Option<i32>, stdout: &str, stderr: &str) -> String {
+/// stderr first, then stdout, then a generic exit-status line naming the verb.
+fn cli_failure_message(verb: &str, code: Option<i32>, stdout: &str, stderr: &str) -> String {
     let stderr = stderr.trim();
     if !stderr.is_empty() {
         return stderr.to_string();
@@ -103,7 +133,7 @@ fn commit_failure_message(code: Option<i32>, stdout: &str, stderr: &str) -> Stri
         return stdout.to_string();
     }
     match code {
-        Some(c) => format!("git commit failed with exit code {c}"),
-        None => "git commit was terminated by a signal".to_string(),
+        Some(c) => format!("git {verb} failed with exit code {c}"),
+        None => format!("git {verb} was terminated by a signal"),
     }
 }

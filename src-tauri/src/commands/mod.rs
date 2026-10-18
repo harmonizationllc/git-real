@@ -1,6 +1,7 @@
 //! Tauri command handlers.
 
 pub mod commit;
+pub mod refs;
 pub mod repo;
 pub mod worktree;
 
