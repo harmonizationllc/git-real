@@ -52,7 +52,7 @@ function headRow(head: HeadState) {
 }
 
 export function BranchesPanel({ repoId }: BranchesPanelProps) {
-  const { branches, isLoading, error: listError, refetch } = useBranches(repoId);
+  const { branches, error: listError, refetch } = useBranches(repoId);
   const actions = useBranchActions(repoId);
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -200,7 +200,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           <button
             type="button"
             className={styles.newBranch}
-            disabled={unborn}
+            disabled={unborn || actions.pending}
             title={unborn ? "Make a commit first" : undefined}
             onClick={() => openDialog(createDialog("New branch", null))}
           >
@@ -246,13 +246,12 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   };
 
   let body: React.ReactNode;
-  if (isLoading) {
-    body = <p role="status">Loading branches…</p>;
-  } else if (listError !== null) {
+  if (listError !== null) {
     body = <RepoError error={listError} path={null} onRetry={refetch} onDismiss={refetch} />;
+  } else if (branches === undefined) {
+    body = <p role="status">Loading branches…</p>;
   } else {
-    // Neither loading nor failed, so the query holds data.
-    body = renderList(branches as BranchList);
+    body = renderList(branches);
   }
 
   return (
