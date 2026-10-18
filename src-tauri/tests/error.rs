@@ -271,3 +271,57 @@ fn apply_failed_message_includes_reason() {
     let app: AppError = GitError::ApplyFailed("hunk rejected".into()).into();
     assert!(app.message.contains("hunk rejected"));
 }
+
+
+#[test]
+fn empty_message_and_nothing_to_commit_map_to_their_kinds() {
+    assert_eq!(AppError::from(GitError::EmptyMessage).kind, AppErrorKind::EmptyMessage);
+    assert_eq!(
+        AppError::from(GitError::NothingToCommit).kind,
+        AppErrorKind::NothingToCommit
+    );
+}
+
+#[test]
+fn commit_failed_message_prefers_stderr() {
+    let err = AppError::from(GitError::CommitFailed {
+        code: Some(1),
+        stdout: "On branch main\n".into(),
+        stderr: "hook says no\nsecond line\n".into(),
+    });
+    assert_eq!(err.kind, AppErrorKind::CommitFailed);
+    assert_eq!(err.message, "hook says no\nsecond line");
+}
+
+#[test]
+fn commit_failed_message_falls_back_to_stdout() {
+    let err = AppError::from(GitError::CommitFailed {
+        code: Some(1),
+        stdout: "  nothing to commit, working tree clean \n".into(),
+        stderr: "  \n".into(),
+    });
+    assert_eq!(err.message, "nothing to commit, working tree clean");
+}
+
+#[test]
+fn commit_failed_message_falls_back_to_exit_code_or_signal() {
+    let code = AppError::from(GitError::CommitFailed {
+        code: Some(128),
+        stdout: String::new(),
+        stderr: String::new(),
+    });
+    assert_eq!(code.message, "git commit failed with exit code 128");
+    let signal = AppError::from(GitError::CommitFailed {
+        code: None,
+        stdout: String::new(),
+        stderr: String::new(),
+    });
+    assert_eq!(signal.message, "git commit was terminated by a signal");
+}
+
+#[test]
+fn new_kinds_serialize_camel_case() {
+    assert_eq!(serde_json::to_value(AppErrorKind::EmptyMessage).unwrap(), "emptyMessage");
+    assert_eq!(serde_json::to_value(AppErrorKind::NothingToCommit).unwrap(), "nothingToCommit");
+    assert_eq!(serde_json::to_value(AppErrorKind::CommitFailed).unwrap(), "commitFailed");
+}

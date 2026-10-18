@@ -85,3 +85,16 @@ pub fn fresh_state() -> (TempDir, RepoRegistry, RecentStore) {
     let store = RecentStore::load(dir.path().join("recent-repos.json"));
     (dir, RepoRegistry::default(), store)
 }
+
+
+/// Sets a repo-local identity and turns signing off, so the developer's
+/// global config (which may sign every commit) never reaches the test.
+pub fn configure_identity(root: &Path) {
+    let repo = Repository::open(root).expect("open repo");
+    let mut config = repo.config().expect("config");
+    config.set_str("user.name", "Test User").expect("set name");
+    config
+        .set_str("user.email", "test@example.com")
+        .expect("set email");
+    config.set_bool("commit.gpgsign", false).expect("set gpgsign");
+}
