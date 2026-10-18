@@ -86,3 +86,27 @@ describe("BranchGroup leading", () => {
     expect(screen.queryByText("Detached at 0123abc")).toBeNull();
   });
 });
+
+// Contract: a leading row with no list needs no empty copy unless the filter hid rows.
+describe("BranchGroup empty copy with leading", () => {
+  it("should show no empty copy when empty, not filtered and leading is present", () => {
+    renderGroup({
+      count: 0,
+      children: null,
+      filtered: false,
+      leading: <p>main (no commits yet)</p>,
+    });
+    expect(screen.queryByText("No branches")).toBeNull();
+    expect(screen.queryByText("No matches")).toBeNull();
+  });
+
+  it("should still show No matches when empty, filtered and leading is present", () => {
+    renderGroup({
+      count: 0,
+      children: null,
+      filtered: true,
+      leading: <p>main (no commits yet)</p>,
+    });
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+  });
+});

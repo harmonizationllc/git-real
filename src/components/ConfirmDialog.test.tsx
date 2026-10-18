@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -322,5 +322,64 @@ describe("ConfirmDialog under StrictMode", () => {
     const { onConfirm } = renderStrict();
     await user.click(screen.getByRole("button", { name: "Confirm" }));
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+});
+
+// Contract: while pending both buttons are disabled, confirm reads Working…, and dismissal is ignored.
+describe("ConfirmDialog pending", () => {
+  it("should disable the confirm button while pending", () => {
+    renderDialog({ pending: true, confirmLabel: "Delete" });
+    expect(screen.getByRole("button", { name: "Working…" })).toBeDisabled();
+  });
+
+  it("should replace the confirm label with Working… while pending", () => {
+    renderDialog({ pending: true, confirmLabel: "Delete" });
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("should disable the cancel button while pending", () => {
+    renderDialog({ pending: true });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("should not call onConfirm when the pending confirm is clicked", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderDialog({ pending: true });
+    await user.click(screen.getByRole("button", { name: "Working…" }));
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("should not call onCancel when Cancel is clicked while pending", async () => {
+    const user = userEvent.setup();
+    const { onCancel } = renderDialog({ pending: true });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should not call onCancel on Escape while pending", () => {
+    const { onCancel } = renderDialog({ pending: true });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should not call onCancel on a backdrop click while pending", () => {
+    const { onCancel } = renderDialog({ pending: true });
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should behave normally when pending is false", async () => {
+    const user = userEvent.setup();
+    const { onConfirm, onCancel } = renderDialog({ pending: false, confirmLabel: "Delete" });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should default to not pending", () => {
+    renderDialog({ confirmLabel: "Delete" });
+    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
   });
 });

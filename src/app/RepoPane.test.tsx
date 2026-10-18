@@ -86,13 +86,14 @@ describe("RepoPane", () => {
   it("should render the path and branch in the header", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     expect(screen.getByText("/r/repo1")).toBeInTheDocument();
-    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(within(header()).getByText("main")).toBeInTheDocument();
     await screen.findByRole("region", { name: "Changes" });
   });
 
   it("should render detached HEAD when there is no branch", async () => {
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<RepoPane tab={tab(1, null)} />);
-    expect(screen.getByText("detached HEAD")).toBeInTheDocument();
+    expect(within(header()).getByText("detached HEAD")).toBeInTheDocument();
     await screen.findByRole("region", { name: "Changes" });
   });
 
@@ -388,7 +389,7 @@ describe("RepoPane grid template", () => {
   it("should use clamped widths after a resize observation", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    act(() => observer().fire(860));
+    act(() => observer().fire(872));
     expect(body().style.gridTemplateColumns).toBe("240px auto 300px auto 1fr");
   });
 
@@ -402,14 +403,14 @@ describe("RepoPane grid template", () => {
   it("should not change the stored widths when the display is clamped", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    act(() => observer().fire(860));
+    act(() => observer().fire(872));
     expect(useLayoutPrefs.getState().sidebarWidth).toBe(320);
   });
 
   it("should give the handles the clamped value and maximum", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    act(() => observer().fire(860));
+    act(() => observer().fire(872));
     expect(handle("Resize changes column")).toHaveAttribute("aria-valuenow", "300");
     expect(handle("Resize changes column")).toHaveAttribute("aria-valuemax", "300");
     expect(handle("Resize branches column")).toHaveAttribute("aria-valuenow", "240");
@@ -506,7 +507,8 @@ describe("RepoPane resize observer", () => {
     const { unmount } = renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     unmount();
-    expect(observer().disconnect).toHaveBeenCalledOnce();
+    expect(StubResizeObserver.instances.length).toBeGreaterThan(0);
+    for (const o of StubResizeObserver.instances) expect(o.disconnect).toHaveBeenCalled();
   });
 
   it("should not disconnect the observer before unmount", async () => {

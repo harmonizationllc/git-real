@@ -390,18 +390,47 @@ describe("PromptDialog edge cases", () => {
     expect(onConfirm).toHaveBeenCalledExactlyOnceWith("a b");
   });
 
-  it("should call onCancel on Escape even while pending (current behaviour)", async () => {
+  it("should not call onCancel on Escape while pending", async () => {
     const user = userEvent.setup();
     const { onCancel } = renderDialog({ pending: true, initialValue: "x" });
     screen.getByRole("dialog").focus();
     await user.keyboard("{Escape}");
-    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
-  it("should call onCancel when Cancel is clicked while pending (current behaviour)", async () => {
+  it("should disable Cancel while pending", () => {
+    renderDialog({ pending: true, initialValue: "x" });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("should not call onCancel when Cancel is clicked while pending", async () => {
     const user = userEvent.setup();
     const { onCancel } = renderDialog({ pending: true, initialValue: "x" });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should not call onCancel on a backdrop click while pending", () => {
+    const { onCancel } = renderDialog({ pending: true, initialValue: "x" });
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should enable Cancel when not pending", () => {
+    renderDialog({ pending: false });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("should call onCancel on Escape when not pending", async () => {
+    const user = userEvent.setup();
+    const { onCancel } = renderDialog({ pending: false });
+    await user.keyboard("{Escape}");
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should call onCancel on a backdrop click when not pending", () => {
+    const { onCancel } = renderDialog({ pending: false });
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
@@ -489,5 +518,20 @@ describe("PromptDialog edge cases", () => {
     const view = render(ui(false));
     view.rerender(ui(true));
     expect(screen.getByRole("checkbox", { name: "Switch" })).toBeChecked();
+  });
+});
+
+// Contract: the input points at the inline error so assistive tech reads it with the field.
+describe("PromptDialog error description", () => {
+  it("should point the input's aria-describedby at the alert when there is an error", () => {
+    renderDialog({ error: { kind: "branchExists", message: "taken" } });
+    const id = screen.getByRole("textbox", { name: "Name" }).getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id as string)).toBe(screen.getByRole("alert"));
+  });
+
+  it("should omit aria-describedby when there is no error", () => {
+    renderDialog({ error: null });
+    expect(screen.getByRole("textbox", { name: "Name" })).not.toHaveAttribute("aria-describedby");
   });
 });

@@ -873,3 +873,174 @@ describe("BranchesPanel pending", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+// Contract (architect 4): each confirm kind is its own dialog, so the force dialog focuses Cancel.
+describe("BranchesPanel force dialog focus", () => {
+  it("should focus Cancel in the force dialog after branchNotMerged", async () => {
+    vi.mocked(deleteBranch).mockRejectedValueOnce(notMerged);
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Delete…"));
+    const dialog = await dialogNamed("Delete branch feature?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const force = await dialogNamed("Force delete feature?");
+    await waitFor(() =>
+      expect(within(force).getByRole("button", { name: "Cancel" })).toHaveFocus(),
+    );
+  });
+});
+
+// Contract (architect 5): opening a dialog clears an earlier panel error.
+describe("BranchesPanel error cleared on dialog open", () => {
+  it("should hide the earlier panel error while a dialog is open", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    await dialogNamed("New branch");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should show no alert after that dialog is cancelled", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const dialog = await dialogNamed("New branch");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should not show an earlier error in a rename dialog opened from the menu", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await screen.findByRole("alert");
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rename…"));
+    await dialogNamed("Rename feature");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+// Contract (architect 6): the switch checkbox is checked again on every open.
+describe("BranchesPanel switch checkbox reset", () => {
+  it("should check Switch to new branch again after uncheck, cancel and reopen", async () => {
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const first = await dialogNamed("New branch");
+    await user.click(within(first).getByLabelText("Switch to new branch"));
+    expect(within(first).getByLabelText("Switch to new branch")).not.toBeChecked();
+    await user.click(within(first).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const second = await dialogNamed("New branch");
+    expect(within(second).getByLabelText("Switch to new branch")).toBeChecked();
+  });
+
+  it("should check the box again when a different create dialog opens next", async () => {
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    const first = await dialogNamed("New branch");
+    await user.click(within(first).getByLabelText("Switch to new branch"));
+    await user.click(within(first).getByRole("button", { name: "Cancel" }));
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Create branch here…"));
+    const second = await dialogNamed("New branch from feature");
+    expect(within(second).getByLabelText("Switch to new branch")).toBeChecked();
+  });
+});
+
+// Contract (architect 7): activation does nothing while an action is pending.
+describe("BranchesPanel activation while pending", () => {
+  async function startPendingCheckout() {
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    const view = await renderPanel();
+    await view.user.dblClick(localRow("feature"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+    );
+    return view;
+  }
+
+  it("should ignore Enter on a branch while an action is pending", async () => {
+    const { user } = await startPendingCheckout();
+    localRow("feature").focus();
+    await user.keyboard("{Enter}{Enter}");
+    expect(checkoutBranch).toHaveBeenCalledOnce();
+  });
+
+  it("should ignore a second double-click while an action is pending", async () => {
+    const { user } = await startPendingCheckout();
+    await user.dblClick(localRow("feature"));
+    expect(checkoutBranch).toHaveBeenCalledOnce();
+  });
+
+  it("should ignore a remote double-click while an action is pending", async () => {
+    const { user } = await startPendingCheckout();
+    await user.dblClick(remoteRow("origin", "other"));
+    expect(checkoutRemoteBranch).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (architect 8): the remote Checkout title uses the unfiltered local list.
+describe("BranchesPanel remote checkout title with a filter", () => {
+  it("should give remote Checkout no title when its local twin is filtered out", async () => {
+    const data = list({
+      remotes: [
+        { remote: "origin", branches: [{ remote: "origin", name: "feature", oid: oid("b") }] },
+      ],
+    });
+    const { user } = await renderPanel(data);
+    await user.type(screen.getByRole("searchbox", { name: "Filter branches" }), "origin/f");
+    expect(screen.queryByTitle("refs/heads/feature")).toBeNull();
+    rightClick(remoteRow("origin", "feature"));
+    expect(menuItem("Checkout")).not.toHaveAttribute("title");
+  });
+});
+
+// Contract (architect 9): body states follow ChangesPanel.
+describe("BranchesPanel body states", () => {
+  it("should show a Loading branches… status while the list is pending", () => {
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => {}));
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading branches…");
+  });
+
+  it("should show no status once the list has loaded", async () => {
+    await renderPanel();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("should label the lists Local branches and <remote> branches", async () => {
+    await renderPanel();
+    expect(screen.getByRole("list", { name: "Local branches" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "origin branches" })).toBeInTheDocument();
+  });
+
+  it("should show only the error, without filter or New branch…, when the list fails", async () => {
+    vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "New branch…" })).toBeNull();
+    expect(screen.queryByRole("heading")).toBeNull();
+  });
+
+  it("should refetch the list when the query error is dismissed", async () => {
+    vi.mocked(listBranches)
+      .mockRejectedValueOnce({ kind: "io", message: "list exploded" })
+      .mockResolvedValue(list());
+    const { user } = renderWithProviders(<BranchesPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    expect(listBranches).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
+  });
+
+  it("should show no empty copy under the unborn row", async () => {
+    await renderPanel(list({ head: { kind: "unborn", name: "main" }, local: [] }));
+    expect(screen.getByText("main (no commits yet)")).toBeInTheDocument();
+    expect(screen.queryByText("No branches")).toBeNull();
+  });
+});

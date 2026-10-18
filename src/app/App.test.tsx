@@ -9,6 +9,7 @@ import {
   getCommitConfig,
   getHeadMessage,
   getStatus,
+  listBranches,
   listRecent,
   onCloneProgress,
   onRepoChanged,
@@ -35,6 +36,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getCommitConfig: vi.fn(),
   getHeadMessage: vi.fn(),
   getStatus: vi.fn(),
+  listBranches: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
 
@@ -57,6 +59,11 @@ beforeEach(() => {
   vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
   vi.mocked(onCloneProgress).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
+  vi.mocked(listBranches).mockResolvedValue({
+    head: { kind: "branch", name: "main" },
+    local: [],
+    remotes: [],
+  });
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);

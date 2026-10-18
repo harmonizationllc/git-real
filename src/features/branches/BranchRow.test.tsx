@@ -213,3 +213,24 @@ describe("BranchRow context menu", () => {
     expect(props.onContextMenu).not.toHaveBeenCalled();
   });
 });
+
+// Contract: keyboard menu keys suppress the native contextmenu so the menu opens once.
+describe("BranchRow keyboard default handling", () => {
+  it("should prevent the default action on Shift+F10", () => {
+    renderRow();
+    const notPrevented = fireEvent.keyDown(rowButton(), { key: "F10", shiftKey: true });
+    expect(notPrevented).toBe(false);
+  });
+
+  it("should prevent the default action on the ContextMenu key", () => {
+    renderRow();
+    const notPrevented = fireEvent.keyDown(rowButton(), { key: "ContextMenu" });
+    expect(notPrevented).toBe(false);
+  });
+
+  it("should not prevent the default action on an unrelated key", () => {
+    renderRow();
+    const notPrevented = fireEvent.keyDown(rowButton(), { key: "a" });
+    expect(notPrevented).toBe(true);
+  });
+});
