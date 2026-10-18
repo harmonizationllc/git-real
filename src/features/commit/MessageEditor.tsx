@@ -21,7 +21,7 @@ function handleEnter(
   onSubmit: () => void,
   onPlainEnter: (() => void) | null,
 ): void {
-  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+  if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
     onSubmit();
