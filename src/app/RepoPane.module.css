@@ -38,6 +38,13 @@
   grid-template-columns: 320px 1fr;
 }
 
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+}
+
 .detail {
   display: flex;
   flex-direction: column;

@@ -1,0 +1,52 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subjectRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.counter,
+.counterOver {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.counterOver {
+  color: var(--color-warning);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-warning);
+}
+
+.subject,
+.body {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.body {
+  resize: vertical;
+  min-height: 4em;
+}

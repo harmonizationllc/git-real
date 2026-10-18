@@ -6,9 +6,12 @@ import {
   checkGitCli,
   cloneRepo,
   closeRepo,
+  commit,
   discardPaths,
+  getCommitConfig,
   getFileContent,
   getFileDiff,
+  getHeadMessage,
   getStatus,
   initRepo,
   listRecent,
@@ -287,5 +290,51 @@ describe("worktree command wrappers", () => {
     const err = { kind: "noChanges", message: "nothing" };
     mockThrowing(err);
     await expect(call()).rejects.toBe(err);
+  });
+});
+
+// Contract: commit wrappers invoke the pinned Rust command names with camelCase args.
+describe("commit commands", () => {
+  it("getCommitConfig sends get_commit_config with the id", async () => {
+    const cfg = { name: "A", email: "a@b.c", signing: null };
+    const calls = mockWith(cfg);
+    await expect(getCommitConfig(3)).resolves.toEqual(cfg);
+    expect(calls).toEqual([{ cmd: "get_commit_config", args: { id: 3 } }]);
+  });
+
+  it("getHeadMessage sends get_head_message and passes null through", async () => {
+    const calls = mockWith(null);
+    await expect(getHeadMessage(3)).resolves.toBeNull();
+    expect(calls).toEqual([{ cmd: "get_head_message", args: { id: 3 } }]);
+  });
+
+  it("getHeadMessage returns the message when HEAD exists", async () => {
+    mockWith({ subject: "S", body: "B" });
+    await expect(getHeadMessage(3)).resolves.toEqual({ subject: "S", body: "B" });
+  });
+
+  it("commit sends commit with id, message and amend", async () => {
+    const out = { oid: "abc", summary: "S" };
+    const calls = mockWith(out);
+    await expect(commit(3, { subject: "S", body: "B" }, true)).resolves.toEqual(out);
+    expect(calls).toEqual([
+      { cmd: "commit", args: { id: 3, message: { subject: "S", body: "B" }, amend: true } },
+    ]);
+  });
+
+  it("commit sends amend false unchanged", async () => {
+    const calls = mockWith({ oid: "abc", summary: "S" });
+    await commit(3, { subject: "S", body: "" }, false);
+    expect(calls[0]?.args).toMatchObject({ amend: false });
+  });
+
+  it("commit rejects with the backend's AppError", async () => {
+    mockThrowing({ kind: "commitFailed", message: "hook says no" });
+    await expect(commit(3, { subject: "S", body: "" }, false)).rejects.toSatisfy(isAppError);
+  });
+
+  it("getCommitConfig rejects with the backend's AppError", async () => {
+    mockThrowing({ kind: "unknownRepo", message: "gone" });
+    await expect(getCommitConfig(3)).rejects.toMatchObject({ kind: "unknownRepo" });
   });
 });

@@ -14,6 +14,9 @@ const KINDS: Record<AppErrorKind, true> = {
   badSelection: true,
   applyFailed: true,
   tooLarge: true,
+  emptyMessage: true,
+  nothingToCommit: true,
+  commitFailed: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

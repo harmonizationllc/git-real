@@ -188,3 +188,28 @@ pub fn temp_repo_unborn() -> (TempDir, PathBuf) {
     Repository::init(&path).expect("init repo");
     (dir, path)
 }
+
+/// Sets a repo-local identity and turns signing off, so the developer's
+/// global config (which may sign every commit) never reaches the test.
+pub fn configure_identity(root: &Path) {
+    let repo = Repository::open(root).expect("open repo");
+    let mut config = repo.config().expect("config");
+    config.set_str("user.name", "Test User").expect("set name");
+    config
+        .set_str("user.email", "test@example.com")
+        .expect("set email");
+    config
+        .set_bool("commit.gpgsign", false)
+        .expect("set gpgsign");
+}
+
+/// Installs an executable `.git/hooks/<name>` with the given body.
+#[cfg(unix)]
+pub fn install_hook(root: &Path, name: &str, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let hooks = root.join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks).expect("hooks dir");
+    let path = hooks.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write hook");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+}

@@ -10,6 +10,8 @@
   --color-added: #1a7f37;
   --color-removed: #cf222e;
   --color-modified: #9a6700;
+  --color-warning: #9a6700;
+  --color-on-accent: #ffffff;
   --color-added-bg: #dafbe1;
   --color-removed-bg: #ffebe9;
   --color-added-word-bg: #abf2bc;
@@ -42,6 +44,8 @@
     --color-added: #3fb950;
     --color-removed: #f85149;
     --color-modified: #d29922;
+    --color-warning: #d29922;
+    --color-on-accent: #0f0f0f;
     --color-added-bg: #12261e;
     --color-removed-bg: #2d1214;
     --color-added-word-bg: #1f6f3a;

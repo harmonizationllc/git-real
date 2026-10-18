@@ -1,8 +1,9 @@
-//! Locating the system `git` executable.
+//! Locating and invoking the system `git` executable.
 
 use std::env;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::error::GitError;
 
@@ -10,6 +11,29 @@ use crate::error::GitError;
 const CANDIDATES: [&str; 2] = ["git.exe", "git"];
 #[cfg(not(windows))]
 const CANDIDATES: [&str; 1] = ["git"];
+
+/// Variables that point git at a repository. git2 ignores them, so an
+/// inherited value would make the CLI act on a different repository.
+const REPO_ENV: [&str; 7] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+];
+
+/// A `git` command with a stable locale, no terminal prompts, and no
+/// inherited repository-locating environment.
+pub fn command(git: &Path) -> Command {
+    let mut cmd = Command::new(git);
+    cmd.env("LC_ALL", "C").env("GIT_TERMINAL_PROMPT", "0");
+    for key in REPO_ENV {
+        cmd.env_remove(key);
+    }
+    cmd
+}
 
 /// Finds `git` on the process `PATH`.
 pub fn locate() -> Result<PathBuf, GitError> {

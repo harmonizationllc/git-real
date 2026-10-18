@@ -25,6 +25,16 @@ pub enum GitError {
     ApplyFailed(String),
     #[error("{path} is {size} bytes, above the {limit} byte preview limit")]
     TooLarge { path: String, size: u64, limit: u64 },
+    #[error("the commit message has no subject")]
+    EmptyMessage,
+    #[error("nothing is staged to commit")]
+    NothingToCommit,
+    #[error("git commit failed (exit code {code:?}): {stderr}")]
+    CommitFailed {
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

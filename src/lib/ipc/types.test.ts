@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type {
   AppErrorKind,
+  CommitConfig,
+  CommitMessage,
+  CommitOutcome,
+  SigningFormat,
   ChangeKind,
   DiffLine,
   FileDiff,
@@ -116,6 +120,31 @@ describe("worktree DTO shapes", () => {
     };
     const kinds: AppErrorKind[] = ["noChanges", "badSelection", "applyFailed"];
     expect(Object.keys(changes)).toHaveLength(7);
+    expect(kinds).toHaveLength(3);
+  });
+});
+
+// Compile-time parity with the Rust commit DTOs.
+describe("commit DTO shapes", () => {
+  it("should accept a CommitMessage, CommitConfig and CommitOutcome carrying every field", () => {
+    const message: CommitMessage = { subject: "s", body: "b" };
+    const config: CommitConfig = { name: "n", email: "e", signing: "openPgp" };
+    const outcome: CommitOutcome = { oid: "abc", summary: "s" };
+    expect([
+      Object.keys(message).sort(),
+      Object.keys(config).sort(),
+      Object.keys(outcome).sort(),
+    ]).toEqual([
+      ["body", "subject"],
+      ["email", "name", "signing"],
+      ["oid", "summary"],
+    ]);
+  });
+
+  it("should cover every SigningFormat and the three commit AppErrorKind members", () => {
+    const formats: Record<SigningFormat, true> = { openPgp: true, x509: true, ssh: true };
+    const kinds: AppErrorKind[] = ["emptyMessage", "nothingToCommit", "commitFailed"];
+    expect(Object.keys(formats)).toHaveLength(3);
     expect(kinds).toHaveLength(3);
   });
 });

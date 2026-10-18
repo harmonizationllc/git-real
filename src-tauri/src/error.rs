@@ -21,6 +21,9 @@ pub enum AppErrorKind {
     BadSelection,
     ApplyFailed,
     TooLarge,
+    EmptyMessage,
+    NothingToCommit,
+    CommitFailed,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -54,10 +57,18 @@ impl From<GitError> for AppError {
             GitError::BadSelection => AppErrorKind::BadSelection,
             GitError::ApplyFailed(_) => AppErrorKind::ApplyFailed,
             GitError::TooLarge { .. } => AppErrorKind::TooLarge,
+            GitError::EmptyMessage => AppErrorKind::EmptyMessage,
+            GitError::NothingToCommit => AppErrorKind::NothingToCommit,
+            GitError::CommitFailed { .. } => AppErrorKind::CommitFailed,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
             GitError::CloneFailed { code, stderr } => clone_failure_message(*code, stderr),
+            GitError::CommitFailed {
+                code,
+                stdout,
+                stderr,
+            } => commit_failure_message(*code, stdout, stderr),
             _ => error.to_string(),
         };
         Self { kind, message }
@@ -77,5 +88,22 @@ fn clone_failure_message(code: Option<i32>, stderr: &str) -> String {
     match code {
         Some(c) => format!("git clone failed with exit code {c}"),
         None => "git clone was terminated by a signal".to_string(),
+    }
+}
+
+/// Hook and git output is what the user needs to read, so it is kept whole:
+/// stderr first, then stdout, then a generic exit-status line.
+fn commit_failure_message(code: Option<i32>, stdout: &str, stderr: &str) -> String {
+    let stderr = stderr.trim();
+    if !stderr.is_empty() {
+        return stderr.to_string();
+    }
+    let stdout = stdout.trim();
+    if !stdout.is_empty() {
+        return stdout.to_string();
+    }
+    match code {
+        Some(c) => format!("git commit failed with exit code {c}"),
+        None => "git commit was terminated by a signal".to_string(),
     }
 }

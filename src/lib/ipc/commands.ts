@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CommitConfig,
+  CommitMessage,
+  CommitOutcome,
   DiffScope,
   DiffSide,
   FileDiff,
@@ -102,4 +105,18 @@ export function applyHunk(
 /** Resolves the `.gitignore` pattern for `path` (appended unless already present). */
 export function addToGitignore(id: RepoId, path: string): Promise<string> {
   return invoke<string>("add_to_gitignore", { id, path });
+}
+
+export function getCommitConfig(id: RepoId): Promise<CommitConfig> {
+  return invoke<CommitConfig>("get_commit_config", { id });
+}
+
+/** HEAD's message split into subject and body; null when HEAD is unborn. */
+export function getHeadMessage(id: RepoId): Promise<CommitMessage | null> {
+  return invoke<CommitMessage | null>("get_head_message", { id });
+}
+
+/** Commits the index through `git commit`; `amend` rewrites HEAD instead. */
+export function commit(id: RepoId, message: CommitMessage, amend: boolean): Promise<CommitOutcome> {
+  return invoke<CommitOutcome>("commit", { id, message, amend });
 }

@@ -139,3 +139,18 @@ describe("queryKeys prefix invalidation", () => {
     ]);
   });
 });
+
+// Contract: commit config and head message queries live under the repo prefix.
+describe("commit query keys", () => {
+  it("commitConfig and headMessage keys sit under the repo prefix", () => {
+    expect(queryKeys.commitConfig(4)).toEqual(["repo", 4, "commitConfig"]);
+    expect(queryKeys.headMessage(4)).toEqual(["repo", 4, "headMessage"]);
+    expect(queryKeys.commitConfig(4).slice(0, 2)).toEqual(queryKeys.repo(4));
+    expect(queryKeys.headMessage(4).slice(0, 2)).toEqual(queryKeys.repo(4));
+  });
+
+  it("commitConfig and headMessage keys differ per repo and from each other", () => {
+    expect(queryKeys.commitConfig(4)).not.toEqual(queryKeys.commitConfig(5));
+    expect(queryKeys.commitConfig(4)).not.toEqual(queryKeys.headMessage(4));
+  });
+});

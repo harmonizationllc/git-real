@@ -1,3 +1,5 @@
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -141,5 +143,17 @@ describe("RepoError retry", () => {
     render(<RepoError error={missing} path={null} onRetry={onRetry} onDismiss={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(onRetry).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the action buttons sit at the top of the alert so Dismiss stays visible when the
+// message is long. happy-dom applies no CSS modules, so the stylesheet source is pinned instead.
+describe("RepoError layout", () => {
+  const css = readFileSync("src/features/repo/RepoError.module.css", "utf8");
+  const rootBlock = /\.root\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+
+  it("should pin the root row to flex-start and not center when the stylesheet is read", () => {
+    expect(rootBlock).toContain("align-items: flex-start");
+    expect(rootBlock).not.toContain("align-items: center");
   });
 });
