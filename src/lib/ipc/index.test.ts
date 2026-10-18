@@ -26,6 +26,13 @@ describe("ipc barrel", () => {
     "applyHunk",
     "addToGitignore",
     "onRepoChanged",
+    "listBranches",
+    "createBranch",
+    "renameBranch",
+    "deleteBranch",
+    "checkoutBranch",
+    "checkoutRemoteBranch",
+    "deleteRemoteBranch",
   ])("barrel exposes %s as a function", (name) => {
     expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
   });

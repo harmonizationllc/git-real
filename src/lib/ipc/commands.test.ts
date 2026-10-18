@@ -4,9 +4,14 @@ import {
   addToGitignore,
   applyHunk,
   checkGitCli,
+  checkoutBranch,
+  checkoutRemoteBranch,
   cloneRepo,
   closeRepo,
   commit,
+  createBranch,
+  deleteBranch,
+  deleteRemoteBranch,
   discardPaths,
   getCommitConfig,
   getFileContent,
@@ -14,16 +19,26 @@ import {
   getHeadMessage,
   getStatus,
   initRepo,
+  listBranches,
   listRecent,
   openRepo,
   removeRecent,
+  renameBranch,
   stageAll,
   stagePaths,
   unstageAll,
   unstagePaths,
 } from "./commands";
 import { isAppError } from "./errors";
-import type { FileDiff, GitCliInfo, OpenedRepo, RecentEntry, WorkingTreeStatus } from "./types";
+import type {
+  BranchList,
+  FileDiff,
+  GitCliInfo,
+  LocalBranch,
+  OpenedRepo,
+  RecentEntry,
+  WorkingTreeStatus,
+} from "./types";
 
 interface Call {
   cmd: string;
@@ -336,5 +351,102 @@ describe("commit commands", () => {
   it("getCommitConfig rejects with the backend's AppError", async () => {
     mockThrowing({ kind: "unknownRepo", message: "gone" });
     await expect(getCommitConfig(3)).rejects.toMatchObject({ kind: "unknownRepo" });
+  });
+});
+
+// Contract: branch wrappers invoke the pinned Rust command names with camelCase args.
+describe("branch commands", () => {
+  const list: BranchList = {
+    head: { kind: "branch", name: "main" },
+    local: [{ name: "main", oid: "abc", isHead: true, tracking: null }],
+    remotes: [],
+  };
+  const created: LocalBranch = { name: "topic", oid: "abc", isHead: false, tracking: null };
+
+  it("listBranches sends list_branches with the id and returns the list", async () => {
+    const calls = mockWith(list);
+    await expect(listBranches(3)).resolves.toEqual(list);
+    expect(calls).toEqual([{ cmd: "list_branches", args: { id: 3 } }]);
+  });
+
+  it("createBranch sends create_branch with id, name, startPoint and checkout", async () => {
+    const calls = mockWith(created);
+    await expect(createBranch(3, "topic", "main", true)).resolves.toEqual(created);
+    expect(calls).toEqual([
+      {
+        cmd: "create_branch",
+        args: { id: 3, name: "topic", startPoint: "main", checkout: true },
+      },
+    ]);
+  });
+
+  it("createBranch sends a null startPoint unchanged", async () => {
+    const calls = mockWith(created);
+    await createBranch(3, "topic", null, false);
+    expect(calls[0]?.args).toEqual({ id: 3, name: "topic", startPoint: null, checkout: false });
+  });
+
+  it("renameBranch sends rename_branch with id, oldName and newName", async () => {
+    const calls = mockWith(null);
+    await renameBranch(3, "old", "new");
+    expect(calls).toEqual([
+      { cmd: "rename_branch", args: { id: 3, oldName: "old", newName: "new" } },
+    ]);
+  });
+
+  it("deleteBranch sends delete_branch with id, name and force", async () => {
+    const calls = mockWith(null);
+    await deleteBranch(3, "topic", true);
+    expect(calls).toEqual([{ cmd: "delete_branch", args: { id: 3, name: "topic", force: true } }]);
+  });
+
+  it("deleteBranch sends force false unchanged", async () => {
+    const calls = mockWith(null);
+    await deleteBranch(3, "topic", false);
+    expect(calls[0]?.args).toMatchObject({ force: false });
+  });
+
+  it("checkoutBranch sends checkout_branch with id and name", async () => {
+    const calls = mockWith(null);
+    await checkoutBranch(3, "topic");
+    expect(calls).toEqual([{ cmd: "checkout_branch", args: { id: 3, name: "topic" } }]);
+  });
+
+  it("checkoutRemoteBranch sends checkout_remote_branch with id, remote and name", async () => {
+    const calls = mockWith(null);
+    await checkoutRemoteBranch(3, "origin", "feature/x");
+    expect(calls).toEqual([
+      {
+        cmd: "checkout_remote_branch",
+        args: { id: 3, remote: "origin", name: "feature/x" },
+      },
+    ]);
+  });
+
+  it("deleteRemoteBranch sends delete_remote_branch with id, remote and name", async () => {
+    const calls = mockWith(null);
+    await deleteRemoteBranch(3, "origin", "topic");
+    expect(calls).toEqual([
+      { cmd: "delete_remote_branch", args: { id: 3, remote: "origin", name: "topic" } },
+    ]);
+  });
+
+  it("branch rejection is recognised by isAppError", async () => {
+    mockThrowing({ kind: "branchNotMerged", message: "not merged" });
+    await expect(deleteBranch(3, "topic", false)).rejects.toSatisfy(isAppError);
+  });
+
+  it.each([
+    ["listBranches", () => listBranches(1)],
+    ["createBranch", () => createBranch(1, "a", null, false)],
+    ["renameBranch", () => renameBranch(1, "a", "b")],
+    ["deleteBranch", () => deleteBranch(1, "a", false)],
+    ["checkoutBranch", () => checkoutBranch(1, "a")],
+    ["checkoutRemoteBranch", () => checkoutRemoteBranch(1, "origin", "a")],
+    ["deleteRemoteBranch", () => deleteRemoteBranch(1, "origin", "a")],
+  ])("%s rejection passes through", async (_name, call) => {
+    const err = { kind: "checkoutFailed", message: "nope" };
+    mockThrowing(err);
+    await expect(call()).rejects.toBe(err);
   });
 });
