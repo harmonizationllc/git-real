@@ -163,22 +163,22 @@ fn amend_on_unborn_head_fails_through_git() {
 
 // --- commit: summary read back from a message git re-encoded ---
 
+#[cfg(unix)]
 #[test]
 fn commit_outcome_survives_a_non_utf8_recorded_message() {
     if !git_available() {
         return;
     }
     let (_d, path, session) = fixture();
-    set_config(&path, "i18n.commitEncoding", "ISO-8859-1");
+    // A commit-msg hook rewrites the message to Latin-1 bytes, so the commit
+    // git records is not valid UTF-8.
+    common::install_hook(&path, "commit-msg", r#"printf 'caf\351 au lait\n' > "$1""#);
     common::write_file(&path, "new.txt", "x\n");
     common::stage(&path, "new.txt");
 
-    let outcome = session
-        .commit(&msg("caf\u{e9} au lait", ""), false)
-        .unwrap();
+    let outcome = session.commit(&msg("Subject", ""), false).unwrap();
 
-    // git stored the subject as Latin-1, so the raw bytes are not UTF-8 and
-    // the summary is a lossy rendering rather than an error or a panic.
+    // The summary is a lossy rendering rather than an error or a panic.
     let head = Repository::open(&path)
         .unwrap()
         .head()
@@ -186,12 +186,7 @@ fn commit_outcome_survives_a_non_utf8_recorded_message() {
         .target()
         .unwrap();
     assert_eq!(outcome.oid, head.to_string());
-    assert!(outcome.summary.starts_with("caf"), "{:?}", outcome.summary);
-    assert!(
-        outcome.summary.ends_with(" au lait"),
-        "{:?}",
-        outcome.summary
-    );
+    assert_eq!(outcome.summary, "caf\u{FFFD} au lait");
 }
 
 // --- git CLI env hygiene: a hostile inherited GIT_DIR must not reach the child ---

@@ -152,7 +152,8 @@ fn head_message_with_invalid_utf8_is_lossy_not_panic() {
         .unwrap();
     repo.set_head_detached(oid).unwrap();
     let m = session.head_message().unwrap().unwrap();
-    assert!(m.subject.starts_with("caf"));
+    assert_eq!(m.subject, "caf\u{FFFD}");
+    assert_eq!(m.body, "");
 }
 
 // --- commit: happy paths (need the real git) ---
