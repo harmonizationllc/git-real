@@ -130,4 +130,14 @@ describe("MessageEditor limit boundary and key modifiers", () => {
     fireEvent.keyDown(subject, { key: "Enter", ctrlKey: true, isComposing: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("Enter with keyCode 229 (WebKit post-composition) neither moves focus nor submits", async () => {
+    const { user, onSubmit } = setup();
+    const subject = screen.getByLabelText("Subject");
+    await user.click(subject);
+    const notPrevented = fireEvent.keyDown(subject, { key: "Enter", keyCode: 229 });
+    expect(subject).toHaveFocus();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
 });
