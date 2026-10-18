@@ -47,7 +47,10 @@ export type AppErrorKind =
   | "noChanges"
   | "badSelection"
   | "applyFailed"
-  | "tooLarge";
+  | "tooLarge"
+  | "emptyMessage"
+  | "nothingToCommit"
+  | "commitFailed";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -119,6 +122,26 @@ export interface HunkSelection {
 }
 
 export type HunkAction = "stage" | "unstage" | "discard";
+
+export interface CommitMessage {
+  subject: string;
+  body: string;
+}
+
+export type SigningFormat = "openPgp" | "x509" | "ssh";
+
+export interface CommitConfig {
+  name: string | null;
+  email: string | null;
+  /** Non-null when `commit.gpgsign` is true. */
+  signing: SigningFormat | null;
+}
+
+export interface CommitOutcome {
+  /** Full hex object id. */
+  oid: string;
+  summary: string;
+}
 
 export interface RepoChangedPayload {
   repoId: RepoId;
