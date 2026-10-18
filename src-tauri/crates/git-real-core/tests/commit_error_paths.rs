@@ -170,8 +170,10 @@ fn commit_outcome_survives_a_non_utf8_recorded_message() {
         return;
     }
     let (_d, path, session) = fixture();
-    // A commit-msg hook rewrites the message to Latin-1 bytes, so the commit
-    // git records is not valid UTF-8.
+    // With a Latin-1 commit encoding, a commit-msg hook that writes Latin-1
+    // bytes makes git record them verbatim (without it git re-encodes to
+    // UTF-8), so the stored commit is not valid UTF-8.
+    set_config(&path, "i18n.commitEncoding", "ISO-8859-1");
     common::install_hook(&path, "commit-msg", r#"printf 'caf\351 au lait\n' > "$1""#);
     common::write_file(&path, "new.txt", "x\n");
     common::stage(&path, "new.txt");
