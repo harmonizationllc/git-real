@@ -50,7 +50,17 @@ export type AppErrorKind =
   | "tooLarge"
   | "emptyMessage"
   | "nothingToCommit"
-  | "commitFailed";
+  | "commitFailed"
+  | "invalidBranchName"
+  | "branchExists"
+  | "branchNotFound"
+  | "branchNotMerged"
+  | "cannotDeleteCurrent"
+  | "unbornHead"
+  | "revisionNotFound"
+  | "remoteNotFound"
+  | "checkoutFailed"
+  | "pushFailed";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -145,4 +155,41 @@ export interface CommitOutcome {
 
 export interface RepoChangedPayload {
   repoId: RepoId;
+}
+
+export type HeadState =
+  | { kind: "branch"; name: string }
+  | { kind: "detached"; oid: string }
+  | { kind: "unborn"; name: string };
+
+export interface Tracking {
+  /** Upstream short name, e.g. `origin/main`. */
+  upstream: string;
+  /** Both null when the upstream is gone. */
+  ahead: number | null;
+  behind: number | null;
+}
+
+export interface LocalBranch {
+  name: string;
+  oid: string;
+  isHead: boolean;
+  tracking: Tracking | null;
+}
+
+export interface RemoteBranch {
+  remote: string;
+  name: string;
+  oid: string;
+}
+
+export interface RemoteGroup {
+  remote: string;
+  branches: RemoteBranch[];
+}
+
+export interface BranchList {
+  head: HeadState;
+  local: LocalBranch[];
+  remotes: RemoteGroup[];
 }

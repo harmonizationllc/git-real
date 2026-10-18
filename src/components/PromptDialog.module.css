@@ -1,0 +1,38 @@
+.backdrop {
+  composes: backdrop from "./ConfirmDialog.module.css";
+}
+
+.dialog {
+  composes: dialog from "./ConfirmDialog.module.css";
+}
+
+.title {
+  composes: title from "./ConfirmDialog.module.css";
+}
+
+.actions {
+  composes: actions from "./ConfirmDialog.module.css";
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+}

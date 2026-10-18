@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BranchList,
   CommitConfig,
   CommitMessage,
   CommitOutcome,
@@ -9,6 +10,7 @@ import type {
   GitCliInfo,
   HunkAction,
   HunkSelection,
+  LocalBranch,
   OpenedRepo,
   RecentEntry,
   RepoId,
@@ -119,4 +121,41 @@ export function getHeadMessage(id: RepoId): Promise<CommitMessage | null> {
 /** Commits the index through `git commit`; `amend` rewrites HEAD instead. */
 export function commit(id: RepoId, message: CommitMessage, amend: boolean): Promise<CommitOutcome> {
   return invoke<CommitOutcome>("commit", { id, message, amend });
+}
+
+export function listBranches(id: RepoId): Promise<BranchList> {
+  return invoke<BranchList>("list_branches", { id });
+}
+
+/** Creates `name` at `startPoint` (HEAD when null), switching to it when `checkout` is set. */
+export function createBranch(
+  id: RepoId,
+  name: string,
+  startPoint: string | null,
+  checkout: boolean,
+): Promise<LocalBranch> {
+  return invoke<LocalBranch>("create_branch", { id, name, startPoint, checkout });
+}
+
+export function renameBranch(id: RepoId, oldName: string, newName: string): Promise<void> {
+  return invoke<void>("rename_branch", { id, oldName, newName });
+}
+
+/** Without `force`, an unmerged branch rejects with `branchNotMerged`. */
+export function deleteBranch(id: RepoId, name: string, force: boolean): Promise<void> {
+  return invoke<void>("delete_branch", { id, name, force });
+}
+
+export function checkoutBranch(id: RepoId, name: string): Promise<void> {
+  return invoke<void>("checkout_branch", { id, name });
+}
+
+/** Switches to a local branch tracking `remote/name`, creating it when missing. */
+export function checkoutRemoteBranch(id: RepoId, remote: string, name: string): Promise<void> {
+  return invoke<void>("checkout_remote_branch", { id, remote, name });
+}
+
+/** Deletes `name` on `remote` through `git push --delete`. */
+export function deleteRemoteBranch(id: RepoId, remote: string, name: string): Promise<void> {
+  return invoke<void>("delete_remote_branch", { id, remote, name });
 }

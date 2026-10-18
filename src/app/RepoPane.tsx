@@ -2,10 +2,13 @@ import { useId } from "react";
 import { CommitBox } from "../features/commit/CommitBox";
 import { DetailPane } from "../features/diff/DetailPane";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
+import { useRepoChanged } from "../lib/query/useRepoChanged";
 import type { RepoTab } from "../lib/store/repoTabs";
 import styles from "./RepoPane.module.css";
 
 export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
+  // The single repo-changed subscription for this tab; it refreshes every query of the repo.
+  useRepoChanged(tab.id);
   const headingId = useId();
   const { name, path, headBranch } = tab.summary;
   return (
