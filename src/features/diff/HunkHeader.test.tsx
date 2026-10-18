@@ -152,3 +152,50 @@ describe("HunkHeader read-only", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
+
+// Contract: the scope and the selection never leak a button the scope does not allow.
+describe("HunkHeader scope rules", () => {
+  it("should never offer Discard for a staged diff, whatever the selection", () => {
+    for (const selectedCount of [0, 1, 4]) {
+      const { unmount } = setup({ scope: "staged", selectedCount });
+      expect(names().some((n) => n?.startsWith("Discard"))).toBe(false);
+      expect(names().some((n) => n?.startsWith("Stage"))).toBe(false);
+      unmount();
+    }
+  });
+
+  it("should never offer Unstage for an unstaged diff", () => {
+    setup({ scope: "unstaged", selectedCount: 2 });
+    expect(names().some((n) => n?.startsWith("Unstage"))).toBe(false);
+  });
+
+  it("should render no buttons with a selection count but no onAction", () => {
+    setup({ withAction: false, selectedCount: 3 });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("should render no buttons for a staged diff with a selection count but no onAction", () => {
+    setup({ withAction: false, scope: "staged", selectedCount: 3 });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("should carry the reason on the title of both unstaged buttons and a labelled count", () => {
+    setup({ selectedCount: 2, disabledReason: "Not now" });
+    expect(screen.getByRole("button", { name: "Stage 2 lines" })).toHaveAttribute(
+      "title",
+      "Not now",
+    );
+    expect(screen.getByRole("button", { name: "Discard 2 lines…" })).toHaveAttribute(
+      "title",
+      "Not now",
+    );
+  });
+
+  it("should carry the reason on the title of the staged button", () => {
+    setup({ scope: "staged", disabledReason: "Not now" });
+    expect(screen.getByRole("button", { name: "Unstage hunk" })).toHaveAttribute(
+      "title",
+      "Not now",
+    );
+  });
+});

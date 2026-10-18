@@ -259,3 +259,41 @@ describe("UnifiedRow content", () => {
     expect(screen.queryByTitle("No newline at end of file")).toBeNull();
   });
 });
+
+// Contract: a context line can never be selected through the row, even if the selection names it.
+describe("UnifiedRow selected context line", () => {
+  it("should render no button for a context line named by the selection", () => {
+    setup(0, { selection: selecting(0, 0) });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("should still show both numbers for a context line named by the selection", () => {
+    const { root } = setup(0, { selection: selecting(0, 0) });
+    expect(root.children[0]).toHaveTextContent(/^1$/);
+    expect(root.children[1]).toHaveTextContent(/^1$/);
+  });
+
+  it("should not call onGutterClick when a context line's gutter is clicked", () => {
+    const { onGutterClick, root } = setup(0);
+    fireEvent.click(root.children[0]);
+    fireEvent.click(root.children[1]);
+    expect(onGutterClick).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: shift is reported from the click on either kind of gutter, and plain clicks stay false.
+describe("UnifiedRow shift-click", () => {
+  it("should report shift true for a shift-click on a deletion", () => {
+    const { onGutterClick } = setup(1);
+    fireEvent.click(screen.getByRole("button"), { shiftKey: true });
+    expect(onGutterClick).toHaveBeenCalledExactlyOnceWith(0, 1, true);
+  });
+
+  it("should report shift false for a plain click that follows a shift-click", () => {
+    const { onGutterClick } = setup(2);
+    fireEvent.click(screen.getByRole("button"), { shiftKey: true });
+    fireEvent.click(screen.getByRole("button"));
+    expect(onGutterClick).toHaveBeenNthCalledWith(1, 0, 2, true);
+    expect(onGutterClick).toHaveBeenNthCalledWith(2, 0, 2, false);
+  });
+});

@@ -116,3 +116,106 @@ describe("LineContent no newline at end of file", () => {
     expect(getByTitle("No newline at end of file")).toBeInTheDocument();
   });
 });
+
+// Contract: range edges that coincide with token edges, cover the line, overlap or touch
+// still mark exactly the ranged characters, keep the full text and keep token classes.
+describe("LineContent range edge cases", () => {
+  const tokens: Token[] = [
+    { text: "const", className: "tok-keyword" },
+    { text: " b = 1", className: null },
+  ];
+
+  it("should mark exactly the first token when the range ends at the token boundary", () => {
+    const { marked, container } = setup("const b = 1", tokens, [{ start: 0, end: 5 }]);
+    expect(marked).toBe("const");
+    expect(container.querySelector("code")).toHaveTextContent("const b = 1");
+    expect(container.querySelector("mark .tok-keyword")).not.toBeNull();
+  });
+
+  it("should mark exactly the second token when the range starts at the token boundary", () => {
+    const { marked, container } = setup("const b = 1", tokens, [{ start: 5, end: 11 }]);
+    expect(marked).toBe(" b = 1");
+    expect(container.querySelector("code")).toHaveTextContent("const b = 1");
+    expect(container.querySelector(".tok-keyword")?.closest("mark")).toBeNull();
+  });
+
+  it("should not create empty pieces when a range edge equals a token edge", () => {
+    const { container } = setup("const b = 1", tokens, [{ start: 0, end: 5 }]);
+    const empties = Array.from(container.querySelectorAll("code span")).filter(
+      (s) => s.textContent === "",
+    );
+    expect(empties).toHaveLength(0);
+  });
+
+  it("should mark the whole line when the range covers all of it", () => {
+    const { marked, container } = setup("const b = 1", tokens, [{ start: 0, end: 11 }]);
+    expect(marked).toBe("const b = 1");
+    expect(container.querySelector("code")).toHaveTextContent("const b = 1");
+  });
+
+  it("should mark the whole line without tokens when the range covers all of it", () => {
+    const { marked } = setup("abc", null, [{ start: 0, end: 3 }]);
+    expect(marked).toBe("abc");
+  });
+
+  it("should mark the union of overlapping ranges and no more", () => {
+    const { marked, container } = setup("const b = 1", null, [
+      { start: 0, end: 4 },
+      { start: 2, end: 6 },
+    ]);
+    expect(marked).toBe("const ");
+    expect(container.querySelector("code")).toHaveTextContent("const b = 1");
+  });
+
+  it("should mark both of two adjacent ranges and nothing between them", () => {
+    const { marked } = setup("const b = 1", null, [
+      { start: 0, end: 2 },
+      { start: 2, end: 5 },
+    ]);
+    expect(marked).toBe("const");
+  });
+
+  it("should mark a range regardless of the order the ranges are given in", () => {
+    const { marked } = setup("const b = 1", null, [
+      { start: 10, end: 11 },
+      { start: 0, end: 5 },
+    ]);
+    expect(marked).toBe("const1");
+  });
+
+  it("should leave a gap between disjoint ranges unmarked", () => {
+    const { marked } = setup("abcdef", null, [
+      { start: 0, end: 1 },
+      { start: 5, end: 6 },
+    ]);
+    expect(marked).toBe("af");
+  });
+});
+
+// Contract: a whitespace-only line renders its own spaces, not the empty-line placeholder.
+describe("LineContent whitespace-only line", () => {
+  it("should render the spaces themselves", () => {
+    const { container } = setup("   ");
+    expect(container.querySelector("code")?.textContent).toBe("   ");
+  });
+
+  it("should render a tab-only line as the tab", () => {
+    const { container } = setup("\t");
+    expect(container.querySelector("code")?.textContent).toBe("\t");
+  });
+
+  it("should mark whitespace covered by a range", () => {
+    const { marked } = setup("a  b", null, [{ start: 1, end: 3 }]);
+    expect(marked).toBe("  ");
+  });
+
+  it("should put the no-newline marker after the text of a non-empty line", () => {
+    const { container } = setup("x", null, [], true);
+    expect(container.querySelector("code")?.textContent).toBe("x⏎");
+  });
+
+  it("should keep the placeholder space before the marker on an empty line", () => {
+    const { container } = setup("", null, [], true);
+    expect(container.querySelector("code")?.textContent).toBe("\u00a0⏎");
+  });
+});

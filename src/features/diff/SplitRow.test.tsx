@@ -276,3 +276,56 @@ describe("SplitRow highlighting", () => {
     expect(container.querySelector("[class*='tok-']")).toBeNull();
   });
 });
+
+// Contract: a context pair is never selectable and never word-marked, even when selected.
+describe("SplitRow context pair", () => {
+  it("should render no button on either side when the selection names the context line", () => {
+    setup(0, 0, { selection: selecting(0, 0) });
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("should show no marks on either side of a context pair", () => {
+    const { left, right } = setup(4, 4);
+    expect(marked(left)).toBe("");
+    expect(marked(right)).toBe("");
+  });
+
+  it("should not call onGutterClick for a context pair", () => {
+    const { onGutterClick, left, right } = setup(0, 0);
+    fireEvent.click(left);
+    fireEvent.click(right);
+    expect(onGutterClick).not.toHaveBeenCalled();
+  });
+
+  it("should render no button on the empty side or the context side of a lone deletion", () => {
+    const { right } = setup(5, null);
+    expect(within(right).queryByRole("button")).toBeNull();
+  });
+});
+
+// Contract: tokens are per side; a side without tokens renders plain while the other is highlighted.
+describe("SplitRow asymmetric highlighting", () => {
+  it("should highlight the left cell only when only the old index has tokens", () => {
+    const highlight: HighlightMap = new Map([
+      [0, [null, [{ text: "const a = 1", className: "tok-keyword" }], null]],
+    ]);
+    const { left, right } = setup(1, 2, { highlight });
+    expect(left.querySelector(".tok-keyword")).not.toBeNull();
+    expect(right.querySelector("[class*='tok-']")).toBeNull();
+  });
+
+  it("should keep the word marks on a highlighted side", () => {
+    const highlight: HighlightMap = new Map([
+      [0, [null, [{ text: "const a = 1", className: "tok-keyword" }], null]],
+    ]);
+    const { left } = setup(1, 2, { highlight });
+    expect(marked(left)).toBe("a");
+  });
+
+  it("should leave the right cell's text intact when only the left has tokens", () => {
+    const highlight: HighlightMap = new Map([
+      [0, [null, [{ text: "const a = 1", className: "tok-keyword" }], null]],
+    ]);
+    expect(setup(1, 2, { highlight }).right).toHaveTextContent(/const b = 1/);
+  });
+});

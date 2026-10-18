@@ -175,3 +175,82 @@ describe("DiffToolbar encoding notice", () => {
     expect(screen.queryByTestId("encoding-notice")).toBeNull();
   });
 });
+
+// Contract: counts only add and remove lines; a path without an old path has no arrow.
+describe("DiffToolbar summary edge cases", () => {
+  it("should show +0 and the deletion count when there are no additions", () => {
+    setup({ diff: fileDiff([hunk([L("deletion", "d", 1, null), L("deletion", "e", 2, null)])]) });
+    expect(screen.getByText("+0")).toBeInTheDocument();
+    expect(screen.getByText("−2")).toBeInTheDocument();
+  });
+
+  it("should show −0 and the addition count when there are no deletions", () => {
+    setup({ diff: fileDiff([hunk([L("addition", "a", null, 1)])]) });
+    expect(screen.getByText("+1")).toBeInTheDocument();
+    expect(screen.getByText("−0")).toBeInTheDocument();
+  });
+
+  it("should not count context lines", () => {
+    setup({ diff: fileDiff([hunk([L("context", "c", 1, 1), L("context", "d", 2, 2)])]) });
+    expect(screen.getByText("+0")).toBeInTheDocument();
+    expect(screen.getByText("−0")).toBeInTheDocument();
+  });
+
+  it("should show no rename arrow when oldPath is null", () => {
+    const { container } = setup({ diff: { ...baseDiff, oldPath: null, path: "plain.ts" } });
+    expect(container.textContent).not.toContain("→");
+    expect(screen.getByText("plain.ts")).toBeInTheDocument();
+  });
+
+  it("should show the arrow for a rename", () => {
+    const { container } = setup({ diff: { ...baseDiff, oldPath: "a.ts", path: "b.ts" } });
+    expect(container.textContent).toContain("a.ts → b.ts");
+  });
+});
+
+// Contract: the radios form one group per toolbar so the browser keeps a single choice.
+describe("DiffToolbar radio group", () => {
+  it("should give both radios the same non-empty name", () => {
+    setup();
+    const [a, b] = screen.getAllByRole("radio") as HTMLInputElement[];
+    expect(a.name).not.toBe("");
+    expect(a.name).toBe(b.name);
+  });
+
+  it("should not give the whitespace checkbox the radios' name", () => {
+    setup();
+    const radio = screen.getAllByRole("radio")[0] as HTMLInputElement;
+    const box = screen.getByRole("checkbox") as HTMLInputElement;
+    expect(box.name).not.toBe(radio.name);
+  });
+
+  it("should give two toolbars different group names", () => {
+    setup();
+    setup();
+    const names = (screen.getAllByRole("radio") as HTMLInputElement[]).map((r) => r.name);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("should give each radio its mode as the value", () => {
+    setup();
+    const values = (screen.getAllByRole("radio") as HTMLInputElement[]).map((r) => r.value);
+    expect(values).toEqual(["split", "unified"]);
+  });
+});
+
+// Contract: the truncation notice and the encoding notice are independent.
+describe("DiffToolbar notices together", () => {
+  it("should show both the encoding notice and the truncation status when both apply", () => {
+    setup({
+      diff: { ...baseDiff, truncated: true, oldEncoding: "utf16Le", newEncoding: "utf16Le" },
+    });
+    expect(screen.getByTestId("encoding-notice")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Showing the first 5 lines");
+  });
+
+  it("should show no Load full diff button for a decoded diff that is not truncated", () => {
+    setup({ diff: { ...baseDiff, oldEncoding: "utf16Le", newEncoding: "utf16Le" } });
+    expect(screen.queryByRole("button", { name: "Load full diff" })).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});

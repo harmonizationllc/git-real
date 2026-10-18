@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DiffScope } from "../../lib/ipc";
@@ -8,7 +9,11 @@ import type { HighlightMap } from "./model/highlight";
 import { buildRows } from "./model/rows";
 import type { UseLineSelection } from "./useLineSelection";
 
-vi.mock("@tanstack/react-virtual", () => import("../../test/mockVirtualizer"));
+// Wrapped in a spy so tests can read the options DiffViewer hands the virtualizer.
+vi.mock("@tanstack/react-virtual", async () => {
+  const fake = await import("../../test/mockVirtualizer");
+  return { useVirtualizer: vi.fn(fake.useVirtualizer) };
+});
 
 // Hunk 0: context, deletion, addition (an edited pair). Hunk 1: lone addition, context.
 const lines0 = [
@@ -285,5 +290,126 @@ describe("DiffViewer highlighting", () => {
   it("should render plain text when the highlight map is null", () => {
     const { container } = setup({ highlight: null });
     expect(container.querySelector("[class*='tok-']")).toBeNull();
+  });
+});
+
+// Contract: the virtualizer keys rows by buildRows' own key, so measured heights follow rows.
+describe("DiffViewer virtualizer options", () => {
+  const lastOptions = () => {
+    const calls = vi.mocked(useVirtualizer).mock.calls;
+    const options = calls[calls.length - 1][0];
+    const { getItemKey } = options;
+    if (!getItemKey) throw new Error("DiffViewer passed no getItemKey");
+    return { count: options.count, getItemKey };
+  };
+
+  it.each<DiffMode>(["unified", "split"])(
+    "should key every %s row by the key buildRows gave it",
+    (mode) => {
+      setup({ mode });
+      const rows = buildRows(diff, mode);
+      const { getItemKey, count } = lastOptions();
+      expect(count).toBe(rows.length);
+      rows.forEach((row, i) => expect(getItemKey(i)).toBe(row.key));
+    },
+  );
+
+  it("should give every row a distinct key", () => {
+    setup({ mode: "split" });
+    const { getItemKey, count } = lastOptions();
+    const keys = Array.from({ length: count }, (_, i) => getItemKey(i));
+    expect(new Set(keys).size).toBe(count);
+  });
+
+  it("should key the rows of the new mode after the mode changes", () => {
+    const { rerender } = setup({ mode: "unified" });
+    rerender(<DiffViewer diff={diff} mode="split" highlight={null} />);
+    const { getItemKey, count } = lastOptions();
+    expect(count).toBe(buildRows(diff, "split").length);
+    expect(getItemKey(1)).toBe(buildRows(diff, "split")[1].key);
+  });
+});
+
+// Contract: a selection belongs to one hunk and never relabels another hunk's buttons.
+describe("DiffViewer selection scoping", () => {
+  const labels = () => screen.getAllByRole("button", { name: /hunk|line…|lines…|\d+ lines?$/ });
+
+  it("should relabel only the hunk that holds the selection", () => {
+    setup({ selection: selecting(1, 0) });
+    const text = labels()
+      .map((b) => b.textContent)
+      .filter((t) => /^(Stage|Discard)/.test(t ?? ""));
+    expect(text).toEqual(["Stage hunk", "Discard hunk…", "Stage 1 line", "Discard 1 line…"]);
+  });
+
+  it("should relabel the first hunk and leave the second alone for a selection in hunk 0", () => {
+    setup({ selection: selecting(0, 1, 2) });
+    const text = labels()
+      .map((b) => b.textContent)
+      .filter((t) => /^(Stage|Discard)/.test(t ?? ""));
+    expect(text).toEqual(["Stage 2 lines", "Discard 2 lines…", "Stage hunk", "Discard hunk…"]);
+  });
+
+  it("should send the second hunk's selected lines, sorted, from its own header", () => {
+    const { onHunkAction } = setup({ selection: selecting(1, 1, 0) });
+    fireEvent.click(screen.getByRole("button", { name: "Stage 2 lines" }));
+    expect(onHunkAction).toHaveBeenCalledExactlyOnceWith("stage", { hunkIndex: 1, lines: [0, 1] });
+  });
+
+  it("should sort a descending three-line selection ascending", () => {
+    const wide = fileDiff([
+      hunk([
+        L("addition", "a", null, 1),
+        L("addition", "b", null, 2),
+        L("addition", "c", null, 3),
+        L("addition", "d", null, 4),
+      ]),
+    ]);
+    const { onHunkAction } = setup({ diff: wide, selection: selecting(0, 3, 0, 2) });
+    fireEvent.click(screen.getByRole("button", { name: "Stage 3 lines" }));
+    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: [0, 2, 3] });
+  });
+});
+
+// Contract: with neither a selection nor an action handler the viewer offers no controls at all.
+describe("DiffViewer fully read-only", () => {
+  it("should render no buttons in unified mode", () => {
+    setup({ hunkAction: false, mode: "unified" });
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("should render no buttons in split mode", () => {
+    setup({ hunkAction: false, mode: "split" });
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("should render no buttons even when a disabled reason is given", () => {
+    setup({ hunkAction: false, reason: "Not now" });
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("should still show line numbers as plain text", () => {
+    const { container } = setup({ hunkAction: false, mode: "unified" });
+    expect(container.textContent).toContain("10");
+  });
+});
+
+// Contract: the reason reaches every header in both modes and a staged scope.
+describe("DiffViewer reason in every header", () => {
+  it.each<DiffMode>(["unified", "split"])(
+    "should disable all unstaged buttons in %s mode",
+    (mode) => {
+      setup({ mode, reason: "Why not" });
+      const buttons = screen.getAllByRole("button");
+      expect(buttons).toHaveLength(4);
+      for (const b of buttons) expect(b).toHaveAttribute("title", "Why not");
+    },
+  );
+
+  it("should disable every unstage button of a staged diff", () => {
+    setup({ diff: diffOf("staged"), reason: "Why not" });
+    const buttons = screen.getAllByRole("button", { name: "Unstage hunk" });
+    expect(buttons).toHaveLength(2);
+    for (const b of buttons) expect(b).toBeDisabled();
   });
 });

@@ -1,7 +1,8 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getFileContent } from "../../lib/ipc";
 import type { AppError, ChangeKind, DiffSide, FileDiff } from "../../lib/ipc";
+import { queryKeys } from "../../lib/query/keys";
 import { fileDiff } from "../../test/diffFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { ImageDiff } from "./ImageDiff";
@@ -243,5 +244,108 @@ describe("ImageDiff cleanup", () => {
     await screen.findByAltText("New image");
     await screen.findByAltText("Old image");
     expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a URL is revoked as soon as the image it feeds is replaced, not only at unmount.
+describe("ImageDiff URL lifecycle", () => {
+  const key = (side: DiffSide) => queryKeys.fileContent(1, "pic.png", "unstaged", side);
+
+  it("should revoke the old URL and create a new one when the bytes change for the same path", async () => {
+    const { queryClient } = setup(imageDiff({ change: "added" }));
+    const img = await screen.findByAltText("New image");
+    expect(img).toHaveAttribute("src", "blob:2");
+    act(() => queryClient.setQueryData(key("new"), new ArrayBuffer(5)));
+    await waitFor(() => expect(screen.getByAltText("New image")).toHaveAttribute("src", "blob:5"));
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:2");
+    expect(revokeObjectURL).not.toHaveBeenCalledWith("blob:5");
+  });
+
+  it("should leave the other side's URL alone when one side's bytes change", async () => {
+    const { queryClient } = setup();
+    await screen.findByAltText("New image");
+    await screen.findByAltText("Old image");
+    act(() => queryClient.setQueryData(key("new"), new ArrayBuffer(5)));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith("blob:2"));
+    expect(revokeObjectURL).not.toHaveBeenCalledWith("blob:1");
+  });
+
+  it("should revoke every URL ever created, exactly once each, after a change and an unmount", async () => {
+    const { queryClient, unmount } = setup(imageDiff({ change: "added" }));
+    await screen.findByAltText("New image");
+    act(() => queryClient.setQueryData(key("new"), new ArrayBuffer(5)));
+    await waitFor(() => expect(screen.getByAltText("New image")).toHaveAttribute("src", "blob:5"));
+    unmount();
+    const created = createObjectURL.mock.results.map((r) => r.value as string);
+    const revoked = revokeObjectURL.mock.calls.map(([u]) => u);
+    expect([...revoked].sort()).toEqual([...created].sort());
+  });
+
+  it("should create nothing and revoke nothing when the content fails to load", async () => {
+    vi.mocked(getFileContent).mockRejectedValue({ kind: "io", message: "disk gone" });
+    const { unmount } = setup();
+    await screen.findAllByText(/disk gone/);
+    unmount();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("should revoke the URLs of both sides on unmount for a modified image", async () => {
+    const { unmount } = setup();
+    await screen.findByAltText("New image");
+    await screen.findByAltText("Old image");
+    unmount();
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Contract: each side owns its caption and its error; sides never share state.
+describe("ImageDiff per-side state", () => {
+  it("should add dimensions to the caption of the side whose image loaded", async () => {
+    setup();
+    const old = await screen.findByAltText("Old image");
+    await screen.findByAltText("New image");
+    Object.defineProperty(old, "naturalWidth", { value: 10 });
+    Object.defineProperty(old, "naturalHeight", { value: 20 });
+    fireEvent.load(old);
+    expect(screen.getByText("Old 10×20")).toBeInTheDocument();
+    expect(screen.getByText("New")).toBeInTheDocument();
+  });
+
+  it("should show tooLarge on the old side only and still render the new image", async () => {
+    vi.mocked(getFileContent).mockImplementation((_id, _path, _scope, side) =>
+      side === "old"
+        ? Promise.reject({ kind: "tooLarge", message: "File is 30 MB" })
+        : Promise.resolve(new ArrayBuffer(2)),
+    );
+    setup();
+    const text = await screen.findByText(/File is 30 MB/);
+    expect(text.closest("figure")).toHaveTextContent("Old");
+    expect(screen.getByAltText("New image")).toBeInTheDocument();
+    expect(screen.queryByAltText("Old image")).toBeNull();
+  });
+
+  it("should show one error per failing side when both sides fail", async () => {
+    vi.mocked(getFileContent).mockRejectedValue({ kind: "io", message: "disk gone" });
+    setup();
+    await waitFor(() => expect(screen.getAllByText(/disk gone/)).toHaveLength(2));
+  });
+
+  it("should show a loading status per side until both arrive", async () => {
+    vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
+    setup();
+    expect(screen.getAllByRole("status")).toHaveLength(2);
+  });
+
+  it("should show a single loading status for a one-sided change", () => {
+    vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
+    setup(imageDiff({ change: "untracked" }));
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("should drop the loading status once the image arrives", async () => {
+    setup(imageDiff({ change: "deleted" }));
+    await screen.findByAltText("Old image");
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

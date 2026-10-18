@@ -695,3 +695,153 @@ describe("DetailPane view mode", () => {
     expect(getFileDiff).toHaveBeenCalledTimes(1);
   });
 });
+
+// Contract: the disabled-reason text is exact, follows the preference live and wins in order.
+describe("DetailPane disabled reason text", () => {
+  const WHITESPACE = "Turn off “Hide whitespace changes” to stage, unstage or discard hunks";
+  const DECODED =
+    "Hunk actions are unavailable for files decoded from UTF-16 or UTF-32; stage or discard the whole file from the Changes panel";
+
+  it("should give every hunk button the exact whitespace reason", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    setup();
+    await diffRegion();
+    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
+      expect(b).toHaveAttribute("title", WHITESPACE);
+    }
+  });
+
+  it("should give every hunk button the exact decoded reason", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      textDiff({ oldEncoding: "utf32Be", newEncoding: "utf32Be" }),
+    );
+    setup();
+    await diffRegion();
+    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
+      expect(b).toHaveAttribute("title", DECODED);
+    }
+  });
+
+  it("should prefer the whitespace reason over the decoded reason", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockResolvedValue(
+      textDiff({ oldEncoding: "utf16Le", newEncoding: "utf16Le" }),
+    );
+    setup();
+    await diffRegion();
+    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
+      expect(b).toHaveAttribute("title", WHITESPACE);
+    }
+  });
+
+  it("should disable the hunk buttons with the whitespace reason once the box is ticked", async () => {
+    setup();
+    await diffRegion();
+    expect(screen.getByRole("button", { name: "Stage hunk" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stage hunk" })).toBeDisabled());
+    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
+      expect(b).toHaveAttribute("title", WHITESPACE);
+    }
+    expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", true, undefined);
+  });
+
+  it("should re-enable the hunk buttons when the box is unticked again", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stage hunk" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Stage hunk" })).not.toHaveAttribute("title");
+  });
+
+  it("should show the pending reason while an action runs", async () => {
+    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stage hunk" })).toHaveAttribute(
+        "title",
+        "Applying changes…",
+      ),
+    );
+  });
+
+  it("should not apply an action through a button disabled for whitespace", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
+    expect(applyHunk).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+// Contract: dialogs and action errors belong to one file and do not follow the user away.
+describe("DetailPane per-file transient state", () => {
+  const dialog = () => screen.queryByRole("dialog", { name: "Discard changes" });
+
+  it("should not reopen a discard dialog when returning to the file it was opened on", async () => {
+    setup("a.ts");
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
+    expect(dialog()).not.toBeNull();
+    select("b.ts");
+    await screen.findByText("b.ts");
+    select("a.ts");
+    await screen.findByText("a.ts");
+    expect(dialog()).toBeNull();
+    expect(applyHunk).not.toHaveBeenCalled();
+  });
+
+  it("should discard nothing when the file is switched while the dialog is open", async () => {
+    setup("a.ts");
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
+    select("b.ts");
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(applyHunk).not.toHaveBeenCalled();
+  });
+
+  it("should leave no alert after a failed action is dismissed and the next action succeeds", async () => {
+    vi.mocked(applyHunk).mockRejectedValueOnce({
+      kind: "badSelection",
+      message: "The diff changed",
+    });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    fireEvent.click(
+      await within(await screen.findByRole("alert")).findByRole("button", { name: "Dismiss" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should clear a stale action error when a later action succeeds", async () => {
+    vi.mocked(applyHunk).mockRejectedValueOnce({
+      kind: "badSelection",
+      message: "The diff changed",
+    });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("should show only the action error, with no Retry, above the viewer", async () => {
+    vi.mocked(applyHunk).mockRejectedValue({ kind: "badSelection", message: "The diff changed" });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+});
