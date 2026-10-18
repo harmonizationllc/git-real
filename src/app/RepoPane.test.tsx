@@ -230,7 +230,7 @@ describe("RepoPane repo-changed subscription", () => {
     let handler: (() => void) | undefined;
     vi.mocked(onRepoChanged).mockImplementation(async (_id, h) => {
       handler = h;
-      return vi.fn();
+      return vi.fn() as unknown as () => void;
     });
     const { queryClient } = renderWithProviders(<RepoPane tab={tab(5)} />);
     await waitFor(() => expect(handler).toBeDefined());

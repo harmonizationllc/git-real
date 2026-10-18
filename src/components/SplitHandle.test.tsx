@@ -59,6 +59,7 @@ describe("SplitHandle accessibility", () => {
         value={200}
         min={160}
         max={500}
+        step={16}
         onChange={vi.fn()}
         onReset={vi.fn()}
       />,
@@ -69,6 +70,7 @@ describe("SplitHandle accessibility", () => {
         value={220}
         min={160}
         max={500}
+        step={16}
         onChange={vi.fn()}
         onReset={vi.fn()}
       />,
