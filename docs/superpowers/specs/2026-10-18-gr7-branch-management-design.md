@@ -1,6 +1,6 @@
 # GR-7 — Branch management
 
-- Status: Draft for review
+- Status: Approved (reviewed in session 2026-10-18)
 - Date: 2026-10-18
 - Epic: GR-1 / Story: GR-7 "Branch management"
 - Depends on: GR-3 (sessions, git CLI adapter, `RepoError`), GR-4 (watcher,
@@ -109,7 +109,7 @@ crates/git-real-core/src/
   refs/
     mod.rs             # impl RepoSession { list_branches, create_branch, rename_branch,
                        #   delete_branch, checkout_branch, checkout_remote_branch,
-                       #   delete_remote_branch } + validate_branch_name
+                       #   prepare_remote_delete } + validate_branch_name
     switch.rs          # shell out: run(git, workdir, SwitchTarget) -> Result<(), GitError>
   remote/
     push_delete.rs     # shell out: run(git, workdir, remote, name) -> Result<(), GitError>
@@ -202,12 +202,12 @@ Local(name))`.
 Remote)` NotFound → `BranchNotFound("remote/name")`; if `find_branch(name,
 Local)` is `Ok` → `switch::run(Local(name))`, else `switch::run
 (NewTracking { name, upstream: "remote/name" })`.
-- `delete_remote_branch(remote, name)`: validate `name`; `find_remote`
-  NotFound → `RemoteNotFound`; `find_branch("remote/name", Remote)` NotFound
-  → `BranchNotFound`; returns the arguments the app layer runs with
-  (`PushDelete { git, workdir, remote, name }`), because the app releases
-  the session lock before the network call. `remote::push_delete::run`
-  executes it.
+- `prepare_remote_delete(remote, name) -> PushDelete`: validate `name`;
+  `find_remote` NotFound → `RemoteNotFound`; `find_branch("remote/name",
+Remote)` NotFound → `BranchNotFound`; returns the validated arguments
+  (`PushDelete { git, workdir, remote, name }`) because the app layer
+  releases the session lock before the network call and then runs
+  `PushDelete::run` (`remote::push_delete`).
 - `switch::run`: `git -C <workdir> switch <name>` or `git -C <workdir> switch
 -c <name> --track <upstream>`, stdin null, stdout and stderr captured.
   Non-zero → `GitError::CheckoutFailed { code, stdout, stderr }`.
