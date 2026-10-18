@@ -24,6 +24,8 @@ export function useFileContent(
         throw toAppError(e);
       }),
     enabled,
+    // Image bytes can be large; drop them soon after the preview is closed.
+    gcTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
   });

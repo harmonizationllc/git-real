@@ -118,6 +118,7 @@ export default defineConfig(() => ({
       "react-dom/client",
       "@tanstack/react-query",
       "zustand",
+      "zustand/middleware",
       "@tauri-apps/api/core",
       "@tauri-apps/api/event",
       "@tauri-apps/plugin-dialog",

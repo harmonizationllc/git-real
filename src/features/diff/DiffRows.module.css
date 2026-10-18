@@ -56,6 +56,10 @@
 .sign {
   text-align: center;
   color: var(--color-text-muted);
+  /* Same metrics as the line content, so a changed row is no taller than a context row. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .split {

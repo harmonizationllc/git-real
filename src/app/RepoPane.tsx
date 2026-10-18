@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { DetailPane } from "../features/diff/DetailPane";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { RepoTab } from "../lib/store/repoTabs";
 import styles from "./RepoPane.module.css";
@@ -19,7 +20,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         {/* Keyed so selection, menu, dialog and mutation state never leak across tabs. */}
         <ChangesPanel key={tab.id} repoId={tab.id} />
         <section aria-label="Detail" className={styles.detail}>
-          Select a file to view its diff
+          <DetailPane key={tab.id} repoId={tab.id} />
         </section>
       </div>
     </section>

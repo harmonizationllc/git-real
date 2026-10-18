@@ -23,8 +23,6 @@
   color: var(--syntax-number);
 }
 .tok-comment,
-.tok-lineComment,
-.tok-blockComment,
 .tok-docComment {
   color: var(--syntax-comment);
   font-style: italic;
