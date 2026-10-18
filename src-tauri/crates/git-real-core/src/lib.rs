@@ -22,6 +22,7 @@ pub mod model;
 mod paths;
 pub mod progress;
 pub mod recent;
+pub mod refs;
 pub mod remote;
 pub mod repo;
 pub mod status;

@@ -35,6 +35,34 @@ pub enum GitError {
         stdout: String,
         stderr: String,
     },
+    #[error("{0} is not a valid branch name")]
+    InvalidBranchName(String),
+    #[error("a branch named {0} already exists")]
+    BranchExists(String),
+    #[error("no branch named {0}")]
+    BranchNotFound(String),
+    #[error("{0} is not fully merged")]
+    BranchNotMerged(String),
+    #[error("cannot delete the current branch {0}")]
+    CannotDeleteCurrent(String),
+    #[error("the repository has no commits yet")]
+    UnbornHead,
+    #[error("{0} is not a known revision")]
+    RevisionNotFound(String),
+    #[error("no remote named {0}")]
+    RemoteNotFound(String),
+    #[error("git switch failed (exit code {code:?}): {stderr}")]
+    CheckoutFailed {
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
+    #[error("git push failed (exit code {code:?}): {stderr}")]
+    PushFailed {
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

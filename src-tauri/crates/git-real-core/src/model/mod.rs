@@ -1,5 +1,6 @@
 //! Plain data types exchanged with the app layer.
 
+mod branch;
 mod commit;
 mod diff;
 mod progress;
@@ -7,6 +8,7 @@ mod recent;
 mod repo;
 mod status;
 
+pub use branch::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
 pub use commit::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
 pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
