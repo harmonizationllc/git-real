@@ -213,3 +213,90 @@ pub fn install_hook(root: &Path, name: &str, body: &str) {
     std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write hook");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 }
+
+/// Writes `name` with `content`, stages it and commits on HEAD; returns the new oid.
+pub fn commit_file(path: &Path, name: &str, content: &str, message: &str) -> git2::Oid {
+    let repo = Repository::open(path).expect("open repo");
+    write_file(path, name, content);
+    let mut index = repo.index().expect("open index");
+    index.add_path(Path::new(name)).expect("stage file");
+    index.write().expect("write index");
+    let tree = repo
+        .find_tree(index.write_tree().expect("write tree"))
+        .expect("find tree");
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+    let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+        .expect("commit")
+}
+
+/// Adds `bare` (a local path, no network) as remote `origin`, fetches it and
+/// sets `head_name`'s upstream to `origin/<head_name>`.
+pub fn add_remote_and_fetch(path: &Path, bare: &Path, head_name: &str) {
+    {
+        let repo = Repository::open(path).expect("open repo");
+        repo.remote("origin", bare.to_str().expect("utf-8 path"))
+            .expect("add remote");
+    }
+    fetch_remote(path, "origin");
+    let repo = Repository::open(path).expect("open repo");
+    let mut branch = repo
+        .find_branch(head_name, git2::BranchType::Local)
+        .expect("find head branch");
+    branch
+        .set_upstream(Some(&format!("origin/{head_name}")))
+        .expect("set upstream");
+}
+
+/// Fetches every branch of `remote` into `refs/remotes/<remote>/*`.
+pub fn fetch_remote(path: &Path, remote: &str) {
+    let repo = Repository::open(path).expect("open repo");
+    let mut remote = repo.find_remote(remote).expect("find remote");
+    let spec = format!(
+        "+refs/heads/*:refs/remotes/{}/*",
+        remote.name().expect("utf-8")
+    );
+    remote.fetch(&[spec.as_str()], None, None).expect("fetch");
+}
+
+/// Pushes local branch `branch` to `origin` over the local path (no network).
+pub fn push_branch(path: &Path, branch: &str) {
+    let repo = Repository::open(path).expect("open repo");
+    let mut remote = repo.find_remote("origin").expect("find origin");
+    let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
+    remote.push(&[spec.as_str()], None).expect("push");
+}
+
+/// Creates `branch` at HEAD, commits `file` on it, then returns the working
+/// tree to the original branch. Returns the new commit's oid.
+pub fn branch_with_commit(path: &Path, branch: &str, file: &str, content: &str) -> git2::Oid {
+    let original = {
+        let repo = Repository::open(path).expect("open repo");
+        let head = repo.head().expect("head");
+        let original = head.name().expect("utf-8 ref").to_string();
+        let commit = head.peel_to_commit().expect("head commit");
+        repo.branch(branch, &commit, false).expect("create branch");
+        repo.set_head(&format!("refs/heads/{branch}"))
+            .expect("switch to branch");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout branch");
+        original
+    };
+    let oid = commit_file(path, file, content, &format!("commit on {branch}"));
+    let repo = Repository::open(path).expect("open repo");
+    repo.set_head(&original).expect("switch back");
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+        .expect("checkout original");
+    oid
+}
+
+/// The short name of the branch HEAD points at (the fixtures do not assume `main`).
+pub fn head_branch_name(path: &Path) -> String {
+    let repo = Repository::open(path).expect("open repo");
+    let head = repo.find_reference("HEAD").expect("HEAD");
+    head.symbolic_target()
+        .and_then(|t| t.strip_prefix("refs/heads/"))
+        .expect("HEAD is symbolic")
+        .to_string()
+}

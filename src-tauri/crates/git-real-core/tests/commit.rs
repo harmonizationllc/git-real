@@ -3,7 +3,7 @@ mod common;
 use std::path::Path;
 
 use git_real_core::commit::git_commit;
-use git_real_core::remote::git_cli;
+use git_real_core::git_cli;
 use git_real_core::{CommitMessage, GitError, RepoSession, SigningFormat};
 use git2::Repository;
 

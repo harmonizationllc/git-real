@@ -58,6 +58,60 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::TooLarge,
             None,
         ),
+        (
+            GitError::InvalidBranchName("a b".into()),
+            AppErrorKind::InvalidBranchName,
+            None,
+        ),
+        (
+            GitError::BranchExists("main".into()),
+            AppErrorKind::BranchExists,
+            None,
+        ),
+        (
+            GitError::BranchNotFound("ghost".into()),
+            AppErrorKind::BranchNotFound,
+            None,
+        ),
+        (
+            GitError::BranchNotMerged("wip".into()),
+            AppErrorKind::BranchNotMerged,
+            None,
+        ),
+        (
+            GitError::CannotDeleteCurrent("main".into()),
+            AppErrorKind::CannotDeleteCurrent,
+            None,
+        ),
+        (GitError::UnbornHead, AppErrorKind::UnbornHead, None),
+        (
+            GitError::RevisionNotFound("nope".into()),
+            AppErrorKind::RevisionNotFound,
+            None,
+        ),
+        (
+            GitError::RemoteNotFound("nope".into()),
+            AppErrorKind::RemoteNotFound,
+            None,
+        ),
+        (
+            GitError::CheckoutFailed {
+                code: Some(128),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+            AppErrorKind::CheckoutFailed,
+            Some("git switch failed with exit code 128"),
+        ),
+        (
+            GitError::PushFailed {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+            AppErrorKind::PushFailed,
+            Some("git push failed with exit code 1"),
+        ),
     ];
     for (err, expected, reduced) in cases {
         let message = reduced.map_or_else(|| err.to_string(), str::to_string);
@@ -335,4 +389,131 @@ fn new_kinds_serialize_camel_case() {
         serde_json::to_value(AppErrorKind::CommitFailed).unwrap(),
         "commitFailed"
     );
+}
+
+// GR-7 branch errors: the wire kinds are camelCase strings the front end relies on.
+#[test]
+fn branch_error_kinds_serialize_camel_case() {
+    let cases = [
+        (AppErrorKind::InvalidBranchName, "invalidBranchName"),
+        (AppErrorKind::BranchExists, "branchExists"),
+        (AppErrorKind::BranchNotFound, "branchNotFound"),
+        (AppErrorKind::BranchNotMerged, "branchNotMerged"),
+        (AppErrorKind::CannotDeleteCurrent, "cannotDeleteCurrent"),
+        (AppErrorKind::UnbornHead, "unbornHead"),
+        (AppErrorKind::RevisionNotFound, "revisionNotFound"),
+        (AppErrorKind::RemoteNotFound, "remoteNotFound"),
+        (AppErrorKind::CheckoutFailed, "checkoutFailed"),
+        (AppErrorKind::PushFailed, "pushFailed"),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
+    }
+}
+
+#[test]
+fn branch_not_merged_serializes_as_kind_and_message() {
+    let err = GitError::BranchNotMerged("wip".into());
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        serde_json::to_value(app).unwrap(),
+        json!({"kind": "branchNotMerged", "message": message})
+    );
+}
+
+#[test]
+fn branch_error_messages_name_the_branch() {
+    let app: AppError = GitError::BranchExists("topic".into()).into();
+    assert!(app.message.contains("topic"));
+}
+
+fn checkout_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
+    GitError::CheckoutFailed {
+        code,
+        stdout: stdout.into(),
+        stderr: stderr.into(),
+    }
+    .into()
+}
+
+fn push_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
+    GitError::PushFailed {
+        code,
+        stdout: stdout.into(),
+        stderr: stderr.into(),
+    }
+    .into()
+}
+
+#[test]
+fn checkout_failed_message_prefers_stderr() {
+    let err = checkout_failed(
+        Some(1),
+        "Switched\n",
+        "error: local changes\nwould be overwritten\n",
+    );
+    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
+    assert_eq!(err.message, "error: local changes\nwould be overwritten");
+}
+
+#[test]
+fn checkout_failed_message_falls_back_to_stdout() {
+    let err = checkout_failed(Some(1), "  from stdout \n", "  \n");
+    assert_eq!(err.message, "from stdout");
+}
+
+#[test]
+fn checkout_failed_message_falls_back_to_exit_code() {
+    assert_eq!(
+        checkout_failed(Some(128), "", "").message,
+        "git switch failed with exit code 128"
+    );
+}
+
+#[test]
+fn checkout_failed_message_falls_back_to_signal() {
+    assert_eq!(
+        checkout_failed(None, " ", " ").message,
+        "git switch was terminated by a signal"
+    );
+}
+
+#[test]
+fn push_failed_message_prefers_stderr() {
+    let err = push_failed(Some(1), "out\n", "error: remote ref does not exist\n");
+    assert_eq!(err.kind, AppErrorKind::PushFailed);
+    assert_eq!(err.message, "error: remote ref does not exist");
+}
+
+#[test]
+fn push_failed_message_falls_back_to_stdout() {
+    let err = push_failed(Some(1), "  from stdout \n", "");
+    assert_eq!(err.message, "from stdout");
+}
+
+#[test]
+fn push_failed_message_falls_back_to_exit_code() {
+    assert_eq!(
+        push_failed(Some(1), "", "").message,
+        "git push failed with exit code 1"
+    );
+}
+
+#[test]
+fn push_failed_message_falls_back_to_signal() {
+    assert_eq!(
+        push_failed(None, "", "").message,
+        "git push was terminated by a signal"
+    );
+}
+
+#[test]
+fn commit_failed_message_still_names_commit_after_the_helper_is_generalised() {
+    let err = AppError::from(GitError::CommitFailed {
+        code: Some(3),
+        stdout: String::new(),
+        stderr: String::new(),
+    });
+    assert_eq!(err.message, "git commit failed with exit code 3");
 }

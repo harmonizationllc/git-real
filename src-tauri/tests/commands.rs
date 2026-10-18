@@ -2,7 +2,7 @@
 
 mod common;
 
-use git_real_core::remote::git_cli;
+use git_real_core::git_cli;
 use git_real_lib::commands::repo::{
     GitCliInfo, check_git_cli_inner, clone_repo_inner, close_repo_inner, init_repo_inner,
     list_recent_inner, open_repo_inner, remove_recent_inner,

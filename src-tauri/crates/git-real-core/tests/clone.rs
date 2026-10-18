@@ -2,7 +2,8 @@ mod common;
 
 use std::path::Path;
 
-use git_real_core::remote::{clone, git_cli};
+use git_real_core::git_cli;
+use git_real_core::remote::clone;
 use git_real_core::{GitError, Progress, ProgressPhase, ProgressSink, RepoSession};
 
 /// Test double: records every progress report so tests can inspect them.
