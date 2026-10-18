@@ -1,0 +1,28 @@
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px;
+  background: var(--color-hunk-bg);
+  color: var(--color-text-muted);
+}
+
+.text {
+  font-size: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action,
+.danger {
+  font-size: 0.75rem;
+  padding: 1px 8px;
+}
+
+.danger {
+  color: var(--color-danger);
+}

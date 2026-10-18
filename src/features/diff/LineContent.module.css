@@ -1,0 +1,20 @@
+.code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* Rows set --word-bg to the added or removed word colour. */
+.word {
+  background: var(--word-bg, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.eof {
+  color: var(--color-text-muted);
+  margin-left: 4px;
+}
