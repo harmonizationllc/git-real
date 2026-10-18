@@ -1,7 +1,8 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getFileDiff, getStatus, onRepoChanged } from "../lib/ipc";
+import { getCommitConfig, getFileDiff, getHeadMessage, getStatus, onRepoChanged } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useWorkspace } from "../lib/store/workspace";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
@@ -9,7 +10,9 @@ import { RepoPane } from "./RepoPane";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  getCommitConfig: vi.fn(),
   getFileDiff: vi.fn(),
+  getHeadMessage: vi.fn(),
   getStatus: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
@@ -22,9 +25,12 @@ const tab = (id: number, headBranch: string | null = "main"): RepoTab => ({
 beforeEach(() => {
   vi.resetAllMocks();
   useWorkspace.setState({ selected: {} });
+  useCommitDraft.setState({ drafts: {} });
   vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
+  vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
+  vi.mocked(getHeadMessage).mockResolvedValue(null);
 });
 
 // Contract: header as before, then a body with the changes panel and the detail pane.
@@ -157,5 +163,24 @@ describe("RepoPane detail pane per tab", () => {
       expect(getFileDiff).toHaveBeenCalledWith(2, "a.txt", "unstaged", false, undefined),
     );
     expect(getFileDiff).not.toHaveBeenCalledWith(2, "a.txt", "unstaged", false, FULL_DIFF_LINES);
+  });
+
+  it("should render the commit box below the changes panel in the sidebar", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const changes = await screen.findByRole("region", { name: "Changes" });
+    const commitBox = screen.getByRole("region", { name: "Commit" });
+    expect(changes.parentElement).toBe(commitBox.parentElement);
+    expect(
+      changes.compareDocumentPosition(commitBox) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("should show a different commit draft per tab", async () => {
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "one" } } });
+    const { rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(screen.getByLabelText("Subject")).toHaveValue("one");
+    rerender(<RepoPane tab={tab(2)} />);
+    expect(screen.getByLabelText("Subject")).toHaveValue("");
+    await screen.findByRole("region", { name: "Changes" });
   });
 });

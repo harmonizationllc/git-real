@@ -15,6 +15,9 @@ const kinds: AppErrorKind[] = [
   "badSelection",
   "applyFailed",
   "tooLarge",
+  "emptyMessage",
+  "nothingToCommit",
+  "commitFailed",
 ];
 
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.

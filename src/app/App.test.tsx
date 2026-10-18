@@ -6,6 +6,8 @@ import {
   checkGitCli,
   cloneRepo,
   closeRepo,
+  getCommitConfig,
+  getHeadMessage,
   getStatus,
   listRecent,
   onCloneProgress,
@@ -14,6 +16,7 @@ import {
   pickFolder,
 } from "../lib/ipc";
 import type { OpenedRepo } from "../lib/ipc";
+import { useCommitDraft } from "../lib/store/commitDraft";
 import { useRepoTabs } from "../lib/store/repoTabs";
 import { useWorkspace } from "../lib/store/workspace";
 import App from "./App";
@@ -29,6 +32,8 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pickFolder: vi.fn(),
   checkGitCli: vi.fn(),
   onCloneProgress: vi.fn(),
+  getCommitConfig: vi.fn(),
+  getHeadMessage: vi.fn(),
   getStatus: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
@@ -45,6 +50,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useWorkspace.setState(useWorkspace.getInitialState(), true);
+  useCommitDraft.setState({ drafts: {} });
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
@@ -52,6 +58,8 @@ beforeEach(() => {
   vi.mocked(onCloneProgress).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
+  vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
+  vi.mocked(getHeadMessage).mockResolvedValue(null);
 });
 
 function renderApp(...seed: OpenedRepo[]) {
@@ -179,6 +187,15 @@ describe("App closing tabs", () => {
     const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
     await user.click(screen.getByRole("button", { name: "Close alpha" }));
     expect(useWorkspace.getState().selected[2]).toEqual({ path: "b.txt", scope: "staged" });
+  });
+
+  it("closing a tab clears that repo's commit draft and keeps the others", async () => {
+    useCommitDraft.getState().setSubject(1, "alpha draft");
+    useCommitDraft.getState().setSubject(2, "beta draft");
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
+    await user.click(screen.getByRole("button", { name: "Close alpha" }));
+    expect(useCommitDraft.getState().drafts).not.toHaveProperty("1");
+    expect(useCommitDraft.getState().drafts[2]).toMatchObject({ subject: "beta draft" });
   });
 
   it("closeRepo rejection with unknownRepo still closes the tab and logs nothing", async () => {
