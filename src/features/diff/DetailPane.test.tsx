@@ -280,7 +280,7 @@ describe("DetailPane zero-hunk diffs", () => {
 
   it("should offer no hunk buttons for a decoded diff without hunks", async () => {
     vi.mocked(getFileDiff).mockResolvedValue(
-      fileDiff([], { oldEncoding: "utf16Le", newEncoding: "utf16Le" }),
+      fileDiff([], { oldEncoding: "utf16Le", newEncoding: "utf8" }),
     );
     setup();
     await screen.findByText("Only the encoding changed");
@@ -879,5 +879,56 @@ describe("DetailPane per-file transient state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
     const alert = await screen.findByRole("alert");
     expect(within(alert).queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+});
+
+// Contract: "Only the encoding changed" needs two different encodings; otherwise nothing changed in lines.
+describe("DetailPane decoded zero-hunk copy", () => {
+  it.each<[string, Partial<FileDiff>]>([
+    ["equal encodings", { oldEncoding: "utf16Le", newEncoding: "utf16Le" }],
+    ["only the old side decoded", { oldEncoding: "utf16Le", newEncoding: null }],
+    ["only the new side decoded", { oldEncoding: null, newEncoding: "utf16Be" }],
+  ])("should say no line changes when %s", async (_name, extra) => {
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([], extra));
+    setup();
+    expect(await screen.findByText("No line changes in this file")).toBeInTheDocument();
+    expect(screen.queryByText("Only the encoding changed")).toBeNull();
+  });
+
+  it("should say the encoding changed when both sides differ", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { oldEncoding: "utf16Le", newEncoding: "utf32Le" }),
+    );
+    setup();
+    expect(await screen.findByText("Only the encoding changed")).toBeInTheDocument();
+  });
+});
+
+// Contract: the last hunk of a truncated diff is partial, so its whole-hunk buttons are off until the full diff loads.
+describe("DetailPane truncated last hunk", () => {
+  const LOAD = "Load the full diff to stage, unstage or discard this hunk";
+  const twoHunks = (truncated: boolean) =>
+    fileDiff(
+      [
+        hunk([L("deletion", "a1", 1, null), L("addition", "a2", null, 1)], "@@ -1 +1 @@"),
+        hunk([L("deletion", "b1", 9, null), L("addition", "b2", null, 9)], "@@ -9 +9 @@"),
+      ],
+      { truncated },
+    );
+
+  it("should disable the last hunk's buttons until the full diff is loaded, then enable them", async () => {
+    vi.mocked(getFileDiff).mockImplementation((_id, _p, _s, _w, max) =>
+      Promise.resolve(twoHunks(max === undefined)),
+    );
+    setup();
+    await diffRegion();
+    const stage = screen.getAllByRole("button", { name: "Stage hunk" });
+    expect(stage[0]).toBeEnabled();
+    expect(stage[1]).toBeDisabled();
+    expect(stage[1]).toHaveAttribute("title", LOAD);
+    fireEvent.click(screen.getByRole("button", { name: "Load full diff" }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Stage hunk" })[1]).toBeEnabled(),
+    );
   });
 });

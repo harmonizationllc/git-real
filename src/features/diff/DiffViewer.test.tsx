@@ -413,3 +413,48 @@ describe("DiffViewer reason in every header", () => {
     for (const b of buttons) expect(b).toBeDisabled();
   });
 });
+
+// Contract: the last hunk of a truncated diff is partial, so only its selected-line actions are safe.
+describe("DiffViewer truncated last hunk", () => {
+  const LOAD = "Load the full diff to stage, unstage or discard this hunk";
+  const truncated = { ...diffOf(), truncated: true };
+
+  it("should disable the last hunk's whole-hunk buttons with the load-full-diff reason", () => {
+    setup({ diff: truncated });
+    for (const name of ["Stage hunk", "Discard hunk…"]) {
+      const last = screen.getAllByRole("button", { name }).at(-1)!;
+      expect(last).toBeDisabled();
+      expect(last).toHaveAttribute("title", LOAD);
+    }
+  });
+
+  it("should disable the unstage button of the last hunk of a staged truncated diff", () => {
+    setup({ diff: { ...diffOf("staged"), truncated: true } });
+    const last = screen.getAllByRole("button", { name: "Unstage hunk" }).at(-1)!;
+    expect(last).toBeDisabled();
+    expect(last).toHaveAttribute("title", LOAD);
+  });
+
+  it("should keep earlier hunks' buttons enabled", () => {
+    setup({ diff: truncated });
+    for (const name of ["Stage hunk", "Discard hunk…"]) {
+      expect(screen.getAllByRole("button", { name })[0]).toBeEnabled();
+    }
+  });
+
+  it("should keep selected-line buttons enabled in the last hunk", () => {
+    setup({ diff: truncated, selection: selecting(1, 0) });
+    expect(screen.getByRole("button", { name: "Stage 1 line" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Discard 1 line…" })).toBeEnabled();
+  });
+
+  it("should enable the last hunk's buttons when the diff is not truncated", () => {
+    setup({ diff: { ...diffOf(), truncated: false } });
+    for (const b of screen.getAllByRole("button")) expect(b).toBeEnabled();
+  });
+
+  it("should let a global reason win over the truncation reason", () => {
+    setup({ diff: truncated, reason: "Not now" });
+    for (const b of screen.getAllByRole("button")) expect(b).toHaveAttribute("title", "Not now");
+  });
+});
