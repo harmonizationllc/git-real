@@ -78,3 +78,38 @@ describe("MessageEditor", () => {
     expect(screen.getByLabelText("Body")).toBeDisabled();
   });
 });
+
+describe("MessageEditor limit boundary and key modifiers", () => {
+  it("styles the counter as over the limit at 73 but not at 72", () => {
+    const { unmount } = render(
+      <MessageEditor
+        subject={"x".repeat(72)}
+        body=""
+        disabled={false}
+        onSubjectChange={vi.fn()}
+        onBodyChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("72/72").className).not.toMatch(/counterOver/);
+    expect(screen.getByLabelText("Subject")).not.toHaveAttribute("aria-describedby");
+    unmount();
+    setup({ subject: "x".repeat(73) });
+    expect(screen.getByText("73/72").className).toMatch(/counterOver/);
+  });
+
+  it("Shift+Enter in the subject moves focus to the body and does not submit", async () => {
+    const { user, onSubmit } = setup();
+    await user.click(screen.getByLabelText("Subject"));
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(screen.getByLabelText("Body")).toHaveFocus();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("plain Enter in the body does not submit", async () => {
+    const { user, onSubmit } = setup();
+    await user.click(screen.getByLabelText("Body"));
+    await user.keyboard("{Enter}");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});

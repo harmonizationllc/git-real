@@ -70,3 +70,17 @@ describe("useCommit", () => {
     await waitFor(() => expect(result.current.pending).toBe(false));
   });
 });
+
+describe("useCommit clearError", () => {
+  it("is a harmless no-op after a successful commit", async () => {
+    vi.mocked(commit).mockResolvedValue({ oid: "abc", summary: "S" });
+    const { result } = renderHookWithProviders(() => useCommit(1));
+    act(() => result.current.commit({ subject: "S", body: "" }, false));
+    await waitFor(() => expect(useCommitDraft.getState().drafts[1]).toBeUndefined());
+    await waitFor(() => expect(result.current.pending).toBe(false));
+    act(() => result.current.clearError());
+    expect(result.current.error).toBeNull();
+    expect(result.current.pending).toBe(false);
+    expect(useCommitDraft.getState().drafts[1]).toBeUndefined();
+  });
+});

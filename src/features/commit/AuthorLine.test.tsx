@@ -29,3 +29,11 @@ describe("AuthorLine", () => {
     expect(screen.getByText(label)).toBeInTheDocument();
   });
 });
+
+describe("AuthorLine with signing but no identity", () => {
+  it("shows both the fallback and the signing badge", () => {
+    render(<AuthorLine config={{ name: null, email: null, signing: "ssh" }} />);
+    expect(screen.getByText("Author not configured")).toBeInTheDocument();
+    expect(screen.getByText("Signs with SSH")).toBeInTheDocument();
+  });
+});

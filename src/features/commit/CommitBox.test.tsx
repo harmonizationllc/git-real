@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commit, getCommitConfig, getHeadMessage, getStatus, onRepoChanged } from "../../lib/ipc";
 import type { CommitConfig, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
@@ -207,5 +207,89 @@ describe("CommitBox", () => {
     renderWithProviders(<CommitBox repoId={2} />);
     expect(screen.getByLabelText("Subject")).toHaveValue("");
     expect(useCommitDraft.getState().drafts[1]?.subject).toBe("one");
+  });
+});
+
+describe("CommitBox spec behaviours", () => {
+  const pendingCommit = () => {
+    let resolve: (v: { oid: string; summary: string }) => void = () => undefined;
+    vi.mocked(commit).mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    return (): void => resolve({ oid: "a", summary: "S" });
+  };
+
+  it("commits once when Ctrl+Enter and a click arrive while pending", async () => {
+    const finish = pendingCommit();
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.type(screen.getByLabelText("Subject"), "S");
+    await waitFor(() => expect(button()).toBeEnabled());
+    await user.click(button());
+    expect(screen.getByRole("button", { name: "Committing…" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByLabelText("Subject"), { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(screen.getByLabelText("Body"), { key: "Enter", metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Committing…" }));
+    expect(commit).toHaveBeenCalledOnce();
+    finish();
+    await waitFor(() => expect(screen.getByLabelText("Subject")).toBeEnabled());
+  });
+
+  it("drops the disabled-reason title while the commit is pending", async () => {
+    const finish = pendingCommit();
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.type(screen.getByLabelText("Subject"), "S");
+    await waitFor(() => expect(button()).toBeEnabled());
+    await user.click(button());
+    expect(screen.getByRole("button", { name: "Committing…" })).not.toHaveAttribute("title");
+    finish();
+    await waitFor(() => expect(screen.getByLabelText("Subject")).toBeEnabled());
+  });
+
+  it("returns the button to Commit and amend to off after a successful amend", async () => {
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    const amend = screen.getByRole("checkbox", { name: "Amend last commit" });
+    await waitFor(() => expect(amend).toBeEnabled());
+    await user.click(amend);
+    await user.click(screen.getByRole("button", { name: "Amend commit" }));
+    await waitFor(() => expect(amend).not.toBeChecked());
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Amend commit" })).toBeNull();
+    expect(screen.getByLabelText("Subject")).toHaveValue("");
+    expect(screen.getByLabelText("Body")).toHaveValue("");
+  });
+
+  it("keeps amend on, the prefill and the Amend commit label after a failed amend", async () => {
+    vi.mocked(commit).mockRejectedValue({ kind: "commitFailed", message: "hook says no" });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    const amend = screen.getByRole("checkbox", { name: "Amend last commit" });
+    await waitFor(() => expect(amend).toBeEnabled());
+    await user.click(amend);
+    await user.click(screen.getByRole("button", { name: "Amend commit" }));
+    await screen.findByRole("alert");
+    expect(amend).toBeChecked();
+    expect(amend).toBeEnabled();
+    expect(screen.getByLabelText("Subject")).toHaveValue("Head subject");
+    expect(screen.getByLabelText("Body")).toHaveValue("Head body");
+    expect(screen.getByRole("button", { name: "Amend commit" })).toBeEnabled();
+  });
+
+  it("allows retrying after a failure and clears the error once the retry succeeds", async () => {
+    vi.mocked(commit).mockRejectedValueOnce({ kind: "commitFailed", message: "hook says no" });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.type(screen.getByLabelText("Subject"), "S");
+    await waitFor(() => expect(button()).toBeEnabled());
+    await user.click(button());
+    await screen.findByRole("alert");
+    await user.click(button());
+    await waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByLabelText("Subject")).toHaveValue("");
   });
 });

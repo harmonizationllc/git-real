@@ -1,6 +1,13 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getCommitConfig, getFileDiff, getHeadMessage, getStatus, onRepoChanged } from "../lib/ipc";
+import {
+  commit,
+  getCommitConfig,
+  getFileDiff,
+  getHeadMessage,
+  getStatus,
+  onRepoChanged,
+} from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useWorkspace } from "../lib/store/workspace";
@@ -10,6 +17,7 @@ import { RepoPane } from "./RepoPane";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  commit: vi.fn(),
   getCommitConfig: vi.fn(),
   getFileDiff: vi.fn(),
   getHeadMessage: vi.fn(),
@@ -182,5 +190,27 @@ describe("RepoPane detail pane per tab", () => {
     rerender(<RepoPane tab={tab(2)} />);
     expect(screen.getByLabelText("Subject")).toHaveValue("");
     await screen.findByRole("region", { name: "Changes" });
+  });
+});
+
+describe("RepoPane commit box state per tab", () => {
+  it("does not carry a commit failure to another tab", async () => {
+    vi.mocked(getStatus).mockResolvedValue({
+      entries: [
+        { path: "a.txt", oldPath: null, index: "modified", worktree: null, conflicted: false },
+      ],
+      headUnborn: false,
+    });
+    vi.mocked(commit).mockRejectedValue({ kind: "commitFailed", message: "hook says no" });
+    const { rerender, user } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    const subject = screen.getByLabelText("Subject");
+    await user.type(subject, "S");
+    const commitButton = screen.getByRole("button", { name: "Commit" });
+    await waitFor(() => expect(commitButton).toBeEnabled());
+    await user.click(commitButton);
+    expect(await screen.findByRole("alert")).toHaveTextContent("hook says no");
+    rerender(<RepoPane tab={tab(2)} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByLabelText("Subject")).toHaveValue("");
   });
 });

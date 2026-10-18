@@ -112,4 +112,18 @@ describe("commitDraft store", () => {
     s.setAmend(1, true, head);
     expect(useCommitDraft.getState().drafts[2]).toMatchObject({ subject: "other", amend: false });
   });
+
+  it("setAmend on while already on ignores a changed head and keeps text and stash", () => {
+    const s = useCommitDraft.getState();
+    s.setSubject(1, "typed");
+    s.setAmend(1, true, head);
+    s.setBody(1, "edited body");
+    s.setAmend(1, true, { subject: "Other head", body: "Other body" });
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: "Head subject",
+      body: "edited body",
+      amend: true,
+      stash: { subject: "typed", body: "" },
+    });
+  });
 });
