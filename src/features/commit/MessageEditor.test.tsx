@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MessageEditor } from "./MessageEditor";
@@ -110,6 +110,24 @@ describe("MessageEditor limit boundary and key modifiers", () => {
     const { user, onSubmit } = setup();
     await user.click(screen.getByLabelText("Body"));
     await user.keyboard("{Enter}");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("Enter during IME composition neither moves focus nor submits", async () => {
+    const { user, onSubmit } = setup();
+    const subject = screen.getByLabelText("Subject");
+    await user.click(subject);
+    const notPrevented = fireEvent.keyDown(subject, { key: "Enter", isComposing: true });
+    expect(subject).toHaveFocus();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
+
+  it("Ctrl+Enter during IME composition does not submit", async () => {
+    const { user, onSubmit } = setup();
+    const subject = screen.getByLabelText("Subject");
+    await user.click(subject);
+    fireEvent.keyDown(subject, { key: "Enter", ctrlKey: true, isComposing: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });

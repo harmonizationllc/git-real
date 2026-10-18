@@ -8,7 +8,7 @@ beforeEach(() => {
 });
 
 describe("commitDraft store", () => {
-  it("returns EMPTY_DRAFT for an unknown repo, by reference", () => {
+  it("has no entry for an unknown repo and EMPTY_DRAFT is the blank draft", () => {
     expect(useCommitDraft.getState().drafts[1]).toBeUndefined();
     expect(EMPTY_DRAFT).toEqual({ subject: "", body: "", amend: false, stash: null });
   });
