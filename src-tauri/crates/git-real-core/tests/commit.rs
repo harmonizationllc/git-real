@@ -429,3 +429,23 @@ fn run_with_missing_git_is_io_error() {
     let err = git_commit::run(&dir.path().join("no-git"), dir.path(), "S\n", false).unwrap_err();
     assert!(matches!(err, GitError::Io(_)), "{err:?}");
 }
+
+#[cfg(unix)]
+#[test]
+fn run_does_not_deadlock_when_hook_output_and_message_exceed_pipe_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let git = common::fake_git(
+        dir.path(),
+        "head -c 300000 /dev/zero | tr '\\0' x >&2; cat >/dev/null; exit 0",
+    );
+    let message = format!("S\n\n{}", "y".repeat(300_000));
+    let workdir = dir.path().to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(git_commit::run(&git, &workdir, &message, false));
+    });
+
+    let result = rx.recv_timeout(std::time::Duration::from_secs(10));
+
+    assert!(matches!(result, Ok(Ok(()))), "{result:?}");
+}
