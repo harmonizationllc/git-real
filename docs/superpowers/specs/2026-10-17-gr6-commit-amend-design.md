@@ -1,6 +1,6 @@
 # GR-6 — Commit and amend
 
-- Status: Draft for user review
+- Status: Approved (reviewed in session 2026-10-17; `--cleanup` wording corrected 2026-10-18 after architect review)
 - Date: 2026-10-17
 - Epic: GR-1 / Story: GR-6 "Commit and amend"
 - Depends on: GR-4 (status, staging, watcher), GR-5 (Changes panel + detail
@@ -40,15 +40,18 @@ whenever the user's Git config asks for it.
   would give two code paths with different behaviour (git2 runs no hooks and
   ignores `commit.gpgsign`). One path means hooks (`pre-commit`,
   `commit-msg`, `prepare-commit-msg`, `post-commit`), `commit.gpgsign`,
-  `gpg.format`, `user.signingkey`, `gpg.ssh.*` and `commit.cleanup` all
-  behave exactly as on the command line. The cost is that committing needs
+  `gpg.format`, `user.signingkey` and `gpg.ssh.*` all behave exactly as on
+  the command line (the one exception is `commit.cleanup`, which the
+  explicit `--cleanup` flag below overrides on purpose). The cost is that committing needs
   the git CLI, which the app already needs for clone; a missing CLI surfaces
   as the existing `gitCliMissing` error.
 - **git2 does the reads around the commit**: author identity from config,
   the HEAD message for amend prefill, and the "is anything staged" check.
 - **The message is passed on stdin with `-F -` and `--cleanup=whitespace`.**
   `whitespace` strips trailing whitespace and surplus blank lines but keeps
-  lines starting with `#`, which `strip` (git's default for `-F`) would drop.
+  lines starting with `#`. It is also git's default for `-F` without an
+  editor, but passing it explicitly means a user's `commit.cleanup=strip`
+  cannot silently drop a `#` line from the box.
   `--amend` is added when amending; `--no-edit` is never needed because `-F`
   supplies the message. The child runs with `LC_ALL=C`,
   `GIT_TERMINAL_PROMPT=0` and `-C <workdir>`. No path arguments are passed
