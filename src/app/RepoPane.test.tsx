@@ -1,12 +1,14 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getStatus, onRepoChanged } from "../lib/ipc";
+import { getFileDiff, getStatus, onRepoChanged } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useWorkspace } from "../lib/store/workspace";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { RepoPane } from "./RepoPane";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  getFileDiff: vi.fn(),
   getStatus: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
@@ -18,11 +20,13 @@ const tab = (id: number, headBranch: string | null = "main"): RepoTab => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useWorkspace.setState({ selected: {} });
+  vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
 });
 
-// Contract: header as before, then a body with the changes panel and a detail placeholder.
+// Contract: header as before, then a body with the changes panel and the detail pane.
 describe("RepoPane", () => {
   it("should render the repo name as the level 1 heading", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
@@ -48,12 +52,25 @@ describe("RepoPane", () => {
     expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
   });
 
-  it("should render the detail placeholder", async () => {
+  it("should render the detail pane with its empty prompt", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
       "Select a file to view its diff",
     );
     await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should show the selected file's diff in the detail pane", async () => {
+    vi.mocked(getStatus).mockResolvedValue({
+      entries: [
+        { path: "a.txt", oldPath: null, index: null, worktree: "modified", conflicted: false },
+      ],
+      headUnborn: false,
+    });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "modified a.txt" }));
+    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent("Loading diff…");
+    expect(getFileDiff).toHaveBeenCalledWith(1, "a.txt", "unstaged", false, undefined);
   });
 
   it("should load the status for the tab's repo id", async () => {
