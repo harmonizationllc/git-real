@@ -3,7 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use git_real_core::remote::{clone::clone, git_cli};
+use git_real_core::git_cli;
+use git_real_core::remote::clone::clone;
 use git_real_core::{ProgressSink, RecentEntry, RepoSession, RepoSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use crate::error::GitError;
+use crate::git_cli;
 use crate::progress::ProgressSink;
-use crate::remote::git_cli;
 use crate::remote::progress_parser::{LineBuffer, parse_line};
 
 /// Clones `url` into `dest` using the `git` found on `PATH`.
