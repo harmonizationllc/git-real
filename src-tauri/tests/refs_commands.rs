@@ -92,6 +92,30 @@ fn create_branch_inner_with_checkout_moves_head() {
 }
 
 #[test]
+fn create_branch_inner_with_checkout_returns_the_branch_marked_as_head() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, _head) = open_fixture();
+    let branch = create_branch_inner(&reg, id, "topic", None, true).unwrap();
+    assert!(branch.is_head);
+}
+
+#[test]
+fn create_branch_inner_with_checkout_removes_the_branch_when_git_refuses() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, head) = open_fixture();
+    common::branch_with_commit(&path, "b2", "README.md", "# on b2\n");
+    std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
+    let err = create_branch_inner(&reg, id, "new", Some("b2"), true).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
+    assert!(!local_exists(&path, "new"));
+    assert_eq!(common::head_branch_name(&path), head);
+}
+
+#[test]
 fn create_branch_inner_honours_the_start_point() {
     let (_d, path, reg, id, _head) = open_fixture();
     let first = Repository::open(&path)

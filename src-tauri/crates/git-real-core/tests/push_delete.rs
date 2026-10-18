@@ -93,8 +93,8 @@ fn prepare_returns_the_validated_remote_and_branch() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
-    assert_eq!(push.remote, "origin");
-    assert_eq!(push.name, "feature");
+    assert_eq!(push.remote(), "origin");
+    assert_eq!(push.name(), "feature");
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn prepare_returns_the_repository_workdir() {
     let session = RepoSession::open(&path).unwrap();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
     assert_eq!(
-        push.workdir.canonicalize().unwrap(),
+        push.workdir().canonicalize().unwrap(),
         path.canonicalize().unwrap()
     );
 }

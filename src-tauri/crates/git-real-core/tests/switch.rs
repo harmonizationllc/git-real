@@ -329,3 +329,109 @@ fn blocked_remote_fixture() -> ((tempfile::TempDir, tempfile::TempDir), PathBuf,
     let session = RepoSession::open(&path).unwrap();
     ((d, b), path, session)
 }
+
+// --- create_and_checkout_branch: create then switch, rolled back on refusal ---
+
+#[test]
+fn create_and_checkout_moves_head_to_the_new_branch() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = fixture();
+    session.create_and_checkout_branch("topic", None).unwrap();
+    assert_eq!(head_ref(&path), "topic");
+}
+
+#[test]
+fn create_and_checkout_returns_the_branch_marked_as_head() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session, _head) = fixture();
+    let branch = session.create_and_checkout_branch("topic", None).unwrap();
+    assert_eq!(branch.name, "topic");
+    assert!(branch.is_head);
+}
+
+#[test]
+fn create_and_checkout_honours_the_start_point() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = fixture();
+    let tip = common::branch_with_commit(&path, "b2", "other.txt", "o\n");
+    let branch = session
+        .create_and_checkout_branch("topic", Some("b2"))
+        .unwrap();
+    assert_eq!(branch.oid, tip.to_string());
+}
+
+fn refused_switch_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
+    let (d, path, session, head) = fixture();
+    common::branch_with_commit(&path, "b2", "README.md", "# changed on b2\n");
+    std::fs::write(path.join("README.md"), "# dirty edit\n").unwrap();
+    (d, path, session, head)
+}
+
+#[test]
+fn create_and_checkout_fails_with_checkout_failed_when_git_refuses() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session, _head) = refused_switch_fixture();
+    let err = session
+        .create_and_checkout_branch("new", Some("b2"))
+        .unwrap_err();
+    assert!(matches!(err, GitError::CheckoutFailed { .. }));
+}
+
+#[test]
+fn create_and_checkout_removes_the_new_branch_when_git_refuses() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = refused_switch_fixture();
+    let _ = session.create_and_checkout_branch("new", Some("b2"));
+    let repo = Repository::open(&path).unwrap();
+    assert!(repo.find_branch("new", BranchType::Local).is_err());
+}
+
+#[test]
+fn create_and_checkout_keeps_head_when_git_refuses() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, head) = refused_switch_fixture();
+    let _ = session.create_and_checkout_branch("new", Some("b2"));
+    assert_eq!(head_ref(&path), head);
+}
+
+#[test]
+fn create_and_checkout_rejects_a_taken_name_and_keeps_head() {
+    let (_d, path, session, head) = fixture();
+    let err = session.create_and_checkout_branch(&head, None).unwrap_err();
+    assert!(matches!(err, GitError::BranchExists(n) if n == head));
+    assert_eq!(head_ref(&path), head);
+}
+
+#[test]
+fn create_and_checkout_rejects_a_leading_dash_name() {
+    let (_d, path, session, _head) = fixture();
+    let err = session.create_and_checkout_branch("-x", None).unwrap_err();
+    assert!(matches!(err, GitError::InvalidBranchName(_)));
+    assert!(
+        Repository::open(&path)
+            .unwrap()
+            .find_branch("-x", BranchType::Local)
+            .is_err()
+    );
+}
+
+#[test]
+fn create_and_checkout_with_an_unknown_revision_fails() {
+    let (_d, _p, session, _head) = fixture();
+    let err = session
+        .create_and_checkout_branch("topic", Some("nope"))
+        .unwrap_err();
+    assert!(matches!(err, GitError::RevisionNotFound(n) if n == "nope"));
+}
