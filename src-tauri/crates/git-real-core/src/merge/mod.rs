@@ -7,6 +7,7 @@
 //! reads use git2 and the `.git` marker files.
 
 mod git_ops;
+mod resolve;
 mod state;
 
 use std::path::{Path, PathBuf};
@@ -17,7 +18,7 @@ use git2::{BranchType, Oid, RepositoryState};
 use crate::commit::is_unborn;
 use crate::error::GitError;
 use crate::git_cli;
-use crate::model::{MergeMode, OperationOutcome, OperationState};
+use crate::model::{FastForwardCheck, MergeMode, OperationOutcome, OperationState};
 use crate::repo::RepoSession;
 use crate::revision;
 
@@ -120,6 +121,20 @@ impl RepoSession {
         let (git, workdir) = self.git()?;
         let output = git_ops::run(&git, workdir, "rebase", &["--continue"], &NO_EDITOR)?;
         self.outcome("rebase", &output)
+    }
+
+    /// Whether HEAD can fast-forward to `branch` (local, else `remote/name`).
+    pub fn can_fast_forward(&self, branch: &str) -> Result<FastForwardCheck, GitError> {
+        self.ensure_born()?;
+        let tip = self.resolve_branch(branch)?;
+        let head = self.repo().head()?.peel_to_commit()?.id();
+        if tip == head {
+            Ok(FastForwardCheck::UpToDate)
+        } else if self.repo().graph_descendant_of(tip, head)? {
+            Ok(FastForwardCheck::Possible)
+        } else {
+            Ok(FastForwardCheck::Diverged)
+        }
     }
 
     /// Local name, else `remote/name` → tip oid; `BranchNotFound` otherwise.
