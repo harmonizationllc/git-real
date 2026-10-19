@@ -44,6 +44,11 @@ describe("useCanFastForward", () => {
     expect(result.current.check).toBeUndefined();
   });
 
+  it("should not report loading when the branch is null", () => {
+    const { result } = renderHookWithProviders(() => useCanFastForward(1, null));
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it("should cache the check under a key that includes the branch", async () => {
     const { result, queryClient } = renderHookWithProviders(() => useCanFastForward(2, "feature"));
     await waitFor(() => expect(result.current.check).toBeDefined());

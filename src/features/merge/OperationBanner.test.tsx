@@ -49,6 +49,8 @@ function provide(opts: {
   pending?: boolean;
   error?: AppError | null;
   head?: BranchList["head"];
+  noBranches?: boolean;
+  noStatus?: boolean;
 }) {
   const { state, conflicts = 0, pending = false, error = null } = opts;
   vi.mocked(useOperationState).mockReturnValue({
@@ -65,17 +67,15 @@ function provide(opts: {
   }));
   const status: WorkingTreeStatus = { entries, headUnborn: false } as WorkingTreeStatus;
   vi.mocked(useStatus).mockReturnValue({
-    status,
+    status: opts.noStatus ? undefined : status,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
   });
   vi.mocked(useBranches).mockReturnValue({
-    branches: {
-      head: opts.head ?? { kind: "branch", name: "main" },
-      local: [],
-      remotes: [],
-    },
+    branches: opts.noBranches
+      ? undefined
+      : { head: opts.head ?? { kind: "branch", name: "main" }, local: [], remotes: [] },
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -136,6 +136,30 @@ describe("OperationBanner titles", () => {
     renderWithProviders(<OperationBanner repoId={1} />);
     expect(
       screen.getByText("Merging feature into HEAD, no conflicts remaining"),
+    ).toBeInTheDocument();
+  });
+
+  it("should read HEAD while the branches are not loaded", () => {
+    provide({ state: mergeState, noBranches: true });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(
+      screen.getByText("Merging feature into HEAD, no conflicts remaining"),
+    ).toBeInTheDocument();
+  });
+
+  it("should count no conflicts while the status is not loaded", () => {
+    provide({ state: mergeState, noStatus: true });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(
+      screen.getByText("Merging feature into main, no conflicts remaining"),
+    ).toBeInTheDocument();
+  });
+
+  it("should name the merged commit by short oid when the branch is unknown", () => {
+    provide({ state: { ...mergeState, branch: null } as OperationState });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(
+      screen.getByText("Merging aaaaaaa into main, no conflicts remaining"),
     ).toBeInTheDocument();
   });
 
@@ -291,7 +315,7 @@ describe("OperationBanner go to commit", () => {
     expect(screen.getByLabelText("Subject")).toHaveFocus();
   });
 
-  it("should do nothing when there is no commit subject input", async () => {
+  it("should not throw when there is no commit subject input", async () => {
     provide({ state: mergeState });
     const { user } = renderWithProviders(<OperationBanner repoId={1} />);
     await user.click(screen.getByRole("button", { name: "Go to commit" }));

@@ -295,6 +295,29 @@ describe("commitDraft syncPrefill with null", () => {
 
   it("should not create a draft for a repo that never had one", () => {
     useCommitDraft.getState().syncPrefill(7, null);
-    expect(useCommitDraft.getState().drafts[7]?.subject ?? "").toBe("");
+    expect(useCommitDraft.getState().drafts[7]).toBeUndefined();
+  });
+
+  it("should leave the state object untouched when there is nothing to drop", () => {
+    const s = useCommitDraft.getState();
+    s.setSubject(1, "typed");
+    const before = useCommitDraft.getState();
+    before.syncPrefill(1, null);
+    expect(useCommitDraft.getState()).toBe(before);
+  });
+});
+
+describe("commitDraft syncPrefill over an amend draft", () => {
+  it("should drop amend and the stash, then fill, when the restored text is empty", () => {
+    const s = useCommitDraft.getState();
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, mergeMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: mergeMsg.subject,
+      body: "",
+      amend: false,
+      stash: null,
+      prefilled: mergeMsg,
+    });
   });
 });
