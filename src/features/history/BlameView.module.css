@@ -22,7 +22,8 @@
 
 .row {
   display: grid;
-  grid-template-columns: 64px 120px 96px 48px auto;
+  /* The line-number column fits six digits. */
+  grid-template-columns: 64px 120px 96px 6ch auto;
   align-items: center;
   gap: 8px;
   height: 100%;
@@ -48,15 +49,16 @@
 }
 
 .author,
-.date,
-.lineno {
+.date {
   color: var(--color-text-muted);
   font-size: 0.85em;
 }
 
 .lineno {
-  text-align: right;
+  color: var(--color-text-muted);
   font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  text-align: right;
 }
 
 .open {

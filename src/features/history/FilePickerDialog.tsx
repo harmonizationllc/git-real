@@ -44,24 +44,28 @@ function FilePickerBody({ repoId, onPick, onCancel }: FilePickerDialogProps) {
     return () => previous.focus();
   }, []);
 
+  // A refetch can shrink the list under the active row, so every use reads the clamped index.
+  const current = Math.min(active, results.length - 1);
+
   const move = (index: number) => {
     setActive(index);
     (document.getElementById(optionId(index)) as HTMLElement).scrollIntoView({ block: "nearest" });
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      onCancel();
-      return;
-    }
+  const onDialogKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") onCancel();
+  };
+
+  // On the input only, so Enter on Retry or Dismiss still clicks the button.
+  const onInputKeyDown = (e: KeyboardEvent) => {
     const step = STEPS[e.key];
     if (step === undefined) return;
     // The input would otherwise move its caret, and there is no form to submit.
     e.preventDefault();
     if (results.length === 0) return;
-    if (step === 0) onPick(results[active]);
+    if (step === 0) onPick(results[current]);
     // The ends clamp rather than wrap.
-    else move(Math.min(Math.max(active + step, 0), results.length - 1));
+    else move(Math.min(Math.max(current + step, 0), results.length - 1));
   };
 
   const onBackdropClick = (e: MouseEvent) => {
@@ -85,7 +89,7 @@ function FilePickerBody({ repoId, onPick, onCancel }: FilePickerDialogProps) {
         aria-modal="true"
         aria-labelledby={titleId}
         className={styles.dialog}
-        onKeyDown={onKeyDown}
+        onKeyDown={onDialogKeyDown}
       >
         <h2 id={titleId} className={styles.title}>
           File history
@@ -96,10 +100,11 @@ function FilePickerBody({ repoId, onPick, onCancel }: FilePickerDialogProps) {
           aria-label="Find file"
           placeholder="Type a file name"
           aria-controls={listId}
-          aria-activedescendant={results.length > 0 ? optionId(active) : undefined}
+          aria-activedescendant={results.length > 0 ? optionId(current) : undefined}
           value={query}
           spellCheck={false}
           autoComplete="off"
+          onKeyDown={onInputKeyDown}
           onChange={(e) => {
             setQuery(e.target.value);
             setActive(0);
@@ -112,7 +117,7 @@ function FilePickerBody({ repoId, onPick, onCancel }: FilePickerDialogProps) {
               key={path}
               id={optionId(index)}
               role="option"
-              aria-selected={index === active}
+              aria-selected={index === current}
               className={styles.option}
               onClick={() => onPick(path)}
             >
