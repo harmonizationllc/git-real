@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DETAIL_MIN,
+  CENTER_MIN,
   KEY_STEP,
   REFS_DEFAULT,
   REFS_MIN,
@@ -9,19 +9,31 @@ import {
   clampWidths,
   maxWidth,
 } from "./layout";
+import * as layoutModule from "./layout";
 import * as storeDefaults from "../lib/store/layoutPrefs";
 
 // Contract: the layout constants are pinned by the spec.
 describe("layout constants", () => {
   it("should pin the minimums, defaults and key step", () => {
-    expect({ REFS_MIN, SIDEBAR_MIN, DETAIL_MIN, REFS_DEFAULT, SIDEBAR_DEFAULT, KEY_STEP }).toEqual({
+    expect({ REFS_MIN, SIDEBAR_MIN, CENTER_MIN, REFS_DEFAULT, SIDEBAR_DEFAULT, KEY_STEP }).toEqual({
       REFS_MIN: 160,
       SIDEBAR_MIN: 240,
-      DETAIL_MIN: 320,
+      CENTER_MIN: 320,
       REFS_DEFAULT: 240,
       SIDEBAR_DEFAULT: 320,
       KEY_STEP: 16,
     });
+  });
+});
+
+// Contract: the middle column's minimum is named CENTER_MIN and DETAIL_MIN is gone.
+describe("layout centre minimum rename", () => {
+  it("should export CENTER_MIN with the unchanged value 320", () => {
+    expect(CENTER_MIN).toBe(320);
+  });
+
+  it("should no longer export DETAIL_MIN", () => {
+    expect("DETAIL_MIN" in layoutModule).toBe(false);
   });
 });
 
@@ -74,12 +86,12 @@ describe("maxWidth", () => {
   it("is unbounded when unmeasured", () => expect(maxWidth(0, "refs", 320)).toBe(Infinity));
 
   it("treats a below-minimum other column as its minimum", () =>
-    expect(maxWidth(1200, "refs", 10)).toBe(1200 - DETAIL_MIN - SIDEBAR_MIN));
+    expect(maxWidth(1200, "refs", 10)).toBe(1200 - CENTER_MIN - SIDEBAR_MIN));
 });
 
 // Coverage audit: boundary and degenerate containers.
 describe("clampWidths boundaries", () => {
-  const fit = REFS_MIN + SIDEBAR_MIN + DETAIL_MIN;
+  const fit = REFS_MIN + SIDEBAR_MIN + CENTER_MIN;
 
   it("keeps the minimums untouched when the container exactly equals the sum of minimums", () =>
     expect(clampWidths(fit, REFS_MIN, SIDEBAR_MIN)).toEqual({ refs: 160, sidebar: 240 }));
@@ -101,7 +113,7 @@ describe("clampWidths boundaries", () => {
 
   it("returns the sum of both columns plus the detail minimum within the container whenever possible", () => {
     const { refs, sidebar } = clampWidths(1000, 400, 500);
-    expect(refs + sidebar + DETAIL_MIN).toBe(1000);
+    expect(refs + sidebar + CENTER_MIN).toBe(1000);
   });
 });
 
@@ -110,7 +122,7 @@ describe("maxWidth boundaries", () => {
     expect(maxWidth(-1, "sidebar", 240)).toBe(Infinity));
 
   it("equals the column minimum exactly when the container is the sum of minimums", () => {
-    const fit = REFS_MIN + SIDEBAR_MIN + DETAIL_MIN;
+    const fit = REFS_MIN + SIDEBAR_MIN + CENTER_MIN;
     expect(maxWidth(fit, "refs", SIDEBAR_MIN)).toBe(REFS_MIN);
     expect(maxWidth(fit, "sidebar", REFS_MIN)).toBe(SIDEBAR_MIN);
   });
@@ -119,8 +131,8 @@ describe("maxWidth boundaries", () => {
     expect(maxWidth(721, "refs", SIDEBAR_MIN)).toBe(161));
 
   it("treats a below-minimum sidebar as its minimum when computing the refs maximum", () =>
-    expect(maxWidth(1000, "refs", 0)).toBe(1000 - DETAIL_MIN - SIDEBAR_MIN));
+    expect(maxWidth(1000, "refs", 0)).toBe(1000 - CENTER_MIN - SIDEBAR_MIN));
 
   it("treats a below-minimum refs column as its minimum when computing the sidebar maximum", () =>
-    expect(maxWidth(1000, "sidebar", 0)).toBe(1000 - DETAIL_MIN - REFS_MIN));
+    expect(maxWidth(1000, "sidebar", 0)).toBe(1000 - CENTER_MIN - REFS_MIN));
 });

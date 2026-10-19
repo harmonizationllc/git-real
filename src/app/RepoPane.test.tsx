@@ -2,9 +2,12 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   commit,
+  getCommit,
   getCommitConfig,
   getFileDiff,
   getHeadMessage,
+  getLogPage,
+  getLogSummary,
   getStatus,
   listBranches,
   onRepoChanged,
@@ -15,16 +18,22 @@ import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
+import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
 import { RepoPane } from "./RepoPane";
 
+vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
+
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   commit: vi.fn(),
+  getCommit: vi.fn(),
   getCommitConfig: vi.fn(),
   getFileDiff: vi.fn(),
   getHeadMessage: vi.fn(),
+  getLogPage: vi.fn(),
+  getLogSummary: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
   onRepoChanged: vi.fn(),
@@ -62,7 +71,10 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
   vi.mocked(listBranches).mockResolvedValue(branchList());
-  useWorkspace.setState({ selected: {} });
+  useWorkspace.setState({ selected: {}, selectedCommit: {} });
+  vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
+  vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
+  vi.mocked(getCommit).mockResolvedValue(commitDetail({ oid: oidOf(0) }));
   useCommitDraft.setState({ drafts: {} });
   vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
@@ -102,9 +114,10 @@ describe("RepoPane", () => {
     expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
   });
 
-  it("should render an empty detail region when no file is selected", async () => {
+  it("should render the commit graph in the History region when no file is selected", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    expect(screen.getByRole("region", { name: "Detail" })).toBeEmptyDOMElement();
+    const history = screen.getByRole("region", { name: "History" });
+    expect(await within(history).findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
     await screen.findByRole("region", { name: "Changes" });
   });
 
@@ -117,7 +130,7 @@ describe("RepoPane", () => {
     });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     fireEvent.click(await screen.findByRole("button", { name: "modified a.txt" }));
-    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent("Loading diff…");
+    expect(screen.getByRole("region", { name: "History" })).toHaveTextContent("Loading diff…");
     expect(getFileDiff).toHaveBeenCalledWith(1, "a.txt", "unstaged", false, undefined);
   });
 
@@ -179,10 +192,11 @@ describe("RepoPane detail pane per tab", () => {
     );
   });
 
-  it("should not show another repo's selection in the detail pane", async () => {
+  it("should not show another repo's selection in the centre", async () => {
     useWorkspace.getState().select(1, { path: "a.txt", scope: "unstaged" });
     renderWithProviders(<RepoPane tab={tab(2)} />);
-    expect(screen.getByRole("region", { name: "Detail" })).toBeEmptyDOMElement();
+    const history = screen.getByRole("region", { name: "History" });
+    expect(await within(history).findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
     expect(getFileDiff).not.toHaveBeenCalled();
     await screen.findByRole("region", { name: "Changes" });
   });
@@ -277,33 +291,42 @@ const observer = () => StubResizeObserver.instances[0] as StubResizeObserver;
 const follows = (a: Element, b: Element) =>
   Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-// Contract: five regions in a row, branches left of changes left of detail.
+// Contract: three regions in a row, branches left of the history centre left of the changes sidebar.
 describe("RepoPane columns", () => {
-  it("should render the branches region left of the changes region", async () => {
+  it("should render the branches region left of the history region and that left of changes", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     const branches = await screen.findByRole("region", { name: "Branches" });
+    const history = screen.getByRole("region", { name: "History" });
     const changes = await screen.findByRole("region", { name: "Changes" });
-    expect(follows(branches, changes)).toBe(true);
+    expect(follows(branches, history)).toBe(true);
+    expect(follows(history, changes)).toBe(true);
   });
 
-  it("should order the regions and separators branches, handle, changes, handle, detail", async () => {
+  it("should order the regions and separators branches, handle, history, handle, changes", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     const els = [
       await screen.findByRole("region", { name: "Branches" }),
       handle("Resize branches column"),
-      await screen.findByRole("region", { name: "Changes" }),
+      screen.getByRole("region", { name: "History" }),
       handle("Resize changes column"),
-      screen.getByRole("region", { name: "Detail" }),
+      await screen.findByRole("region", { name: "Changes" }),
     ];
     const ordered = els.every((el, i) => i === 0 || follows(els[i - 1] as Element, el));
     expect(ordered).toBe(true);
   });
 
-  it("should place the changes and commit sidebar between the two handles", async () => {
+  it("should place the history centre between the two handles", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const history = screen.getByRole("region", { name: "History" });
+    expect(follows(handle("Resize branches column"), history)).toBe(true);
+    expect(follows(history, handle("Resize changes column"))).toBe(true);
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should place the changes and commit sidebar after the second handle", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     const changes = await screen.findByRole("region", { name: "Changes" });
-    expect(follows(handle("Resize branches column"), changes)).toBe(true);
-    expect(follows(changes, handle("Resize changes column"))).toBe(true);
+    expect(follows(handle("Resize changes column"), changes)).toBe(true);
   });
 
   it("should load the branch list for the tab's repo id", async () => {
@@ -372,28 +395,28 @@ describe("RepoPane grid template", () => {
   it("should set the grid template from the stored widths", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    expect(body().style.gridTemplateColumns).toBe("240px auto 320px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("240px auto 1fr auto 320px");
   });
 
   it("should follow widths changed in the store", async () => {
     useLayoutPrefs.setState({ refsWidth: 200, sidebarWidth: 280 });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    expect(body().style.gridTemplateColumns).toBe("200px auto 280px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("200px auto 1fr auto 280px");
   });
 
   it("should use clamped widths after a resize observation", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(872));
-    expect(body().style.gridTemplateColumns).toBe("240px auto 300px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("240px auto 1fr auto 300px");
   });
 
   it("should keep the stored widths when the observation is wide enough", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(1600));
-    expect(body().style.gridTemplateColumns).toBe("240px auto 320px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("240px auto 1fr auto 320px");
   });
 
   it("should not change the stored widths when the display is clamped", async () => {
@@ -447,14 +470,14 @@ describe("RepoPane handles", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowLeft" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(304);
+    expect(useLayoutPrefs.getState().sidebarWidth).toBe(336);
   });
 
   it("should update the grid template after a resize", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowRight" });
-    expect(body().style.gridTemplateColumns).toBe("256px auto 320px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("256px auto 1fr auto 320px");
   });
 
   it("should reset the branches column on double-click", async () => {
@@ -521,7 +544,7 @@ describe("RepoPane minimum widths", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(2000));
-    expect(body().style.gridTemplateColumns).toBe("160px auto 240px auto 1fr");
+    expect(body().style.gridTemplateColumns).toBe("160px auto 1fr auto 240px");
     expect(handle("Resize branches column")).toHaveAttribute("aria-valuenow", "160");
     expect(handle("Resize changes column")).toHaveAttribute("aria-valuenow", "240");
   });
@@ -536,13 +559,13 @@ describe("RepoPane minimum widths", () => {
   });
 });
 
-// Contract: each handle's maximum leaves the detail minimum and the other column's width.
+// Contract: each handle's maximum leaves the centre minimum and the other column's width.
 describe("RepoPane handle maximums", () => {
   it("should set each maximum from the body width minus both handle tracks", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(1000));
-    // available = 1000 - 12 = 988; detail minimum 320
+    // available = 1000 - 12 = 988; centre minimum 320
     expect(handle("Resize branches column")).toHaveAttribute(
       "aria-valuemax",
       String(988 - 320 - 320),
@@ -567,10 +590,17 @@ describe("RepoPane handle maximums", () => {
 
 // Contract: both handles move by the keyboard step in either direction.
 describe("RepoPane handle step", () => {
-  it("should move the changes column right by 16", async () => {
+  it("should narrow the changes column by 16 on ArrowRight because its handle is inverted", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
+    expect(useLayoutPrefs.getState().sidebarWidth).toBe(304);
+  });
+
+  it("should widen the changes column by 16 on ArrowLeft", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowLeft" });
     expect(useLayoutPrefs.getState().sidebarWidth).toBe(336);
   });
 
@@ -579,5 +609,126 @@ describe("RepoPane handle step", () => {
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowLeft" });
     expect(useLayoutPrefs.getState().refsWidth).toBe(224);
+  });
+});
+
+const FILE = { path: "a.txt", scope: "unstaged" } as const;
+
+// Contract: the centre shows the graph by default and the diff while a file is selected.
+describe("RepoPane centre content", () => {
+  it("should show the graph and no diff when no file is selected", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading diff…")).toBeNull();
+  });
+
+  it("should request the graph for the tab's repo id", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await screen.findByRole("listbox", { name: "Commits" });
+    expect(getLogSummary).toHaveBeenCalledWith(7);
+  });
+
+  it("should replace the graph with the diff once a file is selected", async () => {
+    useWorkspace.getState().select(1, FILE);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "History" })).toHaveTextContent("Loading diff…"),
+    );
+    expect(screen.queryByRole("listbox", { name: "Commits" })).toBeNull();
+  });
+
+  it("should unmount the graph when a file is selected later", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("listbox", { name: "Commits" });
+    act(() => useWorkspace.getState().select(1, FILE));
+    expect(screen.queryByRole("listbox", { name: "Commits" })).toBeNull();
+  });
+
+  it("should bring the graph back when the diff is closed", async () => {
+    useWorkspace.getState().select(1, FILE);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close diff" }));
+    expect(await screen.findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
+  });
+});
+
+// Contract: the sidebar shows the commit summary while a commit is selected, else changes and commit box.
+describe("RepoPane sidebar content", () => {
+  it("should show Changes and Commit and no commit details by default", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Commit" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Commit details" })).toBeNull();
+  });
+
+  it("should show the commit summary after a commit is selected", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => useWorkspace.getState().selectCommit(1, oidOf(0)));
+    expect(await screen.findByRole("region", { name: "Commit details" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: `Commit ${shortOf(oidOf(0))}` }),
+    ).toBeInTheDocument();
+  });
+
+  it("should request the selected commit for the tab's repo id", async () => {
+    useWorkspace.getState().selectCommit(7, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await screen.findByRole("region", { name: "Commit details" });
+    expect(getCommit).toHaveBeenCalledWith(7, oidOf(0));
+  });
+
+  it("should remove the changes panel and commit box while a commit is selected", async () => {
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Commit details" });
+    expect(screen.queryByRole("region", { name: "Changes" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Commit" })).toBeNull();
+  });
+
+  it("should restore the changes panel and commit box when the summary is closed", async () => {
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close commit details" }));
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Commit" })).toBeInTheDocument();
+  });
+
+  it("should not show another repo's commit selection", async () => {
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(2)} />);
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Commit details" })).toBeNull();
+  });
+
+  it("should keep the sidebar after the second handle while a commit is selected", async () => {
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const details = await screen.findByRole("region", { name: "Commit details" });
+    expect(follows(handle("Resize changes column"), details)).toBe(true);
+  });
+});
+
+// Contract: the second handle sizes the column after it, so its pointer and arrow directions are inverted.
+describe("RepoPane handle sides", () => {
+  it("should widen the branches column on ArrowRight", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowRight" });
+    expect(useLayoutPrefs.getState().refsWidth).toBe(256);
+  });
+
+  it("should narrow the changes column on ArrowRight", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
+    expect(useLayoutPrefs.getState().sidebarWidth).toBe(304);
+  });
+
+  it("should show the narrowed width in the grid template after ArrowRight", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
+    expect(body().style.gridTemplateColumns).toBe("240px auto 1fr auto 304px");
   });
 });
