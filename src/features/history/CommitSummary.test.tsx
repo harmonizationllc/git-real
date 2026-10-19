@@ -71,6 +71,17 @@ describe("CommitSummary buttons", () => {
     expect(copyText).toHaveBeenCalledExactlyOnceWith(OID);
   });
 
+  it("should show a failed copy as a dismissable alert and keep the panel open", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
+    await renderSummary();
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("clipboard denied");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("region", { name: "Commit details" })).toBeInTheDocument();
+    expect(useWorkspace.getState().selectedCommit[1]).toBe(OID);
+  });
+
   it("should not copy anything before Copy is clicked", async () => {
     await renderSummary();
     expect(copyText).not.toHaveBeenCalled();

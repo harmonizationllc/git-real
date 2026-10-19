@@ -59,6 +59,18 @@ describe("GraphToolbar counter", () => {
     expect(screen.getByText("No matches")).toBeInTheDocument();
   });
 
+  it("should show neither a counter nor No matches while the search is in flight", () => {
+    renderToolbar({ query: "fix", matchCount: null, current: 0 });
+    expect(screen.queryByText("No matches")).toBeNull();
+    expect(screen.queryByText(/ of /)).toBeNull();
+  });
+
+  it("should disable Previous and Next while the search is in flight", () => {
+    renderToolbar({ query: "fix", matchCount: null, current: 0 });
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+  });
+
   it("should show nothing when the query is empty", () => {
     renderToolbar({ query: "", matchCount: 0, current: 0 });
     expect(screen.queryByText("No matches")).toBeNull();

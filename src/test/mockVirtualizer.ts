@@ -14,12 +14,20 @@ interface Options {
 
 const measureElement = (): void => undefined; // stable, like the real instance method
 /** Stable and shared so tests can assert calls; reset it in beforeEach where it is used. */
-export const scrollToIndex = vi.fn<(index: number) => void>();
+export const scrollToIndex =
+  vi.fn<(index: number, options?: { align?: "start" | "center" | "end" | "auto" }) => void>();
+
+/**
+ * How many leading items the fake reports as rendered. Infinity (the default) renders every row;
+ * a finite size models a scrolled window so "not rendered" differs from "not loaded". Tests that
+ * change it must reset it in beforeEach.
+ */
+export const mockWindow = { size: Infinity };
 
 /** Renders every row, and calls each option callback the way the real hook would. */
 export function useVirtualizer({ count, getScrollElement, estimateSize, getItemKey }: Options) {
   getScrollElement();
-  const items = Array.from({ length: count }, (_, index) => ({
+  const items = Array.from({ length: Math.min(count, mockWindow.size) }, (_, index) => ({
     index,
     key: getItemKey(index),
     start: index * estimateSize(index),

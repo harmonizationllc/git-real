@@ -1,24 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeRow, oidOf, ref } from "../../test/graphFixtures";
 import { GraphRow } from "./GraphRow";
 import { gutterWidth } from "./model/edges";
 import { fullDate } from "./model/relativeTime";
 
-const NOW = 1_700_000_000_000;
-
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(NOW);
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+// Unix seconds, passed as the `now` prop; the row never reads the clock itself.
+const NOW = 1_700_000_000;
 
 function renderRow(over: Partial<React.ComponentProps<typeof GraphRow>> = {}) {
   const props = {
-    row: makeRow(0, { authorTime: NOW / 1000 - 3 * 3600 }),
+    row: makeRow(0, { authorTime: NOW - 3 * 3600 }),
+    now: NOW,
     maxLanes: 3,
     selected: false,
     matched: false,
@@ -55,10 +48,12 @@ describe("GraphRow content", () => {
 
   it("should title the date with the full date", () => {
     renderRow();
-    expect(screen.getByText("3 hours ago")).toHaveAttribute(
-      "title",
-      fullDate(NOW / 1000 - 3 * 3600),
-    );
+    expect(screen.getByText("3 hours ago")).toHaveAttribute("title", fullDate(NOW - 3 * 3600));
+  });
+
+  it("should compute the relative date from the now prop", () => {
+    renderRow({ now: NOW + 2 * 86400 });
+    expect(screen.getByText("2 days ago")).toBeInTheDocument();
   });
 
   it("should render the lane graph sized for maxLanes", () => {
