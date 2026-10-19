@@ -96,6 +96,25 @@ describe("isAppError branch kinds", () => {
   });
 });
 
+// Contract: the commit graph error kinds are recognised by the guard.
+describe("isAppError commit graph kinds", () => {
+  it.each(["logStale", "commitNotFound"])("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it.each(["logstale", "commitnotfound", "LogStale"])(
+    "isAppError rejects the near-miss kind %s",
+    (kind) => {
+      expect(isAppError({ kind, message: "m" })).toBe(false);
+    },
+  );
+
+  it("toAppError returns a logStale error unchanged", () => {
+    const err = { kind: "logStale", message: "m" } as const;
+    expect(toAppError(err)).toBe(err);
+  });
+});
+
 // Contract: toAppError coerces any thrown value into an AppError.
 describe("toAppError", () => {
   it("should return an AppError unchanged", () => {

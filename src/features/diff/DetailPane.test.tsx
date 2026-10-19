@@ -63,11 +63,16 @@ beforeEach(() => {
   vi.mocked(applyHunk).mockResolvedValue(undefined);
 });
 
-// Contract: nothing selected, nothing fetched.
+// Contract: nothing selected, nothing rendered or fetched; RepoPane decides what shows instead.
 describe("DetailPane without a selection", () => {
-  it("should prompt to select a file", () => {
+  it("should render nothing", () => {
+    const { container } = renderWithProviders(<DetailPane repoId={REPO} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("should not show the old select-a-file placeholder", () => {
     renderWithProviders(<DetailPane repoId={REPO} />);
-    expect(screen.getByText("Select a file to view its diff")).toBeInTheDocument();
+    expect(screen.queryByText("Select a file to view its diff")).toBeNull();
   });
 
   it("should not fetch a diff", () => {
@@ -75,10 +80,16 @@ describe("DetailPane without a selection", () => {
     expect(getFileDiff).not.toHaveBeenCalled();
   });
 
-  it("should ignore the selection of another repository", () => {
+  it("should render nothing for the selection of another repository", () => {
     useWorkspace.getState().select(2, { path: "a.ts", scope: "unstaged" });
-    renderWithProviders(<DetailPane repoId={REPO} />);
-    expect(screen.getByText("Select a file to view its diff")).toBeInTheDocument();
+    const { container } = renderWithProviders(<DetailPane repoId={REPO} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("should render nothing after the selection is cleared with null", () => {
+    useWorkspace.getState().select(REPO, null);
+    const { container } = renderWithProviders(<DetailPane repoId={REPO} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
 
@@ -195,11 +206,11 @@ describe("DetailPane load errors", () => {
     expect(await diffRegion()).toBeInTheDocument();
   });
 
-  it("should return to the empty state when Dismiss is clicked", async () => {
+  it("should drop the alert when Dismiss is clicked", async () => {
     vi.mocked(getFileDiff).mockRejectedValue(gitError);
     setup();
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
-    expect(screen.getByText("Select a file to view its diff")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("should clear the workspace selection when Dismiss is clicked", async () => {
@@ -930,5 +941,85 @@ describe("DetailPane truncated last hunk", () => {
     await waitFor(() =>
       expect(screen.getAllByRole("button", { name: "Stage hunk" })[1]).toBeEnabled(),
     );
+  });
+});
+
+// Contract: every state of the pane offers Close diff, which clears the file selection.
+describe("DetailPane Close diff", () => {
+  const closeButton = () => screen.findByRole("button", { name: "Close diff" });
+  const expectClosed = () => expect(useWorkspace.getState().selected[REPO]).toBeNull();
+
+  it("should offer Close diff while the diff is loading", async () => {
+    vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
+    setup();
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer Close diff when there are no changes", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "no changes" });
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer Close diff for a binary file without a preview", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "blob.bin", isBinary: true, change: "modified" }),
+    );
+    setup("blob.bin");
+    await screen.findByText("Binary file — no preview available");
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer Close diff when the diff has no line changes", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([]));
+    setup();
+    await screen.findByText("No line changes in this file");
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer Close diff in the toolbar of a loaded diff", async () => {
+    setup();
+    await diffRegion();
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer Dismiss on a load error and clear the selection", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
+    expectClosed();
+  });
+
+  it("should render nothing once Close diff has cleared the selection", async () => {
+    setup();
+    await diffRegion();
+    fireEvent.click(await closeButton());
+    expect(screen.queryByRole("region", { name: "Diff" })).toBeNull();
+  });
+
+  it("should offer exactly one Close diff button in the loaded state", async () => {
+    setup();
+    await diffRegion();
+    expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  it("should not clear another repository's selection", async () => {
+    useWorkspace.getState().select(2, { path: "z.ts", scope: "staged" });
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([]));
+    setup();
+    await screen.findByText("No line changes in this file");
+    fireEvent.click(await closeButton());
+    expect(useWorkspace.getState().selected[2]).toEqual({ path: "z.ts", scope: "staged" });
+  });
+
+  it("should not offer Close diff when nothing is selected", () => {
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    expect(screen.queryByRole("button", { name: "Close diff" })).toBeNull();
   });
 });

@@ -393,3 +393,41 @@ describe("ConfirmDialog pending with danger", () => {
     expect(confirm).toHaveAttribute("data-danger", "true");
   });
 });
+
+// Contract: the body may be any ReactNode and renders inside the aria-describedby node.
+describe("ConfirmDialog node body", () => {
+  it("should render an element body inside the described-by node", () => {
+    renderDialog({
+      body: (
+        <p>
+          Reset to <strong>abc1234</strong>
+        </p>
+      ),
+    });
+    const id = screen.getByRole("dialog").getAttribute("aria-describedby");
+    expect(document.getElementById(id ?? "missing")).toContainElement(screen.getByText("abc1234"));
+  });
+
+  it("should keep the structure of an element body", () => {
+    renderDialog({
+      body: (
+        <ul>
+          <li>one</li>
+          <li>two</li>
+        </ul>
+      ),
+    });
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("should render a string body inside the described-by node", () => {
+    renderDialog({ body: "This cannot be undone." });
+    const id = screen.getByRole("dialog").getAttribute("aria-describedby");
+    expect(document.getElementById(id ?? "missing")).toHaveTextContent("This cannot be undone.");
+  });
+
+  it("should not render the element body while closed", () => {
+    renderDialog({ open: false, body: <p>hidden body</p> });
+    expect(screen.queryByText("hidden body")).toBeNull();
+  });
+});

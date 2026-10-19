@@ -413,3 +413,84 @@ describe("SplitHandle keyboard edges", () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith(350);
   });
 });
+
+// Contract: side="after" resizes the column after the handle, so pointer dx and arrows invert.
+describe("SplitHandle side after", () => {
+  it("should report a smaller value when the pointer moves right", () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 130, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(270);
+  });
+
+  it("should report a larger value when the pointer moves left", () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 70, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(330);
+  });
+
+  it("should clamp an inverted drag to min", () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 900, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(160);
+  });
+
+  it("should clamp an inverted drag to max", () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: -900, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(500);
+  });
+
+  it("should narrow by one step on ArrowRight", async () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 - 16);
+  });
+
+  it("should widen by one step on ArrowLeft", async () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    handle.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(300 + 16);
+  });
+
+  it("should still jump to min on Home", async () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    handle.focus();
+    await userEvent.keyboard("{Home}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(160);
+  });
+
+  it("should still jump to max on End", async () => {
+    const { handle, onChange } = renderHandle({ side: "after" });
+    handle.focus();
+    await userEvent.keyboard("{End}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(500);
+  });
+
+  it("should still call onReset on double-click", () => {
+    const { handle, onReset } = renderHandle({ side: "after" });
+    fireEvent.doubleClick(handle);
+    expect(onReset).toHaveBeenCalledOnce();
+  });
+});
+
+describe("SplitHandle side before", () => {
+  it("should behave as the default when side is before", () => {
+    const { handle, onChange } = renderHandle({ side: "before" });
+    fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 130, pointerId: 1 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(330);
+  });
+
+  it("should widen on ArrowRight when side is before", async () => {
+    const { handle, onChange } = renderHandle({ side: "before" });
+    handle.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(316);
+  });
+});

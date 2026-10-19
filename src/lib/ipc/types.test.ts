@@ -8,6 +8,15 @@ import type {
   RemoteGroup,
   Tracking,
   CommitConfig,
+  CommitDetail,
+  GraphEdge,
+  GraphRow,
+  LogPage,
+  LogSummary,
+  RefKind,
+  RefLabel,
+  ResetMode,
+  Signature,
   CommitMessage,
   CommitOutcome,
   SigningFormat,
@@ -200,5 +209,78 @@ describe("branch DTO shapes", () => {
       "pushFailed",
     ];
     expect(kinds).toHaveLength(10);
+  });
+});
+
+// Compile-time parity with the Rust commit graph DTOs; `tsc` fails until the types exist.
+describe("commit graph DTO shapes", () => {
+  it("should accept a RefLabel and a GraphEdge carrying every field", () => {
+    const label: RefLabel = { kind: "branch", name: "main", isHead: true };
+    const edge: GraphEdge = { top: null, bottom: 2 };
+    expect(Object.keys(label).sort()).toEqual(["isHead", "kind", "name"]);
+    expect(Object.keys(edge).sort()).toEqual(["bottom", "top"]);
+  });
+
+  it("should cover every RefKind", () => {
+    const kinds: Record<RefKind, true> = { head: true, branch: true, remote: true, tag: true };
+    expect(Object.keys(kinds).sort()).toEqual(["branch", "head", "remote", "tag"]);
+  });
+
+  it("should accept a GraphRow carrying every field", () => {
+    const row: GraphRow = {
+      oid: "abc",
+      parents: ["def"],
+      subject: "s",
+      authorName: "n",
+      authorEmail: "e",
+      authorTime: 1,
+      lane: 0,
+      edges: [],
+      refs: [],
+    };
+    expect(Object.keys(row).sort()).toEqual([
+      "authorEmail",
+      "authorName",
+      "authorTime",
+      "edges",
+      "lane",
+      "oid",
+      "parents",
+      "refs",
+      "subject",
+    ]);
+  });
+
+  it("should accept a LogSummary and a LogPage carrying every field", () => {
+    const summary: LogSummary = { generation: 1, total: 2, maxLanes: 3 };
+    const page: LogPage = { start: 0, rows: [] };
+    expect(Object.keys(summary).sort()).toEqual(["generation", "maxLanes", "total"]);
+    expect(Object.keys(page).sort()).toEqual(["rows", "start"]);
+  });
+
+  it("should accept a Signature and a CommitDetail carrying every field", () => {
+    const signature: Signature = { name: "n", email: "e", time: 1 };
+    const detail: CommitDetail = {
+      oid: "abc",
+      parents: [],
+      message: { subject: "s", body: "b" },
+      author: signature,
+      committer: signature,
+    };
+    expect(Object.keys(signature).sort()).toEqual(["email", "name", "time"]);
+    expect(Object.keys(detail).sort()).toEqual([
+      "author",
+      "committer",
+      "message",
+      "oid",
+      "parents",
+    ]);
+  });
+
+  it("should cover every ResetMode and the two commit graph AppErrorKind members", () => {
+    const modes: Record<ResetMode, true> = { soft: true, mixed: true, hard: true };
+    const kinds: AppErrorKind[] = ["logStale", "commitNotFound"];
+    expect(Object.keys(modes)).toEqual(["soft", "mixed", "hard"]);
+    expect(kinds).toHaveLength(2);
   });
 });

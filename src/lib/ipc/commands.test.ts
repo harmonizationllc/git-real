@@ -5,6 +5,7 @@ import {
   applyHunk,
   checkGitCli,
   checkoutBranch,
+  checkoutCommit,
   checkoutRemoteBranch,
   cloneRepo,
   closeRepo,
@@ -13,10 +14,13 @@ import {
   deleteBranch,
   deleteRemoteBranch,
   discardPaths,
+  getCommit,
   getCommitConfig,
   getFileContent,
   getFileDiff,
   getHeadMessage,
+  getLogPage,
+  getLogSummary,
   getStatus,
   initRepo,
   listBranches,
@@ -24,6 +28,8 @@ import {
   openRepo,
   removeRecent,
   renameBranch,
+  resetToCommit,
+  searchLog,
   stageAll,
   stagePaths,
   unstageAll,
@@ -32,9 +38,12 @@ import {
 import { isAppError } from "./errors";
 import type {
   BranchList,
+  CommitDetail,
   FileDiff,
   GitCliInfo,
   LocalBranch,
+  LogPage,
+  LogSummary,
   OpenedRepo,
   RecentEntry,
   WorkingTreeStatus,
@@ -446,6 +455,80 @@ describe("branch commands", () => {
     ["deleteRemoteBranch", () => deleteRemoteBranch(1, "origin", "a")],
   ])("%s rejection passes through", async (_name, call) => {
     const err = { kind: "checkoutFailed", message: "nope" };
+    mockThrowing(err);
+    await expect(call()).rejects.toBe(err);
+  });
+});
+
+// Contract: the commit graph wrappers invoke the pinned Rust command names with camelCase args.
+describe("commit graph command wrappers", () => {
+  it("getLogSummary sends get_log_summary with id", async () => {
+    const summary: LogSummary = { generation: 4, total: 10, maxLanes: 2 };
+    const calls = mockWith(summary);
+    const result = await getLogSummary(3);
+    expect(calls).toEqual([{ cmd: "get_log_summary", args: { id: 3 } }]);
+    expect(result).toEqual(summary);
+  });
+
+  it("getLogPage sends get_log_page with id, generation, start and count", async () => {
+    const page: LogPage = { start: 500, rows: [] };
+    const calls = mockWith(page);
+    const result = await getLogPage(3, 4, 500, 500);
+    expect(calls).toEqual([
+      { cmd: "get_log_page", args: { id: 3, generation: 4, start: 500, count: 500 } },
+    ]);
+    expect(result).toEqual(page);
+  });
+
+  it("searchLog sends search_log with id, generation and query", async () => {
+    const calls = mockWith([2, 9]);
+    const result = await searchLog(3, 4, "fix");
+    expect(calls).toEqual([{ cmd: "search_log", args: { id: 3, generation: 4, query: "fix" } }]);
+    expect(result).toEqual([2, 9]);
+  });
+
+  it("getCommit sends get_commit with id and oid", async () => {
+    const sig = { name: "n", email: "e", time: 1 };
+    const detail: CommitDetail = {
+      oid: "abc",
+      parents: [],
+      message: { subject: "s", body: "" },
+      author: sig,
+      committer: sig,
+    };
+    const calls = mockWith(detail);
+    const result = await getCommit(3, "abc");
+    expect(calls).toEqual([{ cmd: "get_commit", args: { id: 3, oid: "abc" } }]);
+    expect(result).toEqual(detail);
+  });
+
+  it("checkoutCommit sends checkout_commit with id and oid", async () => {
+    const calls = mockWith(null);
+    await checkoutCommit(3, "abc");
+    expect(calls).toEqual([{ cmd: "checkout_commit", args: { id: 3, oid: "abc" } }]);
+  });
+
+  it.each(["soft", "mixed", "hard"] as const)(
+    "resetToCommit sends reset_to_commit with id, oid and mode %s",
+    async (mode) => {
+      const calls = mockWith(null);
+      await resetToCommit(3, "abc", mode);
+      expect(calls).toEqual([{ cmd: "reset_to_commit", args: { id: 3, oid: "abc", mode } }]);
+    },
+  );
+});
+
+// Contract: a rejected commit graph command surfaces the backend's AppError unchanged.
+describe("commit graph command rejections", () => {
+  it.each([
+    ["getLogSummary", () => getLogSummary(1)],
+    ["getLogPage", () => getLogPage(1, 1, 0, 500)],
+    ["searchLog", () => searchLog(1, 1, "x")],
+    ["getCommit", () => getCommit(1, "abc")],
+    ["checkoutCommit", () => checkoutCommit(1, "abc")],
+    ["resetToCommit", () => resetToCommit(1, "abc", "hard")],
+  ])("%s rejection passes through", async (_name, call) => {
+    const err = { kind: "logStale", message: "stale" };
     mockThrowing(err);
     await expect(call()).rejects.toBe(err);
   });
