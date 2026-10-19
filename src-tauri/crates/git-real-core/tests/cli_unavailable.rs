@@ -215,3 +215,79 @@ fn abort_and_continue_without_git_are_git_cli_missing() {
         ));
     });
 }
+
+// GR-10a: a git that cannot be executed is an Io error for every CLI-backed operation.
+#[test]
+fn operations_with_a_git_that_cannot_be_executed_fail_with_io() {
+    let (_d, path, session) = operation_fixture();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
+        .to_string();
+    let broken = non_executable_git();
+    with_path(broken.path().as_os_str().to_owned(), || {
+        assert!(matches!(
+            session.merge_branch("other", MergeMode::Merge).unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.rebase_onto("other").unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.cherry_pick(&oid).unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.revert_commit(&oid).unwrap_err(),
+            GitError::Io(_)
+        ));
+    });
+}
+
+#[test]
+fn abort_and_continue_with_a_git_that_cannot_be_executed_fail_with_io() {
+    let (_d, path, session) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    let broken = non_executable_git();
+    with_path(broken.path().as_os_str().to_owned(), || {
+        assert!(matches!(
+            session.abort_operation().unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.continue_rebase().unwrap_err(),
+            GitError::Io(_)
+        ));
+    });
+}
+
+#[test]
+fn cherry_pick_and_revert_without_git_are_git_cli_missing() {
+    let (_d, path, session) = operation_fixture();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
+        .to_string();
+    let (_e, empty) = empty_path();
+    with_path(empty, || {
+        assert!(matches!(
+            session.cherry_pick(&oid).unwrap_err(),
+            GitError::GitCliMissing
+        ));
+        assert!(matches!(
+            session.revert_commit(&oid).unwrap_err(),
+            GitError::GitCliMissing
+        ));
+        assert!(matches!(
+            session.rebase_onto("other").unwrap_err(),
+            GitError::GitCliMissing
+        ));
+    });
+}

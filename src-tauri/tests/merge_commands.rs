@@ -316,6 +316,125 @@ fn can_fast_forward_inner_maps_an_unknown_branch_to_branch_not_found() {
     assert_eq!(err.kind, AppErrorKind::BranchNotFound);
 }
 
+// --- GR-10a cycle 1 coverage: error kinds per command ---
+
+#[test]
+fn rebase_onto_inner_maps_an_unknown_branch_to_branch_not_found() {
+    let (_d, _p, reg, id) = diverged();
+
+    let err = rebase_onto_inner(&reg, id, "nope").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::BranchNotFound);
+}
+
+#[test]
+fn rebase_onto_inner_maps_a_second_operation_to_operation_in_progress() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id) = diverged();
+    assert_eq!(
+        rebase_onto_inner(&reg, id, "other").unwrap(),
+        OperationOutcome::Conflicts
+    );
+
+    let err = rebase_onto_inner(&reg, id, "other").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::OperationInProgress);
+}
+
+#[test]
+fn cherry_pick_inner_and_revert_commit_inner_map_an_operation_in_progress() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id) = diverged();
+    merge_branch_inner(&reg, id, "other", MergeMode::Merge).unwrap();
+    let head = head_oid(&path).to_string();
+
+    let pick = cherry_pick_inner(&reg, id, &head).unwrap_err();
+    let revert = revert_commit_inner(&reg, id, &head).unwrap_err();
+
+    assert_eq!(pick.kind, AppErrorKind::OperationInProgress);
+    assert_eq!(revert.kind, AppErrorKind::OperationInProgress);
+}
+
+#[test]
+fn cherry_pick_inner_and_revert_commit_inner_map_a_merge_commit() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, _tip) = ahead();
+    common::commit_file(&path, "base.txt", "base\n", "base moves on");
+    let merged = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(&path)
+        .args(["merge", "--no-ff", "--no-edit", "fast"])
+        .output()
+        .unwrap();
+    assert!(merged.status.success(), "{merged:?}");
+    let merge_commit = head_oid(&path).to_string();
+
+    let pick = cherry_pick_inner(&reg, id, &merge_commit).unwrap_err();
+    let revert = revert_commit_inner(&reg, id, &merge_commit).unwrap_err();
+
+    assert_eq!(pick.kind, AppErrorKind::MergeCommit);
+    assert_eq!(revert.kind, AppErrorKind::MergeCommit);
+    assert!(pick.message.contains(&merge_commit), "{}", pick.message);
+}
+
+#[test]
+fn resolve_conflicts_inner_keeps_one_side_and_lets_the_state_clear() {
+    let (_d, path, reg, id) = diverged();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let other = repo.find_branch("other", git2::BranchType::Local).unwrap();
+        let annotated = repo.reference_to_annotated_commit(other.get()).unwrap();
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.allow_conflicts(true);
+        repo.merge(&[&annotated], None, Some(&mut checkout))
+            .unwrap();
+    }
+
+    resolve_conflicts_inner(&reg, id, &["README.md".to_string()], ConflictSide::Theirs).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(path.join("README.md")).unwrap(),
+        "# other\n"
+    );
+    assert!(
+        !Repository::open(&path)
+            .unwrap()
+            .index()
+            .unwrap()
+            .has_conflicts()
+    );
+}
+
+#[test]
+fn resolve_conflicts_inner_maps_a_path_outside_the_repo_to_path_not_found() {
+    let (_d, _p, reg, id) = diverged();
+
+    let err =
+        resolve_conflicts_inner(&reg, id, &["../x".to_string()], ConflictSide::Ours).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn can_fast_forward_inner_is_up_to_date_for_the_same_tip() {
+    let (_d, path, reg, id, _tip) = ahead();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("same", &head, false).unwrap();
+    }
+
+    let check = can_fast_forward_inner(&reg, id, "same").unwrap();
+
+    assert_eq!(check, FastForwardCheck::UpToDate);
+}
+
 // --- wire shape ---
 
 #[test]
