@@ -1033,7 +1033,7 @@ fn diff_unstaged_typechange_to_symlink_is_one_typechange() {
 fn diff_conflicted_path_is_ok_without_hunks_in_both_scopes() {
     let (_dir, path) = common::temp_repo_with_conflict();
     for scope in [DiffScope::Unstaged, DiffScope::Staged] {
-        let diff = diff_of(&path, "README.md", scope, DiffOptions::default())
+        let diff = diff_of(&path, "README.md", scope.clone(), DiffOptions::default())
             .unwrap_or_else(|e| panic!("{scope:?}: {e:?}"));
         assert_eq!(
             (diff.change, diff.hunks.is_empty()),

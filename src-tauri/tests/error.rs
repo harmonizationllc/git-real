@@ -118,6 +118,11 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::CommitNotFound,
             None,
         ),
+        (
+            GitError::BinaryFile("x".into()),
+            AppErrorKind::BinaryFile,
+            None,
+        ),
     ];
     for (err, expected, reduced) in cases {
         let message = reduced.map_or_else(|| err.to_string(), str::to_string);
@@ -160,6 +165,7 @@ fn app_error_kind_serializes_camel_case() {
         (AppErrorKind::TooLarge, "tooLarge"),
         (AppErrorKind::LogStale, "logStale"),
         (AppErrorKind::CommitNotFound, "commitNotFound"),
+        (AppErrorKind::BinaryFile, "binaryFile"),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));

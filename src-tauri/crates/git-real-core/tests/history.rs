@@ -248,19 +248,15 @@ fn commit_files_non_hex_oid_is_commit_not_found() {
 #[test]
 fn commit_files_order_is_by_path() {
     let (_d, path) = common::temp_repo_with_commit();
-    let c = commit_as(
-        &path,
-        &[("z.txt", "z\n"), ("a.txt", "a\n"), ("m.txt", "m\n")],
-        "three files",
-        &[head_oid(&path)],
-        "Alice",
-        10,
-    );
+    common::write_file(&path, "c.txt", "c\n");
+    common::write_file(&path, "a.txt", "a\n");
+    common::write_file(&path, "b/x.txt", "x\n");
+    let c = common::commit_all(&path, "three files");
 
     let files = open(&path).commit_files(&c.to_string()).unwrap();
 
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-    assert_eq!(paths, ["a.txt", "m.txt", "z.txt"]);
+    assert_eq!(paths, ["a.txt", "b/x.txt", "c.txt"]);
 }
 
 #[test]
@@ -571,6 +567,19 @@ fn blame_echoes_the_requested_oid() {
 fn blame_strips_cr_and_hunks_cover_every_line() {
     let (_d, path) = common::temp_repo_with_commit();
     common::commit_crlf(&path, "crlf.txt", "a\nb\nc\n", "add crlf file");
+    let repo = Repository::open(&path).unwrap();
+    let blob = repo
+        .head()
+        .unwrap()
+        .peel_to_tree()
+        .unwrap()
+        .get_name("crlf.txt")
+        .unwrap()
+        .to_object(&repo)
+        .unwrap()
+        .peel_to_blob()
+        .unwrap();
+    assert_eq!(blob.content(), b"a\r\nb\r\nc\r\n", "fixture must hold CRLF");
 
     let blame = open(&path).blame("crlf.txt", None).unwrap();
 
@@ -750,4 +759,93 @@ fn tracked_files_unborn_is_empty() {
     let files = open(&path).tracked_files().unwrap();
 
     assert_eq!(files, Vec::<String>::new());
+}
+
+// --- GR-9 architect changes: type changes, lossy paths, malformed paths, non-blob entries ---
+
+#[cfg(unix)]
+#[test]
+fn commit_files_reports_a_type_change() {
+    let (_d, path) = common::temp_repo_unborn();
+    common::commit_file(&path, "f", "target\n", "file");
+    std::fs::remove_file(path.join("f")).unwrap();
+    std::os::unix::fs::symlink("elsewhere", path.join("f")).unwrap();
+    let c = common::commit_all(&path, "now a symlink");
+
+    let files = open(&path).commit_files(&c.to_string()).unwrap();
+
+    assert_eq!(files, [cf("f", None, ChangeKind::TypeChange)]);
+}
+
+#[cfg(unix)]
+#[test]
+fn tracked_files_lists_a_non_utf8_directory_lossily() {
+    use std::os::unix::ffi::OsStrExt;
+    let (_d, path) = common::temp_repo_unborn();
+    let repo = Repository::open(&path).unwrap();
+    let blob = repo.blob(b"x\n").unwrap();
+    let mut inner = repo.treebuilder(None).unwrap();
+    inner.insert("f.txt", blob, 0o100644).unwrap();
+    let inner = inner.write().unwrap();
+    let mut outer = repo.treebuilder(None).unwrap();
+    let dir_name = std::ffi::OsStr::from_bytes(b"d\xff");
+    outer.insert(dir_name.as_bytes(), inner, 0o040000).unwrap();
+    let tree = repo.find_tree(outer.write().unwrap()).unwrap();
+    let sig = Signature::now("Test User", "test@example.com").unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "non-utf8 dir", &tree, &[])
+        .unwrap();
+
+    let files = open(&path).tracked_files().unwrap();
+
+    assert_eq!(files, ["d\u{fffd}/f.txt"]);
+}
+
+#[test]
+fn blame_malformed_path_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let s = open(&path);
+
+    let results = [s.blame("../x", None), s.blame("", None)];
+
+    assert!(
+        results
+            .iter()
+            .all(|r| matches!(r, Err(GitError::PathNotFound(_)))),
+        "{results:?}"
+    );
+}
+
+#[test]
+fn file_history_malformed_path_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let mut s = open(&path);
+    let generation = s.log_summary().unwrap().generation;
+
+    let results = [
+        s.file_history(generation, "../x"),
+        s.file_history(generation, ""),
+    ];
+
+    assert!(
+        results
+            .iter()
+            .all(|r| matches!(r, Err(GitError::PathNotFound(_)))),
+        "{results:?}"
+    );
+}
+
+#[test]
+fn file_history_treats_a_file_replaced_by_a_directory_as_deleted() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    common::commit_file(&path, "x", "file\n", "x is a file");
+    std::fs::remove_file(path.join("x")).unwrap();
+    common::write_file(&path, "x/inner.txt", "inner\n");
+    common::commit_all(&path, "x becomes a directory");
+
+    let entries = history(&path, "x").unwrap();
+
+    let changes: Vec<ChangeKind> = entries.iter().map(|e| e.change).collect();
+    assert_eq!(changes, [ChangeKind::Deleted, ChangeKind::Added]);
 }

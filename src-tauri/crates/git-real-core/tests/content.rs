@@ -75,7 +75,7 @@ fn resolves_each_scope_and_side() {
     ];
     for (scope, side, want) in cases {
         assert_eq!(
-            content(&path, "README.md", scope, side).unwrap(),
+            content(&path, "README.md", scope.clone(), side).unwrap(),
             want.as_bytes(),
             "{scope:?}/{side:?}"
         );

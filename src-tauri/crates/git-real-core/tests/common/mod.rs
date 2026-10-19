@@ -456,7 +456,14 @@ pub fn commit_binary(path: &Path, name: &str, bytes: &[u8], message: &str) -> gi
         .expect("commit")
 }
 
-/// Commits `text` with every `\n` written as `\r\n`, on HEAD.
+/// Commits `text` with every `\n` written as `\r\n`, on HEAD. Turns
+/// `core.autocrlf` off first so a global setting cannot normalise the blob.
 pub fn commit_crlf(path: &Path, name: &str, text: &str, message: &str) -> git2::Oid {
+    Repository::open(path)
+        .expect("open repo")
+        .config()
+        .expect("config")
+        .set_bool("core.autocrlf", false)
+        .expect("disable autocrlf");
     commit_binary(path, name, text.replace('\n', "\r\n").as_bytes(), message)
 }
