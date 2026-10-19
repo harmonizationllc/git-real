@@ -1,6 +1,7 @@
 //! Tauri command handlers.
 
 pub mod commit;
+pub mod log;
 pub mod refs;
 pub mod repo;
 pub mod worktree;
@@ -30,10 +31,10 @@ where
 pub fn with_session<T>(
     reg: &RepoRegistry,
     id: RepoId,
-    f: impl FnOnce(&RepoSession) -> Result<T, GitError>,
+    f: impl FnOnce(&mut RepoSession) -> Result<T, GitError>,
 ) -> Result<T, AppError> {
     let session = reg.get(id).ok_or_else(|| AppError::unknown_repo(id))?;
     // git2 writes the index through a lock file, so a panicked op leaves no torn state.
-    let guard = session.lock().unwrap_or_else(PoisonError::into_inner);
-    f(&guard).map_err(AppError::from)
+    let mut guard = session.lock().unwrap_or_else(PoisonError::into_inner);
+    f(&mut guard).map_err(AppError::from)
 }

@@ -17,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RepoRegistry::default()))
         .manage(Arc::new(WatcherRegistry::default()))
         .setup(|app| {
@@ -52,6 +53,12 @@ pub fn run() {
             commands::refs::checkout_branch,
             commands::refs::checkout_remote_branch,
             commands::refs::delete_remote_branch,
+            commands::log::get_log_summary,
+            commands::log::get_log_page,
+            commands::log::search_log,
+            commands::log::get_commit,
+            commands::log::checkout_commit,
+            commands::log::reset_to_commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
