@@ -37,6 +37,11 @@ pub enum AppErrorKind {
     LogStale,
     CommitNotFound,
     BinaryFile,
+    OperationFailed,
+    OperationInProgress,
+    NoOperation,
+    UnresolvedConflicts,
+    MergeCommit,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -86,6 +91,11 @@ impl From<GitError> for AppError {
             GitError::LogStale => AppErrorKind::LogStale,
             GitError::CommitNotFound(_) => AppErrorKind::CommitNotFound,
             GitError::BinaryFile(_) => AppErrorKind::BinaryFile,
+            GitError::OperationFailed { .. } => AppErrorKind::OperationFailed,
+            GitError::OperationInProgress => AppErrorKind::OperationInProgress,
+            GitError::NoOperation => AppErrorKind::NoOperation,
+            GitError::UnresolvedConflicts => AppErrorKind::UnresolvedConflicts,
+            GitError::MergeCommit(_) => AppErrorKind::MergeCommit,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
@@ -105,6 +115,12 @@ impl From<GitError> for AppError {
                 stdout,
                 stderr,
             } => cli_failure_message("push", *code, stdout, stderr),
+            GitError::OperationFailed {
+                verb,
+                code,
+                stdout,
+                stderr,
+            } => cli_failure_message(verb, *code, stdout, stderr),
             _ => error.to_string(),
         };
         Self { kind, message }

@@ -63,6 +63,15 @@ pub fn run() {
             commands::history::get_commit_files,
             commands::history::get_file_history,
             commands::history::get_blame,
+            commands::merge::get_operation_state,
+            commands::merge::merge_branch,
+            commands::merge::rebase_onto,
+            commands::merge::cherry_pick,
+            commands::merge::revert_commit,
+            commands::merge::abort_operation,
+            commands::merge::continue_rebase,
+            commands::merge::resolve_conflicts,
+            commands::merge::can_fast_forward,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
