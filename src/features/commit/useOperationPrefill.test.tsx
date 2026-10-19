@@ -245,3 +245,57 @@ describe("useOperationPrefill repository switch", () => {
     expect(useOperationState).toHaveBeenLastCalledWith(2);
   });
 });
+
+// Contract (review I2): amend is unavailable during any operation, so an amend draft is turned off.
+describe("useOperationPrefill amend draft", () => {
+  const amendDraft = (stash = { subject: "mine", body: "my body" }) => ({
+    ...EMPTY_DRAFT,
+    subject: "Head subject",
+    body: "Head body",
+    amend: true as const,
+    stash,
+  });
+
+  it("should turn amend off when a rebase becomes active", () => {
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft() } });
+    mount(rebase);
+    expect(draft()).toMatchObject({ amend: false, stash: null });
+  });
+
+  it("should restore the stashed text when a rebase becomes active", () => {
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft() } });
+    mount(rebase);
+    expect(draft()).toMatchObject({ subject: "mine", body: "my body" });
+  });
+
+  it("should turn amend off when an operation becomes active after the first render", () => {
+    const view = mount(none);
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft() } });
+    provide(rebase);
+    view.rerender({ id: REPO });
+    expect(draft()).toMatchObject({ amend: false, stash: null, subject: "mine" });
+  });
+
+  it("should turn amend off and keep the user's text when a merge becomes active", () => {
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft() } });
+    mount(merge);
+    expect(draft()).toMatchObject({ amend: false, stash: null, subject: "mine" });
+  });
+
+  it("should turn amend off and prefill the message when a merge finds an empty stash", () => {
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft({ subject: "", body: "" }) } });
+    mount(merge);
+    expect(draft()).toMatchObject({
+      amend: false,
+      stash: null,
+      subject: message.subject,
+      prefilled: message,
+    });
+  });
+
+  it("should leave an amend draft alone when there is no operation", () => {
+    useCommitDraft.setState({ drafts: { [REPO]: amendDraft() } });
+    mount(none);
+    expect(draft()).toMatchObject({ amend: true, subject: "Head subject" });
+  });
+});
