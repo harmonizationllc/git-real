@@ -709,6 +709,38 @@ describe("RepoPane sidebar content", () => {
   });
 });
 
+// Coverage audit: the centre and the sidebar swap independently of each other.
+describe("RepoPane both selections", () => {
+  it("should show the diff in the centre and the commit summary in the sidebar at once", async () => {
+    useWorkspace.getState().select(1, FILE);
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "Commit details" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "History" })).toHaveTextContent("Loading diff…");
+    expect(screen.queryByRole("listbox", { name: "Commits" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Changes" })).toBeNull();
+  });
+
+  it("should keep the commit summary when only the diff is closed", async () => {
+    useWorkspace.getState().select(1, FILE);
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close diff" }));
+    expect(await screen.findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Commit details" })).toBeInTheDocument();
+  });
+
+  it("should keep the diff when only the commit summary is closed", async () => {
+    useWorkspace.getState().select(1, FILE);
+    useWorkspace.getState().selectCommit(1, oidOf(0));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close commit details" }));
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "History" })).toHaveTextContent("Loading diff…");
+    expect(screen.queryByRole("listbox", { name: "Commits" })).toBeNull();
+  });
+});
+
 // Contract: the second handle sizes the column after it, so its pointer and arrow directions are inverted.
 describe("RepoPane handle sides", () => {
   it("should widen the branches column on ArrowRight", async () => {

@@ -1367,3 +1367,298 @@ describe("GraphPanel generation change", () => {
     }
   });
 });
+
+// Coverage audit: search-box edge cases (empty results, stale answers, rejections, clearing).
+describe("GraphPanel search edge cases", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+  const type = (value: string) => fireEvent.change(searchBox(), { target: { value } });
+  const matchedFlags = () => screen.getAllByRole("option").map((o) => /matched/.test(o.className));
+
+  it("should ignore Enter and Shift+Enter in the search box when nothing matches", async () => {
+    await renderPanel();
+    fireEvent.click(optionAt(1));
+    type("zzz");
+    await advance(400);
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+    const scrollsBefore = scrolls.mock.calls.length;
+    fireEvent.keyDown(searchBox(), { key: "Enter" });
+    fireEvent.keyDown(searchBox(), { key: "Enter", shiftKey: true });
+    await advance(0);
+    expect(selectedOid()).toBe(oidOf(1));
+    expect(scrolls.mock.calls.length).toBe(scrollsBefore);
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+  });
+
+  it("should not let a slow answer for an earlier query move the selection", async () => {
+    let releaseFix!: (matches: number[]) => void;
+    vi.mocked(searchLog).mockImplementation((_id, _generation, q) =>
+      q === "fix"
+        ? new Promise<number[]>((resolve) => {
+            releaseFix = resolve;
+          })
+        : Promise.resolve(q === "bug" ? [2] : []),
+    );
+    await renderPanel();
+    type("fix");
+    await advance(400);
+    type("bug");
+    await advance(400);
+    expect(selectedOid()).toBe(oidOf(2));
+    await act(async () => releaseFix([0]));
+    expect(selectedOid()).toBe(oidOf(2));
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
+
+  it("should swallow a failed search without an alert or a selection", async () => {
+    vi.mocked(searchLog).mockRejectedValue({ kind: "git", message: "search broke" });
+    await renderPanel();
+    type("fix");
+    await advance(400);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(selectedOid()).toBeUndefined();
+  });
+
+  it("should not select or scroll when the panel unmounts before the search answers", async () => {
+    let release!: (matches: number[]) => void;
+    vi.mocked(searchLog).mockReturnValue(
+      new Promise<number[]>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const { unmount } = await renderPanel();
+    type("fix");
+    await advance(400);
+    unmount();
+    await act(async () => release([1]));
+    expect(selectedOid()).toBeUndefined();
+    expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("should clear highlights and counter at once when the input is emptied by editing", async () => {
+    vi.mocked(searchLog).mockImplementation((_id, _generation, q) =>
+      Promise.resolve(q === "fix" ? [0, 2] : []),
+    );
+    await renderPanel();
+    type("fix");
+    await advance(400);
+    expect(matchedFlags()).toEqual([true, false, true]);
+    type("");
+    expect(matchedFlags()).toEqual([false, false, false]);
+    expect(screen.queryByText(/ of /)).toBeNull();
+    const callsBefore = vi.mocked(searchLog).mock.calls.length;
+    await advance(400);
+    expect(vi.mocked(searchLog).mock.calls.length).toBe(callsBefore);
+  });
+
+  it("should clear highlights when the query becomes whitespace only after a search", async () => {
+    vi.mocked(searchLog).mockImplementation((_id, _generation, q) =>
+      Promise.resolve(q === "fix" ? [0, 2] : []),
+    );
+    await renderPanel();
+    type("fix");
+    await advance(400);
+    type("   ");
+    await advance(400);
+    expect(matchedFlags()).toEqual([false, false, false]);
+    expect(screen.queryByText(/ of /)).toBeNull();
+    expect(screen.queryByText("No matches")).toBeNull();
+  });
+
+  it("should clamp the cursor when a new generation returns fewer matches", async () => {
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ generation: 1 }))
+      .mockResolvedValue(summary({ generation: 2 }));
+    vi.mocked(searchLog).mockImplementation((_id, generation, q) =>
+      Promise.resolve(q === "fix" ? (generation === 1 ? [0, 2] : [1]) : []),
+    );
+    const { queryClient } = await renderPanel();
+    type("fix");
+    await advance(400);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, "fix"));
+    await advance(100);
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
+});
+
+// Coverage audit: asynchronous continuations after a failure or an unmount (the c6eabdc guard).
+describe("GraphPanel async guards", () => {
+  const far = oidOf(550);
+  const select = (oid: string) => act(() => useWorkspace.getState().selectCommit(REPO, oid));
+
+  function gatePage1() {
+    const gate = deferred();
+    const base = vi.mocked(getLogPage).getMockImplementation();
+    vi.mocked(getLogPage).mockImplementation(async (id, generation, start, count) => {
+      if (start === 500) await gate.promise;
+      return (base as NonNullable<typeof base>)(id, generation, start, count);
+    });
+    return gate;
+  }
+
+  it("should swallow a failed page fetch when End targets an unloaded page", async () => {
+    const base = vi.mocked(getLogPage).getMockImplementation();
+    vi.mocked(getLogPage).mockImplementation((id, generation, start, count) =>
+      start === 500
+        ? Promise.reject({ kind: "git", message: "page broke" })
+        : (base as NonNullable<typeof base>)(id, generation, start, count),
+    );
+    await renderWindowed();
+    fireEvent.click(optionAt(0));
+    press("End");
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledWith(REPO, 1, 500, 500));
+    await act(async () => undefined);
+    expect(selectedOid()).toBe(oidOf(0));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should not select after unmount when a keyboard move waits on its page", async () => {
+    const gate = gatePage1();
+    const { unmount } = await renderWindowed();
+    fireEvent.click(optionAt(0));
+    press("End");
+    unmount();
+    gate.resolve();
+    await act(async () => undefined);
+    expect(selectedOid()).toBe(oidOf(0));
+  });
+
+  it("should not scroll after unmount when the reveal is waiting on the candidate's page", async () => {
+    vi.mocked(searchLog).mockResolvedValue([550]);
+    const gate = gatePage1();
+    const { unmount } = await renderWindowed();
+    select(far);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledOnce());
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledWith(REPO, 1, 500, 500));
+    unmount();
+    gate.resolve();
+    await act(async () => undefined);
+    expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("should not scroll after unmount when the reveal is still searching", async () => {
+    let release!: (matches: number[]) => void;
+    vi.mocked(searchLog).mockReturnValue(
+      new Promise<number[]>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const { unmount } = await renderWindowed();
+    select(far);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledOnce());
+    unmount();
+    await act(async () => release([550]));
+    expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("should not scroll when the selection changes while the candidate's page loads", async () => {
+    vi.mocked(searchLog).mockResolvedValue([550]);
+    const gate = gatePage1();
+    await renderWindowed();
+    select(far);
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledWith(REPO, 1, 500, 500));
+    fireEvent.click(optionAt(1));
+    gate.resolve();
+    await act(async () => undefined);
+    expect(scrollToIndex).not.toHaveBeenCalledWith(550, expect.anything());
+    expect(selectedOid()).toBe(oidOf(1));
+  });
+});
+
+// Coverage audit: keyboard anchoring when the selection is absent or cleared from outside.
+describe("GraphPanel keyboard anchor", () => {
+  it("should select the first row on ArrowUp when nothing is selected", async () => {
+    await renderPanel();
+    press("ArrowUp");
+    expect(selectedOid()).toBe(oidOf(0));
+  });
+
+  it("should continue from the last keyboard row after the selection is cleared outside", async () => {
+    total = 5;
+    await renderPanel();
+    fireEvent.click(optionAt(1));
+    press("ArrowDown");
+    expect(selectedOid()).toBe(oidOf(2));
+    act(() => useWorkspace.getState().selectCommit(REPO, null));
+    press("ArrowDown");
+    expect(selectedOid()).toBe(oidOf(3));
+  });
+
+  it("should open no menu on Shift+F10 once the selection is cleared outside", async () => {
+    await renderPanel();
+    fireEvent.click(optionAt(1));
+    act(() => useWorkspace.getState().selectCommit(REPO, null));
+    press("F10", { shiftKey: true });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+// Coverage audit: relative dates follow a one-minute clock that stops with the panel.
+describe("GraphPanel clock", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("should refresh relative dates every minute", async () => {
+    const start = 1_800_000_000;
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: start * 1000 });
+    vi.mocked(getLogPage).mockImplementation((_id, _generation, startIndex) =>
+      Promise.resolve({ start: startIndex, rows: [makeRow(0, { authorTime: start })] }),
+    );
+    total = 1;
+    await renderPanel();
+    expect(screen.getByText("just now")).toBeInTheDocument();
+    await act(async () => void (await vi.advanceTimersByTimeAsync(61_000)));
+    expect(screen.getByText("1 minute ago")).toBeInTheDocument();
+  });
+
+  it("should stop the clock when the panel unmounts", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const cleared = vi.spyOn(globalThis, "clearInterval");
+    const { unmount } = await renderPanel();
+    unmount();
+    expect(cleared).toHaveBeenCalled();
+    cleared.mockRestore();
+  });
+});
+
+// Coverage audit: a panel error never leaks into a dialog, and a dialog never leaves one behind.
+describe("GraphPanel dialog error hygiene", () => {
+  it("should not show an earlier checkout failure after a create dialog is cancelled", async () => {
+    vi.mocked(checkoutCommit).mockRejectedValue({ kind: "checkoutFailed", message: "blocked" });
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Checkout"));
+    await screen.findByRole("alert");
+    rightClick(optionAt(1));
+    await user.click(menuItem("Create branch here…"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should leave no alert behind when a failed create dialog is cancelled", async () => {
+    vi.mocked(createBranch).mockRejectedValue({ kind: "branchExists", message: "taken" });
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Create branch here…"));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "topic");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await within(dialog).findByRole("alert");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
