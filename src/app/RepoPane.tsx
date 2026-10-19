@@ -4,11 +4,14 @@ import { BranchesPanel } from "../features/branches/BranchesPanel";
 import { useBranches } from "../features/branches/useBranches";
 import { CommitBox } from "../features/commit/CommitBox";
 import { DetailPane } from "../features/diff/DetailPane";
+import { GraphPanel } from "../features/graph/GraphPanel";
+import { CommitSummary } from "../features/history/CommitSummary";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { HeadState } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useWorkspace } from "../lib/store/workspace";
 import { KEY_STEP, REFS_MIN, SIDEBAR_MIN, clampWidths, maxWidth } from "./layout";
 import styles from "./RepoPane.module.css";
 
@@ -36,6 +39,8 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const setRefsWidth = useLayoutPrefs((s) => s.setRefsWidth);
   const setSidebarWidth = useLayoutPrefs((s) => s.setSidebarWidth);
   const resetWidth = useLayoutPrefs((s) => s.reset);
+  const fileSelected = useWorkspace((s) => Boolean(s.selected[tab.id]));
+  const selectedCommit = useWorkspace((s) => s.selectedCommit[tab.id] ?? null);
 
   // Measured body width; 0 until the first observation, which leaves the stored widths unclamped.
   const [container, setContainer] = useState(0);
@@ -62,7 +67,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
       <div
         ref={bodyRef}
         className={styles.body}
-        style={{ gridTemplateColumns: `${refs}px auto ${sidebar}px auto 1fr` }}
+        style={{ gridTemplateColumns: `${refs}px auto 1fr auto ${sidebar}px` }}
       >
         {/* Keyed so filter, menu, dialog and mutation state never leak across tabs. */}
         <div key={`refs-${tab.id}`} className={styles.refs}>
@@ -77,13 +82,18 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
           onChange={setRefsWidth}
           onReset={() => resetWidth("refs")}
         />
-        {/* Keyed so selection, menu, dialog, draft and mutation state never leak across tabs. */}
-        <div key={tab.id} className={styles.sidebar}>
-          <ChangesPanel repoId={tab.id} />
-          <CommitBox repoId={tab.id} />
-        </div>
+        {/* The diff of a selected file replaces the graph until it is closed. */}
+        <section aria-label="History" className={styles.center}>
+          {fileSelected ? (
+            <DetailPane key={tab.id} repoId={tab.id} />
+          ) : (
+            <GraphPanel key={tab.id} repoId={tab.id} />
+          )}
+        </section>
+        {/* The handle sits before the column it sizes, so its directions are inverted. */}
         <SplitHandle
           label="Resize changes column"
+          side="after"
           value={sidebar}
           min={SIDEBAR_MIN}
           max={maxWidth(available, "sidebar", refs)}
@@ -91,9 +101,17 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
           onChange={setSidebarWidth}
           onReset={() => resetWidth("sidebar")}
         />
-        <section aria-label="Detail" className={styles.detail}>
-          <DetailPane key={tab.id} repoId={tab.id} />
-        </section>
+        {/* Keyed so selection, menu, dialog, draft and mutation state never leak across tabs. */}
+        <div key={tab.id} className={styles.sidebar}>
+          {selectedCommit === null ? (
+            <>
+              <ChangesPanel repoId={tab.id} />
+              <CommitBox repoId={tab.id} />
+            </>
+          ) : (
+            <CommitSummary repoId={tab.id} oid={selectedCommit} />
+          )}
+        </div>
       </div>
     </section>
   );
