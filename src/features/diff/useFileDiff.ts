@@ -31,6 +31,9 @@ export function useFileDiff(
       ),
     enabled: file !== null,
     retry: false,
+    // Fresh until invalidated: writes and the file watcher invalidate the repo prefix, so
+    // toggling Blame and back re-shows the cached diff without another round trip.
+    staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
   const noChanges = query.error?.kind === "noChanges";

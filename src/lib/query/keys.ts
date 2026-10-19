@@ -27,4 +27,13 @@ export const queryKeys = {
   logSearch: (id: RepoId, generation: number, query: string) =>
     ["repoImmutable", id, "logSearch", generation, query] as const,
   commit: (id: RepoId, oid: string) => ["repoImmutable", id, "commit", oid] as const,
+  commitFiles: (id: RepoId, oid: string) => ["repoImmutable", id, "commitFiles", oid] as const,
+  fileHistory: (id: RepoId, generation: number, path: string) =>
+    ["repoImmutable", id, "fileHistory", generation, path] as const,
+  /** Blame at a fixed commit never changes. */
+  blameAt: (id: RepoId, path: string, oid: string) =>
+    ["repoImmutable", id, "blame", path, oid] as const,
+  /** Blame at HEAD; under the repo prefix so a new HEAD refreshes it. */
+  blameHead: (id: RepoId, path: string) => ["repo", id, "blame", path] as const,
+  trackedFiles: (id: RepoId) => ["repo", id, "trackedFiles"] as const,
 };

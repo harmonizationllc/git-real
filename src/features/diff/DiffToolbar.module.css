@@ -14,13 +14,6 @@
   gap: 12px;
 }
 
-.path {
-  flex: 1;
-  min-width: 0;
-  font-family: ui-monospace, monospace;
-  overflow-wrap: anywhere;
-}
-
 .summary {
   font-family: ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
@@ -32,10 +25,6 @@
 
 .removed {
   color: var(--color-removed);
-}
-
-.close {
-  margin-left: auto;
 }
 
 .modes {

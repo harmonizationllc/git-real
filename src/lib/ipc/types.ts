@@ -62,7 +62,8 @@ export type AppErrorKind =
   | "checkoutFailed"
   | "pushFailed"
   | "logStale"
-  | "commitNotFound";
+  | "commitNotFound"
+  | "binaryFile";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -90,7 +91,8 @@ export interface WorkingTreeStatus {
   headUnborn: boolean;
 }
 
-export type DiffScope = "staged" | "unstaged";
+/** A working-tree side, or one commit against its first parent (serde externally tagged). */
+export type DiffScope = "staged" | "unstaged" | { commit: string };
 
 export type DiffSide = "old" | "new";
 
@@ -251,3 +253,41 @@ export interface CommitDetail {
 }
 
 export type ResetMode = "soft" | "mixed" | "hard";
+
+/** One file a commit changed against its first parent. */
+export interface CommitFile {
+  path: string;
+  oldPath: string | null;
+  change: ChangeKind;
+}
+
+/** One commit that touched a file, following renames. */
+export interface FileHistoryEntry {
+  oid: string;
+  subject: string;
+  authorName: string;
+  authorEmail: string;
+  /** Unix seconds. */
+  authorTime: number;
+  change: ChangeKind;
+  /** The file's path in this commit. */
+  path: string;
+  oldPath: string | null;
+}
+
+export interface BlameHunk {
+  /** 1-based first line. */
+  start: number;
+  lines: number;
+  oid: string;
+  author: Signature;
+  summary: string;
+}
+
+export interface Blame {
+  /** The commit blamed at. */
+  oid: string;
+  path: string;
+  hunks: BlameHunk[];
+  lines: string[];
+}
