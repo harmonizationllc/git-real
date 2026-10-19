@@ -212,3 +212,15 @@ describe("useIntegrationActions invalidation", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.repo(4) });
   });
 });
+
+// Coverage audit: invalidation is scoped to the repo prefix.
+describe("useIntegrationActions invalidation scope", () => {
+  it("should invalidate only the repo it runs for", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useIntegrationActions(4));
+    queryClient.setQueryData(queryKeys.operation(4), { kind: "none" });
+    queryClient.setQueryData(queryKeys.operation(5), { kind: "none" });
+    await run(() => result.current, { action: "abort" });
+    expect(queryClient.getQueryState(queryKeys.operation(4))?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(queryKeys.operation(5))?.isInvalidated).toBe(false);
+  });
+});

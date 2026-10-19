@@ -93,3 +93,40 @@ describe("useCanFastForward", () => {
     second.unmount();
   });
 });
+
+// Coverage audit: the check is not kept once nobody observes it, and a second observer
+// mounted while the first is alive still triggers a fresh check (staleTime 0).
+describe("useCanFastForward caching", () => {
+  it("should drop the cached check once the hook unmounts", async () => {
+    const queryClient = createQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const first = renderHook(() => useCanFastForward(1, "feature"), { wrapper });
+    await waitFor(() => expect(first.result.current.check).toBe("possible"));
+    first.unmount();
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKeys.fastForward(1, "feature"))).toBeUndefined(),
+    );
+  });
+
+  it("should check again for a second observer mounted while the first is alive", async () => {
+    const queryClient = createQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const first = renderHook(() => useCanFastForward(1, "feature"), { wrapper });
+    await waitFor(() => expect(first.result.current.check).toBe("possible"));
+    const second = renderHook(() => useCanFastForward(1, "feature"), { wrapper });
+    await waitFor(() => expect(canFastForward).toHaveBeenCalledTimes(2));
+    first.unmount();
+    second.unmount();
+  });
+
+  it("should keep the cache empty for a null branch", async () => {
+    const { queryClient } = renderHookWithProviders(() => useCanFastForward(1, null));
+    await Promise.resolve();
+    expect(queryClient.getQueryCache().findAll({ fetchStatus: "fetching" })).toHaveLength(0);
+    expect(canFastForward).not.toHaveBeenCalled();
+  });
+});

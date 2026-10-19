@@ -321,3 +321,122 @@ describe("commitDraft syncPrefill over an amend draft", () => {
     });
   });
 });
+
+// Coverage audit: rules the first round left implicit.
+describe("commitDraft syncPrefill edge rules", () => {
+  it("should refill a draft the user emptied after the prefill was loaded", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.setSubject(1, "");
+    s.syncPrefill(1, otherMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: "Cherry-pick",
+      body: "picked body",
+      amend: false,
+      stash: null,
+      prefilled: otherMsg,
+    });
+  });
+
+  it("should give the same draft when the same message arrives twice", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    const first = useCommitDraft.getState().drafts[1];
+    s.syncPrefill(1, mergeMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual(first);
+  });
+
+  it("should not refill typed text after the prefill marker was dropped", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.setSubject(1, "edited");
+    s.syncPrefill(1, null);
+    s.syncPrefill(1, otherMsg);
+    expect(useCommitDraft.getState().drafts[1]).toMatchObject({
+      subject: "edited",
+      prefilled: null,
+    });
+  });
+
+  it("should fill again after the untouched prefill was cleaned up", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.syncPrefill(1, null);
+    s.syncPrefill(1, otherMsg);
+    expect(useCommitDraft.getState().drafts[1]).toMatchObject({
+      subject: "Cherry-pick",
+      prefilled: otherMsg,
+    });
+  });
+
+  it("should record the new message object as prefilled when equal text arrives in a new object", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    const copy = { ...mergeMsg };
+    s.syncPrefill(1, copy);
+    expect(useCommitDraft.getState().drafts[1]?.prefilled).toBe(copy);
+  });
+
+  it("should drop the prefilled draft with clear and fill again afterwards", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.clear(1);
+    expect(useCommitDraft.getState().drafts[1]).toBeUndefined();
+    s.syncPrefill(1, otherMsg);
+    expect(useCommitDraft.getState().drafts[1]).toMatchObject({ prefilled: otherMsg });
+  });
+
+  it("should judge the stashed text of an amend draft, not the HEAD message it shows", () => {
+    const s = useCommitDraft.getState();
+    s.setSubject(1, "typed before amend");
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, mergeMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: "typed before amend",
+      body: "",
+      amend: false,
+      stash: null,
+      prefilled: null,
+    });
+  });
+
+  it("should refill an amend draft whose stash still holds the previous prefill", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, otherMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: "Cherry-pick",
+      body: "picked body",
+      amend: false,
+      stash: null,
+      prefilled: otherMsg,
+    });
+  });
+
+  it("should drop the prefill marker but keep amend on when null arrives over an amend draft", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, null);
+    expect(useCommitDraft.getState().drafts[1]).toMatchObject({
+      subject: head.subject,
+      body: head.body,
+      amend: true,
+      prefilled: null,
+    });
+  });
+
+  it("should keep the stash when null arrives over an amend draft", () => {
+    const s = useCommitDraft.getState();
+    s.syncPrefill(1, mergeMsg);
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, null);
+    s.setAmend(1, false, head);
+    expect(useCommitDraft.getState().drafts[1]).toMatchObject({
+      subject: mergeMsg.subject,
+      amend: false,
+      stash: null,
+    });
+  });
+});

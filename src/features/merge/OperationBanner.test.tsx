@@ -363,3 +363,132 @@ describe("OperationBanner feedback", () => {
     );
   });
 });
+
+// Coverage audit: behaviours the first round left unpinned.
+describe("OperationBanner busy and error handling", () => {
+  const error: AppError = { kind: "operationFailed", message: "hook refused" };
+
+  it("should disable Abort… while an action is pending", () => {
+    provide({ state: mergeState, pending: true });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Abort…" })).toBeDisabled();
+  });
+
+  it("should clear a previous error when Abort… is opened", async () => {
+    provide({ state: mergeState, error });
+    const { user } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    expect(clearError).toHaveBeenCalledOnce();
+  });
+
+  it("should close the dialog when abort fails", async () => {
+    run.mockResolvedValue(error);
+    provide({ state: mergeState });
+    const { user } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Abort" }));
+    expect(run).toHaveBeenCalledExactlyOnceWith({ action: "abort" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should show the dialog as working and keep Cancel disabled while abort is pending", async () => {
+    provide({ state: mergeState });
+    const { user, rerender } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    provide({ state: mergeState, pending: true });
+    rerender(<OperationBanner repoId={1} />);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Working…" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("should show an error and its message together with the dialog closed", () => {
+    provide({ state: rebaseState, error });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("hook refused");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("OperationBanner conflict gating details", () => {
+  it("should give Go to commit the resolve-first reason while conflicts remain", () => {
+    provide({ state: mergeState, conflicts: 2 });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Go to commit" })).toHaveAttribute(
+      "title",
+      "Resolve all conflicts first",
+    );
+  });
+
+  it("should give Go to commit and Continue no title at zero conflicts", () => {
+    provide({ state: mergeState });
+    const { unmount } = renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Go to commit" })).not.toHaveAttribute("title");
+    unmount();
+    provide({ state: rebaseState });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Continue" })).not.toHaveAttribute("title");
+  });
+
+  it("should not run anything when the disabled Go to commit is clicked", async () => {
+    provide({ state: mergeState, conflicts: 1 });
+    const { user } = renderWithProviders(
+      <>
+        <input id="commit-subject" aria-label="Subject" />
+        <OperationBanner repoId={1} />
+      </>,
+    );
+    await user.click(screen.getByRole("button", { name: "Go to commit" }));
+    expect(screen.getByLabelText("Subject")).not.toHaveFocus();
+  });
+
+  it("should count only conflicted entries", () => {
+    provide({ state: mergeState });
+    vi.mocked(useStatus).mockReturnValue({
+      status: {
+        headUnborn: false,
+        entries: [
+          { path: "a", oldPath: null, index: null, worktree: "conflicted", conflicted: true },
+          { path: "b", oldPath: null, index: null, worktree: "modified", conflicted: false },
+          { path: "c", oldPath: null, index: "added", worktree: null, conflicted: false },
+        ],
+      } as WorkingTreeStatus,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByText(/1 conflict remaining/)).toBeInTheDocument();
+  });
+
+  it("should enable Continue when the only entries are not conflicted", () => {
+    provide({ state: rebaseState });
+    vi.mocked(useStatus).mockReturnValue({
+      status: {
+        headUnborn: false,
+        entries: [
+          { path: "b", oldPath: null, index: null, worktree: "modified", conflicted: false },
+        ],
+      } as WorkingTreeStatus,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
+  });
+});
+
+describe("OperationBanner state transitions", () => {
+  it("should appear when the state arrives and disappear when the operation ends", () => {
+    provide({ state: undefined });
+    const { rerender } = renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.queryByRole("region")).toBeNull();
+    provide({ state: mergeState });
+    rerender(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("region", { name: "Operation in progress" })).toBeInTheDocument();
+    provide({ state: { kind: "none" } });
+    rerender(<OperationBanner repoId={1} />);
+    expect(screen.queryByRole("region")).toBeNull();
+  });
+});

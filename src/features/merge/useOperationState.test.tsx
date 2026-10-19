@@ -1,4 +1,5 @@
-import { waitFor } from "@testing-library/react";
+import { focusManager } from "@tanstack/react-query";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getOperationState } from "../../lib/ipc";
 import type { AppError, OperationState } from "../../lib/ipc";
@@ -66,5 +67,39 @@ describe("useOperationState", () => {
     await waitFor(() => expect(result.current.state).toBeDefined());
     result.current.refetch();
     await waitFor(() => expect(getOperationState).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Coverage audit: freshness triggers named by the brief.
+describe("useOperationState freshness", () => {
+  it("should query again when the window regains focus", async () => {
+    const { result } = renderHookWithProviders(() => useOperationState(1));
+    await waitFor(() => expect(result.current.state).toBeDefined());
+    act(() => focusManager.setFocused(false));
+    act(() => focusManager.setFocused(true));
+    await waitFor(() => expect(getOperationState).toHaveBeenCalledTimes(2));
+    focusManager.setFocused(undefined);
+  });
+
+  it("should query again when the repo prefix is invalidated", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useOperationState(1));
+    await waitFor(() => expect(result.current.state).toBeDefined());
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.repo(1) }));
+    expect(getOperationState).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not query again when another repo is invalidated", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useOperationState(1));
+    await waitFor(() => expect(result.current.state).toBeDefined());
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.repo(2) }));
+    expect(getOperationState).toHaveBeenCalledTimes(1);
+  });
+
+  it("should expose the new state after a refetch returns one", async () => {
+    const { result } = renderHookWithProviders(() => useOperationState(1));
+    await waitFor(() => expect(result.current.state).toEqual(state));
+    vi.mocked(getOperationState).mockResolvedValue({ kind: "none" });
+    result.current.refetch();
+    await waitFor(() => expect(result.current.state).toEqual({ kind: "none" }));
   });
 });
