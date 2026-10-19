@@ -373,11 +373,11 @@ Left column: `{historyPath !== null ? <FileHistoryPanel repoId={tab.id} path={hi
 
 Per `feedback-token-cost-batching`: three cycles, each running the mandatory team workflow once (architect + tdd-tester in parallel → developer → tdd-tester-coverage + code-reviewer in parallel → fix loop), then one final architect sign-off.
 
-| Cycle | Tasks | Deliverable                                                                  |
-| ----- | ----- | ---------------------------------------------------------------------------- |
-| 1     | 1–3   | Rust: commit scope, commit files, file history, blame, tracked files, commands |
+| Cycle | Tasks | Deliverable                                                                          |
+| ----- | ----- | ------------------------------------------------------------------------------------ |
+| 1     | 1–3   | Rust: commit scope, commit files, file history, blame, tracked files, commands       |
 | 2     | 4     | Front-end foundations (seam, keys, store, scope helpers, FileHeader, read-only diff) |
-| 3     | 5–6   | History views, picker, `RepoPane` wiring, Changes menu                       |
+| 3     | 5–6   | History views, picker, `RepoPane` wiring, Changes menu                               |
 
 Dispatch count: 3 × 5 = 15 plus the final architect = 16, plus any fix passes. Models: architect and developer on the opus agent definitions, tester, coverage and reviewer on sonnet, passed explicitly on each dispatch. Agents write their reports to the scratchpad, not the main context.
 
