@@ -1502,6 +1502,30 @@ describe("BranchesPanel integration menu items", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("should clear an earlier branch action error when an integration item is chosen", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await screen.findByText(checkoutFailed.message);
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Merge feature into main"));
+    expect(screen.queryByText(checkoutFailed.message)).toBeNull();
+    expect(integrationRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("should disable Checkout while only the integration action is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(localRow("feature"));
+    expect(menuItem("Checkout")).toBeDisabled();
+  });
+
+  it("should disable New branch… while only the integration action is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    expect(screen.getByRole("button", { name: "New branch…" })).toBeDisabled();
+  });
+
   it("should not run anything when a disabled item is clicked", async () => {
     provideMerge({ state: mergeState });
     const { user } = await renderPanel();

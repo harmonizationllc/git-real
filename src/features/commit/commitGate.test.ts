@@ -170,4 +170,60 @@ describe("commitDisabledReason during an operation", () => {
       }),
     ).toBe("Resolve conflicts before committing");
   });
+
+  // Contract (R3): a merge commit may be recorded with an index equal to HEAD.
+  const unstagedOnly = status([entry({ worktree: "modified" })]);
+
+  it("does not require staged changes for a merge", () => {
+    expect(
+      gateReason({
+        ...ready,
+        status: unstagedOnly,
+        operation: { kind: "merge", head: "a".repeat(40), branch: "f", message },
+      }),
+    ).toBeNull();
+  });
+
+  it("still requires staged changes for a cherry-pick", () => {
+    expect(
+      gateReason({
+        ...ready,
+        status: unstagedOnly,
+        operation: { kind: "cherryPick", oid: "a".repeat(40), message },
+      }),
+    ).toBe("Stage changes to commit");
+  });
+
+  it("still requires staged changes for a revert", () => {
+    expect(
+      gateReason({
+        ...ready,
+        status: unstagedOnly,
+        operation: { kind: "revert", oid: "a".repeat(40), message },
+      }),
+    ).toBe("Stage changes to commit");
+  });
+
+  it("still requires a subject for a merge with nothing staged", () => {
+    expect(
+      gateReason({
+        ...ready,
+        status: unstagedOnly,
+        subject: " ",
+        operation: { kind: "merge", head: "a".repeat(40), branch: "f", message },
+      }),
+    ).toBe("Enter a commit subject");
+  });
+
+  it("keeps the conflicts rule for cherry-pick and revert", () => {
+    const s = status([entry({ conflicted: true })]);
+    for (const operation of [
+      { kind: "cherryPick", oid: "a".repeat(40), message },
+      { kind: "revert", oid: "a".repeat(40), message },
+    ] satisfies OperationState[]) {
+      expect(gateReason({ ...ready, status: s, operation })).toBe(
+        "Resolve conflicts before committing",
+      );
+    }
+  });
 });

@@ -1823,6 +1823,7 @@ describe("GraphPanel cherry-pick and revert", () => {
   });
 
   it("should disable Cherry-pick on the commit a detached HEAD points at", async () => {
+    refsByIndex = { 1: [ref("head", "HEAD", true)] };
     vi.mocked(listBranches).mockResolvedValue({
       head: { kind: "detached", oid: oidOf(1) },
       local: [],
@@ -1834,6 +1835,7 @@ describe("GraphPanel cherry-pick and revert", () => {
   });
 
   it("should keep Cherry-pick enabled on a commit other than the detached HEAD", async () => {
+    refsByIndex = { 1: [ref("head", "HEAD", true)] };
     vi.mocked(listBranches).mockResolvedValue({
       head: { kind: "detached", oid: oidOf(1) },
       local: [],
@@ -1904,6 +1906,18 @@ describe("GraphPanel cherry-pick and revert", () => {
     rightClick(optionAt(1));
     await user.click(menuItem("Cherry-pick commit"));
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should clear an earlier copy error when an integration item is chosen", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Copy hash"));
+    await screen.findByText(/clipboard denied/);
+    rightClick(optionAt(1));
+    await user.click(menuItem("Revert commit"));
+    expect(screen.queryByText(/clipboard denied/)).toBeNull();
+    expect(integrationRun).toHaveBeenCalledTimes(1);
   });
 
   it("should run nothing when a disabled item is clicked", async () => {

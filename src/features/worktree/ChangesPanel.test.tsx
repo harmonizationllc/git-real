@@ -1274,6 +1274,24 @@ describe("ChangesPanel conflict sides", () => {
     expect(btn("Stage a.txt")).toBeDisabled();
   });
 
+  it("should disable Stage all and Unstage all while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel(unstaged("a.txt"), staged("s.txt"));
+    expect(btn("Stage all")).toBeDisabled();
+    expect(btn("Unstage all")).toBeDisabled();
+  });
+
+  it("should clear an earlier staging error when Keep or Take is chosen", async () => {
+    vi.mocked(stagePaths).mockRejectedValue({ kind: "io", message: "stage exploded" });
+    const { user } = await renderPanel(unstaged("a.txt"), conflict("README.md"));
+    await user.click(btn("Stage a.txt"));
+    await screen.findByText(/stage exploded/);
+    rightClick(btn("conflicted README.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep ours" }));
+    expect(screen.queryByText(/stage exploded/)).toBeNull();
+    expect(integrationRun).toHaveBeenCalledTimes(1);
+  });
+
   it("should keep the row buttons enabled when the integration is idle", async () => {
     await renderPanel(conflict("README.md"));
     expect(btn("Stage README.md")).toBeEnabled();

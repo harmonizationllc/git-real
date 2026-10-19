@@ -149,6 +149,11 @@ describe("MessageEditor subject id", () => {
     expect(screen.getByLabelText("Subject")).toHaveAttribute("id", "commit-subject");
   });
 
+  it("associates the Subject label with the fixed id", () => {
+    setup();
+    expect(screen.getByText("Subject")).toHaveAttribute("for", "commit-subject");
+  });
+
   it("keeps the subject input labelled Subject", () => {
     setup();
     expect(screen.getByRole("textbox", { name: "Subject" })).toBeInTheDocument();

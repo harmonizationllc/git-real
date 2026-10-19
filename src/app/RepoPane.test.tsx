@@ -29,12 +29,21 @@ import { RepoPane } from "./RepoPane";
 
 vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
 
+const bannerMounts = vi.hoisted<number[]>(() => []);
+
 // A stand-in that exposes the repo id it received; built lazily so no import is hoisted above it.
 vi.mock("../features/merge/OperationBanner", async () => {
-  const { createElement } = await import("react");
+  const { createElement, useEffect } = await import("react");
   return {
-    OperationBanner: ({ repoId }: { repoId: number }) =>
-      createElement("div", { "data-testid": "operation-banner", "data-repo-id": String(repoId) }),
+    OperationBanner: ({ repoId }: { repoId: number }) => {
+      useEffect(() => {
+        bannerMounts.push(repoId);
+      }, []);
+      return createElement("div", {
+        "data-testid": "operation-banner",
+        "data-repo-id": String(repoId),
+      });
+    },
   };
 });
 
@@ -85,6 +94,7 @@ class StubResizeObserver {
 beforeEach(() => {
   vi.resetAllMocks();
   StubResizeObserver.instances = [];
+  bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
   vi.mocked(listBranches).mockResolvedValue(branchList());
@@ -1026,6 +1036,13 @@ describe("RepoPane operation banner", () => {
     expect(banner().parentElement).toBe(header().parentElement);
     expect(history.parentElement).not.toBe(banner().parentElement);
     await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should remount the banner for a different tab", async () => {
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    view.rerender(<RepoPane tab={tab(2)} />);
+    expect(bannerMounts).toEqual([1, 2]);
   });
 
   it("should follow the tab when the pane shows another repository", async () => {
