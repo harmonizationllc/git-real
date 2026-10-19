@@ -36,6 +36,7 @@ pub enum AppErrorKind {
     PushFailed,
     LogStale,
     CommitNotFound,
+    BinaryFile,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -84,6 +85,7 @@ impl From<GitError> for AppError {
             GitError::PushFailed { .. } => AppErrorKind::PushFailed,
             GitError::LogStale => AppErrorKind::LogStale,
             GitError::CommitNotFound(_) => AppErrorKind::CommitNotFound,
+            GitError::BinaryFile(_) => AppErrorKind::BinaryFile,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
