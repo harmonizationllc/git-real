@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type {
   AppErrorKind,
+  ConflictSide,
+  FastForwardCheck,
+  MergeMode,
+  OperationOutcome,
+  OperationState,
   Blame,
   BlameHunk,
   CommitFile,
@@ -341,5 +346,54 @@ describe("GR-9 history types", () => {
     const b: Blame = { oid: "o", path: "p", hunks: [h], lines: ["x", "y"] };
     expect(Object.keys(h).sort()).toEqual(["author", "lines", "oid", "start", "summary"]);
     expect(Object.keys(b).sort()).toEqual(["hunks", "lines", "oid", "path"]);
+  });
+});
+
+// Compile-time parity with the Rust merge DTOs; `tsc` fails until the types exist.
+describe("GR-10a operation types", () => {
+  it("should accept the five operation AppErrorKind members", () => {
+    const kinds: AppErrorKind[] = [
+      "operationFailed",
+      "operationInProgress",
+      "noOperation",
+      "unresolvedConflicts",
+      "mergeCommit",
+    ];
+    expect(kinds).toHaveLength(5);
+  });
+
+  it("should cover every MergeMode, OperationOutcome, ConflictSide and FastForwardCheck", () => {
+    const mode: MergeMode[] = ["merge", "fastForward"];
+    const outcome: OperationOutcome[] = ["completed", "conflicts"];
+    const side: ConflictSide[] = ["ours", "theirs"];
+    const check: FastForwardCheck[] = ["possible", "upToDate", "diverged"];
+    expect([mode, outcome, side, check].map((a) => a.length)).toEqual([2, 2, 2, 3]);
+  });
+
+  it("should shape every OperationState variant with its fields", () => {
+    const message = { subject: "s", body: "b" };
+    const states: OperationState[] = [
+      { kind: "none" },
+      { kind: "merge", head: "a".repeat(40), branch: "feature", message },
+      { kind: "merge", head: "a".repeat(40), branch: null, message },
+      {
+        kind: "rebase",
+        onto: "b".repeat(40),
+        ontoName: "main",
+        branch: "feature",
+        step: 1,
+        total: 3,
+      },
+      { kind: "cherryPick", oid: "c".repeat(40), message },
+      { kind: "revert", oid: "d".repeat(40), message },
+    ];
+    expect(states.map((s) => s.kind)).toEqual([
+      "none",
+      "merge",
+      "merge",
+      "rebase",
+      "cherryPick",
+      "revert",
+    ]);
   });
 });

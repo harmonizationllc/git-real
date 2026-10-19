@@ -307,3 +307,27 @@ describe("queryKeys history keys", () => {
     );
   });
 });
+
+// Contract: the operation keys live under the repo prefix so one invalidation refreshes them.
+describe("queryKeys merge operation keys", () => {
+  it("should define operation(id) under the repo prefix", () => {
+    expect(queryKeys.operation(3)).toEqual(["repo", 3, "operation"]);
+  });
+
+  it("should define fastForward(id, branch) under the repo prefix", () => {
+    expect(queryKeys.fastForward(3, "feature")).toEqual(["repo", 3, "fastForward", "feature"]);
+  });
+
+  it("should start both keys with the repo key", () => {
+    expect(queryKeys.operation(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+    expect(queryKeys.fastForward(3, "a").slice(0, 2)).toEqual(queryKeys.repo(3));
+  });
+
+  it("should differ between two branches for the fast-forward key", () => {
+    expect(queryKeys.fastForward(1, "a")).not.toEqual(queryKeys.fastForward(1, "b"));
+  });
+
+  it("should differ between two repos for the operation key", () => {
+    expect(queryKeys.operation(1)).not.toEqual(queryKeys.operation(2));
+  });
+});

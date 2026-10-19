@@ -1,13 +1,17 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  abortOperation,
   addToGitignore,
   applyHunk,
   checkGitCli,
   checkoutBranch,
   checkoutCommit,
   checkoutRemoteBranch,
+  canFastForward,
+  cherryPick,
   cloneRepo,
+  continueRebase,
   closeRepo,
   commit,
   createBranch,
@@ -15,6 +19,7 @@ import {
   deleteRemoteBranch,
   discardPaths,
   getBlame,
+  getOperationState,
   getCommit,
   getCommitFiles,
   getFileHistory,
@@ -29,10 +34,14 @@ import {
   initRepo,
   listBranches,
   listRecent,
+  mergeBranch,
   openRepo,
+  rebaseOnto,
   removeRecent,
   renameBranch,
   resetToCommit,
+  resolveConflicts,
+  revertCommit,
   searchLog,
   stageAll,
   stagePaths,
@@ -42,6 +51,9 @@ import {
 import { isAppError } from "./errors";
 import type {
   BranchList,
+  FastForwardCheck,
+  OperationOutcome,
+  OperationState,
   CommitDetail,
   FileDiff,
   GitCliInfo,
@@ -653,5 +665,91 @@ describe("getFileDiff with a commit scope", () => {
     const calls = mockWith({});
     await getFileDiff(1, "a.ts", { commit: "abc" }, false);
     expect((calls[0]?.args as { scope: unknown }).scope).toEqual({ commit: "abc" });
+  });
+});
+
+// Contract: each GR-10a wrapper invokes the pinned Rust command with camelCase args.
+describe("merge operation wrappers", () => {
+  it("getOperationState sends get_operation_state with id and returns the state", async () => {
+    const state: OperationState = { kind: "none" };
+    const calls = mockWith(state);
+    const result = await getOperationState(2);
+    expect(calls).toEqual([{ cmd: "get_operation_state", args: { id: 2 } }]);
+    expect(result).toEqual(state);
+  });
+
+  it("mergeBranch sends merge_branch with id, branch and mode", async () => {
+    const outcome: OperationOutcome = "conflicts";
+    const calls = mockWith(outcome);
+    const result = await mergeBranch(2, "feature", "fastForward");
+    expect(calls).toEqual([
+      { cmd: "merge_branch", args: { id: 2, branch: "feature", mode: "fastForward" } },
+    ]);
+    expect(result).toBe("conflicts");
+  });
+
+  it("rebaseOnto sends rebase_onto with id and onto", async () => {
+    const calls = mockWith("completed");
+    const result = await rebaseOnto(2, "main");
+    expect(calls).toEqual([{ cmd: "rebase_onto", args: { id: 2, onto: "main" } }]);
+    expect(result).toBe("completed");
+  });
+
+  it("cherryPick sends cherry_pick with id and oid", async () => {
+    const calls = mockWith("completed");
+    const result = await cherryPick(2, "abc");
+    expect(calls).toEqual([{ cmd: "cherry_pick", args: { id: 2, oid: "abc" } }]);
+    expect(result).toBe("completed");
+  });
+
+  it("revertCommit sends revert_commit with id and oid", async () => {
+    const calls = mockWith("completed");
+    const result = await revertCommit(2, "abc");
+    expect(calls).toEqual([{ cmd: "revert_commit", args: { id: 2, oid: "abc" } }]);
+    expect(result).toBe("completed");
+  });
+
+  it("abortOperation sends abort_operation with id", async () => {
+    const calls = mockWith(null);
+    await abortOperation(2);
+    expect(calls).toEqual([{ cmd: "abort_operation", args: { id: 2 } }]);
+  });
+
+  it("continueRebase sends continue_rebase with id", async () => {
+    const calls = mockWith("conflicts");
+    const result = await continueRebase(2);
+    expect(calls).toEqual([{ cmd: "continue_rebase", args: { id: 2 } }]);
+    expect(result).toBe("conflicts");
+  });
+
+  it("resolveConflicts sends resolve_conflicts with id, paths and side", async () => {
+    const calls = mockWith(null);
+    await resolveConflicts(2, ["a.txt", "b/c.txt"], "theirs");
+    expect(calls).toEqual([
+      { cmd: "resolve_conflicts", args: { id: 2, paths: ["a.txt", "b/c.txt"], side: "theirs" } },
+    ]);
+  });
+
+  it("canFastForward sends can_fast_forward with id and branch", async () => {
+    const check: FastForwardCheck = "diverged";
+    const calls = mockWith(check);
+    const result = await canFastForward(2, "feature");
+    expect(calls).toEqual([{ cmd: "can_fast_forward", args: { id: 2, branch: "feature" } }]);
+    expect(result).toBe("diverged");
+  });
+
+  it.each([
+    ["getOperationState", () => getOperationState(1)],
+    ["mergeBranch", () => mergeBranch(1, "b", "merge")],
+    ["rebaseOnto", () => rebaseOnto(1, "b")],
+    ["cherryPick", () => cherryPick(1, "a")],
+    ["revertCommit", () => revertCommit(1, "a")],
+    ["abortOperation", () => abortOperation(1)],
+    ["continueRebase", () => continueRebase(1)],
+    ["resolveConflicts", () => resolveConflicts(1, ["a"], "ours")],
+    ["canFastForward", () => canFastForward(1, "b")],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing({ kind: "operationInProgress", message: "busy" });
+    await expect(call()).rejects.toEqual({ kind: "operationInProgress", message: "busy" });
   });
 });
