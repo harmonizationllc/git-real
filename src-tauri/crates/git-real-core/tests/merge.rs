@@ -110,6 +110,15 @@ fn ahead_with_remote_only_fast() -> (TempDir, TempDir, PathBuf, RepoSession, Oid
     let head = common::head_branch_name(&path);
     let (bare_dir, bare) = common::temp_bare_clone(&path);
     common::add_remote_and_fetch(&path, &bare, &head);
+    common::push_branch(&path, "fast");
+    common::fetch_remote(&path, "origin");
+    assert!(
+        Repository::open(&path)
+            .unwrap()
+            .find_reference("refs/remotes/origin/fast")
+            .is_ok(),
+        "origin/fast must exist before the local branch is deleted"
+    );
     Repository::open(&path)
         .unwrap()
         .find_branch("fast", BranchType::Local)
@@ -243,6 +252,46 @@ fn state_after_conflicting_revert() {
     };
     assert_eq!(oid, first.to_string());
     assert!(message.subject.starts_with("Revert"), "{}", message.subject);
+}
+
+// git's own commit flow strips comment lines from the prepared message.
+#[test]
+fn state_message_strips_comment_lines() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = diverged();
+    session.merge_branch("other", MergeMode::Merge).unwrap();
+
+    let state = session.operation_state();
+
+    let OperationState::Merge { message, .. } = state else {
+        panic!("expected a merge in progress, got {state:?}");
+    };
+    assert_eq!(message.subject, "Merge branch 'other'");
+    assert!(
+        message.body.lines().all(|l| !l.starts_with('#')),
+        "{:?}",
+        message.body
+    );
+}
+
+#[test]
+fn state_message_drops_hand_written_comment_lines_from_the_body() {
+    let (_d, path, session) = conflicted_merge();
+    std::fs::write(
+        path.join(".git").join("MERGE_MSG"),
+        "Subject\n\n# comment\nbody line\n# another\n",
+    )
+    .unwrap();
+
+    let state = session.operation_state();
+
+    let OperationState::Merge { message, .. } = state else {
+        panic!("expected a merge in progress, got {state:?}");
+    };
+    assert_eq!(message.subject, "Subject");
+    assert_eq!(message.body, "body line");
 }
 
 // Unreadable or missing rebase marker files degrade to empty fields, never an error.
