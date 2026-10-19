@@ -36,4 +36,6 @@ export const queryKeys = {
   /** Blame at HEAD; under the repo prefix so a new HEAD refreshes it. */
   blameHead: (id: RepoId, path: string) => ["repo", id, "blame", path] as const,
   trackedFiles: (id: RepoId) => ["repo", id, "trackedFiles"] as const,
+  operation: (id: RepoId) => ["repo", id, "operation"] as const,
+  fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
 };
