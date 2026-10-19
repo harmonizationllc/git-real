@@ -2,7 +2,14 @@ import { javascriptLanguage } from "@codemirror/lang-javascript";
 import { LanguageDescription } from "@codemirror/language";
 import { describe, expect, it, vi } from "vitest";
 import { L, hunk } from "../../../test/diffFixtures";
-import { highlightHunk, languageFor, loadParser, sideText, tokenize } from "./highlight";
+import {
+  highlightHunk,
+  highlightText,
+  languageFor,
+  loadParser,
+  sideText,
+  tokenize,
+} from "./highlight";
 
 const parser = javascriptLanguage.parser;
 
@@ -184,5 +191,26 @@ describe("highlightHunk one-sided hunks", () => {
   });
   it("should return an empty array for a hunk with no lines", () => {
     expect(highlightHunk(hunk([]), parser)).toEqual([]);
+  });
+});
+
+// Contract: highlightText tokenizes whole-file lines as one text, one token array per line.
+describe("highlightText", () => {
+  it("should return one token array per input line", () => {
+    const out = highlightText(["const a = 1;", "// c"], parser);
+    expect(out).toHaveLength(2);
+  });
+  it("should classify tokens in each line", () => {
+    const out = highlightText(["const a = 1;", "// c"], parser);
+    expect(out[0]?.find((t) => t.text === "1")?.className).toBe("tok-number");
+    expect(out[1]?.[0]?.className).toBe("tok-comment");
+  });
+  it("should return an empty token array for a blank line", () => {
+    const out = highlightText(["const a = 1;", "", "const b = 2;"], parser);
+    expect(out[1]).toEqual([]);
+  });
+  it("should parse the lines as one text so a block comment spans lines", () => {
+    const out = highlightText(["/* a", "b */"], parser);
+    expect(out[1]?.[0]?.className).toBe("tok-comment");
   });
 });

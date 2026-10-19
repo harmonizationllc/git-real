@@ -14,7 +14,11 @@ import {
   deleteBranch,
   deleteRemoteBranch,
   discardPaths,
+  getBlame,
   getCommit,
+  getCommitFiles,
+  getFileHistory,
+  listTrackedFiles,
   getCommitConfig,
   getFileContent,
   getFileDiff,
@@ -592,5 +596,53 @@ describe("commit graph command argument edges", () => {
   it("checkoutCommit resolves to undefined", async () => {
     mockWith(null);
     await expect(checkoutCommit(1, "abc")).resolves.toBeNull();
+  });
+});
+
+// Contract: GR-9 history wrappers invoke the pinned command names with camelCase args.
+describe("history command wrappers", () => {
+  it("listTrackedFiles sends list_tracked_files with id", async () => {
+    const calls = mockWith(["a.ts"]);
+    const result = await listTrackedFiles(5);
+    expect(calls).toEqual([{ cmd: "list_tracked_files", args: { id: 5 } }]);
+    expect(result).toEqual(["a.ts"]);
+  });
+
+  it("getCommitFiles sends get_commit_files with id and oid", async () => {
+    const calls = mockWith([]);
+    await getCommitFiles(5, "abc");
+    expect(calls).toEqual([{ cmd: "get_commit_files", args: { id: 5, oid: "abc" } }]);
+  });
+
+  it("getFileHistory sends get_file_history with id, generation and path", async () => {
+    const calls = mockWith([]);
+    await getFileHistory(5, 7, "src/a.ts");
+    expect(calls).toEqual([
+      { cmd: "get_file_history", args: { id: 5, generation: 7, path: "src/a.ts" } },
+    ]);
+  });
+
+  it("getBlame sends get_blame with id, path and oid", async () => {
+    const calls = mockWith({ oid: "abc", path: "a", hunks: [], lines: [] });
+    await getBlame(5, "a", "abc");
+    expect(calls).toEqual([{ cmd: "get_blame", args: { id: 5, path: "a", oid: "abc" } }]);
+  });
+
+  it("getBlame passes a null oid through unchanged", async () => {
+    const calls = mockWith({ oid: "abc", path: "a", hunks: [], lines: [] });
+    await getBlame(5, "a", null);
+    expect(calls).toEqual([{ cmd: "get_blame", args: { id: 5, path: "a", oid: null } }]);
+  });
+
+  it("getBlame rejects with a binaryFile error as is", async () => {
+    const err = { kind: "binaryFile", message: "binary" };
+    mockThrowing(err);
+    await expect(getBlame(5, "a.png", null)).rejects.toBe(err);
+  });
+
+  it("getCommitFiles rejects with a commitNotFound error as is", async () => {
+    const err = { kind: "commitNotFound", message: "nope" };
+    mockThrowing(err);
+    await expect(getCommitFiles(5, "dead")).rejects.toBe(err);
   });
 });

@@ -18,6 +18,7 @@ const kinds: AppErrorKind[] = [
   "emptyMessage",
   "nothingToCommit",
   "commitFailed",
+  "binaryFile",
 ];
 
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.
