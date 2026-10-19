@@ -54,7 +54,7 @@ describe("blameRows edge cases", () => {
 
   it("should emit nothing for a zero-line hunk between other hunks", () => {
     const zero = blameHunk(5, 2, 0);
-    const rows = blameRows(blameOf([A, zero, blameHunk(1, 2, 1)], ["a", "b"]));
+    const rows = blameRows(blameOf([blameHunk(0, 1, 1), zero, blameHunk(1, 2, 1)], ["a", "b"]));
     expect(rows.map((r) => r.hunkIndex)).toEqual([0, 2]);
   });
 
