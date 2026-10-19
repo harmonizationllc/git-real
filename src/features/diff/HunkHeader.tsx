@@ -1,4 +1,5 @@
 import type { DiffScope, HunkAction } from "../../lib/ipc";
+import { isReadOnly, type CommitScope } from "./model/scope";
 import styles from "./HunkHeader.module.css";
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   disabledReason?: string;
   /** Disables only the whole-hunk form of each button; selected-line actions stay enabled. */
   wholeHunkDisabledReason?: string;
-  /** Absent for a read-only viewer: no buttons are rendered. */
+  /** Absent for a read-only viewer, and ignored for a commit scope: no buttons are rendered. */
   onAction?(action: HunkAction): void;
 }
 
@@ -31,7 +32,7 @@ export function HunkHeader({
   return (
     <div className={styles.root} data-kind="header">
       <code className={styles.text}>{header}</code>
-      {onAction && (
+      {onAction && !isReadOnly(scope) && (
         <Actions
           scope={scope}
           selectedCount={selectedCount}
@@ -49,7 +50,7 @@ function Actions({
   disabledReason,
   onAction,
 }: {
-  scope: DiffScope;
+  scope: Exclude<DiffScope, CommitScope>;
   selectedCount: number;
   disabledReason?: string;
   onAction(action: HunkAction): void;

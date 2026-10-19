@@ -684,3 +684,65 @@ fn only_new_side_above_max_decode_bytes_stays_binary() {
     assert!(d.hunks.is_empty());
     assert_eq!((d.old_encoding, d.new_encoding), (None, None));
 }
+
+// --- GR-9 coverage audit: commit scope decodes and flags binary sides ---
+
+fn commit_scope(path: &Path) -> DiffScope {
+    let head = git2::Repository::open(path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    DiffScope::Commit(head.to_string())
+}
+
+#[test]
+fn commit_scope_transcodes_a_utf16_file_for_display() {
+    let (_d, path) = repo_with_utf16_file();
+
+    let d = diff(&path, "a.txt", commit_scope(&path), DiffOptions::default()).unwrap();
+
+    let lines: Vec<&str> = d
+        .hunks
+        .iter()
+        .flat_map(|h| h.lines.iter().map(|l| l.content.as_str()))
+        .collect();
+    assert_eq!(
+        (d.new_encoding, d.is_binary, lines),
+        (Some(TextEncoding::Utf16Le), false, vec!["one", "two"])
+    );
+}
+
+#[test]
+fn commit_scope_keeps_a_nul_file_binary_with_no_hunks() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_binary(&path, "img.bin", b"PNG\0\x01\x02\x03", "add binary");
+
+    let d = diff(
+        &path,
+        "img.bin",
+        commit_scope(&path),
+        DiffOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        (d.is_binary, d.hunks.len(), d.new_encoding),
+        (true, 0, None)
+    );
+}
+
+#[test]
+fn commit_scope_transcodes_the_old_side_of_a_modified_utf16_file() {
+    let (_d, path) = repo_with_utf16_file();
+    write_bytes(&path, "a.txt", &utf16le("one\nthree\n"));
+    common::commit_all(&path, "edit utf16");
+
+    let d = diff(&path, "a.txt", commit_scope(&path), DiffOptions::default()).unwrap();
+
+    assert_eq!(
+        (d.old_encoding, d.new_encoding),
+        (Some(TextEncoding::Utf16Le), Some(TextEncoding::Utf16Le))
+    );
+}

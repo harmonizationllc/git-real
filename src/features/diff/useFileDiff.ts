@@ -3,6 +3,7 @@ import { getFileDiff, toAppError } from "../../lib/ipc";
 import type { AppError, FileDiff, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import type { SelectedFile } from "../../lib/store/workspace";
+import { isReadOnly } from "./model/scope";
 
 export interface UseFileDiff {
   diff: FileDiff | undefined;
@@ -31,6 +32,10 @@ export function useFileDiff(
       ),
     enabled: file !== null,
     retry: false,
+    // A commit's diff never changes, so toggling Blame and back reuses it. Working-tree
+    // diffs keep the default and revalidate, so a missed watcher event never leaves a
+    // stale view to stage or discard from.
+    staleTime: isReadOnly(scope) ? Infinity : 0,
     refetchOnWindowFocus: false,
   });
   const noChanges = query.error?.kind === "noChanges";

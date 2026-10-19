@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type {
   AppErrorKind,
+  Blame,
+  BlameHunk,
+  CommitFile,
+  DiffScope,
+  FileHistoryEntry,
   BranchList,
   HeadState,
   LocalBranch,
@@ -282,5 +287,59 @@ describe("commit graph DTO shapes", () => {
     const kinds: AppErrorKind[] = ["logStale", "commitNotFound"];
     expect(Object.keys(modes)).toEqual(["soft", "mixed", "hard"]);
     expect(kinds).toHaveLength(2);
+  });
+});
+
+// Contract: GR-9 wire shapes mirror the Rust history model (camelCase) and DiffScope admits a commit.
+describe("GR-9 history types", () => {
+  it("should accept staged, unstaged and a commit object as a DiffScope", () => {
+    const scopes: DiffScope[] = ["staged", "unstaged", { commit: "abc" }];
+    expect(scopes).toHaveLength(3);
+  });
+
+  it("should accept binaryFile as an AppErrorKind", () => {
+    const kind: AppErrorKind = "binaryFile";
+    expect(kind).toBe("binaryFile");
+  });
+
+  it("should shape CommitFile with path, oldPath and change", () => {
+    const f: CommitFile = { path: "b", oldPath: "a", change: "renamed" };
+    expect(Object.keys(f).sort()).toEqual(["change", "oldPath", "path"]);
+  });
+
+  it("should shape FileHistoryEntry like the Rust model", () => {
+    const e: FileHistoryEntry = {
+      oid: "o",
+      subject: "s",
+      authorName: "n",
+      authorEmail: "e",
+      authorTime: 1,
+      change: "modified",
+      path: "p",
+      oldPath: null,
+    };
+    expect(Object.keys(e).sort()).toEqual([
+      "authorEmail",
+      "authorName",
+      "authorTime",
+      "change",
+      "oid",
+      "oldPath",
+      "path",
+      "subject",
+    ]);
+  });
+
+  it("should shape BlameHunk and Blame like the Rust model", () => {
+    const h: BlameHunk = {
+      start: 1,
+      lines: 2,
+      oid: "o",
+      author: { name: "n", email: "e", time: 1 },
+      summary: "s",
+    };
+    const b: Blame = { oid: "o", path: "p", hunks: [h], lines: ["x", "y"] };
+    expect(Object.keys(h).sort()).toEqual(["author", "lines", "oid", "start", "summary"]);
+    expect(Object.keys(b).sort()).toEqual(["hunks", "lines", "oid", "path"]);
   });
 });

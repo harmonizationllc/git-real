@@ -3,15 +3,18 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
 import { useDiffPrefs } from "../../lib/store/diffPrefs";
 import { useWorkspace, type SelectedFile } from "../../lib/store/workspace";
+import { BlameView } from "../history/BlameView";
 import { RepoError } from "../repo/RepoError";
 import { useWorktreeActions } from "../worktree/useWorktreeActions";
 import { BinaryPlaceholder } from "./BinaryPlaceholder";
-import { CloseDiffButton, DiffToolbar } from "./DiffToolbar";
+import { DiffToolbar } from "./DiffToolbar";
 import { DiffViewer } from "./DiffViewer";
+import { FileHeader } from "./FileHeader";
 import { ImageDiff } from "./ImageDiff";
 import { isDecoded } from "./model/encoding";
 import { isImagePath } from "./model/images";
 import { FULL_DIFF_LINES } from "./model/limits";
+import { commitOf, isReadOnly, scopeId } from "./model/scope";
 import { useFileDiff } from "./useFileDiff";
 import { useHighlight } from "./useHighlight";
 import { useLineSelection } from "./useLineSelection";
@@ -28,66 +31,94 @@ interface PendingDiscard {
   selection: HunkSelection;
 }
 
-/** The selected file's diff; renders nothing without a selection, so RepoPane decides what shows. */
+/** The selected file's diff or blame; renders nothing without a selection, so RepoPane decides what shows. */
 export function DetailPane({ repoId }: { repoId: RepoId }) {
   const file = useWorkspace((s) => s.selected[repoId] ?? null);
   if (file === null) return null;
   // Keyed so line cap, dialog, action error and scroll offset never leak to another file.
-  return <FileDetail key={`${file.scope}:${file.path}`} repoId={repoId} file={file} />;
+  return <FileDetail key={`${scopeId(file.scope)}:${file.path}`} repoId={repoId} file={file} />;
 }
 
 function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
+  const view = useWorkspace((s) => s.centreView[repoId] ?? "diff");
+  const setView = useWorkspace((s) => s.setCentreView);
+  const showHistory = useWorkspace((s) => s.showHistory);
   const { mode, ignoreWhitespace, setMode, setIgnoreWhitespace } = useDiffPrefs();
   const [maxLines, setMaxLines] = useState<number | null>(null);
+  // Blame needs no diff; a null file disables the query.
   const { diff, error, loading, noChanges, refetch } = useFileDiff(
     repoId,
-    file,
+    view === "blame" ? null : file,
     ignoreWhitespace,
     maxLines,
   );
+  // Every hook runs before the first return: toggling the view keeps this component mounted.
   const highlight = useHighlight(diff);
   const selection = useLineSelection(diff);
   const actions = useWorktreeActions(repoId);
   const [pending, setPending] = useState<PendingDiscard | null>(null);
+  const readOnly = isReadOnly(file.scope);
   const close = () => useWorkspace.getState().select(repoId, null);
-  const closeButton = <CloseDiffButton onClick={close} />;
+  const header = (oldPath: string | null = null) => (
+    <FileHeader
+      path={file.path}
+      oldPath={oldPath}
+      view={view}
+      onViewChange={(v) => setView(repoId, v)}
+      onHistory={() => showHistory(repoId, file.path)}
+      onClose={close}
+    />
+  );
 
+  if (view === "blame") {
+    return (
+      <div className={styles.root}>
+        {header()}
+        <BlameView repoId={repoId} path={file.path} oid={commitOf(file.scope)} />
+      </div>
+    );
+  }
   if (noChanges) {
     // Hiding whitespace can empty a diff; keep the only control that caused it reachable.
     return (
-      <Empty>
-        <p className={styles.message}>{`No ${file.scope} changes in ${file.path}`}</p>
-        {ignoreWhitespace && (
-          <label className={styles.option}>
-            <input type="checkbox" checked onChange={() => setIgnoreWhitespace(false)} />
-            Hide whitespace changes
-          </label>
-        )}
-        {closeButton}
-      </Empty>
+      <div className={styles.root}>
+        {header()}
+        <Empty>
+          <p className={styles.message}>
+            {readOnly ? `No changes in ${file.path}` : `No ${file.scope} changes in ${file.path}`}
+          </p>
+          {ignoreWhitespace && (
+            <label className={styles.option}>
+              <input type="checkbox" checked onChange={() => setIgnoreWhitespace(false)} />
+              Hide whitespace changes
+            </label>
+          )}
+        </Empty>
+      </div>
     );
   }
   if (error) {
     return (
       <div className={styles.root}>
-        <div className={styles.closeRow}>{closeButton}</div>
+        {header()}
         <RepoError error={error} path={null} onRetry={refetch} onDismiss={close} />
       </div>
     );
   }
   if (loading || !diff) {
     return (
-      <Empty>
-        {/* Only the text is live, so the button label is not announced as status. */}
-        <span role="status">Loading diff…</span>
-        {closeButton}
-      </Empty>
+      <div className={styles.root}>
+        {header()}
+        <Empty>
+          <span role="status">Loading diff…</span>
+        </Empty>
+      </div>
     );
   }
   if (diff.isBinary) {
     return (
       <div className={styles.root}>
-        <div className={styles.closeRow}>{closeButton}</div>
+        {header(diff.oldPath)}
         {isImagePath(diff.path) ? (
           <ImageDiff repoId={repoId} diff={diff} />
         ) : (
@@ -115,6 +146,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const n = pending?.selection.lines?.length ?? 0;
   return (
     <div className={styles.root}>
+      {header(diff.oldPath)}
       <DiffToolbar
         diff={diff}
         mode={mode}
@@ -122,7 +154,6 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
         onModeChange={setMode}
         onIgnoreWhitespaceChange={setIgnoreWhitespace}
         onLoadFull={() => setMaxLines(FULL_DIFF_LINES)}
-        onClose={close}
       />
       {actions.error && (
         <RepoError error={actions.error} path={null} onDismiss={actions.clearError} />
@@ -136,27 +167,27 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
           diff={diff}
           mode={mode}
           highlight={highlight}
-          selection={selection}
-          onHunkAction={onHunkAction}
-          actionsDisabledReason={reason}
+          {...(readOnly ? {} : { selection, onHunkAction, actionsDisabledReason: reason })}
         />
       )}
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Discard changes"
-        danger
-        confirmLabel="Discard"
-        body={
-          n > 0
-            ? `Discard ${n} selected ${n === 1 ? "line" : "lines"} in ${diff.path}? This cannot be undone.`
-            : `Discard this hunk in ${diff.path}? This cannot be undone.`
-        }
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          actions.applyHunk(diff.path, "discard", (pending as PendingDiscard).selection);
-          setPending(null);
-        }}
-      />
+      {!readOnly && (
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Discard changes"
+          danger
+          confirmLabel="Discard"
+          body={
+            n > 0
+              ? `Discard ${n} selected ${n === 1 ? "line" : "lines"} in ${diff.path}? This cannot be undone.`
+              : `Discard this hunk in ${diff.path}? This cannot be undone.`
+          }
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            actions.applyHunk(diff.path, "discard", (pending as PendingDiscard).selection);
+            setPending(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1033,7 +1033,7 @@ fn diff_unstaged_typechange_to_symlink_is_one_typechange() {
 fn diff_conflicted_path_is_ok_without_hunks_in_both_scopes() {
     let (_dir, path) = common::temp_repo_with_conflict();
     for scope in [DiffScope::Unstaged, DiffScope::Staged] {
-        let diff = diff_of(&path, "README.md", scope, DiffOptions::default())
+        let diff = diff_of(&path, "README.md", scope.clone(), DiffOptions::default())
             .unwrap_or_else(|e| panic!("{scope:?}: {e:?}"));
         assert_eq!(
             (diff.change, diff.hunks.is_empty()),
@@ -1276,4 +1276,322 @@ fn diff_max_lines_zero_is_ok_truncated_with_no_hunks() {
     };
     let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("Ok, not NoChanges");
     assert_eq!((diff.truncated, diff.hunks.is_empty()), (true, true));
+}
+
+// --- GR-9: commit scope (a commit against its first parent) ---
+
+const ABSENT_OID: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+fn commit_scope(oid: impl ToString) -> DiffScope {
+    DiffScope::Commit(oid.to_string())
+}
+
+fn head_oid(path: &std::path::Path) -> git2::Oid {
+    git2::Repository::open(path)
+        .expect("open repo")
+        .head()
+        .expect("head")
+        .target()
+        .expect("direct head")
+}
+
+#[test]
+fn commit_scope_on_root_commit_is_all_additions() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(diff.change, Some(ChangeKind::Added));
+    assert!(
+        all_lines(&diff)
+            .iter()
+            .all(|l| l.kind == DiffLineKind::Addition)
+    );
+}
+
+#[test]
+fn commit_scope_on_root_commit_has_lines() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(all_lines(&diff).len(), 1);
+}
+
+#[test]
+fn commit_scope_echoes_the_scope_in_the_result() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope.clone(), DiffOptions::default()).expect("diff");
+
+    assert_eq!(diff.scope, scope);
+}
+
+#[test]
+fn commit_scope_diffs_child_against_first_parent() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let child = common::commit_file(&path, "README.md", "# fixture\ntwo\n", "add two");
+
+    let diff = diff_of(
+        &path,
+        "README.md",
+        commit_scope(child),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    let added: Vec<&str> = all_lines(&diff)
+        .iter()
+        .filter(|l| l.kind == DiffLineKind::Addition)
+        .map(|l| l.content.as_str())
+        .collect();
+    assert_eq!(added, ["two"]);
+}
+
+#[test]
+fn commit_scope_child_diff_is_modified() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let child = common::commit_file(&path, "README.md", "# fixture\ntwo\n", "add two");
+
+    let diff = diff_of(
+        &path,
+        "README.md",
+        commit_scope(child),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    assert_eq!(diff.change, Some(ChangeKind::Modified));
+}
+
+#[test]
+fn commit_scope_on_merge_uses_first_parent() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    let diff = diff_of(&path, "b.txt", commit_scope(m), DiffOptions::default()).expect("diff");
+
+    assert_eq!(
+        (diff.change, diff.hunks[0].lines[0].content.as_str()),
+        (Some(ChangeKind::Added), "b")
+    );
+}
+
+#[test]
+fn commit_scope_on_merge_ignores_second_parent_only_changes() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    // a.txt is already in the first parent, so the merge does not change it.
+    let err = diff_of(&path, "a.txt", commit_scope(m), DiffOptions::default()).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::NoChanges(p) if p == "a.txt"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn commit_scope_rename_reports_old_path() {
+    let (_dir, path, oids) = common::rename_fixture();
+
+    let diff = diff_of(
+        &path,
+        "b.txt",
+        commit_scope(oids[2]),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    assert_eq!(
+        (diff.change, diff.old_path.as_deref()),
+        (Some(ChangeKind::Renamed), Some("a.txt"))
+    );
+}
+
+#[test]
+fn commit_scope_bad_oid_is_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+
+    let err = diff_of(
+        &path,
+        "README.md",
+        commit_scope(ABSENT_OID),
+        DiffOptions::default(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_non_hex_oid_is_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+
+    let err = diff_of(
+        &path,
+        "README.md",
+        commit_scope("not-a-hash"),
+        DiffOptions::default(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_untouched_path_is_no_changes() {
+    let (_dir, path, _r, a, _b, _m) = common::merge_fixture();
+
+    let err = diff_of(&path, "base.txt", commit_scope(a), DiffOptions::default()).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::NoChanges(p) if p == "base.txt"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn commit_scope_ignores_uncommitted_workdir_edits() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+    common::write_file(&path, "README.md", "# edited in the workdir\n");
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(all_lines(&diff)[0].content, "# fixture");
+}
+
+// DiffScope::Commit crosses IPC as a tagged object.
+#[test]
+fn diff_scope_commit_serializes_tagged() {
+    let scope = DiffScope::Commit("abc123".into());
+
+    let json = serde_json::to_string(&scope).expect("serialize");
+
+    assert_eq!(json, r#"{"commit":"abc123"}"#);
+}
+
+#[test]
+fn diff_scope_commit_round_trips() {
+    let scope: DiffScope = serde_json::from_str(r#"{"commit":"abc123"}"#).expect("deserialize");
+
+    assert_eq!(scope, DiffScope::Commit("abc123".into()));
+}
+
+#[test]
+fn diff_scope_unit_variants_still_serialize_as_plain_strings() {
+    assert_eq!(
+        serde_json::to_string(&DiffScope::Staged).expect("serialize"),
+        r#""staged""#
+    );
+}
+
+#[test]
+fn diff_scope_rejects_a_commit_payload_without_an_oid() {
+    let result = serde_json::from_str::<DiffScope>(r#"{"commit":null}"#);
+
+    assert!(result.is_err());
+}
+
+// --- GR-9 coverage audit: commit scope on directories, type changes and malformed ids ---
+
+#[test]
+fn commit_scope_directory_path_is_no_changes() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let c = common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let err = diff_of(&path, "dir", commit_scope(c), DiffOptions::default()).unwrap_err();
+
+    assert!(matches!(err, GitError::NoChanges(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_nested_file_diffs_by_its_full_path() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let c = common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let diff = diff_of(&path, "dir/x.txt", commit_scope(c), DiffOptions::default()).unwrap();
+
+    assert_eq!(
+        (diff.path.as_str(), diff.change),
+        ("dir/x.txt", Some(ChangeKind::Added))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn commit_scope_reports_a_file_replaced_by_a_symlink_as_a_type_change() {
+    let (_dir, path) = common::temp_repo_unborn();
+    common::commit_file(&path, "f", "target\n", "file");
+    std::fs::remove_file(path.join("f")).unwrap();
+    std::os::unix::fs::symlink("elsewhere", path.join("f")).unwrap();
+    let c = common::commit_all(&path, "now a symlink");
+
+    let diff = diff_of(&path, "f", commit_scope(c), DiffOptions::default()).unwrap();
+
+    assert_eq!(diff.change, Some(ChangeKind::TypeChange));
+}
+
+#[test]
+fn commit_scope_wrong_length_or_object_kind_ids_are_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let head = head_oid(&path);
+    let tree = git2::Repository::open(&path)
+        .unwrap()
+        .find_commit(head)
+        .unwrap()
+        .tree_id();
+    let bad = [
+        head.to_string()[..39].to_owned(),
+        format!("{head}0"),
+        tree.to_string(),
+    ];
+
+    for oid in bad {
+        let err = diff_of(
+            &path,
+            "README.md",
+            commit_scope(&oid),
+            DiffOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, GitError::CommitNotFound(_)), "{oid}: {err:?}");
+    }
+}
+
+#[test]
+fn commit_scope_on_a_merge_shows_a_file_from_the_second_parent_as_added() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    let diff = diff_of(&path, "b.txt", commit_scope(m), DiffOptions::default()).unwrap();
+
+    assert_eq!(diff.change, Some(ChangeKind::Added));
+}
+
+#[test]
+fn commit_scope_deleted_file_is_all_deletions() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "gone.txt", "one\ntwo\n", "add gone");
+    std::fs::remove_file(path.join("gone.txt")).unwrap();
+    let second = common::commit_all(&path, "delete gone");
+
+    let diff = diff_of(
+        &path,
+        "gone.txt",
+        commit_scope(second),
+        DiffOptions::default(),
+    )
+    .unwrap();
+
+    let kinds: Vec<DiffLineKind> = all_lines(&diff).iter().map(|l| l.kind).collect();
+    assert_eq!(
+        (diff.change, diff.old_path.as_deref(), kinds),
+        (
+            Some(ChangeKind::Deleted),
+            None,
+            vec![DiffLineKind::Deletion, DiffLineKind::Deletion]
+        )
+    );
 }

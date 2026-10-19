@@ -22,7 +22,6 @@ function setup(
     onModeChange: vi.fn(),
     onIgnoreWhitespaceChange: vi.fn(),
     onLoadFull: vi.fn(),
-    onClose: vi.fn(),
   };
   const view = render(
     <DiffToolbar
@@ -35,16 +34,19 @@ function setup(
   return { ...view, ...props };
 }
 
-// Contract: the path, or old and new path for a rename, is shown.
-describe("DiffToolbar path", () => {
-  it("should show the path", () => {
+// Contract: the path now lives in FileHeader; the toolbar shows none.
+describe("DiffToolbar path removal", () => {
+  it("should not show the path", () => {
     setup();
-    expect(screen.getByText("a.ts")).toBeInTheDocument();
+    expect(screen.queryByText("a.ts")).toBeNull();
   });
 
-  it("should show old and new path as one text for a rename", () => {
-    setup({ diff: { ...baseDiff, oldPath: "old.ts", path: "new.ts", change: "renamed" } });
-    expect(screen.getByText("old.ts → new.ts")).toBeInTheDocument();
+  it("should not show old and new path for a rename", () => {
+    const { container } = setup({
+      diff: { ...baseDiff, oldPath: "old.ts", path: "new.ts", change: "renamed" },
+    });
+    expect(container.textContent).not.toContain("→");
+    expect(screen.queryByText("new.ts")).toBeNull();
   });
 });
 
@@ -196,17 +198,6 @@ describe("DiffToolbar summary edge cases", () => {
     expect(screen.getByText("+0")).toBeInTheDocument();
     expect(screen.getByText("−0")).toBeInTheDocument();
   });
-
-  it("should show no rename arrow when oldPath is null", () => {
-    const { container } = setup({ diff: { ...baseDiff, oldPath: null, path: "plain.ts" } });
-    expect(container.textContent).not.toContain("→");
-    expect(screen.getByText("plain.ts")).toBeInTheDocument();
-  });
-
-  it("should show the arrow for a rename", () => {
-    const { container } = setup({ diff: { ...baseDiff, oldPath: "a.ts", path: "b.ts" } });
-    expect(container.textContent).toContain("a.ts → b.ts");
-  });
 });
 
 // Contract: the radios form one group per toolbar so the browser keeps a single choice.
@@ -256,27 +247,10 @@ describe("DiffToolbar notices together", () => {
   });
 });
 
-// Contract: the toolbar ends with a Close diff button that asks its owner to close the diff.
-describe("DiffToolbar close", () => {
-  it("should render a Close diff button", () => {
+// Contract: the close control moved to FileHeader; the toolbar renders none.
+describe("DiffToolbar close removal", () => {
+  it("should not render a Close diff button", () => {
     setup();
-    expect(screen.getByRole("button", { name: "Close diff" })).toBeInTheDocument();
-  });
-
-  it("should call onClose once when Close diff is clicked", () => {
-    const { onClose } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("should not call onClose until Close diff is clicked", () => {
-    const { onClose } = setup();
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("should not call onClose when other toolbar controls are used", () => {
-    const { onClose } = setup();
-    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
-    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Close diff" })).toBeNull();
   });
 });

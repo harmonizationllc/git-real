@@ -100,3 +100,10 @@ export function highlightDiff(diff: FileDiff, parser: Parser): HighlightMap {
   diff.hunks.forEach((hunk, i) => map.set(i, highlightHunk(hunk, parser)));
   return map;
 }
+
+/** Tokens for each line of a whole file, parsed as one text so constructs span lines. */
+export function highlightText(lines: string[], parser: Parser): (Token[] | null)[] {
+  // tokenize("") yields one empty line; keep one entry per input line.
+  if (lines.length === 0) return [];
+  return tokenize(lines.join("\n"), parser);
+}

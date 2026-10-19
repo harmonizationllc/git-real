@@ -145,7 +145,15 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
         { id: "discard", label: "Discard…", danger: true, onSelect: () => openDiscard(row) },
       ];
     }
-    return items.map((item) => ({ ...item, disabled: actions.pending }));
+    // File history only reads, so it stays enabled while an action is pending.
+    return [
+      ...items.map((item) => ({ ...item, disabled: actions.pending })),
+      {
+        id: "history",
+        label: "File history",
+        onSelect: () => useWorkspace.getState().showHistory(repoId, row.entry.path),
+      },
+    ];
   };
 
   const selectRow = (row: Row, mods: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {

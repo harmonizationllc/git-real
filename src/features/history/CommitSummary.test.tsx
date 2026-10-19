@@ -1,8 +1,9 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { copyText, getCommit } from "../../lib/ipc";
+import { copyText, getCommit, getCommitFiles } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { commitDetail, oidOf, shortOf } from "../../test/graphFixtures";
+import { commitFile } from "../../test/historyFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { fullDate } from "../graph/model/relativeTime";
 import { CommitSummary } from "./CommitSummary";
@@ -10,6 +11,7 @@ import { CommitSummary } from "./CommitSummary";
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getCommit: vi.fn(),
+  getCommitFiles: vi.fn(),
   copyText: vi.fn(),
 }));
 
@@ -37,6 +39,7 @@ const personLines = () => screen.queryAllByText(/<[^>]+@[^>]+> · /);
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(copyText).mockResolvedValue(undefined);
+  vi.mocked(getCommitFiles).mockResolvedValue([commitFile("src/a.ts")]);
   useWorkspace.setState({ selected: {}, selectedCommit: { 1: OID } });
 });
 
@@ -216,5 +219,51 @@ describe("CommitSummary loading and error", () => {
     renderWithProviders(<CommitSummary repoId={1} oid={OID} />);
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
+  });
+});
+
+// Contract: the changed files of the commit are listed after the message.
+describe("CommitSummary files", () => {
+  it("should render the Changed files section inside the details region", async () => {
+    await renderSummary();
+    const details = screen.getByRole("region", { name: "Commit details" });
+    expect(
+      await within(details).findByRole("region", { name: "Changed files" }),
+    ).toBeInTheDocument();
+  });
+
+  it("should request the files for the commit's repo id and oid", async () => {
+    await renderSummary({}, 7);
+    await waitFor(() => expect(getCommitFiles).toHaveBeenCalledExactlyOnceWith(7, OID));
+  });
+
+  it("should list the commit's files", async () => {
+    await renderSummary();
+    expect(await screen.findByRole("heading", { name: "Files (1)" })).toBeInTheDocument();
+  });
+
+  it("should place the files after the message", async () => {
+    await renderSummary();
+    const files = await screen.findByRole("region", { name: "Changed files" });
+    const subject = screen.getByText("Fix the thing");
+    const body = screen.getByText("Line one Line two");
+    expect(subject.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(body.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("should place the files after the message when the body is empty", async () => {
+    await renderSummary({ message: { subject: "Only subject", body: "" } });
+    const files = await screen.findByRole("region", { name: "Changed files" });
+    expect(
+      screen.getByText("Only subject").compareDocumentPosition(files) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("should not request the files when the commit failed to load", async () => {
+    vi.mocked(getCommit).mockRejectedValue({ kind: "commitNotFound", message: "No such commit" });
+    renderWithProviders(<CommitSummary repoId={1} oid={OID} />);
+    await screen.findByRole("alert");
+    expect(getCommitFiles).not.toHaveBeenCalled();
   });
 });

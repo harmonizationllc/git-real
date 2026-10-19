@@ -3,6 +3,7 @@
 mod branch;
 mod commit;
 mod diff;
+mod history;
 mod log;
 mod progress;
 mod recent;
@@ -15,6 +16,7 @@ pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
     HunkSelection, TextEncoding,
 };
+pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry};
 pub use log::{
     CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,
 };

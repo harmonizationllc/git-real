@@ -12,7 +12,6 @@ interface Props {
   onModeChange(mode: DiffMode): void;
   onIgnoreWhitespaceChange(on: boolean): void;
   onLoadFull(): void;
-  onClose(): void;
 }
 
 const MODE_LABELS: Record<DiffMode, string> = { split: "Side by side", unified: "Unified" };
@@ -24,7 +23,6 @@ export function DiffToolbar({
   onModeChange,
   onIgnoreWhitespaceChange,
   onLoadFull,
-  onClose,
 }: Props) {
   const groupName = useId();
   const { additions, deletions } = useMemo(() => {
@@ -42,9 +40,6 @@ export function DiffToolbar({
   return (
     <div className={styles.root}>
       <div className={styles.row}>
-        <span className={styles.path}>
-          {diff.oldPath ? `${diff.oldPath} → ${diff.path}` : diff.path}
-        </span>
         <span className={styles.summary}>
           <span className={styles.added}>{`+${additions}`}</span>{" "}
           <span className={styles.removed}>{`−${deletions}`}</span>
@@ -71,9 +66,6 @@ export function DiffToolbar({
           />
           Hide whitespace changes
         </label>
-        <span className={styles.close}>
-          <CloseDiffButton onClick={onClose} />
-        </span>
       </div>
       {notice && (
         <div className={styles.notice} data-testid="encoding-notice">
@@ -90,14 +82,5 @@ export function DiffToolbar({
         </div>
       )}
     </div>
-  );
-}
-
-/** The diff's close control; DetailPane reuses it in states that have no toolbar. */
-export function CloseDiffButton({ onClick }: { onClick(): void }) {
-  return (
-    <button type="button" aria-label="Close diff" onClick={onClick}>
-      ✕
-    </button>
   );
 }

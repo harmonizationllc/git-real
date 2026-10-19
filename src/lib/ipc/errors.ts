@@ -29,6 +29,7 @@ const KINDS: Record<AppErrorKind, true> = {
   pushFailed: true,
   logStale: true,
   commitNotFound: true,
+  binaryFile: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

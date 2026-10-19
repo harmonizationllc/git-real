@@ -1,13 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  Blame,
   BranchList,
   CommitConfig,
   CommitDetail,
+  CommitFile,
   CommitMessage,
   CommitOutcome,
   DiffScope,
   DiffSide,
   FileDiff,
+  FileHistoryEntry,
   GitCliInfo,
   HunkAction,
   HunkSelection,
@@ -195,4 +198,28 @@ export function checkoutCommit(id: RepoId, oid: string): Promise<void> {
 
 export function resetToCommit(id: RepoId, oid: string, mode: ResetMode): Promise<void> {
   return invoke<void>("reset_to_commit", { id, oid, mode });
+}
+
+/** Every file path in the HEAD tree, sorted; empty for an unborn HEAD. */
+export function listTrackedFiles(id: RepoId): Promise<string[]> {
+  return invoke<string[]>("list_tracked_files", { id });
+}
+
+/** The files `oid` changed against its first parent. */
+export function getCommitFiles(id: RepoId, oid: string): Promise<CommitFile[]> {
+  return invoke<CommitFile[]>("get_commit_files", { id, oid });
+}
+
+/** Commits of log `generation` that changed `path`, in graph order, following renames. */
+export function getFileHistory(
+  id: RepoId,
+  generation: number,
+  path: string,
+): Promise<FileHistoryEntry[]> {
+  return invoke<FileHistoryEntry[]>("get_file_history", { id, generation, path });
+}
+
+/** Blame of `path` at `oid`, or at HEAD when `oid` is null. */
+export function getBlame(id: RepoId, path: string, oid: string | null): Promise<Blame> {
+  return invoke<Blame>("get_blame", { id, path, oid });
 }

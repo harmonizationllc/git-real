@@ -6,6 +6,8 @@ import { CommitBox } from "../features/commit/CommitBox";
 import { DetailPane } from "../features/diff/DetailPane";
 import { GraphPanel } from "../features/graph/GraphPanel";
 import { CommitSummary } from "../features/history/CommitSummary";
+import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
+import { FilePickerDialog } from "../features/history/FilePickerDialog";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { HeadState } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
@@ -41,6 +43,22 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const resetWidth = useLayoutPrefs((s) => s.reset);
   const fileSelected = useWorkspace((s) => Boolean(s.selected[tab.id]));
   const selectedCommit = useWorkspace((s) => s.selectedCommit[tab.id] ?? null);
+  const historyPath = useWorkspace((s) => s.historyPath[tab.id] ?? null);
+  const showHistory = useWorkspace((s) => s.showHistory);
+  const [picker, setPicker] = useState(false);
+
+  // Ctrl+Shift+H (Cmd+Shift+H) opens the file picker; never on top of another dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Shift reports "H", and Caps Lock can flip it, so compare in lower case.
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.key.toLowerCase() !== "h") return;
+      if (document.querySelector('[role="dialog"]') !== null) return;
+      e.preventDefault();
+      setPicker(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Measured body width; 0 until the first observation, which leaves the stored widths unclamped.
   const [container, setContainer] = useState(0);
@@ -71,7 +89,12 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
       >
         {/* Keyed so filter, menu, dialog and mutation state never leak across tabs. */}
         <div key={`refs-${tab.id}`} className={styles.refs}>
-          <BranchesPanel repoId={tab.id} />
+          {historyPath === null ? (
+            <BranchesPanel repoId={tab.id} />
+          ) : (
+            // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.
+            <FileHistoryPanel key={historyPath} repoId={tab.id} path={historyPath} />
+          )}
         </div>
         <SplitHandle
           label="Resize branches column"
@@ -113,6 +136,15 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
           )}
         </div>
       </div>
+      <FilePickerDialog
+        repoId={tab.id}
+        open={picker}
+        onPick={(p) => {
+          showHistory(tab.id, p);
+          setPicker(false);
+        }}
+        onCancel={() => setPicker(false)}
+      />
     </section>
   );
 }

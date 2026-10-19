@@ -219,3 +219,167 @@ describe("clear with only a commit selection", () => {
     expect(useWorkspace.getState().selected).toBe(files);
   });
 });
+
+// Contract: GR-9 history path and centre view are tracked per repo; select leaves the view alone.
+describe("history path", () => {
+  it("should start with no history path for any repo", () => {
+    expect(useWorkspace.getState().historyPath).toEqual({});
+  });
+
+  it("should store the path passed to showHistory", () => {
+    useWorkspace.getState().showHistory(1, "a.ts");
+    expect(useWorkspace.getState().historyPath[1]).toBe("a.ts");
+  });
+
+  it("should store null when showHistory is called with null", () => {
+    useWorkspace.getState().showHistory(1, "a.ts");
+    useWorkspace.getState().showHistory(1, null);
+    expect(useWorkspace.getState().historyPath[1]).toBeNull();
+  });
+
+  it("should keep history paths of different repos independent", () => {
+    useWorkspace.getState().showHistory(1, "a.ts");
+    useWorkspace.getState().showHistory(2, "b.ts");
+    expect(useWorkspace.getState().historyPath).toEqual({ 1: "a.ts", 2: "b.ts" });
+  });
+});
+
+describe("centre view", () => {
+  it("should start with no centre view for any repo", () => {
+    expect(useWorkspace.getState().centreView).toEqual({});
+  });
+
+  it("should store the view passed to setCentreView", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    expect(useWorkspace.getState().centreView[1]).toBe("blame");
+  });
+
+  it("should switch back to diff", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    useWorkspace.getState().setCentreView(1, "diff");
+    expect(useWorkspace.getState().centreView[1]).toBe("diff");
+  });
+
+  it("should keep the centre view when another file is selected", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    useWorkspace.getState().select(1, { path: "b.txt", scope: { commit: "abc" } });
+    expect(useWorkspace.getState().centreView[1]).toBe("blame");
+  });
+
+  it("should accept a commit scope as the selection", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: { commit: "abc" } });
+    expect(useWorkspace.getState().selected[1]).toEqual({
+      path: "a.txt",
+      scope: { commit: "abc" },
+    });
+  });
+});
+
+describe("clear with history state", () => {
+  it("should forget the history path of the repo", () => {
+    useWorkspace.getState().showHistory(1, "a.ts");
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().historyPath).toBe(false);
+  });
+
+  it("should forget the centre view of the repo", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().centreView).toBe(false);
+  });
+
+  it("should leave other repos history path and centre view alone", () => {
+    useWorkspace.getState().showHistory(2, "b.ts");
+    useWorkspace.getState().setCentreView(2, "blame");
+    useWorkspace.getState().showHistory(1, "a.ts");
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().historyPath[2]).toBe("b.ts");
+    expect(useWorkspace.getState().centreView[2]).toBe("blame");
+  });
+
+  it("should clear a repo that only has a history path", () => {
+    useWorkspace.getState().showHistory(1, "a.ts");
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().historyPath).toEqual({});
+  });
+
+  it("should clear a repo that only has a centre view", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().centreView).toEqual({});
+  });
+});
+
+describe("reference stability with history state", () => {
+  it("should return the same state object when clearing an absent repo", () => {
+    useWorkspace.getState().showHistory(2, "b.ts");
+    useWorkspace.getState().setCentreView(2, "blame");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState()).toBe(before);
+  });
+
+  it("should keep the centreView record when a file is selected", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    const before = useWorkspace.getState().centreView;
+    useWorkspace.getState().select(1, { path: "a", scope: "staged" });
+    expect(useWorkspace.getState().centreView).toBe(before);
+  });
+
+  it("should keep the centreView record when the selection is cleared with null", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    const before = useWorkspace.getState().centreView;
+    useWorkspace.getState().select(1, null);
+    expect(useWorkspace.getState().centreView).toBe(before);
+  });
+});
+
+// Contract: clear forgets all four records of one repo and nothing of any other.
+describe("clear with every record set", () => {
+  const fill = (id: number) => {
+    const w = useWorkspace.getState();
+    w.select(id, { path: `f${id}`, scope: { commit: "abc" } });
+    w.selectCommit(id, `c${id}`);
+    w.showHistory(id, `h${id}`);
+    w.setCentreView(id, "blame");
+  };
+  it("should remove all four records of the repo", () => {
+    fill(1);
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect([1 in s.selected, 1 in s.selectedCommit, 1 in s.historyPath, 1 in s.centreView]).toEqual(
+      [false, false, false, false],
+    );
+  });
+  it("should keep all four records of another repo", () => {
+    fill(1);
+    fill(2);
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect(s.selected[2]).toEqual({ path: "f2", scope: { commit: "abc" } });
+    expect(s.selectedCommit[2]).toBe("c2");
+    expect(s.historyPath[2]).toBe("h2");
+    expect(s.centreView[2]).toBe("blame");
+  });
+  it("should clear a repo whose only record is a null selection", () => {
+    useWorkspace.getState().select(1, null);
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().selected).toBe(false);
+  });
+  it("should clear a repo whose history path is null", () => {
+    useWorkspace.getState().showHistory(1, null);
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().historyPath).toBe(false);
+  });
+  it("should keep the untouched records by reference when only history is cleared", () => {
+    useWorkspace.getState().showHistory(1, "h");
+    useWorkspace.getState().select(2, { path: "x", scope: "staged" });
+    const { selected, selectedCommit, centreView } = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect(s.selected).toBe(selected);
+    expect(s.selectedCommit).toBe(selectedCommit);
+    expect(s.centreView).toBe(centreView);
+  });
+});

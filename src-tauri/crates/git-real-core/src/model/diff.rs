@@ -2,23 +2,25 @@ use serde::{Deserialize, Serialize};
 
 use super::ChangeKind;
 
-/// Which side of the index a diff compares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What a diff compares: either side of the index, or one commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiffScope {
     /// HEAD -> index.
     Staged,
     /// Index -> workdir.
     Unstaged,
+    /// First parent (empty tree for a root) -> the commit with this full hex id.
+    Commit(String),
 }
 
 /// Which version of a file a content request refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DiffSide {
-    /// HEAD for `Staged`, the index for `Unstaged`.
+    /// HEAD for `Staged`, the index for `Unstaged`, the first parent for `Commit`.
     Old,
-    /// The index for `Staged`, the working tree for `Unstaged`.
+    /// The index for `Staged`, the working tree for `Unstaged`, the commit for `Commit`.
     New,
 }
 

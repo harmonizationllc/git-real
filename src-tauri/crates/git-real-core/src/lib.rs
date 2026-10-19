@@ -16,6 +16,7 @@ pub mod diff;
 pub mod encoding;
 pub mod error;
 pub mod git_cli;
+pub mod history;
 pub mod ignore;
 pub mod index_ops;
 pub mod log;
@@ -26,6 +27,7 @@ pub mod recent;
 pub mod refs;
 pub mod remote;
 pub mod repo;
+mod revision;
 pub mod status;
 
 pub use error::GitError;

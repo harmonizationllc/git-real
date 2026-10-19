@@ -199,3 +199,28 @@ describe("HunkHeader scope rules", () => {
     );
   });
 });
+
+// Contract: a commit scope is read-only, so no buttons render even when onAction is given.
+describe("HunkHeader commit scope", () => {
+  it("should render no buttons for a commit scope with onAction", () => {
+    setup({ scope: { commit: "abc" } });
+    expect(names()).toEqual([]);
+  });
+
+  it("should still render the header text for a commit scope", () => {
+    setup({ scope: { commit: "abc" } });
+    expect(screen.getByText("@@ -1,2 +1,2 @@")).toBeInTheDocument();
+  });
+
+  it("should render no buttons for a commit scope with selected lines", () => {
+    setup({ scope: { commit: "abc" }, selectedCount: 2 });
+    expect(names()).toEqual([]);
+  });
+});
+
+describe("HunkHeader commit scope regression", () => {
+  it("should not render Unstage hunk for a commit scope", () => {
+    setup({ scope: { commit: "abc" } });
+    expect(screen.queryByRole("button", { name: "Unstage hunk" })).toBeNull();
+  });
+});

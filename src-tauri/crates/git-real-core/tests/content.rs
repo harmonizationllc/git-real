@@ -75,7 +75,7 @@ fn resolves_each_scope_and_side() {
     ];
     for (scope, side, want) in cases {
         assert_eq!(
-            content(&path, "README.md", scope, side).unwrap(),
+            content(&path, "README.md", scope.clone(), side).unwrap(),
             want.as_bytes(),
             "{scope:?}/{side:?}"
         );
@@ -386,4 +386,285 @@ fn too_large_workdir_file_reports_its_real_length() {
         }) => assert_eq!((p.as_str(), size, limit), ("ten.txt", 10, 3)),
         other => panic!("expected TooLarge with the real size, got {other:?}"),
     }
+}
+
+// --- GR-9: commit scope reads the blob from the commit or its first parent ---
+
+fn head_hex(path: &Path) -> String {
+    git2::Repository::open(path)
+        .expect("open repo")
+        .head()
+        .expect("head")
+        .target()
+        .expect("direct head")
+        .to_string()
+}
+
+#[test]
+fn commit_scope_new_side_reads_the_commit_blob() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "README.md", "# v2\n", "second");
+    common::write_file(&path, "README.md", "# workdir\n");
+
+    let bytes = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+    );
+
+    assert_eq!(bytes.unwrap(), b"# v2\n");
+}
+
+#[test]
+fn commit_scope_old_side_reads_the_parent_blob() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "README.md", "# v2\n", "second");
+
+    let bytes = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_eq!(bytes.unwrap(), b"# fixture\n");
+}
+
+#[test]
+fn commit_scope_old_side_of_added_file_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "new.txt", "new\n", "add new");
+
+    let result = content(
+        &path,
+        "new.txt",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_old_side_on_root_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_new_side_of_missing_path_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "missing.txt",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_bad_oid_is_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "README.md",
+        DiffScope::Commit("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into()),
+        DiffSide::New,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::CommitNotFound(_))),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_new_side_over_the_limit_is_too_large() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content_with(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+        3,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::TooLarge { .. })),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_old_side_looks_up_the_requested_path_not_the_rename_source() {
+    let (_d, path, oids) = common::rename_fixture();
+
+    // The old side is the requested path in the parent tree; b.txt is absent there.
+    let result = content(
+        &path,
+        "b.txt",
+        DiffScope::Commit(oids[2].to_string()),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}
+
+// --- GR-9 coverage audit: commit scope on merges, renames, directories and bad oids ---
+
+fn tree_hex(path: &std::path::Path) -> String {
+    let repo = git2::Repository::open(path).expect("open repo");
+    let head = repo.head().expect("head").peel_to_commit().expect("commit");
+    head.tree_id().to_string()
+}
+
+#[test]
+fn commit_scope_on_a_merge_reads_the_first_parent_as_the_old_side() {
+    let (_d, path, _r, _a, _b, m) = common::merge_fixture();
+    let scope = || DiffScope::Commit(m.to_string());
+
+    // b.txt arrived from the second parent: absent in the first parent, present in the merge.
+    let old = content(&path, "b.txt", scope(), DiffSide::Old);
+    let new = content(&path, "b.txt", scope(), DiffSide::New);
+    // a.txt is in the first parent, so it has an old side too.
+    let old_a = content(&path, "a.txt", scope(), DiffSide::Old);
+
+    assert_not_found(old);
+    assert_eq!(new.unwrap(), b"b\n");
+    assert_eq!(old_a.unwrap(), b"a\n");
+}
+
+#[test]
+fn commit_scope_reads_both_sides_of_a_renamed_file_by_their_own_paths() {
+    let (_d, path, oids) = common::rename_fixture();
+    let scope = || DiffScope::Commit(oids[2].to_string());
+
+    let old = content(&path, "a.txt", scope(), DiffSide::Old);
+    let new = content(&path, "b.txt", scope(), DiffSide::New);
+    // The old name is gone after the rename; the new name did not exist before it.
+    let old_name_new_side = content(&path, "a.txt", scope(), DiffSide::New);
+
+    assert_eq!(old.unwrap(), b"one\ntwo\n");
+    assert_eq!(new.unwrap(), b"one\ntwo\n");
+    assert_not_found(old_name_new_side);
+}
+
+#[test]
+fn commit_scope_directory_path_is_path_not_found_on_both_sides() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+    common::commit_file(&path, "dir/y.txt", "y\n", "nested again");
+    let scope = || DiffScope::Commit(head_hex(&path));
+
+    let new = content(&path, "dir", scope(), DiffSide::New);
+    let old = content(&path, "dir", scope(), DiffSide::Old);
+
+    assert_not_found(new);
+    assert_not_found(old);
+}
+
+#[test]
+fn commit_scope_non_hex_and_wrong_length_oids_are_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let head = head_hex(&path);
+    let bad = [
+        "not-a-hash".to_owned(),
+        head[..39].to_owned(),
+        format!("{head}0"),
+        "z".repeat(40),
+        String::new(),
+    ];
+
+    for oid in bad {
+        let result = content(
+            &path,
+            "README.md",
+            DiffScope::Commit(oid.clone()),
+            DiffSide::New,
+        );
+        assert!(
+            matches!(result, Err(GitError::CommitNotFound(_))),
+            "{oid:?}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn commit_scope_with_a_tree_object_id_is_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(tree_hex(&path)),
+        DiffSide::New,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::CommitNotFound(_))),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_malformed_path_is_path_not_found_for_a_valid_commit() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    for bad in ["", "../x", "/etc/passwd", "a/../b"] {
+        let result = content(
+            &path,
+            bad,
+            DiffScope::Commit(head_hex(&path)),
+            DiffSide::New,
+        );
+        assert_not_found(result);
+    }
+}
+
+#[test]
+fn commit_scope_old_side_over_the_limit_is_too_large() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "README.md", "# v2\n", "second");
+
+    let result = content_with(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+        3,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::TooLarge { .. })),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_of_a_deleted_file_has_an_old_side_and_no_new_side() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "gone.txt", "one\ntwo\n", "add gone");
+    std::fs::remove_file(path.join("gone.txt")).unwrap();
+    let second = common::commit_all(&path, "delete gone");
+    let scope = || DiffScope::Commit(second.to_string());
+
+    let old = content(&path, "gone.txt", scope(), DiffSide::Old);
+    let new = content(&path, "gone.txt", scope(), DiffSide::New);
+
+    assert_eq!(old.unwrap(), b"one\ntwo\n");
+    assert_not_found(new);
 }

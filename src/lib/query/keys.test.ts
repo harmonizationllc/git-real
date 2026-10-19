@@ -247,3 +247,63 @@ describe("commit graph query keys", () => {
     ]).toEqual([true, false, false, false]);
   });
 });
+
+// Contract: GR-9 keys; immutable data lives under repoImmutable, HEAD-relative data under repo.
+describe("queryKeys history keys", () => {
+  it("should define commitFiles under the repoImmutable prefix", () => {
+    expect(queryKeys.commitFiles(3, "abc")).toEqual(["repoImmutable", 3, "commitFiles", "abc"]);
+  });
+
+  it("should define fileHistory with generation and path under repoImmutable", () => {
+    expect(queryKeys.fileHistory(3, 9, "a.ts")).toEqual([
+      "repoImmutable",
+      3,
+      "fileHistory",
+      9,
+      "a.ts",
+    ]);
+  });
+
+  it("should define blameAt under the repoImmutable prefix", () => {
+    expect(queryKeys.blameAt(3, "a.ts", "abc")).toEqual([
+      "repoImmutable",
+      3,
+      "blame",
+      "a.ts",
+      "abc",
+    ]);
+  });
+
+  it("should define blameHead under the repo prefix", () => {
+    expect(queryKeys.blameHead(3, "a.ts")).toEqual(["repo", 3, "blame", "a.ts"]);
+  });
+
+  it("should define trackedFiles under the repo prefix", () => {
+    expect(queryKeys.trackedFiles(3)).toEqual(["repo", 3, "trackedFiles"]);
+  });
+
+  it("should differ between blame at two commits of the same file", () => {
+    expect(queryKeys.blameAt(1, "a", "x")).not.toEqual(queryKeys.blameAt(1, "a", "y"));
+  });
+
+  it("should make repo(id) a prefix of blameHead and trackedFiles", () => {
+    expect(queryKeys.blameHead(3, "a").slice(0, 2)).toEqual(queryKeys.repo(3));
+    expect(queryKeys.trackedFiles(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+  });
+
+  it("should not put blameAt under the repo prefix", () => {
+    expect(queryKeys.blameAt(3, "a", "x")[0]).not.toBe("repo");
+  });
+
+  it("should give an object-scoped fileDiff a stable key that differs from a string scope", () => {
+    const a = queryKeys.fileDiff(1, "a", { commit: "abc" }, false);
+    expect(a).toEqual(queryKeys.fileDiff(1, "a", { commit: "abc" }, false));
+    expect(a).not.toEqual(queryKeys.fileDiff(1, "a", "staged", false));
+  });
+
+  it("should differ between two commit scopes for the same file", () => {
+    expect(queryKeys.fileDiff(1, "a", { commit: "x" }, false)).not.toEqual(
+      queryKeys.fileDiff(1, "a", { commit: "y" }, false),
+    );
+  });
+});

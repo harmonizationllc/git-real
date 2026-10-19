@@ -5,6 +5,7 @@ import { useWorkspace } from "../../lib/store/workspace";
 import { shortOid } from "../graph/model/layout";
 import { fullDate } from "../graph/model/relativeTime";
 import { RepoError } from "../repo/RepoError";
+import { CommitFiles } from "./CommitFiles";
 import { useCommitDetail } from "./useCommitDetail";
 import styles from "./CommitSummary.module.css";
 
@@ -96,6 +97,7 @@ function Details({ repoId, commit, onClose }: DetailsProps) {
       )}
       <strong className={styles.subject}>{message.subject}</strong>
       {message.body !== "" && <p className={styles.body}>{message.body}</p>}
+      <CommitFiles repoId={repoId} oid={oid} />
     </section>
   );
 }

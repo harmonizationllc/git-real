@@ -1,8 +1,17 @@
 import { javascriptLanguage } from "@codemirror/lang-javascript";
 import { LanguageDescription } from "@codemirror/language";
+import type { Parser } from "@lezer/common";
+import { Tree } from "@lezer/common";
 import { describe, expect, it, vi } from "vitest";
 import { L, hunk } from "../../../test/diffFixtures";
-import { highlightHunk, languageFor, loadParser, sideText, tokenize } from "./highlight";
+import {
+  highlightHunk,
+  highlightText,
+  languageFor,
+  loadParser,
+  sideText,
+  tokenize,
+} from "./highlight";
 
 const parser = javascriptLanguage.parser;
 
@@ -184,5 +193,63 @@ describe("highlightHunk one-sided hunks", () => {
   });
   it("should return an empty array for a hunk with no lines", () => {
     expect(highlightHunk(hunk([]), parser)).toEqual([]);
+  });
+});
+
+// Contract: highlightText tokenizes whole-file lines as one text, one token array per line.
+describe("highlightText", () => {
+  it("should return one token array per input line", () => {
+    const out = highlightText(["const a = 1;", "// c"], parser);
+    expect(out).toHaveLength(2);
+  });
+  it("should classify tokens in each line", () => {
+    const out = highlightText(["const a = 1;", "// c"], parser);
+    expect(out[0]?.find((t) => t.text === "1")?.className).toBe("tok-number");
+    expect(out[1]?.[0]?.className).toBe("tok-comment");
+  });
+  it("should return an empty token array for a blank line", () => {
+    const out = highlightText(["const a = 1;", "", "const b = 2;"], parser);
+    expect(out[1]).toEqual([]);
+  });
+  it("should parse the lines as one text so a block comment spans lines", () => {
+    const out = highlightText(["/* a", "b */"], parser);
+    expect(out[1]?.[0]?.className).toBe("tok-comment");
+  });
+  it("should return [] for no lines", () => {
+    expect(highlightText([], parser)).toEqual([]);
+  });
+  it("should return one entry per line for lines with a blank in the middle", () => {
+    expect(highlightText(["a", "", "b"], parser)).toHaveLength(3);
+  });
+});
+
+// Contract: highlightText keeps one entry per input line even when the parser yields no spans.
+describe("highlightText without spans", () => {
+  const noSpans = { parse: () => Tree.empty } as unknown as Parser;
+  it("should emit each line as one unclassified token", () => {
+    expect(highlightText(["ab", "c"], noSpans)).toEqual([
+      [{ text: "ab", className: null }],
+      [{ text: "c", className: null }],
+    ]);
+  });
+  it("should emit an empty token array for blank lines", () => {
+    expect(highlightText(["ab", "", "c"], noSpans)).toEqual([
+      [{ text: "ab", className: null }],
+      [],
+      [{ text: "c", className: null }],
+    ]);
+  });
+  it("should return one empty token array for a single empty line", () => {
+    expect(highlightText([""], parser)).toEqual([[]]);
+  });
+  it("should return one entry per line, whatever the line count", () => {
+    for (const n of [1, 2, 5]) {
+      expect(
+        highlightText(
+          Array.from({ length: n }, () => "x = 1"),
+          parser,
+        ),
+      ).toHaveLength(n);
+    }
   });
 });
