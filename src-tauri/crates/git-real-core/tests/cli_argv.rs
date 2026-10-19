@@ -282,3 +282,59 @@ fn push_delete_exposes_the_validated_remote_name_and_workdir() {
         std::fs::canonicalize(&path).unwrap()
     );
 }
+
+// --- checkout of a commit (GR-8) ---
+
+/// Plain repo with one commit and the stand-in git first on PATH.
+fn commit_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, git2::Oid) {
+    use_fake_git();
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session, oid)
+}
+
+#[test]
+fn checkout_commit_runs_switch_detach_with_the_full_hex_oid() {
+    let (_d, path, session, oid) = commit_fixture();
+    session.checkout_commit(&oid.to_string()).unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["switch".to_owned(), "--detach".to_owned(), oid.to_string()]
+    );
+}
+
+#[test]
+fn checkout_commit_passes_the_canonical_lowercase_oid_when_given_uppercase_hex() {
+    let (_d, path, session, oid) = commit_fixture();
+    session
+        .checkout_commit(&oid.to_string().to_uppercase())
+        .unwrap();
+    assert_eq!(after_workdir(&path)[2], oid.to_string());
+}
+
+#[test]
+fn checkout_commit_does_not_run_git_when_the_oid_is_unknown() {
+    let (_d, path, session, _oid) = commit_fixture();
+    let _ = session.checkout_commit(&"0".repeat(40));
+    assert!(!path.join(".git").join("argv.txt").exists());
+}
+
+#[test]
+fn checkout_commit_maps_a_failing_switch_to_checkout_failed_with_the_output() {
+    let (_d, path, session, oid) = commit_fixture();
+    script_behaviour(&path, "echo 'boom' >&2\nexit 128");
+    match session.checkout_commit(&oid.to_string()).unwrap_err() {
+        GitError::CheckoutFailed { code, stderr, .. } => {
+            assert_eq!(code, Some(128));
+            assert!(stderr.contains("boom"));
+        }
+        other => panic!("expected CheckoutFailed, got {other:?}"),
+    }
+}

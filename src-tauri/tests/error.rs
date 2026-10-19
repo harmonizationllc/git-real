@@ -517,3 +517,54 @@ fn commit_failed_message_still_names_commit_after_the_helper_is_generalised() {
     });
     assert_eq!(err.message, "git commit failed with exit code 3");
 }
+
+// GR-8: the commit graph error kinds.
+#[test]
+fn log_stale_maps_to_the_log_stale_kind_with_the_core_message() {
+    let err = GitError::LogStale;
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        app,
+        AppError {
+            kind: AppErrorKind::LogStale,
+            message
+        }
+    );
+}
+
+#[test]
+fn log_stale_message_tells_the_user_to_reload() {
+    let app: AppError = GitError::LogStale.into();
+    assert_eq!(app.message, "the commit graph changed; reload it");
+}
+
+#[test]
+fn commit_not_found_maps_to_its_kind_and_names_the_oid() {
+    let app: AppError = GitError::CommitNotFound("abc123".into()).into();
+    assert_eq!(
+        app,
+        AppError {
+            kind: AppErrorKind::CommitNotFound,
+            message: "abc123 is not a commit in this repository".into()
+        }
+    );
+}
+
+#[test]
+fn log_stale_serializes_as_camel_case() {
+    let app: AppError = GitError::LogStale.into();
+    assert_eq!(
+        serde_json::to_value(&app).unwrap()["kind"],
+        json!("logStale")
+    );
+}
+
+#[test]
+fn commit_not_found_serializes_as_camel_case() {
+    let app: AppError = GitError::CommitNotFound("x".into()).into();
+    assert_eq!(
+        serde_json::to_value(&app).unwrap()["kind"],
+        json!("commitNotFound")
+    );
+}
