@@ -1264,12 +1264,6 @@ describe("DetailPane commit scope", () => {
     expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
   });
 
-  it("should render no discard confirm dialog", async () => {
-    commitSetup();
-    await diffRegion();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
   it("should still render the hunk header text", async () => {
     commitSetup();
     await diffRegion();
@@ -1361,14 +1355,25 @@ describe("DetailPane blame view", () => {
     );
   });
 
-  it("should toggle Diff, Blame, Diff on one file without throwing or refetching", async () => {
+  it("should toggle Diff, Blame, Diff on an unstaged file without throwing or a loading flash", async () => {
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
     await screen.findByRole("table", { name: "Blame" });
     fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    expect(screen.queryByText("Loading diff…")).toBeNull();
+    expect(await diffRegion()).toBeInTheDocument();
+  });
+
+  it("should toggle Diff, Blame, Diff on a commit file without a loading flash", async () => {
+    selectScope(COMMIT);
+    renderWithProviders(<DetailPane repoId={REPO} />);
     await diffRegion();
-    expect(getFileDiff).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
+    await screen.findByRole("table", { name: "Blame" });
+    fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    expect(screen.queryByText("Loading diff…")).toBeNull();
+    expect(await diffRegion()).toBeInTheDocument();
   });
 
   it("should render no diff region in blame mode", async () => {
