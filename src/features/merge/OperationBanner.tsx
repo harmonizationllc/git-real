@@ -6,6 +6,7 @@ import { RepoError } from "../repo/RepoError";
 import { useStatus } from "../worktree/useStatus";
 import styles from "./OperationBanner.module.css";
 import { bannerTitle, headName, operationNoun } from "./operationCopy";
+import type { ActiveOperation } from "./operationCopy";
 import { useIntegrationActions } from "./useIntegrationActions";
 import { useOperationState } from "./useOperationState";
 
@@ -18,12 +19,22 @@ export interface OperationBannerProps {
 /** A strip naming the in-progress operation, with Abort… and its way to finish. */
 export function OperationBanner({ repoId }: OperationBannerProps) {
   const { state } = useOperationState(repoId);
+  if (state === undefined || state.kind === "none") return null;
+  return <ActiveBanner repoId={repoId} state={state} />;
+}
+
+interface ActiveBannerProps {
+  repoId: RepoId;
+  state: ActiveOperation;
+}
+
+// Mounted only while an operation is active, so its action error and dialog state reset when
+// the operation ends and never carry over to the next one.
+function ActiveBanner({ repoId, state }: ActiveBannerProps) {
   const { branches } = useBranches(repoId);
   const { status } = useStatus(repoId);
   const { run, pending, error, clearError } = useIntegrationActions(repoId);
   const [confirming, setConfirming] = useState(false);
-
-  if (state === undefined || state.kind === "none") return null;
 
   const head = headName(branches?.head);
   const conflicts = status?.entries.filter((e) => e.conflicted).length ?? 0;
