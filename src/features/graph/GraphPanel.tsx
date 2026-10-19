@@ -269,6 +269,14 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
   const lastIndex = useRef(-1);
   // Latest-wins sequencing for selections that wait on a page fetch.
   const seq = useRef(0);
+  // Async continuations (page fetches, searches) must not scroll or select after an unmount.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const pick = (index: number, oid: string) => {
     seq.current += 1;
@@ -292,7 +300,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
       .fetchQuery(logPageOptions(repoId, generation, page))
       .then(({ rows }) => {
         const found = rows[index - pageStart(page)];
-        if (n === seq.current && found) pick(index, found.oid);
+        if (mounted.current && n === seq.current && found) pick(index, found.oid);
       })
       .catch(ignore);
   };
@@ -304,7 +312,8 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     revealed.current = selected;
     if (selected === null || selectedIndex !== undefined) return;
     const oid = selected;
-    const stillSelected = () => useWorkspace.getState().selectedCommit[repoId] === oid;
+    const stillSelected = () =>
+      mounted.current && useWorkspace.getState().selectedCommit[repoId] === oid;
     const reveal = async () => {
       // A revert or cherry-pick message contains the full oid too, so verify each candidate.
       const candidates = await queryClient.fetchQuery(logSearchOptions(repoId, generation, oid));
@@ -342,7 +351,9 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     queryClient
       .fetchQuery(logSearchOptions(repoId, generation, q))
       .then((found) => {
-        if (searched.current === q && found.length > 0) selectIndex(found[0], "center");
+        if (mounted.current && searched.current === q && found.length > 0) {
+          selectIndex(found[0], "center");
+        }
       })
       .catch(ignore);
   });
