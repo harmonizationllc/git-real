@@ -166,13 +166,16 @@ fn should_keep_one_lane_when_history_is_linear() {
 
 // --- branch and merge fixture: lanes, edges, parents, labels ---
 
-fn merge_rows() -> (
+/// Temp dir, path, the (root, a, b, merge) oids, the rows and the summary.
+type MergeRows = (
     tempfile::TempDir,
     PathBuf,
     (Oid, Oid, Oid, Oid),
     Vec<git_real_core::GraphRow>,
     LogSummary,
-) {
+);
+
+fn merge_rows() -> MergeRows {
     let (d, path, r, a, b, m) = common::merge_fixture();
     let mut s = open(&path);
     let summary = s.log_summary().unwrap();
@@ -186,7 +189,7 @@ fn should_order_the_merge_fixture_as_merge_then_newer_branch_then_older_then_roo
     let got: Vec<String> = rows.iter().map(|x| x.oid.clone()).collect();
     assert_eq!(
         got,
-        vec![m, b, a, r]
+        [m, b, a, r]
             .iter()
             .map(|o| o.to_string())
             .collect::<Vec<_>>()
@@ -1095,4 +1098,629 @@ fn should_reject_a_reset_to_a_tree_oid() {
             .unwrap_err(),
         GitError::CommitNotFound(_)
     ));
+}
+
+// --- coverage audit: generation tracking beyond commits and tags ---
+
+#[test]
+fn should_bump_the_generation_when_head_switches_to_another_branch_at_the_same_commit() {
+    let (_d, path, _oids) = linear(0);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("other", &commit, false).unwrap();
+    }
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    Repository::open(&path)
+        .unwrap()
+        .set_head("refs/heads/other")
+        .unwrap();
+    let again = s.log_summary().unwrap();
+    let rows = s.log_page(again.generation, 0, 10).unwrap().rows;
+    let head: Vec<_> = rows[0].refs.iter().filter(|l| l.is_head).collect();
+    assert_eq!(
+        (again.generation, head.len(), head[0].name.as_str()),
+        (g + 1, 1, "other")
+    );
+}
+
+#[test]
+fn should_bump_the_generation_when_a_branch_is_deleted() {
+    let (_d, path, _oids) = linear(0);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("x", &commit, false).unwrap();
+    }
+    let mut s = open(&path);
+    s.log_summary().unwrap();
+    Repository::open(&path)
+        .unwrap()
+        .find_branch("x", git2::BranchType::Local)
+        .unwrap()
+        .delete()
+        .unwrap();
+    assert_eq!(s.log_summary().unwrap().generation, 2);
+}
+
+#[test]
+fn should_bump_the_generation_when_a_tag_is_deleted() {
+    let (_d, path, oids) = linear(0);
+    common::tag_lightweight(&path, "v1", oids[0]);
+    let mut s = open(&path);
+    s.log_summary().unwrap();
+    Repository::open(&path).unwrap().tag_delete("v1").unwrap();
+    let g = s.log_summary().unwrap().generation;
+    let rows = s.log_page(g, 0, 10).unwrap().rows;
+    assert!(g == 2 && rows[0].refs.iter().all(|l| l.kind != RefKind::Tag));
+}
+
+#[test]
+fn should_bump_the_generation_when_a_branch_moves_to_another_commit() {
+    let (_d, path, oids) = linear(1);
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.branch("x", &repo.find_commit(oids[1]).unwrap(), false)
+            .unwrap();
+    }
+    let mut s = open(&path);
+    s.log_summary().unwrap();
+    Repository::open(&path)
+        .unwrap()
+        .reference("refs/heads/x", oids[0], true, "move")
+        .unwrap();
+    let g = s.log_summary().unwrap().generation;
+    let rows = s.log_page(g, 0, 10).unwrap().rows;
+    assert_eq!(
+        (g, rows[1].refs.iter().any(|l| l.name == "x")),
+        (2, true),
+        "x must now label the older commit"
+    );
+}
+
+#[test]
+fn should_keep_the_generation_when_the_index_changes() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let mut s = open(&path);
+    let first = s.log_summary().unwrap().generation;
+    common::write_file(&path, "staged.txt", "x\n");
+    common::stage(&path, "staged.txt");
+    assert_eq!(s.log_summary().unwrap().generation, first);
+}
+
+#[test]
+fn should_keep_the_previous_cache_and_retry_when_a_rebuild_fails() {
+    let (_d, path, oids) = linear(1);
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    // A branch pointing at an object that does not exist makes the walk fail.
+    std::fs::write(
+        path.join(".git/refs/heads/broken"),
+        format!("{}\n", "ab".repeat(20)),
+    )
+    .unwrap();
+    let failed = s.log_summary();
+    // The old pages stay readable, and the rebuild is attempted again.
+    let old_page = s.log_page(g, 0, 10);
+    let retried = s.log_summary();
+    assert!(
+        failed.is_err() && retried.is_err() && old_page.unwrap().rows.len() == oids.len(),
+        "failed={failed:?} retried={retried:?}"
+    );
+}
+
+// --- coverage audit: walk contents and labels ---
+
+#[test]
+fn should_list_a_commit_once_when_several_refs_reach_it() {
+    let (_d, path, oids) = linear(1);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let tip = repo.find_commit(oids[1]).unwrap();
+        repo.branch("a", &tip, false).unwrap();
+        repo.branch("b", &tip, false).unwrap();
+    }
+    common::tag_lightweight(&path, "v1", oids[1]);
+    let mut s = open(&path);
+    let summary = s.log_summary().unwrap();
+    let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
+    assert_eq!(
+        (summary.total, summary.max_lanes, rows[0].refs.len()),
+        (2, 1, 4)
+    );
+}
+
+#[test]
+fn should_list_a_commit_reachable_only_from_a_tag() {
+    let (_d, path, oids) = linear(0);
+    let only_tagged = {
+        let repo = Repository::open(&path).unwrap();
+        let base = repo.find_commit(oids[0]).unwrap();
+        let sig = Signature::now("T", "t@x.io").unwrap();
+        repo.commit(
+            None,
+            &sig,
+            &sig,
+            "only on a tag",
+            &base.tree().unwrap(),
+            &[&base],
+        )
+        .unwrap()
+    };
+    common::tag_lightweight(&path, "lonely", only_tagged);
+    let mut s = open(&path);
+    let summary = s.log_summary().unwrap();
+    let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
+    assert_eq!(
+        (
+            summary.total,
+            rows[0].subject.as_str(),
+            rows[0].refs.clone()
+        ),
+        (
+            2,
+            "only on a tag",
+            vec![label(RefKind::Tag, "lonely", false)]
+        )
+    );
+}
+
+#[test]
+fn should_peel_a_tag_of_a_tag_to_the_commit() {
+    let (_d, path, oids) = linear(0);
+    common::tag_annotated(&path, "inner", oids[0]);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let inner = repo.find_reference("refs/tags/inner").unwrap();
+        let inner_obj = repo.find_object(inner.target().unwrap(), None).unwrap();
+        let sig = Signature::now("T", "t@x.io").unwrap();
+        repo.tag("outer", &inner_obj, &sig, "again", false).unwrap();
+    }
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let rows = s.log_page(g, 0, 10).unwrap().rows;
+    let tags: Vec<_> = rows[0]
+        .refs
+        .iter()
+        .filter(|l| l.kind == RefKind::Tag)
+        .map(|l| l.name.as_str())
+        .collect();
+    assert_eq!(tags, ["inner", "outer"]);
+}
+
+#[test]
+fn should_put_the_head_branch_first_even_when_it_sorts_after_other_branches() {
+    let (_d, path, oids) = linear(0);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let c = repo.find_commit(oids[0]).unwrap();
+        repo.branch("aaa", &c, false).unwrap();
+        repo.branch("zzz", &c, false).unwrap();
+    }
+    Repository::open(&path)
+        .unwrap()
+        .set_head("refs/heads/zzz")
+        .unwrap();
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let branches: Vec<(String, bool)> = s.log_page(g, 0, 1).unwrap().rows[0]
+        .refs
+        .iter()
+        .filter(|l| l.kind == RefKind::Branch)
+        .map(|l| (l.name.clone(), l.is_head))
+        .collect();
+    let mut rest: Vec<String> = branches[1..].iter().map(|b| b.0.clone()).collect();
+    let sorted = {
+        let mut r = rest.clone();
+        r.sort();
+        r
+    };
+    rest.dedup();
+    assert_eq!(
+        (branches[0].clone(), branches[1..].iter().any(|b| b.1), rest),
+        (("zzz".to_owned(), true), false, sorted)
+    );
+}
+
+// --- coverage audit: pages ---
+
+#[test]
+fn should_concatenate_consecutive_pages_into_the_whole_graph() {
+    let (_d, path, _oids) = linear(4);
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let whole = s.log_page(g, 0, 100).unwrap().rows;
+    let mut stitched = Vec::new();
+    for start in [0, 2, 4] {
+        let page = s.log_page(g, start, 2).unwrap();
+        assert_eq!(page.start, start);
+        stitched.extend(page.rows);
+    }
+    assert_eq!(stitched, whole);
+}
+
+#[test]
+fn should_return_an_empty_page_when_start_and_count_are_at_the_numeric_limit() {
+    let (_d, path, _oids) = linear(1);
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let page = s.log_page(g, u32::MAX, u32::MAX).unwrap();
+    assert_eq!((page.start, page.rows.len()), (u32::MAX, 0));
+}
+
+// --- coverage audit: search ---
+
+#[test]
+fn should_not_match_hex_text_from_the_middle_of_a_hash() {
+    let (_d, _p, s, g, oids) = search_fixture();
+    let middle = &oids[1].to_string()[1..9];
+    assert_eq!(s.search_log(g, middle).unwrap(), Vec::<u32>::new());
+}
+
+#[test]
+fn should_match_hex_looking_text_in_the_author_name_when_it_is_not_a_hash_prefix() {
+    let (_d, path) = common::temp_repo_with_commit();
+    commit_as(
+        &path,
+        "x.txt",
+        "plain subject",
+        ("Dead Beef", "db@x.io"),
+        ("Dead Beef", "db@x.io"),
+    );
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    assert_eq!(s.search_log(g, "dead").unwrap(), vec![0]);
+}
+
+#[test]
+fn should_match_hex_looking_text_that_appears_only_in_the_body() {
+    let (_d, path) = common::temp_repo_with_commit();
+    commit_as(
+        &path,
+        "x.txt",
+        "plain subject\n\nsee also cafe0042 for context",
+        ("A", "a@x.io"),
+        ("A", "a@x.io"),
+    );
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    assert_eq!(s.search_log(g, "cafe0042").unwrap(), vec![0]);
+}
+
+#[test]
+fn should_treat_regex_characters_in_the_query_literally() {
+    let (_d, _p, s, g, _oids) = search_fixture();
+    assert_eq!(
+        (
+            s.search_log(g, "fix.typo").unwrap(),
+            s.search_log(g, "f*x").unwrap(),
+            s.search_log(g, "(").unwrap()
+        ),
+        (vec![], vec![], vec![])
+    );
+}
+
+#[test]
+fn should_match_the_whole_message_when_the_query_spans_subject_and_body() {
+    let (_d, _p, s, g, _oids) = search_fixture();
+    assert_eq!(
+        s.search_log(g, "add parser\n\nimplements").unwrap(),
+        vec![1]
+    );
+}
+
+#[test]
+fn should_match_non_ascii_text_case_insensitively() {
+    let (_d, path) = common::temp_repo_with_commit();
+    commit_as(
+        &path,
+        "x.txt",
+        "Überarbeitung des Parsers",
+        ("Zoë", "zoe@x.io"),
+        ("Zoë", "zoe@x.io"),
+    );
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    assert_eq!(
+        (
+            s.search_log(g, "überarbeitung").unwrap(),
+            s.search_log(g, "ZOË").unwrap()
+        ),
+        (vec![0], vec![0])
+    );
+}
+
+#[test]
+fn should_match_a_full_hash_given_in_uppercase() {
+    let (_d, _p, s, g, oids) = search_fixture();
+    let full = oids[2].to_string().to_uppercase();
+    assert_eq!(s.search_log(g, &full).unwrap(), vec![0]);
+}
+
+// --- coverage audit: commit_detail ---
+
+#[test]
+fn should_reject_an_oid_of_thirty_nine_or_forty_one_hex_characters() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let full = head_target(&path).to_string();
+    let s = open(&path);
+    let short = &full[..39];
+    let long = format!("{full}0");
+    assert!(matches!(s.commit_detail(short), Err(GitError::CommitNotFound(x)) if x == short));
+    assert!(matches!(s.commit_detail(&long), Err(GitError::CommitNotFound(x)) if x == long));
+}
+
+#[test]
+fn should_reject_an_abbreviated_hash_of_an_existing_commit() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let full = head_target(&path).to_string();
+    let err = open(&path).commit_detail(&full[..7]).unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(_)));
+}
+
+#[test]
+fn should_reject_an_oid_padded_with_whitespace() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let padded = format!(" {}", &head_target(&path).to_string()[..39]);
+    assert_eq!(padded.len(), 40);
+    let err = open(&path).commit_detail(&padded).unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(_)));
+}
+
+#[test]
+fn should_reject_forty_bytes_of_non_ascii_text() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let input = "é".repeat(20);
+    assert_eq!(input.len(), 40);
+    let err = open(&path).commit_detail(&input).unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(s) if s == input));
+}
+
+#[test]
+fn should_accept_an_uppercase_oid_and_report_it_in_lowercase() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let lower = head_target(&path).to_string();
+    let detail = open(&path).commit_detail(&lower.to_uppercase()).unwrap();
+    assert_eq!(detail.oid, lower);
+}
+
+#[test]
+fn should_reject_the_oid_of_a_blob() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let blob = Repository::open(&path).unwrap().blob(b"x").unwrap();
+    let err = open(&path).commit_detail(&blob.to_string()).unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(_)));
+}
+
+#[test]
+fn should_reject_the_oid_of_an_annotated_tag_object() {
+    let (_d, path, oids) = linear(0);
+    common::tag_annotated(&path, "v1", oids[0]);
+    let tag_object = Repository::open(&path)
+        .unwrap()
+        .find_reference("refs/tags/v1")
+        .unwrap()
+        .target()
+        .unwrap();
+    assert_ne!(tag_object, oids[0]);
+    let err = open(&path)
+        .commit_detail(&tag_object.to_string())
+        .unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(_)));
+}
+
+#[test]
+fn should_report_an_empty_body_when_the_message_is_one_line() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let oid = commit_as(
+        &path,
+        "x.txt",
+        "only a subject",
+        ("A", "a@x.io"),
+        ("A", "a@x.io"),
+    );
+    let detail = open(&path).commit_detail(&oid.to_string()).unwrap();
+    assert_eq!(
+        (
+            detail.message.subject.as_str(),
+            detail.message.body.as_str()
+        ),
+        ("only a subject", "")
+    );
+}
+
+#[test]
+fn should_replace_invalid_utf8_in_the_message_and_signature_instead_of_failing() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let oid = {
+        let repo = Repository::open(&path).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = parent.tree().unwrap();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(format!("tree {}\nparent {}\n", tree.id(), parent.id()).as_bytes());
+        raw.extend_from_slice(b"author Zo\xe9 <z@x.io> 1700000000 +0000\n");
+        raw.extend_from_slice(b"committer Zo\xe9 <z@x.io> 1700000000 +0000\n\nbad \xe9 byte\n");
+        let odb = repo.odb().unwrap();
+        let id = odb.write(git2::ObjectType::Commit, &raw).unwrap();
+        repo.reference("refs/heads/latin1", id, true, "t").unwrap();
+        id
+    };
+    let mut s = open(&path);
+    let detail = s.commit_detail(&oid.to_string()).unwrap();
+    let g = s.log_summary().unwrap().generation;
+    let row = s.log_page(g, 0, 1).unwrap().rows.remove(0);
+    assert_eq!(
+        (
+            detail.message.subject.contains('\u{fffd}'),
+            detail.author.name.contains('\u{fffd}'),
+            row.author_name.contains('\u{fffd}')
+        ),
+        (true, true, true)
+    );
+}
+
+// --- coverage audit: reset_to_commit ---
+
+#[test]
+fn should_move_a_detached_head_without_touching_any_branch_when_resetting() {
+    let (_d, path, s, first, second) = reset_fixture();
+    let head = common::head_branch_name(&path);
+    Repository::open(&path)
+        .unwrap()
+        .set_head_detached(second)
+        .unwrap();
+    s.reset_to_commit(&first.to_string(), ResetMode::Hard)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(
+        (
+            repo.head_detached().unwrap(),
+            head_target(&path),
+            repo.find_branch(&head, git2::BranchType::Local)
+                .unwrap()
+                .get()
+                .target()
+        ),
+        (true, first, Some(second))
+    );
+}
+
+#[test]
+fn should_move_head_forward_to_a_descendant_when_resetting() {
+    let (_d, path, s, first, second) = reset_fixture();
+    s.reset_to_commit(&first.to_string(), ResetMode::Hard)
+        .unwrap();
+    s.reset_to_commit(&second.to_string(), ResetMode::Hard)
+        .unwrap();
+    assert_eq!(
+        (head_target(&path), index_blob(&path)),
+        (second, blob_of(V2))
+    );
+}
+
+#[test]
+fn should_keep_untracked_files_when_resetting_hard() {
+    let (_d, path, s, first, _second) = reset_fixture();
+    common::write_file(&path, "untracked.txt", "keep me\n");
+    s.reset_to_commit(&first.to_string(), ResetMode::Hard)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(path.join("untracked.txt")).unwrap(),
+        "keep me\n"
+    );
+}
+
+#[test]
+fn should_reset_to_a_merge_commit_and_expose_its_two_parents() {
+    let (_d, path, _r, _a, b, m) = common::merge_fixture();
+    let s = open(&path);
+    s.reset_to_commit(&b.to_string(), ResetMode::Soft).unwrap();
+    s.reset_to_commit(&m.to_string(), ResetMode::Hard).unwrap();
+    assert_eq!(
+        (
+            head_target(&path),
+            s.commit_detail(&m.to_string()).unwrap().parents.len()
+        ),
+        (m, 2)
+    );
+}
+
+#[test]
+fn should_reject_a_reset_to_an_abbreviated_hash_and_leave_head_alone() {
+    let (_d, path, s, first, second) = reset_fixture();
+    let err = s
+        .reset_to_commit(&first.to_string()[..7], ResetMode::Hard)
+        .unwrap_err();
+    assert!(matches!(err, GitError::CommitNotFound(_)) && head_target(&path) == second);
+}
+
+// --- coverage audit: wire format the UI depends on ---
+
+#[test]
+fn should_deserialize_reset_modes_from_lowercase_names() {
+    let parse = |s: &str| serde_json::from_str::<ResetMode>(&format!("\"{s}\""));
+    assert_eq!(
+        (
+            parse("soft").unwrap(),
+            parse("mixed").unwrap(),
+            parse("hard").unwrap()
+        ),
+        (ResetMode::Soft, ResetMode::Mixed, ResetMode::Hard)
+    );
+}
+
+#[test]
+fn should_reject_unknown_or_capitalised_reset_modes() {
+    let parse = |s: &str| serde_json::from_str::<ResetMode>(&format!("\"{s}\""));
+    assert!(parse("Hard").is_err() && parse("keep").is_err() && parse("").is_err());
+}
+
+#[test]
+fn should_serialize_log_types_with_camel_case_keys_and_ref_kinds() {
+    let (_d, path, oids) = linear(0);
+    common::tag_lightweight(&path, "v1", oids[0]);
+    let mut s = open(&path);
+    let summary = s.log_summary().unwrap();
+    let page = s.log_page(summary.generation, 0, 1).unwrap();
+    let json = serde_json::to_value(&page).unwrap();
+    let row = &json["rows"][0];
+    let mut row_keys: Vec<&str> = row
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    row_keys.sort();
+    assert_eq!(
+        (
+            serde_json::to_value(&summary).unwrap(),
+            json["start"].clone(),
+            row_keys,
+            row["refs"][0]["kind"].clone(),
+            row["refs"][1]["kind"].clone(),
+            row["refs"][1]["isHead"].clone(),
+            row["edges"].clone()
+        ),
+        (
+            serde_json::json!({"generation": 1, "total": 1, "maxLanes": 1}),
+            serde_json::json!(0),
+            vec![
+                "authorEmail",
+                "authorName",
+                "authorTime",
+                "edges",
+                "lane",
+                "oid",
+                "parents",
+                "refs",
+                "subject"
+            ],
+            serde_json::json!("branch"),
+            serde_json::json!("tag"),
+            serde_json::json!(false),
+            serde_json::json!([])
+        )
+    );
+}
+
+#[test]
+fn should_serialize_edges_with_null_ends_and_commit_detail_in_camel_case() {
+    let (_d, path, oids) = linear(1);
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let rows = serde_json::to_value(s.log_page(g, 0, 2).unwrap()).unwrap();
+    let detail = serde_json::to_value(s.commit_detail(&oids[1].to_string()).unwrap()).unwrap();
+    assert_eq!(
+        (
+            rows["rows"][0]["edges"].clone(),
+            detail["committer"]["time"].is_i64(),
+            detail["message"]["subject"].clone()
+        ),
+        (
+            serde_json::json!([{"top": null, "bottom": 0}]),
+            true,
+            serde_json::json!("commit 0")
+        )
+    );
 }

@@ -329,6 +329,106 @@ mod tests {
         assert_eq!(l.max_columns(), 2);
     }
 
+    // A column freed by a join in this row is reused by a later parent of
+    // the same commit.
+    #[test]
+    fn should_reuse_a_column_freed_by_the_join_for_a_later_parent_of_the_same_commit() {
+        let (m, p, q) = (o(9), o(2), o(1));
+        let mut l = LaneLayout::new();
+        l.next(o(7), &[m]);
+        l.next(o(8), &[m]);
+        assert_eq!(
+            l.next(m, &[p, q]),
+            (
+                0,
+                vec![
+                    e(None, Some(0)),
+                    e(None, Some(1)),
+                    e(Some(0), None),
+                    e(Some(1), None)
+                ]
+            )
+        );
+        assert_eq!(l.max_columns(), 2);
+    }
+
+    // A hole left in the middle is the first free column handed out, and
+    // the columns on either side of it keep passing through.
+    #[test]
+    fn should_fill_a_free_column_in_the_middle_before_opening_a_new_one() {
+        let mut l = LaneLayout::new();
+        l.next(o(7), &[o(1)]);
+        l.next(o(8), &[o(2)]);
+        l.next(o(9), &[o(3)]);
+        l.next(o(2), &[]);
+        assert_eq!(
+            l.next(o(6), &[o(4)]),
+            (
+                1,
+                vec![e(None, Some(1)), e(Some(0), Some(0)), e(Some(2), Some(2))]
+            )
+        );
+        assert_eq!(l.max_columns(), 3);
+    }
+
+    // A later parent that is expected by a column further left than a free
+    // one joins that column rather than taking the free column.
+    #[test]
+    fn should_join_the_expecting_column_for_a_later_parent_even_when_a_free_column_exists() {
+        let mut l = LaneLayout::new();
+        l.next(o(7), &[o(1)]);
+        l.next(o(8), &[o(2)]);
+        l.next(o(9), &[o(3)]);
+        l.next(o(2), &[]);
+        let (lane, edges) = l.next(o(6), &[o(4), o(3)]);
+        assert_eq!(
+            (lane, edges),
+            (
+                1,
+                vec![
+                    e(None, Some(1)),
+                    e(None, Some(2)),
+                    e(Some(0), Some(0)),
+                    e(Some(2), Some(2))
+                ]
+            )
+        );
+    }
+
+    // The dot takes the first of several columns expecting it, and every
+    // one of them is closed, none passes through.
+    #[test]
+    fn should_place_the_dot_in_the_first_expecting_column_when_three_columns_expect_it() {
+        let mut l = LaneLayout::new();
+        l.next(o(7), &[o(1)]);
+        l.next(o(8), &[o(1)]);
+        l.next(o(9), &[o(1)]);
+        assert_eq!(
+            l.next(o(1), &[]),
+            (
+                0,
+                vec![e(Some(0), None), e(Some(1), None), e(Some(2), None)]
+            )
+        );
+        assert_eq!(l.columns.len(), 0);
+    }
+
+    // A commit that nothing expects, in the middle of other lines, takes
+    // the first free column and is never reported as a pass-through itself.
+    #[test]
+    fn should_open_a_new_last_column_when_every_existing_column_is_busy_and_unrelated() {
+        let mut l = LaneLayout::new();
+        l.next(o(7), &[o(1)]);
+        l.next(o(8), &[o(2)]);
+        assert_eq!(
+            l.next(o(9), &[o(3)]),
+            (
+                2,
+                vec![e(None, Some(2)), e(Some(0), Some(0)), e(Some(1), Some(1))]
+            )
+        );
+    }
+
     #[test]
     fn should_give_identical_output_when_the_same_commits_are_laid_out_twice() {
         let run = || {

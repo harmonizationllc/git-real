@@ -270,3 +270,111 @@ fn reset_to_commit_inner_maps_unknown_repo() {
         reset_to_commit_inner(&reg, MISSING_ID, &"0".repeat(40), ResetMode::Soft).unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
+
+// --- coverage audit: staleness across commands, blank queries, bad input ---
+
+#[test]
+fn search_log_inner_rejects_the_previous_generation_after_a_commit() {
+    let (_d, path, reg, id) = open_fixture();
+    let old = get_log_summary_inner(&reg, id).unwrap().generation;
+    common::commit_file(&path, "b.txt", "b\n", "second");
+    get_log_summary_inner(&reg, id).unwrap();
+    let err = search_log_inner(&reg, id, old, "second").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::LogStale);
+}
+
+#[test]
+fn search_log_inner_returns_nothing_for_a_blank_query() {
+    let (_d, _p, reg, id) = open_fixture();
+    let g = get_log_summary_inner(&reg, id).unwrap().generation;
+    assert_eq!(
+        search_log_inner(&reg, id, g, "   ").unwrap(),
+        Vec::<u32>::new()
+    );
+}
+
+#[test]
+fn search_log_inner_finds_a_commit_by_a_hash_prefix() {
+    let (_d, path, reg, id) = open_fixture();
+    let g = get_log_summary_inner(&reg, id).unwrap().generation;
+    let prefix = head_oid(&path).to_string()[..7].to_owned();
+    assert_eq!(search_log_inner(&reg, id, g, &prefix).unwrap(), vec![0]);
+}
+
+#[test]
+fn get_log_page_inner_returns_an_empty_page_past_the_end() {
+    let (_d, _p, reg, id) = open_fixture();
+    let g = get_log_summary_inner(&reg, id).unwrap().generation;
+    let page = get_log_page_inner(&reg, id, g, 50, 10).unwrap();
+    assert_eq!((page.start, page.rows.len()), (50, 0));
+}
+
+#[test]
+fn get_log_summary_inner_keeps_the_generation_when_nothing_changed() {
+    let (_d, _p, reg, id) = open_fixture();
+    let first = get_log_summary_inner(&reg, id).unwrap().generation;
+    assert_eq!(get_log_summary_inner(&reg, id).unwrap().generation, first);
+}
+
+#[test]
+fn reset_to_commit_inner_makes_the_next_summary_a_new_generation() {
+    let (_d, path, reg, id) = open_fixture();
+    let first = head_oid(&path);
+    common::commit_file(&path, "b.txt", "b\n", "second");
+    let before = get_log_summary_inner(&reg, id).unwrap();
+    reset_to_commit_inner(&reg, id, &first.to_string(), ResetMode::Hard).unwrap();
+    let after = get_log_summary_inner(&reg, id).unwrap();
+    assert_eq!(
+        (before.total, after.total, after.generation),
+        (2, 1, before.generation + 1)
+    );
+}
+
+#[test]
+fn get_commit_inner_maps_an_abbreviated_hash_to_commit_not_found() {
+    let (_d, path, reg, id) = open_fixture();
+    let short = head_oid(&path).to_string()[..7].to_owned();
+    let err = get_commit_inner(&reg, id, &short).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn checkout_commit_inner_maps_flag_like_text_to_commit_not_found_without_running_git() {
+    let (_d, path, reg, id) = open_fixture();
+    let before = head_oid(&path);
+    let err = checkout_commit_inner(&reg, id, "--detach").unwrap_err();
+    assert_eq!(
+        (err.kind, head_oid(&path)),
+        (AppErrorKind::CommitNotFound, before)
+    );
+}
+
+#[test]
+fn reset_to_commit_inner_maps_malformed_text_to_commit_not_found() {
+    let (_d, _p, reg, id) = open_fixture();
+    let err = reset_to_commit_inner(&reg, id, "not-a-hash", ResetMode::Soft).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn checkout_commit_inner_makes_the_next_summary_a_new_generation_with_a_head_label() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id) = open_fixture();
+    let first = head_oid(&path);
+    common::commit_file(&path, "b.txt", "b\n", "second");
+    let before = get_log_summary_inner(&reg, id).unwrap();
+    checkout_commit_inner(&reg, id, &first.to_string()).unwrap();
+    let after = get_log_summary_inner(&reg, id).unwrap();
+    let page = get_log_page_inner(&reg, id, after.generation, 0, 10).unwrap();
+    let detached = page
+        .rows
+        .iter()
+        .find(|r| r.oid == first.to_string())
+        .unwrap()
+        .refs
+        .iter()
+        .any(|l| l.name == "HEAD" && l.is_head);
+    assert_eq!((after.generation, detached), (before.generation + 1, true));
+}
