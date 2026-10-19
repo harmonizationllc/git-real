@@ -69,6 +69,21 @@ pub enum GitError {
     CommitNotFound(String),
     #[error("{0} is a binary file")]
     BinaryFile(String),
+    #[error("git {verb} failed")]
+    OperationFailed {
+        verb: String,
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
+    #[error("another operation is in progress")]
+    OperationInProgress,
+    #[error("no merge, rebase, cherry-pick or revert is in progress")]
+    NoOperation,
+    #[error("resolve all conflicts first")]
+    UnresolvedConflicts,
+    #[error("{0} is a merge commit; choosing a parent is not supported yet")]
+    MergeCommit(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

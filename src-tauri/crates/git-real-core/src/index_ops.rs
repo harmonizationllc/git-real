@@ -188,7 +188,7 @@ impl RepoSession {
 
     /// The repository's index, re-read from disk so neither external writes
     /// nor dirty state left by an earlier failed call can leak in.
-    fn fresh_index(&self) -> Result<Index, GitError> {
+    pub(crate) fn fresh_index(&self) -> Result<Index, GitError> {
         let mut index = self.repo().index()?;
         index.read(true)?;
         Ok(index)

@@ -85,7 +85,7 @@ impl RepoSession {
     }
 }
 
-fn is_unborn(e: &git2::Error) -> bool {
+pub(crate) fn is_unborn(e: &git2::Error) -> bool {
     matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound)
 }
 
