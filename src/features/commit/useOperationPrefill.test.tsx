@@ -186,3 +186,62 @@ describe("useOperationPrefill result", () => {
     expect(useOperationState).toHaveBeenCalledWith(9);
   });
 });
+
+// Coverage audit: operation-to-operation transitions and repository switches.
+describe("useOperationPrefill transitions between operations", () => {
+  it("should replace an untouched prefill with the next operation's message", () => {
+    const view = mount(merge);
+    provide(pick);
+    view.rerender({ id: REPO });
+    expect(draft()).toMatchObject({ subject: "Pick it", body: "", prefilled: pick.message });
+  });
+
+  it("should keep edited text when a different committing operation starts", () => {
+    const view = mount(merge);
+    useCommitDraft.getState().setSubject(REPO, "edited");
+    provide(revert);
+    view.rerender({ id: REPO });
+    expect(draft()?.subject).toBe("edited");
+  });
+
+  it("should prefill again for a later operation after the earlier one ended", () => {
+    const view = mount(merge);
+    provide(none);
+    view.rerender({ id: REPO });
+    provide(revert);
+    view.rerender({ id: REPO });
+    expect(draft()).toMatchObject({ subject: 'Revert "Pick it"', prefilled: revert.message });
+  });
+
+  it("should keep a typed message when a merge starts over a non-empty draft", () => {
+    const view = mount(none);
+    useCommitDraft.getState().setBody(REPO, "notes");
+    provide(merge);
+    view.rerender({ id: REPO });
+    expect(draft()).toMatchObject({ subject: "", body: "notes", prefilled: null });
+  });
+});
+
+describe("useOperationPrefill repository switch", () => {
+  it("should prefill the new repository when the id changes to one with an operation", () => {
+    const view = mount(none, 1);
+    provide(merge);
+    view.rerender({ id: 2 });
+    expect(useCommitDraft.getState().drafts[2]?.subject).toBe(message.subject);
+    expect(useCommitDraft.getState().drafts[1]).toBeUndefined();
+  });
+
+  it("should leave the previous repository's prefill alone after a switch", () => {
+    const view = mount(merge, 1);
+    provide(none);
+    view.rerender({ id: 2 });
+    expect(useCommitDraft.getState().drafts[1]?.prefilled).toEqual(message);
+    expect(useCommitDraft.getState().drafts[2]).toBeUndefined();
+  });
+
+  it("should read the state of the new repository after a switch", () => {
+    const view = mount(merge, 1);
+    view.rerender({ id: 2 });
+    expect(useOperationState).toHaveBeenLastCalledWith(2);
+  });
+});

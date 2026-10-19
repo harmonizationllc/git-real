@@ -227,3 +227,63 @@ describe("commitDisabledReason during an operation", () => {
     }
   });
 });
+
+// Coverage audit: rule order and amend interplay for each operation kind.
+describe("commitDisabledReason operation gaps", () => {
+  const message = { subject: "s", body: "" };
+  const merge: OperationState = { kind: "merge", head: "a".repeat(40), branch: "f", message };
+  const ready = { amend: false, subject: "s", status: staged, config } as const;
+  const unstagedOnly = status([entry({ worktree: "modified" })]);
+
+  it("is the rebase reason even when amend is on", () => {
+    const rebase: OperationState = {
+      kind: "rebase",
+      onto: "b".repeat(40),
+      ontoName: null,
+      branch: null,
+      step: 1,
+      total: 1,
+    };
+    expect(gateReason({ ...ready, amend: true, operation: rebase })).toBe(
+      "Use Continue in the banner to resume the rebase",
+    );
+  });
+
+  it("still demands an identity for a merge", () => {
+    expect(gateReason({ ...ready, config: { ...config, email: null }, operation: merge })).toBe(
+      "Set user.name and user.email in your Git config",
+    );
+  });
+
+  it("puts the conflicts rule ahead of the merge staged exemption", () => {
+    const s = status([entry({ conflicted: true, worktree: "conflicted" })]);
+    expect(gateReason({ ...ready, status: s, operation: merge })).toBe(
+      "Resolve conflicts before committing",
+    );
+  });
+
+  it("keeps Loading… ahead of everything for a merge", () => {
+    expect(gateReason({ ...ready, status: undefined, operation: merge })).toBe("Loading…");
+  });
+
+  it("allows a merge with an empty status and a subject", () => {
+    expect(gateReason({ ...ready, status: status([]), operation: merge })).toBeNull();
+  });
+
+  it("still requires staged changes outside an operation when only the worktree changed", () => {
+    expect(gateReason({ ...ready, status: unstagedOnly, operation: { kind: "none" } })).toBe(
+      "Stage changes to commit",
+    );
+  });
+
+  it("allows an amend of a cherry-pick with nothing staged", () => {
+    expect(
+      gateReason({
+        ...ready,
+        amend: true,
+        status: unstagedOnly,
+        operation: { kind: "cherryPick", oid: "a".repeat(40), message },
+      }),
+    ).toBeNull();
+  });
+});

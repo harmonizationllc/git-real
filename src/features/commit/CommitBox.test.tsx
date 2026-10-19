@@ -472,3 +472,69 @@ describe("CommitBox during an operation", () => {
     await waitFor(() => expect(go).toBeEnabled());
   });
 });
+
+// Coverage audit: the box hands the operation to the gate and lets operations win over the unborn title.
+describe("CommitBox operation gate wiring", () => {
+  const message = { subject: "Merge branch 'feature'", body: "" };
+  const merge: OperationState = { kind: "merge", head: "a".repeat(40), branch: "feature", message };
+  const pick: OperationState = { kind: "cherryPick", oid: "c".repeat(40), message };
+  const draftWithSubject = () =>
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "S" } } });
+
+  it("should enable Commit and merge with nothing staged, as after an all-ours merge", async () => {
+    prefill.mockReturnValue(merge);
+    vi.mocked(getStatus).mockResolvedValue(clean);
+    draftWithSubject();
+    renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and merge" });
+    await waitFor(() => expect(go).toBeEnabled());
+    expect(go).not.toHaveAttribute("title");
+  });
+
+  it("should keep Commit and cherry-pick disabled with nothing staged", async () => {
+    prefill.mockReturnValue(pick);
+    vi.mocked(getStatus).mockResolvedValue(clean);
+    draftWithSubject();
+    renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and cherry-pick" });
+    await waitFor(() => expect(go).toHaveAttribute("title", "Stage changes to commit"));
+    expect(go).toBeDisabled();
+  });
+
+  it("should keep Commit and merge disabled with unresolved conflicts", async () => {
+    prefill.mockReturnValue(merge);
+    vi.mocked(getStatus).mockResolvedValue({
+      entries: [entry({ conflicted: true, worktree: "conflicted" })],
+      headUnborn: false,
+    });
+    draftWithSubject();
+    renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and merge" });
+    await waitFor(() => expect(go).toHaveAttribute("title", "Resolve conflicts before committing"));
+  });
+
+  it("should prefer the operation title over No commit to amend on an unborn HEAD", async () => {
+    prefill.mockReturnValue(pick);
+    vi.mocked(getHeadMessage).mockResolvedValue(null);
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(screen.getByRole("checkbox", { name: "Amend last commit" })).toHaveAttribute(
+      "title",
+      "Not available during a cherry-pick",
+    );
+  });
+
+  it("should not commit on Ctrl+Enter when the merge has conflicts", async () => {
+    prefill.mockReturnValue(merge);
+    vi.mocked(getStatus).mockResolvedValue({
+      entries: [entry({ conflicted: true, worktree: "conflicted" })],
+      headUnborn: false,
+    });
+    draftWithSubject();
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.click(screen.getByLabelText("Subject"));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(commit).not.toHaveBeenCalled();
+  });
+});

@@ -1609,3 +1609,191 @@ describe("BranchesPanel integration pending", () => {
     expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy");
   });
 });
+
+// Coverage audit: states the first pass left unpinned (HEAD kinds, shared pending, error hygiene).
+describe("BranchesPanel integration gaps", () => {
+  const integrationItems = () =>
+    screen
+      .getAllByRole("menuitem")
+      .filter((i) => /^(Merge|Fast-forward|Rebase) /.test(i.textContent ?? ""));
+  const unbornList = () => list({ head: { kind: "unborn", name: "main" }, local: [] });
+  const detached = () =>
+    list({ head: { kind: "detached", oid: oid("a") }, local: [localBranch("feature")] });
+  const dirty: AppError = { kind: "operationFailed", message: "error: merge exploded" };
+
+  it("should name the current branch HEAD in the labels when HEAD is detached", async () => {
+    await renderPanel(detached());
+    rightClick(localRow("feature"));
+    expect(integrationItems().map((i) => i.textContent)).toEqual([
+      "Merge feature into HEAD",
+      "Fast-forward HEAD to feature",
+      "Rebase HEAD onto feature",
+    ]);
+  });
+
+  it("should disable the items of a remote row on a detached HEAD with the checkout-first title", async () => {
+    await renderPanel(detached());
+    rightClick(remoteRow("origin", "other"));
+    for (const item of integrationItems()) {
+      expect(item).toBeDisabled();
+      expect(item).toHaveAttribute("title", "Check out a branch first");
+    }
+    expect(integrationItems()).toHaveLength(3);
+  });
+
+  it("should disable the items of a remote row on an unborn HEAD with the checkout-first title", async () => {
+    await renderPanel(unbornList());
+    rightClick(remoteRow("origin", "other"));
+    expect(integrationItems().map((i) => i.textContent)).toEqual([
+      "Merge origin/other into HEAD",
+      "Fast-forward HEAD to origin/other",
+      "Rebase HEAD onto origin/other",
+    ]);
+    for (const item of integrationItems()) {
+      expect(item).toBeDisabled();
+      expect(item).toHaveAttribute("title", "Check out a branch first");
+    }
+  });
+
+  it("should prefer the checkout-first title over the fast-forward reason on a detached HEAD", async () => {
+    provideMerge({ check: "upToDate" });
+    await renderPanel(detached());
+    rightClick(localRow("feature"));
+    expect(menuItem("Fast-forward HEAD to feature")).toHaveAttribute(
+      "title",
+      "Check out a branch first",
+    );
+  });
+
+  it("should prefer the checkout-first title over Checking… on a detached HEAD", async () => {
+    provideMerge({ check: undefined, checking: true });
+    await renderPanel(detached());
+    rightClick(localRow("feature"));
+    expect(menuItem("Fast-forward HEAD to feature")).toHaveAttribute(
+      "title",
+      "Check out a branch first",
+    );
+  });
+
+  it("should prefer the in-progress title over the checkout-first title on a detached HEAD", async () => {
+    provideMerge({
+      state: { kind: "merge", head: oid("a"), branch: "x", message: { subject: "s", body: "" } },
+    });
+    await renderPanel(detached());
+    rightClick(localRow("feature"));
+    for (const item of integrationItems()) {
+      expect(item).toHaveAttribute("title", IN_PROGRESS_TITLE);
+    }
+  });
+
+  it("should use the remote-qualified name in the diverged title of a remote row", async () => {
+    provideMerge({ check: "diverged" });
+    await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    expect(menuItem("Fast-forward main to origin/other")).toHaveAttribute(
+      "title",
+      "main and origin/other have diverged",
+    );
+  });
+
+  it("should disable Fast-forward on a remote row that is already merged", async () => {
+    provideMerge({ check: "upToDate" });
+    await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    expect(menuItem("Fast-forward main to origin/other")).toHaveAttribute(
+      "title",
+      "Already up to date",
+    );
+  });
+
+  it("should leave the remote-row items enabled when fast-forward is possible", async () => {
+    await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    for (const item of integrationItems()) expect(item).toBeEnabled();
+  });
+
+  // Contract: `pending` is shared, so an integration run locks every other control too.
+  it("should disable every item of a remote row's menu while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    const items = screen.getAllByRole("menuitem");
+    expect(items).toHaveLength(5);
+    for (const item of items) expect(item).toBeDisabled();
+  });
+
+  it("should disable the local row's create, rename and delete items while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(localRow("feature"));
+    for (const item of screen.getAllByRole("menuitem")) expect(item).toBeDisabled();
+  });
+
+  it("should ignore a local double-click while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    expect(checkoutBranch).not.toHaveBeenCalled();
+  });
+
+  it("should ignore Enter on a branch while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    const { user } = await renderPanel();
+    localRow("feature").focus();
+    await user.keyboard("{Enter}");
+    expect(checkoutBranch).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a remote double-click while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    const { user } = await renderPanel();
+    await user.dblClick(remoteRow("origin", "other"));
+    expect(checkoutRemoteBranch).not.toHaveBeenCalled();
+  });
+
+  // Contract: a new failure must not hide behind an older one, and dialogs open clean.
+  it("should clear the integration error before running an integration item", async () => {
+    provideMerge({ error: dirty });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rebase main onto feature"));
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+    expect(integrationClear.mock.invocationCallOrder[0]).toBeLessThan(
+      integrationRun.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("should clear the integration error when the New branch dialog opens", async () => {
+    provideMerge({ error: dirty });
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    await dialogNamed("New branch");
+    expect(integrationClear).toHaveBeenCalled();
+  });
+
+  it("should hide the panel error while a dialog is open", async () => {
+    provideMerge({ error: dirty });
+    const { user } = await renderPanel();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    await dialogNamed("New branch");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should clear the integration error when a dialog is cancelled", async () => {
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "New branch…" }));
+    await dialogNamed("New branch");
+    integrationClear.mockClear();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not run an item that is disabled by a pending integration", async () => {
+    provideMerge({ pending: true });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Merge feature into main"));
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+});

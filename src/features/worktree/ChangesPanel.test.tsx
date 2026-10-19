@@ -1325,3 +1325,94 @@ describe("ChangesPanel conflict sides", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("stage exploded");
   });
 });
+
+// Coverage audit: dismiss hygiene, loading branches and multi-select on both sides.
+describe("ChangesPanel conflict sides gaps", () => {
+  const message = { subject: "s", body: "" };
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "feature",
+    message,
+  };
+  const dirty: AppError = { kind: "unresolvedConflicts", message: "still conflicted" };
+  const stageFailed = { kind: "io", message: "stage exploded" };
+
+  it("should name the ours side HEAD while the branch list is still loading", async () => {
+    provideMerge({ state: mergeState });
+    vi.mocked(useBranches).mockReturnValue({
+      branches: undefined,
+      isLoading: true,
+      error: null,
+      refetch: vi.fn(),
+    });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(itemLabels().slice(0, 2)).toEqual(["Keep HEAD", "Take feature"]);
+  });
+
+  it("should clear the staging error too when Dismiss is pressed", async () => {
+    provideMerge({ error: dirty });
+    vi.mocked(stagePaths).mockRejectedValue(stageFailed);
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    await screen.findByText(/stage exploded/);
+    await user.click(btn("Dismiss"));
+    expect(screen.queryByText(/stage exploded/)).toBeNull();
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("should clear the integration error before running Keep", async () => {
+    provideMerge({ state: mergeState, error: dirty });
+    const { user } = await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep main" }));
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+    expect(integrationClear.mock.invocationCallOrder[0]).toBeLessThan(
+      integrationRun.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("should keep every selected conflict path when Keep is chosen on a multi-selection", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("x.txt"), conflict("y.txt"), conflict("z.txt"));
+    await user.click(btn("conflicted x.txt"));
+    await modClick(user, btn("conflicted z.txt"), "Control");
+    rightClick(btn("conflicted x.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep main" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["x.txt", "z.txt"],
+      side: "ours",
+    });
+  });
+
+  it("should not run anything when a pending Keep item is clicked", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    const { user } = await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep main" }));
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+
+  it("should offer Keep and Take for a conflict next to staged and unstaged rows", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel(conflict("c.txt"), unstaged("a.txt"), staged("s.txt"));
+    rightClick(btn("conflicted c.txt"));
+    expect(itemLabels()).toEqual([
+      "Keep main",
+      "Take feature",
+      "Mark resolved (stage)",
+      "File history",
+    ]);
+  });
+
+  it("should disable the untracked, staged and unstaged menus while only the integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel(unstaged("a.txt"), staged("s.txt"));
+    rightClick(btn("modified a.txt"));
+    const staging = screen.getAllByRole("menuitem").filter((i) => i.textContent !== "File history");
+    for (const item of staging) expect(item).toBeDisabled();
+    expect(staging.length).toBeGreaterThan(0);
+  });
+});

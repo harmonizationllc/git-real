@@ -36,9 +36,11 @@ vi.mock("../features/merge/OperationBanner", async () => {
   const { createElement, useEffect } = await import("react");
   return {
     OperationBanner: ({ repoId }: { repoId: number }) => {
+      // Mount-only on purpose: a re-render with a new repoId must not look like a remount.
       useEffect(() => {
         bannerMounts.push(repoId);
-      }, [repoId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
       return createElement("div", {
         "data-testid": "operation-banner",
         "data-repo-id": String(repoId),
