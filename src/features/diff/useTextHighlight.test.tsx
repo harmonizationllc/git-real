@@ -1,3 +1,5 @@
+import type { Parser } from "@lezer/common";
+import { Tree } from "@lezer/common";
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadParser } from "./model/highlight";
@@ -44,7 +46,9 @@ describe("useTextHighlight eligibility", () => {
 // Contract: HIGHLIGHT_LIMIT lines is the largest highlighted file; one more is skipped.
 describe("useTextHighlight limit boundary", () => {
   it("should highlight a file of exactly HIGHLIGHT_LIMIT lines", async () => {
-    const lines = Array.from({ length: HIGHLIGHT_LIMIT }, () => "const a = 1;");
+    // A span-less stub parser keeps this about the limit check, not real tokenizing time.
+    vi.mocked(loadParser).mockResolvedValueOnce({ parse: () => Tree.empty } as unknown as Parser);
+    const lines = Array.from({ length: HIGHLIGHT_LIMIT }, () => "x");
     const { result } = renderHook(() => useTextHighlight("a.js", lines));
     await waitFor(() => expect(result.current).not.toBeNull());
     expect(loadParser).toHaveBeenCalledTimes(1);
