@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listTrackedFiles } from "../../lib/ipc";
+import { queryKeys } from "../../lib/query/keys";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { FilePickerDialog } from "./FilePickerDialog";
 
@@ -415,5 +416,34 @@ describe("FilePickerDialog arrow clamping", () => {
     press("ArrowDown");
     press("ArrowUp");
     expect(activeOption()).toBe(screen.getAllByRole("option")[0]);
+  });
+});
+
+// Contract (review fix round 1): Enter on a focused button activates it, and Enter never picks a missing row.
+describe("FilePickerDialog review fixes", () => {
+  it("should retry when Enter is pressed on the focused Retry button", async () => {
+    vi.mocked(listTrackedFiles).mockRejectedValueOnce({ kind: "git", message: "list boom" });
+    const { user } = await renderDialog({}, false);
+    const retry = await within(await screen.findByRole("alert")).findByRole("button", {
+      name: "Retry",
+    });
+    retry.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(listTrackedFiles).toHaveBeenCalledTimes(2));
+  });
+
+  it("should never pick undefined when the list shrinks under the active last row", async () => {
+    const { onPick, queryClient } = await renderDialog();
+    press("ArrowDown");
+    press("ArrowDown");
+    press("ArrowDown");
+    press("ArrowDown");
+    expect(activeOption()).toBe(screen.getAllByRole("option")[FILES.length - 1]);
+    vi.mocked(listTrackedFiles).mockResolvedValue(["README.md"]);
+    await queryClient.refetchQueries({ queryKey: queryKeys.trackedFiles(1) });
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
+    press("Enter");
+    expect(onPick).not.toHaveBeenCalledWith(undefined);
+    for (const call of onPick.mock.calls) expect(FILES).toContain(call[0]);
   });
 });
