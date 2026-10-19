@@ -346,7 +346,11 @@ conflict count. Title per 5.6. Buttons:
 - **`commitGate`** takes `operation: OperationState | undefined` after
   `status`: a rebase → `Use Continue in the banner to resume the rebase`
   (placed after the loading check and before the identity check). The
-  existing `Resolve conflicts before committing` rule stays.
+  existing `Resolve conflicts before committing` rule stays. During a merge
+  the `Stage changes to commit` rule is skipped: keeping "ours" on every
+  conflict leaves the index equal to HEAD, and `git commit` with
+  `MERGE_HEAD` records the merge commit anyway. Cherry-pick and revert keep
+  the rule because git refuses an empty commit.
 
 ### 5.5 Wiring
 
