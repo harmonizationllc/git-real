@@ -1414,3 +1414,159 @@ describe("DetailPane blame view", () => {
     expect(screen.queryByRole("table", { name: "Blame" })).toBeNull();
   });
 });
+
+const noHunkButtons = () =>
+  screen.queryByRole("button", { name: /^(Stage|Unstage|Discard|Select )/ });
+
+// Contract: every commit-scope state keeps the file header and offers no working-tree actions.
+describe("DetailPane commit scope states", () => {
+  const commitSetup = (path = "a.ts") => {
+    selectScope(COMMIT, path);
+    return renderWithProviders(<DetailPane repoId={REPO} />);
+  };
+
+  it("should show the header and the loading status while a commit diff loads", async () => {
+    vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
+    commitSetup();
+    expect(await header()).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading diff…");
+    expect(noHunkButtons()).toBeNull();
+  });
+
+  it("should show the header and an alert with Retry when a commit diff fails", async () => {
+    vi.mocked(getFileDiff).mockRejectedValueOnce(gitError);
+    commitSetup();
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(getFileDiff).toHaveBeenCalledTimes(2);
+    expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", COMMIT, false, undefined);
+  });
+
+  it("should keep the header and offer no stage actions in the no-changes state", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "none" });
+    commitSetup("src/a.ts");
+    await screen.findByText("No changes in src/a.ts");
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+    expect(screen.queryByText(/No (staged|unstaged|\[object)/)).toBeNull();
+    expect(noHunkButtons()).toBeNull();
+  });
+
+  it("should show the whitespace control in the commit no-changes state when hiding whitespace", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "none" });
+    commitSetup();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Hide whitespace changes" }));
+    expect(useDiffPrefs.getState().ignoreWhitespace).toBe(false);
+  });
+
+  it("should show the header and the placeholder for a binary file in a commit", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "blob.bin", isBinary: true, change: "modified", scope: COMMIT }),
+    );
+    commitSetup("blob.bin");
+    expect(await screen.findByText("Binary file — no preview available")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+  });
+
+  it("should load image bytes at the commit scope for a binary image in a commit", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "logo.png", isBinary: true, change: "modified", scope: COMMIT }),
+    );
+    commitSetup("logo.png");
+    expect(await screen.findByAltText("New image")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+    expect(getFileContent).toHaveBeenCalledWith(REPO, "logo.png", COMMIT, "new");
+  });
+
+  it("should show the header, no hunk actions and Load full diff for a truncated commit diff", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(textDiff({ truncated: true, scope: COMMIT }));
+    commitSetup();
+    expect(await screen.findByRole("button", { name: "Load full diff" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+    expect(noHunkButtons()).toBeNull();
+  });
+
+  it("should show the header and the empty-hunks copy for a commit diff without line changes", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([], { scope: COMMIT }));
+    commitSetup();
+    expect(await screen.findByText("No line changes in this file")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "View" })).toBeInTheDocument();
+  });
+
+  it("should close the commit file from the header without touching the selected commit", async () => {
+    useWorkspace.getState().selectCommit(REPO, "abc1234");
+    commitSetup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
+    expect(useWorkspace.getState().selected[REPO]).toBeNull();
+    expect(useWorkspace.getState().selectedCommit[REPO]).toBe("abc1234");
+  });
+
+  it("should store the file path as the history path from a commit-scope header", async () => {
+    commitSetup("src/a.ts");
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Show file history" }));
+    expect(useWorkspace.getState().historyPath[REPO]).toBe("src/a.ts");
+  });
+
+  it("should show a commit rename in the header as old → new", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(textDiff({ oldPath: "old.ts", scope: COMMIT }));
+    commitSetup();
+    expect(await screen.findByText("old.ts → a.ts")).toBeInTheDocument();
+  });
+});
+
+// Contract: Blame never queries the diff; the cached diff is reused on return unless invalidated.
+describe("DetailPane Diff and Blame round trips", () => {
+  it("should not call getFileDiff for a commit while in Blame, then reuse the cache on return", async () => {
+    selectScope(COMMIT);
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
+    await screen.findByRole("table", { name: "Blame" });
+    fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    await diffRegion();
+    expect(getFileDiff).toHaveBeenCalledTimes(1);
+  });
+
+  it("should refetch on return to Diff when the repo was invalidated during Blame", async () => {
+    selectScope("unstaged");
+    const { queryClient } = renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
+    await screen.findByRole("table", { name: "Blame" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", REPO] }));
+    expect(getFileDiff).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    await diffRegion();
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
+  });
+
+  it("should not refetch a mounted diff on window focus", async () => {
+    selectScope("unstaged");
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getFileDiff).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep the Blame view and fetch no diff when a commit file is replaced by another commit's file", async () => {
+    useWorkspace.getState().setCentreView(REPO, "blame");
+    selectScope(COMMIT);
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await screen.findByRole("table", { name: "Blame" });
+    act(() => selectScope({ commit: "def5678" }));
+    await waitFor(() =>
+      expect(vi.mocked(BlameView)).toHaveBeenLastCalledWith(
+        { repoId: REPO, path: "a.ts", oid: "def5678" },
+        undefined,
+      ),
+    );
+    expect(getFileDiff).not.toHaveBeenCalled();
+  });
+});

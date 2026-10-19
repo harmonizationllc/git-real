@@ -334,3 +334,52 @@ describe("reference stability with history state", () => {
     expect(useWorkspace.getState().centreView).toBe(before);
   });
 });
+
+// Contract: clear forgets all four records of one repo and nothing of any other.
+describe("clear with every record set", () => {
+  const fill = (id: number) => {
+    const w = useWorkspace.getState();
+    w.select(id, { path: `f${id}`, scope: { commit: "abc" } });
+    w.selectCommit(id, `c${id}`);
+    w.showHistory(id, `h${id}`);
+    w.setCentreView(id, "blame");
+  };
+  it("should remove all four records of the repo", () => {
+    fill(1);
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect([1 in s.selected, 1 in s.selectedCommit, 1 in s.historyPath, 1 in s.centreView]).toEqual(
+      [false, false, false, false],
+    );
+  });
+  it("should keep all four records of another repo", () => {
+    fill(1);
+    fill(2);
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect(s.selected[2]).toEqual({ path: "f2", scope: { commit: "abc" } });
+    expect(s.selectedCommit[2]).toBe("c2");
+    expect(s.historyPath[2]).toBe("h2");
+    expect(s.centreView[2]).toBe("blame");
+  });
+  it("should clear a repo whose only record is a null selection", () => {
+    useWorkspace.getState().select(1, null);
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().selected).toBe(false);
+  });
+  it("should clear a repo whose history path is null", () => {
+    useWorkspace.getState().showHistory(1, null);
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().historyPath).toBe(false);
+  });
+  it("should keep the untouched records by reference when only history is cleared", () => {
+    useWorkspace.getState().showHistory(1, "h");
+    useWorkspace.getState().select(2, { path: "x", scope: "staged" });
+    const { selected, selectedCommit, centreView } = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    const s = useWorkspace.getState();
+    expect(s.selected).toBe(selected);
+    expect(s.selectedCommit).toBe(selectedCommit);
+    expect(s.centreView).toBe(centreView);
+  });
+});

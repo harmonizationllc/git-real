@@ -41,6 +41,34 @@ describe("useTextHighlight eligibility", () => {
   });
 });
 
+// Contract: HIGHLIGHT_LIMIT lines is the largest highlighted file; one more is skipped.
+describe("useTextHighlight limit boundary", () => {
+  it("should highlight a file of exactly HIGHLIGHT_LIMIT lines", async () => {
+    const lines = Array.from({ length: HIGHLIGHT_LIMIT }, () => "const a = 1;");
+    const { result } = renderHook(() => useTextHighlight("a.js", lines));
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(loadParser).toHaveBeenCalledTimes(1);
+    expect(result.current).toHaveLength(HIGHLIGHT_LIMIT);
+  });
+  it("should highlight an empty file as no lines", async () => {
+    const lines: string[] = [];
+    const { result } = renderHook(() => useTextHighlight("a.js", lines));
+    await waitFor(() => expect(result.current).not.toBeNull());
+    expect(result.current).toEqual([]);
+  });
+  it("should go back to null when the lines grow past the limit", async () => {
+    const small = ["const a = 1;"];
+    const big = Array.from({ length: HIGHLIGHT_LIMIT + 1 }, () => "x");
+    const { result, rerender } = renderHook(({ l }) => useTextHighlight("a.js", l), {
+      initialProps: { l: small },
+    });
+    await waitFor(() => expect(result.current).not.toBeNull());
+    rerender({ l: big });
+    await settle();
+    expect(result.current).toBeNull();
+  });
+});
+
 // Contract: tokens arrive once the grammar loads, one array per line.
 describe("useTextHighlight result", () => {
   it("should be null while loading and tokens after", async () => {
