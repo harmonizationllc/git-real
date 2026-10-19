@@ -37,6 +37,13 @@ describe("useCanFastForward", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 
+  it("should stop loading with no check when canFastForward rejects", async () => {
+    vi.mocked(canFastForward).mockRejectedValue(new Error("boom"));
+    const { result } = renderHookWithProviders(() => useCanFastForward(1, "feature"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.check).toBeUndefined();
+  });
+
   it("should not query when the branch is null", async () => {
     const { result } = renderHookWithProviders(() => useCanFastForward(1, null));
     await Promise.resolve();

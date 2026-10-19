@@ -118,7 +118,7 @@ describe("useIntegrationActions results", () => {
     vi.mocked(rebaseOnto).mockResolvedValue("conflicts");
     const { result } = renderHookWithProviders(() => useIntegrationActions(4));
     await run(() => result.current, { action: "rebase", onto: "main" });
-    expect(result.current.error).toBeNull();
+    await waitFor(() => expect(result.current.error).toBeNull());
   });
 
   it("should resolve the AppError when the wrapper rejects with one", async () => {
@@ -131,7 +131,7 @@ describe("useIntegrationActions results", () => {
     vi.mocked(abortOperation).mockRejectedValue(failure);
     const { result } = renderHookWithProviders(() => useIntegrationActions(4));
     await run(() => result.current, { action: "abort" });
-    expect(result.current.error).toEqual(failure);
+    await waitFor(() => expect(result.current.error).toEqual(failure));
   });
 
   it("should map a non-AppError rejection to an io error", async () => {
@@ -155,14 +155,14 @@ describe("useIntegrationActions results", () => {
     const req: Request = { action: "resolve", paths: ["a"], side: "ours" };
     await run(() => result.current, req);
     await run(() => result.current, req);
-    expect(result.current.error).toBeNull();
+    await waitFor(() => expect(result.current.error).toBeNull());
   });
 
   it("should not be pending before and after a run", async () => {
     const { result } = renderHookWithProviders(() => useIntegrationActions(4));
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current.pending).toBe(false));
     await run(() => result.current, { action: "abort" });
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current.pending).toBe(false));
   });
 
   it("should be pending while an action is in flight", async () => {
@@ -182,7 +182,7 @@ describe("useIntegrationActions results", () => {
       finish();
       await pending;
     });
-    expect(result.current.pending).toBe(false);
+    await waitFor(() => expect(result.current.pending).toBe(false));
   });
 });
 

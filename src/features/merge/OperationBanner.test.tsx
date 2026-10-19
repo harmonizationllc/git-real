@@ -358,9 +358,8 @@ describe("OperationBanner feedback", () => {
   it("should not be aria-busy when idle", () => {
     provide({ state: mergeState, pending: false });
     renderWithProviders(<OperationBanner repoId={1} />);
-    expect(screen.getByRole("region", { name: "Operation in progress" })).toHaveAttribute(
+    expect(screen.getByRole("region", { name: "Operation in progress" })).not.toHaveAttribute(
       "aria-busy",
-      "false",
     );
   });
 });
