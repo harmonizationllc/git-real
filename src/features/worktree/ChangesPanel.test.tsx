@@ -413,25 +413,25 @@ describe("ChangesPanel context menu", () => {
   it("should offer Stage, Add to .gitignore and Delete… for an untracked row", async () => {
     await renderPanel(unstaged("new.txt", "untracked"));
     rightClick(btn("untracked new.txt"));
-    expect(itemLabels()).toEqual(["Stage", "Add to .gitignore", "Delete…"]);
+    expect(itemLabels()).toEqual(["Stage", "Add to .gitignore", "Delete…", "File history"]);
   });
 
   it("should offer Stage and Discard… for a tracked unstaged row", async () => {
     await renderPanel(unstaged("a.txt"));
     rightClick(btn("modified a.txt"));
-    expect(itemLabels()).toEqual(["Stage", "Discard…"]);
+    expect(itemLabels()).toEqual(["Stage", "Discard…", "File history"]);
   });
 
   it("should offer Unstage for a staged row", async () => {
     await renderPanel(staged("a.txt"));
     rightClick(btn("modified a.txt"));
-    expect(itemLabels()).toEqual(["Unstage"]);
+    expect(itemLabels()).toEqual(["Unstage", "File history"]);
   });
 
   it("should offer Mark resolved (stage) for a conflicts row", async () => {
     await renderPanel(conflict("c.txt"));
     rightClick(btn("conflicted c.txt"));
-    expect(itemLabels()).toEqual(["Mark resolved (stage)"]);
+    expect(itemLabels()).toEqual(["Mark resolved (stage)", "File history"]);
   });
 
   it("should not show a menu until a row is right-clicked", async () => {
@@ -702,12 +702,18 @@ describe("ChangesPanel pending", () => {
     expect(btn("modified a.txt")).toBeEnabled();
   });
 
-  it("should disable every context menu item while pending", async () => {
+  it("should disable every context menu item except File history while pending", async () => {
     await startPending();
     rightClick(btn("modified a.txt"));
-    expect(screen.getAllByRole("menuitem").every((i) => (i as HTMLButtonElement).disabled)).toBe(
-      true,
-    );
+    const others = screen.getAllByRole("menuitem").filter((i) => i.textContent !== "File history");
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((i) => (i as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it("should keep File history enabled while pending", async () => {
+    await startPending();
+    rightClick(btn("modified a.txt"));
+    expect(screen.getByRole("menuitem", { name: "File history" })).toBeEnabled();
   });
 
   it("should re-enable the buttons when the action settles", async () => {
@@ -959,5 +965,86 @@ describe("ChangesPanel untracked folder", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "the selection does not match the file's changes",
     );
+  });
+});
+
+// Contract: every row's menu ends with File history, which opens that file's history.
+describe("ChangesPanel File history menu item", () => {
+  const history = () => screen.getByRole("menuitem", { name: "File history" });
+  const last = () => screen.getAllByRole("menuitem").at(-1);
+
+  it("should offer File history last for a staged row", async () => {
+    await renderPanel(staged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    expect(last()).toBe(history());
+  });
+
+  it("should offer File history last for an unstaged row", async () => {
+    await renderPanel(unstaged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    expect(last()).toBe(history());
+  });
+
+  it("should offer File history last for an untracked row", async () => {
+    await renderPanel(unstaged("new.txt", "untracked"));
+    rightClick(btn("untracked new.txt"));
+    expect(last()).toBe(history());
+  });
+
+  it("should offer File history last for a conflicted row", async () => {
+    await renderPanel(conflict("c.txt"));
+    rightClick(btn("conflicted c.txt"));
+    expect(last()).toBe(history());
+  });
+
+  it("should show the file's history for a staged row", async () => {
+    const { user } = await renderPanel(staged("s.txt"));
+    rightClick(btn("modified s.txt"));
+    await user.click(history());
+    expect(useWorkspace.getState().historyPath[1]).toBe("s.txt");
+  });
+
+  it("should show the file's history for an unstaged row", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    await user.click(history());
+    expect(useWorkspace.getState().historyPath[1]).toBe("a.txt");
+  });
+
+  it("should show the file's history for an untracked row", async () => {
+    const { user } = await renderPanel(unstaged("new.txt", "untracked"));
+    rightClick(btn("untracked new.txt"));
+    await user.click(history());
+    expect(useWorkspace.getState().historyPath[1]).toBe("new.txt");
+  });
+
+  it("should show the file's history for a conflicted row", async () => {
+    const { user } = await renderPanel(conflict("c.txt"));
+    rightClick(btn("conflicted c.txt"));
+    await user.click(history());
+    expect(useWorkspace.getState().historyPath[1]).toBe("c.txt");
+  });
+
+  it("should show a renamed file's history under its new path", async () => {
+    const { user } = await renderPanel(
+      entry({ path: "new.txt", oldPath: "old.txt", index: "renamed" }),
+    );
+    rightClick(btn("renamed old.txt → new.txt"));
+    await user.click(history());
+    expect(useWorkspace.getState().historyPath[1]).toBe("new.txt");
+  });
+
+  it("should not stage, unstage or discard anything from File history", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    await user.click(history());
+    expect(stagePaths).not.toHaveBeenCalled();
+    expect(discardPaths).not.toHaveBeenCalled();
+  });
+
+  it("should show no history before the item is chosen", async () => {
+    await renderPanel(unstaged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    expect(useWorkspace.getState().historyPath[1]).toBeUndefined();
   });
 });

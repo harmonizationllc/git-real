@@ -4,12 +4,15 @@ import {
   commit,
   getCommit,
   getCommitConfig,
+  getCommitFiles,
   getFileDiff,
+  getFileHistory,
   getHeadMessage,
   getLogPage,
   getLogSummary,
   getStatus,
   listBranches,
+  listTrackedFiles,
   onRepoChanged,
 } from "../lib/ipc";
 import type { BranchList } from "../lib/ipc";
@@ -30,12 +33,15 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   commit: vi.fn(),
   getCommit: vi.fn(),
   getCommitConfig: vi.fn(),
+  getCommitFiles: vi.fn(),
   getFileDiff: vi.fn(),
+  getFileHistory: vi.fn(),
   getHeadMessage: vi.fn(),
   getLogPage: vi.fn(),
   getLogSummary: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
+  listTrackedFiles: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
 
@@ -71,7 +77,7 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
   vi.mocked(listBranches).mockResolvedValue(branchList());
-  useWorkspace.setState({ selected: {}, selectedCommit: {} });
+  useWorkspace.setState({ selected: {}, selectedCommit: {}, historyPath: {}, centreView: {} });
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
   vi.mocked(getCommit).mockResolvedValue(commitDetail({ oid: oidOf(0) }));
@@ -81,6 +87,9 @@ beforeEach(() => {
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
+  vi.mocked(getCommitFiles).mockResolvedValue([]);
+  vi.mocked(getFileHistory).mockResolvedValue([]);
+  vi.mocked(listTrackedFiles).mockResolvedValue(["src/a.ts", "b.txt"]);
 });
 
 afterEach(() => {
@@ -762,5 +771,198 @@ describe("RepoPane handle sides", () => {
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
     expect(body().style.gridTemplateColumns).toBe("240px auto 1fr auto 304px");
+  });
+});
+
+// Contract: the refs column shows the branches, or the file history while a history path is set.
+describe("RepoPane history mode", () => {
+  const PATH = "src/a.ts";
+
+  it("should show the branches panel by default", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
+  });
+
+  it("should show the file history panel instead of the branches when a history path is set", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "File history" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+  });
+
+  it("should pass the history path to the panel", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const panel = await screen.findByRole("region", { name: "File history" });
+    expect(within(panel).getByText(PATH)).toBeInTheDocument();
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(1, 1, PATH));
+  });
+
+  it("should keep the commit graph in the History region in history mode", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const history = screen.getByRole("region", { name: "History" });
+    expect(await within(history).findByRole("listbox", { name: "Commits" })).toBeInTheDocument();
+  });
+
+  it("should keep the resize handle label in history mode", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "File history" });
+    expect(handle("Resize branches column")).toBeInTheDocument();
+  });
+
+  it("should return to the branches panel when the history path is cleared", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close file history" }));
+    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
+  });
+
+  it("should show the history of only the tab's own repo", async () => {
+    useWorkspace.getState().showHistory(1, PATH);
+    renderWithProviders(<RepoPane tab={tab(2)} />);
+    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
+  });
+});
+
+// Contract: Ctrl+Shift+H (or Meta+Shift+H) opens the file picker unless a dialog is already open.
+describe("RepoPane file history shortcut", () => {
+  const openPicker = (init: KeyboardEventInit = { ctrlKey: true, shiftKey: true, key: "H" }) =>
+    fireEvent.keyDown(window, init);
+  const dialogs = () => screen.queryAllByRole("dialog");
+
+  it("should open the file picker on Ctrl+Shift+H", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker();
+    expect(await screen.findByRole("dialog", { name: "File history" })).toBeInTheDocument();
+  });
+
+  it("should open the file picker when the key is reported in lower case", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker({ ctrlKey: true, shiftKey: true, key: "h" });
+    expect(await screen.findByRole("dialog", { name: "File history" })).toBeInTheDocument();
+  });
+
+  it("should open the file picker on Meta+Shift+H", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker({ metaKey: true, shiftKey: true, key: "H" });
+    expect(await screen.findByRole("dialog", { name: "File history" })).toBeInTheDocument();
+  });
+
+  it("should prevent the default action when it opens the picker", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(openPicker()).toBe(false);
+  });
+
+  it("should not open the picker without Shift", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker({ ctrlKey: true, key: "h" });
+    expect(dialogs()).toEqual([]);
+  });
+
+  it("should not open the picker without Ctrl or Meta", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker({ shiftKey: true, key: "H" });
+    expect(dialogs()).toEqual([]);
+  });
+
+  it("should not open the picker for another key", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker({ ctrlKey: true, shiftKey: true, key: "J" });
+    expect(dialogs()).toEqual([]);
+  });
+
+  it("should leave the default action alone for keys it ignores", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(openPicker({ ctrlKey: true, key: "h" })).toBe(true);
+  });
+
+  it("shortcut is ignored while a dialog is open", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const other = document.createElement("div");
+    other.setAttribute("role", "dialog");
+    document.body.append(other);
+    try {
+      const notPrevented = openPicker();
+      expect(dialogs()).toHaveLength(1);
+      expect(notPrevented).toBe(true);
+    } finally {
+      other.remove();
+    }
+  });
+
+  it("should fetch the tracked files for the tab's repo id when the picker opens", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker();
+    await waitFor(() => expect(listTrackedFiles).toHaveBeenCalledWith(7));
+  });
+
+  it("should not fetch the tracked files before the picker opens", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(listTrackedFiles).not.toHaveBeenCalled();
+  });
+
+  it("should enter history mode for the picked file and close the picker", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker();
+    fireEvent.click(await screen.findByRole("option", { name: "src/a.ts" }));
+    expect(useWorkspace.getState().historyPath[1]).toBe("src/a.ts");
+    expect(dialogs()).toEqual([]);
+    expect(await screen.findByRole("region", { name: "File history" })).toBeInTheDocument();
+  });
+
+  it("should close the picker on Escape without entering history mode", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker();
+    fireEvent.keyDown(await screen.findByRole("searchbox", { name: "Find file" }), {
+      key: "Escape",
+    });
+    expect(dialogs()).toEqual([]);
+    expect(useWorkspace.getState().historyPath[1]).toBeUndefined();
+  });
+
+  it("should register one keydown listener on the window and keep it across re-renders", async () => {
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    rerender(<RepoPane tab={tab(1)} />);
+    const adds = add.mock.calls.filter(([type]) => type === "keydown").length;
+    const removes = remove.mock.calls.filter(([type]) => type === "keydown").length;
+    add.mockRestore();
+    remove.mockRestore();
+    expect(adds).toBe(1);
+    expect(removes).toBe(0);
+  });
+
+  it("should remove the keydown listener on unmount", async () => {
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { unmount } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const added = add.mock.calls.filter(([type]) => type === "keydown").map(([, fn]) => fn);
+    unmount();
+    const removed = remove.mock.calls.filter(([type]) => type === "keydown").map(([, fn]) => fn);
+    add.mockRestore();
+    remove.mockRestore();
+    expect(added).toHaveLength(1);
+    expect(removed).toEqual(added);
   });
 });
