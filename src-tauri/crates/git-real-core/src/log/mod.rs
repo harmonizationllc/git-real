@@ -6,7 +6,7 @@ mod lanes;
 mod search;
 mod walk;
 
-use git2::{Commit, Oid, ResetType};
+use git2::{Commit, ResetType};
 
 use self::cache::{CachedRow, LogCache};
 use crate::error::GitError;
@@ -14,6 +14,7 @@ use crate::git_cli;
 use crate::model::{CommitDetail, LogPage, LogSummary, ResetMode, Signature};
 use crate::refs::switch::{self, SwitchTarget};
 use crate::repo::RepoSession;
+use crate::revision;
 
 /// The most rows one page may hold.
 const MAX_PAGE: u32 = 1000;
@@ -115,7 +116,7 @@ impl RepoSession {
     }
 
     /// The cache built as `generation`, or `LogStale`.
-    fn log_cache(&self, generation: u64) -> Result<&LogCache, GitError> {
+    pub(crate) fn log_cache(&self, generation: u64) -> Result<&LogCache, GitError> {
         self.log_cache
             .as_ref()
             .filter(|c| c.generation == generation)
@@ -124,16 +125,11 @@ impl RepoSession {
 
     /// The commit named by exactly 40 hex characters, or `CommitNotFound`.
     fn find_commit_hex(&self, oid: &str) -> Result<Commit<'_>, GitError> {
-        let not_found = || GitError::CommitNotFound(oid.to_owned());
-        if oid.len() != 40 || !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(not_found());
-        }
-        let oid = Oid::from_str(oid).map_err(|_| not_found())?;
-        self.repo().find_commit(oid).map_err(|_| not_found())
+        revision::resolve_commit(self.repo(), oid)
     }
 }
 
-fn signature(sig: &git2::Signature<'_>) -> Signature {
+pub(crate) fn signature(sig: &git2::Signature<'_>) -> Signature {
     Signature {
         name: String::from_utf8_lossy(sig.name_bytes()).into_owned(),
         email: String::from_utf8_lossy(sig.email_bytes()).into_owned(),

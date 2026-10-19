@@ -3,12 +3,13 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use git2::{ErrorCode, ObjectType};
+use git2::{Blob, ErrorCode, ObjectType, Oid, Tree};
 
 use crate::error::GitError;
 use crate::model::{DiffScope, DiffSide};
 use crate::paths::{checked_relative, repo_relative};
 use crate::repo::RepoSession;
+use crate::revision;
 
 /// Git file mode of a gitlink (submodule) entry.
 const GITLINK_MODE: u32 = 0o160000;
@@ -16,6 +17,7 @@ const GITLINK_MODE: u32 = 0o160000;
 impl RepoSession {
     /// Raw bytes of `path` on `side` of `scope`, refusing anything above `max_bytes`.
     /// `path` is the path on that side (the old path for the old side of a rename).
+    /// For `Commit`, the old side is the first parent's tree and the new side the commit's.
     pub fn file_content(
         &self,
         path: &str,
@@ -23,7 +25,7 @@ impl RepoSession {
         side: DiffSide,
         max_bytes: u64,
     ) -> Result<Vec<u8>, GitError> {
-        match (scope, side) {
+        match (&scope, side) {
             (DiffScope::Staged, DiffSide::Old) => self.head_blob(&repo_relative(path)?, max_bytes),
             (DiffScope::Staged, DiffSide::New) | (DiffScope::Unstaged, DiffSide::Old) => {
                 self.index_blob(&repo_relative(path)?, max_bytes)
@@ -31,6 +33,17 @@ impl RepoSession {
             (DiffScope::Unstaged, DiffSide::New) => {
                 let workdir = self.workdir()?;
                 workdir_bytes(workdir, &checked_relative(workdir, path)?, max_bytes)
+            }
+            (DiffScope::Commit(oid), side) => {
+                let rel = repo_relative(path)?;
+                let commit = revision::resolve_commit(self.repo(), oid)?;
+                let tree = match side {
+                    DiffSide::Old => {
+                        revision::first_parent_tree(&commit)?.ok_or_else(|| not_found(&rel))?
+                    }
+                    DiffSide::New => commit.tree()?,
+                };
+                self.tree_blob(&tree, &rel, max_bytes)
             }
         }
     }
@@ -43,6 +56,16 @@ impl RepoSession {
             }
             Err(e) => return Err(e.into()),
         };
+        self.tree_blob(&tree, rel, max_bytes)
+    }
+
+    fn tree_blob(&self, tree: &Tree<'_>, rel: &str, max_bytes: u64) -> Result<Vec<u8>, GitError> {
+        let id = self.tree_blob_id(tree, rel)?;
+        self.blob_bytes(rel, id, max_bytes)
+    }
+
+    /// The blob id at `rel` in `tree`; `PathNotFound` when absent, a tree, or a gitlink.
+    pub(crate) fn tree_blob_id(&self, tree: &Tree<'_>, rel: &str) -> Result<Oid, GitError> {
         let entry = match tree.get_path(Path::new(rel)) {
             Ok(entry) => entry,
             Err(e) if e.code() == ErrorCode::NotFound => return Err(not_found(rel)),
@@ -52,7 +75,7 @@ impl RepoSession {
         if entry.kind() != Some(ObjectType::Blob) {
             return Err(not_found(rel));
         }
-        self.blob_bytes(rel, entry.id(), max_bytes)
+        Ok(entry.id())
     }
 
     fn index_blob(&self, rel: &str, max_bytes: u64) -> Result<Vec<u8>, GitError> {
@@ -68,8 +91,17 @@ impl RepoSession {
         self.blob_bytes(rel, entry.id, max_bytes)
     }
 
-    /// Checks the object size through the ODB header before loading the blob.
-    fn blob_bytes(&self, rel: &str, oid: git2::Oid, max_bytes: u64) -> Result<Vec<u8>, GitError> {
+    fn blob_bytes(&self, rel: &str, oid: Oid, max_bytes: u64) -> Result<Vec<u8>, GitError> {
+        Ok(self.checked_blob(rel, oid, max_bytes)?.content().to_vec())
+    }
+
+    /// Checks kind and size through the ODB header, then loads the blob.
+    pub(crate) fn checked_blob(
+        &self,
+        rel: &str,
+        oid: Oid,
+        max_bytes: u64,
+    ) -> Result<Blob<'_>, GitError> {
         let (size, kind) = self.repo().odb()?.read_header(oid)?;
         if kind != ObjectType::Blob {
             return Err(not_found(rel));
@@ -78,7 +110,7 @@ impl RepoSession {
         if size > max_bytes {
             return Err(too_large(rel, size, max_bytes));
         }
-        Ok(self.repo().find_blob(oid)?.content().to_vec())
+        Ok(self.repo().find_blob(oid)?)
     }
 }
 

@@ -67,6 +67,8 @@ pub enum GitError {
     LogStale,
     #[error("{0} is not a commit in this repository")]
     CommitNotFound(String),
+    #[error("{0} is a binary file")]
+    BinaryFile(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

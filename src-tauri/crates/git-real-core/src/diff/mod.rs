@@ -14,6 +14,7 @@ use crate::model::{
     HunkAction, HunkSelection, TextEncoding,
 };
 use crate::repo::RepoSession;
+use crate::revision;
 use crate::status::file_path;
 
 /// How diff line bytes become `DiffLine::content`.
@@ -121,7 +122,7 @@ impl RepoSession {
         mode: LineMode,
     ) -> Result<LoadedDiff, GitError> {
         let no_changes = || GitError::NoChanges(path.to_owned());
-        let diff = self.scoped_diff(path, scope, opts)?;
+        let diff = self.scoped_diff(path, &scope, opts)?;
 
         let idx = diff
             .deltas()
@@ -132,7 +133,7 @@ impl RepoSession {
         let change = change_kind(delta.status()).ok_or_else(no_changes)?;
         let raw_binary = delta.flags().is_binary();
         let decoded = if raw_binary && mode == LineMode::Display {
-            self.decode_sides(&delta, scope, opts, path)?
+            self.decode_sides(&delta, &scope, opts, path)?
         } else {
             None
         };
@@ -176,11 +177,12 @@ impl RepoSession {
     }
 
     /// Builds the git2 diff for `scope`: pathspec-limited when unstaged, whole
-    /// index with rename detection when staged.
+    /// index with rename detection when staged, whole commit against its first
+    /// parent with rename detection for a commit.
     fn scoped_diff(
         &self,
         path: &str,
-        scope: DiffScope,
+        scope: &DiffScope,
         opts: DiffOptions,
     ) -> Result<git2::Diff<'_>, GitError> {
         let repo = self.repo();
@@ -206,6 +208,12 @@ impl RepoSession {
                 let mut diff = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut o))?;
                 diff.find_similar(Some(git2::DiffFindOptions::new().renames(true)))?;
                 Ok(diff)
+            }
+            DiffScope::Commit(oid) => {
+                let commit = revision::resolve_commit(repo, oid)?;
+                let new = commit.tree()?;
+                let old = revision::first_parent_tree(&commit)?;
+                revision::commit_delta_diff(repo, old.as_ref(), &new, &mut o)
             }
         }
     }
@@ -251,7 +259,7 @@ impl RepoSession {
     fn decode_sides(
         &self,
         delta: &git2::DiffDelta<'_>,
-        scope: DiffScope,
+        scope: &DiffScope,
         opts: DiffOptions,
         path: &str,
     ) -> Result<Option<DecodedSides>, GitError> {
@@ -298,14 +306,19 @@ impl RepoSession {
     fn sniff_side(
         &self,
         file: git2::DiffFile<'_>,
-        scope: DiffScope,
+        scope: &DiffScope,
         side: DiffSide,
         opts: DiffOptions,
     ) -> Result<Option<Sniffed>, GitError> {
         if !file.exists() {
             return Ok(Some(Sniffed::Absent));
         }
-        let bytes = match self.file_content(&file_path(&file), scope, side, opts.max_decode_bytes) {
+        let bytes = match self.file_content(
+            &file_path(&file),
+            scope.clone(),
+            side,
+            opts.max_decode_bytes,
+        ) {
             Ok(bytes) => bytes,
             Err(GitError::TooLarge { .. } | GitError::PathNotFound(_)) => return Ok(None),
             Err(e) => return Err(e),
@@ -315,7 +328,7 @@ impl RepoSession {
 }
 
 /// Maps a delta status to a change kind; `None` means nothing to show.
-fn change_kind(status: git2::Delta) -> Option<ChangeKind> {
+pub(crate) fn change_kind(status: git2::Delta) -> Option<ChangeKind> {
     match status {
         git2::Delta::Added | git2::Delta::Copied => Some(ChangeKind::Added),
         git2::Delta::Untracked => Some(ChangeKind::Untracked),
