@@ -1,0 +1,77 @@
+/* Sits under FileHeader in DetailPane's flex column. */
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  color: var(--color-text);
+}
+
+.inner {
+  position: relative;
+  width: 100%;
+}
+
+/* Lines never wrap, so every row keeps the fixed height and the table scrolls sideways. */
+.item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 64px 120px 96px 48px auto;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+  border-left: 2px solid transparent;
+}
+
+.row[data-hunk-parity="1"] {
+  background: var(--color-surface-hover);
+}
+
+.row[data-current="true"] {
+  border-left-color: var(--color-accent);
+  background: var(--color-line-selected);
+}
+
+.hash,
+.author,
+.date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.author,
+.date,
+.lineno {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+}
+
+.lineno {
+  text-align: right;
+  font-family: ui-monospace, monospace;
+}
+
+.open {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: ui-monospace, monospace;
+  cursor: pointer;
+}
+
+.open:hover {
+  text-decoration: underline;
+}
+
+.content > code {
+  white-space: pre;
+}

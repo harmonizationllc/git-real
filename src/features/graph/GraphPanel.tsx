@@ -25,6 +25,7 @@ import { useCommitActions } from "./useCommitActions";
 import { logPageOptions, useLogPages } from "./useLogPages";
 import { logSearchOptions, useLogSearch } from "./useLogSearch";
 import { useLogSummary } from "./useLogSummary";
+import { useNow } from "./useNow";
 import styles from "./GraphPanel.module.css";
 
 export interface GraphPanelProps {
@@ -216,8 +217,6 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
 const getItemKey = (index: number) => index;
 const estimateSize = () => ROW_HEIGHT;
 
-const CLOCK_MS = 60_000;
-const nowSeconds = () => Math.floor(Date.now() / 1000);
 /** Swallows a rejection whose only consequence would be a missing scroll or selection. */
 const ignore = () => undefined;
 
@@ -238,12 +237,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Relative dates are computed against this clock rather than reading it during render.
-  const [now, setNow] = useState(nowSeconds);
-  useEffect(() => {
-    // setNow receives nowSeconds as an updater on every tick.
-    const timer = setInterval(setNow, CLOCK_MS, nowSeconds);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow();
 
   // No React Compiler is installed, so nothing memoizes the virtualizer's functions anyway.
   // eslint-disable-next-line react-hooks/incompatible-library

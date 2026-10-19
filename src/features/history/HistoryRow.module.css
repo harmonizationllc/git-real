@@ -1,0 +1,52 @@
+.row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding: 0 8px;
+  border-left: 2px solid transparent;
+  color: var(--color-text);
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
+}
+
+.selected,
+.selected:hover {
+  background: var(--color-surface-hover);
+  border-left-color: var(--color-accent);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 16px;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+}
+
+/* The subject takes the ellipsis first; the date never shrinks. */
+.subject,
+.text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject {
+  flex: 1 1 0;
+}
+
+.date {
+  flex: none;
+  white-space: nowrap;
+}
