@@ -18,4 +18,13 @@ export const queryKeys = {
   commitConfig: (id: RepoId) => ["repo", id, "commitConfig"] as const,
   headMessage: (id: RepoId) => ["repo", id, "headMessage"] as const,
   branches: (id: RepoId) => ["repo", id, "branches"] as const,
+  /** The log summary; under the repo prefix so every repo change re-checks the generation. */
+  log: (id: RepoId) => ["repo", id, "log"] as const,
+  /** Prefix of per-repo data that never changes once fetched; repo invalidation skips it. */
+  repoImmutable: (id: RepoId) => ["repoImmutable", id] as const,
+  logPage: (id: RepoId, generation: number, page: number) =>
+    ["repoImmutable", id, "logPage", generation, page] as const,
+  logSearch: (id: RepoId, generation: number, query: string) =>
+    ["repoImmutable", id, "logSearch", generation, query] as const,
+  commit: (id: RepoId, oid: string) => ["repoImmutable", id, "commit", oid] as const,
 };

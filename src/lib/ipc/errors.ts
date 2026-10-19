@@ -27,6 +27,8 @@ const KINDS: Record<AppErrorKind, true> = {
   remoteNotFound: true,
   checkoutFailed: true,
   pushFailed: true,
+  logStale: true,
+  commitNotFound: true,
 };
 
 export function isAppError(e: unknown): e is AppError {
