@@ -3,6 +3,10 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { ChangeKind, RepoId, StatusEntry } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
+import { useBranches } from "../branches/useBranches";
+import { headName, sideLabels } from "../merge/operationCopy";
+import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
+import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import styles from "./ChangesPanel.module.css";
 import { FileRow, type Section } from "./FileRow";
@@ -101,6 +105,12 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const idPrefix = useId();
   const { status, isLoading, error: statusError, refetch } = useStatus(repoId);
   const actions = useWorktreeActions(repoId);
+  const { state } = useOperationState(repoId);
+  const { branches } = useBranches(repoId);
+  const integration = useIntegrationActions(repoId);
+  const sides = sideLabels(state, headName(branches?.head));
+  const pending = actions.pending || integration.pending;
+  const panelError = actions.error ?? integration.error;
   const rows = rowsBySection(status?.entries ?? []);
   const selection = useFileSelection(
     SECTIONS.flatMap(({ section }) => rows[section].map((r) => r.key)),
@@ -108,6 +118,17 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  const clearErrors = () => {
+    actions.clearError();
+    integration.clearError();
+  };
+
+  // A newer integration failure must not hide behind an older, undismissed panel error.
+  const runIntegration = (req: IntegrationRequest) => {
+    clearErrors();
+    void integration.run(req);
+  };
 
   /** The selected rows of the row's section if the row is selected, else the row alone. */
   const targetRows = (row: Row): Row[] =>
@@ -128,7 +149,20 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     if (row.section === "staged") {
       items = [{ id: "unstage", label: "Unstage", onSelect: () => primary(row) }];
     } else if (row.section === "conflicts") {
-      items = [{ id: "resolve", label: "Mark resolved (stage)", onSelect: () => primary(row) }];
+      items = [
+        {
+          id: "keepOurs",
+          label: `Keep ${sides.ours}`,
+          onSelect: () => runIntegration({ action: "resolve", paths: targets(row), side: "ours" }),
+        },
+        {
+          id: "takeTheirs",
+          label: `Take ${sides.theirs}`,
+          onSelect: () =>
+            runIntegration({ action: "resolve", paths: targets(row), side: "theirs" }),
+        },
+        { id: "resolve", label: "Mark resolved (stage)", onSelect: () => primary(row) },
+      ];
     } else if (row.kind === "untracked") {
       items = [
         stage,
@@ -147,7 +181,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     }
     // File history only reads, so it stays enabled while an action is pending.
     return [
-      ...items.map((item) => ({ ...item, disabled: actions.pending })),
+      ...items.map((item) => ({ ...item, disabled: pending })),
       {
         id: "history",
         label: "File history",
@@ -172,7 +206,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
       <button
         type="button"
         className={styles.headerAction}
-        disabled={actions.pending}
+        disabled={pending}
         onClick={() => run()}
       >
         {label}
@@ -189,8 +223,8 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
       <>
-        {actions.error !== null && (
-          <RepoError error={actions.error} path={null} onDismiss={actions.clearError} />
+        {panelError !== null && (
+          <RepoError error={panelError} path={null} onDismiss={clearErrors} />
         )}
         {nonEmpty.length === 0 && <p className={styles.empty}>No changes</p>}
         {nonEmpty.map(({ section, title, listLabel }) => {
@@ -211,7 +245,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
                     section={section}
                     kind={row.kind}
                     selected={selection.isSelected(row.key)}
-                    disabled={actions.pending}
+                    disabled={pending}
                     onClick={(mods) => selectRow(row, mods)}
                     onContextMenu={(x, y) => setMenu({ x, y, row })}
                     onPrimary={() => primary(row)}
