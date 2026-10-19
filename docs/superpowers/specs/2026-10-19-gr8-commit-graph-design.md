@@ -197,10 +197,11 @@ page is serialized; `GraphRow` is the wire type built per page.
   - Lanes: `LaneLayout::next(oid, &parents)` per commit in walk order.
 - `lanes.rs`: `LaneLayout { columns: Vec<Option<Oid>> }`.
   `next(c, parents) -> (lane, edges)`:
-  1. `lane` = first column expecting `c`; otherwise the first free column,
-     or a new one appended.
-  2. Every column `k` expecting `c` (including `lane`) yields an edge
-     `{ top: Some(k), bottom: None }` and is freed.
+  1. `lane` = the first column expecting `c`; otherwise the first free
+     column, or a new one appended. A column taken this way was not
+     expecting `c`, so a tip commit gets no line above its dot.
+  2. Every column `k` that was expecting `c` (which includes `lane` when it
+     was) yields an edge `{ top: Some(k), bottom: None }` and is freed.
   3. Parents in order: the first parent takes column `lane`; each later
      parent takes the column already expecting it if any, else the first
      free column, else a new one. Each yields `{ top: None, bottom: Some(k) }`.
