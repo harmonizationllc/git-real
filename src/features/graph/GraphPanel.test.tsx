@@ -1597,6 +1597,15 @@ describe("GraphPanel keyboard anchor", () => {
     },
   );
 
+  it("should continue from the last keyboard row when the selection is outside the rendered window", async () => {
+    await renderWindowed();
+    fireEvent.click(optionAt(0));
+    press("End");
+    await waitFor(() => expect(selectedOid()).toBe(oidOf(599)));
+    press("ArrowUp");
+    await waitFor(() => expect(selectedOid()).toBe(oidOf(598)));
+  });
+
   it("should open no menu on Shift+F10 once the selection is cleared outside", async () => {
     await renderPanel();
     fireEvent.click(optionAt(1));
