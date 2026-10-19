@@ -306,3 +306,46 @@ describe("BlameView error", () => {
     expect(useWorkspace.getState().centreView[REPO]).toBe("diff");
   });
 });
+
+// Contract: shapes of blame data the hunks list can take.
+describe("BlameView hunk shapes", () => {
+  it("should render one hash button and one parity for a single hunk covering every line", async () => {
+    vi.mocked(getBlame).mockResolvedValue(blameOf([blameHunk(0, 1, 3)], LINES, PATH));
+    await renderBlame();
+    expect(screen.getAllByRole("button", { name: /^Open commit / })).toHaveLength(1);
+    expect(screen.getAllByRole("row").map((r) => r.getAttribute("data-hunk-parity"))).toEqual([
+      "0",
+      "0",
+      "0",
+    ]);
+  });
+
+  it("should mark every row current when the selected commit owns the only hunk", async () => {
+    useWorkspace.getState().selectCommit(REPO, A);
+    vi.mocked(getBlame).mockResolvedValue(blameOf([blameHunk(0, 1, 3)], LINES, PATH));
+    await renderBlame();
+    expect(document.querySelectorAll('[data-current="true"]')).toHaveLength(3);
+  });
+
+  it("should ignore a zero-length last hunk", async () => {
+    vi.mocked(getBlame).mockResolvedValue(
+      blameOf([blameHunk(0, 1, 2), blameHunk(1, 3, 0)], LINES.slice(0, 2), PATH),
+    );
+    await renderBlame();
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: `Open commit ${shortOf(B)}` })).toBeNull();
+    expect(table()).toHaveAttribute("aria-rowcount", "2");
+  });
+
+  it("should show the full line number for a file of more than a thousand lines", async () => {
+    const many = Array.from({ length: 1200 }, (_, i) => `line ${i + 1}`);
+    vi.mocked(getBlame).mockResolvedValue(blameOf([blameHunk(0, 1, 1200)], many, PATH));
+    await renderBlame();
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(1200);
+    expect(table()).toHaveAttribute("aria-rowcount", "1200");
+    expect(rows[1199]).toHaveAttribute("aria-rowindex", "1200");
+    expect(within(rows[1199]).getByText("1200")).toBeInTheDocument();
+    expect(within(rows[999]).getByText("1000")).toBeInTheDocument();
+  });
+});

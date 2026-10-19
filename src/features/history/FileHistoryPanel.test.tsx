@@ -502,3 +502,65 @@ describe("FileHistoryPanel errors", () => {
     expect(useWorkspace.getState().historyPath[REPO]).toBeNull();
   });
 });
+
+// Contract: with a single entry every navigation key lands on it; an empty list has no listbox.
+describe("FileHistoryPanel with one entry", () => {
+  const ONE = [ENTRIES[0]];
+  const renderOne = async () => {
+    vi.mocked(getFileHistory).mockResolvedValue(ONE);
+    const view = await renderPanel();
+    await waitFor(() => expect(selectedCommit()).toBe(oidOf(0)));
+    return view;
+  };
+
+  it.each(["Home", "End", "ArrowDown", "ArrowUp", "Enter"])(
+    "should stay on the only entry on %s",
+    async (key) => {
+      await renderOne();
+      press(key);
+      expect(selectedCommit()).toBe(oidOf(0));
+      expect(selectedFile()).toEqual({ path: PATH, scope: { commit: oidOf(0) } });
+    },
+  );
+
+  it("should scroll to index 0 on End", async () => {
+    await renderOne();
+    press("End");
+    expect(scrolledTo(0)).toBe(true);
+  });
+
+  it("should offer no listbox to navigate for an empty history", async () => {
+    vi.mocked(getFileHistory).mockResolvedValue([]);
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    await screen.findByText("No commits touch this file");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.keyDown(panel(), { key: "End" });
+    expect(selectedCommit()).toBeUndefined();
+  });
+});
+
+// Contract: auto-select is once per path; the user's later choice survives a new generation.
+describe("FileHistoryPanel auto-select after the user chooses", () => {
+  it("should keep another commit the user selected across a new log generation", async () => {
+    const { queryClient } = await renderPanel();
+    await waitFor(() => expect(selectedCommit()).toBe(oidOf(0)));
+    fireEvent.click(optionAt(2));
+    expect(selectedCommit()).toBe(oidOf(2));
+    vi.mocked(getLogSummary).mockResolvedValue(summary(2));
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(REPO, 2, PATH));
+    await settle();
+    expect(selectedCommit()).toBe(oidOf(2));
+    expect(selectedFile()).toEqual({ path: "src/old.ts", scope: { commit: oidOf(2) } });
+  });
+
+  it("should not auto-select again when the same path is shown again after another path", async () => {
+    const view = await renderPanel();
+    await waitFor(() => expect(selectedCommit()).toBe(oidOf(0)));
+    view.rerender(<FileHistoryPanel repoId={REPO} path="other.ts" />);
+    await waitFor(() => expect(selectedCommit()).toBe(oidOf(5)));
+    fireEvent.click(screen.getAllByRole("option")[1]);
+    await settle();
+    expect(selectedCommit()).toBe(oidOf(6));
+  });
+});

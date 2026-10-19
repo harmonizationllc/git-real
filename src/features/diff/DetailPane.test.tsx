@@ -1575,3 +1575,34 @@ describe("DetailPane Diff and Blame round trips", () => {
     expect(getFileDiff).not.toHaveBeenCalled();
   });
 });
+
+// Contract: only commit-scoped diffs are immutable; a working-tree diff revalidates on return.
+describe("DetailPane diff caching across the Blame toggle", () => {
+  const toggleBlameAndBack = async () => {
+    await diffRegion();
+    fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
+    await screen.findByRole("table", { name: "Blame" });
+    fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    await diffRegion();
+  };
+
+  it("should fetch an unstaged diff again after Diff, Blame, Diff with no invalidation", async () => {
+    setup("a.ts", "unstaged");
+    await toggleBlameAndBack();
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
+  });
+
+  it("should fetch a staged diff again after Diff, Blame, Diff with no invalidation", async () => {
+    setup("a.ts", "staged");
+    await toggleBlameAndBack();
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
+  });
+
+  it("should reuse a commit diff after Diff, Blame, Diff", async () => {
+    selectScope(COMMIT);
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await toggleBlameAndBack();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(getFileDiff).toHaveBeenCalledTimes(1);
+  });
+});

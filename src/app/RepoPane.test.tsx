@@ -876,6 +876,18 @@ describe("RepoPane file history shortcut", () => {
     expect(dialogs()).toEqual([]);
   });
 
+  it.each([
+    ["a plain h", { key: "h" }],
+    ["a plain H", { key: "H" }],
+    ["Shift+H without Ctrl or Meta", { key: "H", shiftKey: true }],
+    ["Ctrl+Shift+J", { key: "J", ctrlKey: true, shiftKey: true }],
+  ])("should not open the picker for %s", async (_name, init) => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    openPicker(init);
+    expect(dialogs()).toEqual([]);
+  });
+
   it("should not open the picker for another key", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });

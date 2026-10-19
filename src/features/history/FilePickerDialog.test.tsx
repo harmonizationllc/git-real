@@ -372,3 +372,48 @@ describe("FilePickerDialog loading and error", () => {
     expect(listTrackedFiles).toHaveBeenCalledTimes(2);
   });
 });
+
+// Contract: ArrowUp and ArrowDown clamp at the ends of the results rather than wrapping.
+describe("FilePickerDialog arrow clamping", () => {
+  it("should stay on the first option on ArrowUp at the start", async () => {
+    await renderDialog();
+    press("ArrowUp");
+    expect(activeOption()).toBe(screen.getAllByRole("option")[0]);
+  });
+
+  it("should pick the first file on Enter after ArrowUp at the start", async () => {
+    const { onPick } = await renderDialog();
+    press("ArrowUp");
+    press("Enter");
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(FILES[0]);
+  });
+
+  it("should stay on the last option on ArrowDown at the end", async () => {
+    await renderDialog();
+    for (let i = 0; i < FILES.length + 3; i++) press("ArrowDown");
+    expect(activeOption()).toBe(screen.getAllByRole("option")[FILES.length - 1]);
+  });
+
+  it("should pick the last file on Enter after ArrowDown past the end", async () => {
+    const { onPick } = await renderDialog();
+    for (let i = 0; i < FILES.length + 3; i++) press("ArrowDown");
+    press("Enter");
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(FILES[FILES.length - 1]);
+  });
+
+  it("should move up from the last option after clamping at the end", async () => {
+    await renderDialog();
+    for (let i = 0; i < FILES.length + 3; i++) press("ArrowDown");
+    press("ArrowUp");
+    expect(activeOption()).toBe(screen.getAllByRole("option")[FILES.length - 2]);
+  });
+
+  it("should keep the only option active on both arrows when one file matches", async () => {
+    await renderDialog();
+    type("lib");
+    press("ArrowDown");
+    press("ArrowDown");
+    press("ArrowUp");
+    expect(activeOption()).toBe(screen.getAllByRole("option")[0]);
+  });
+});

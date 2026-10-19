@@ -246,3 +246,47 @@ describe("CommitFiles loading and error", () => {
     expect(getCommitFiles).toHaveBeenCalledTimes(2);
   });
 });
+
+// Contract: right-clicking a row selects that file in the commit, then opens the menu on it.
+describe("CommitFiles right-click", () => {
+  it("should select the right-clicked file with the commit scope", async () => {
+    await renderFiles();
+    rightClick(fileButton(/docs\/gone\.md/));
+    expect(useWorkspace.getState().selected[1]).toEqual({
+      path: "docs/gone.md",
+      scope: { commit: OID },
+    });
+  });
+
+  it("should mark the right-clicked file as current", async () => {
+    await renderFiles();
+    rightClick(fileButton(/docs\/gone\.md/));
+    await waitFor(() =>
+      expect(fileButton(/docs\/gone\.md/)).toHaveAttribute("aria-current", "true"),
+    );
+  });
+
+  it("should open the menu at the pointer position", async () => {
+    await renderFiles();
+    rightClick(fileButton(/src\/a\.ts/));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("should not change the centre view just by right-clicking", async () => {
+    await renderFiles();
+    rightClick(fileButton(/src\/a\.ts/));
+    expect(useWorkspace.getState().centreView[1]).toBeUndefined();
+  });
+});
+
+// Contract: a files error offers Retry only; dismissing would strand the summary without files.
+describe("CommitFiles error actions", () => {
+  it("should offer Retry and no Dismiss on failure", async () => {
+    vi.mocked(getCommitFiles).mockRejectedValue({ kind: "git", message: "files boom" });
+    renderWithProviders(<CommitFiles repoId={1} oid={OID} />);
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(alert).queryByRole("button", { name: /dismiss/i })).toBeNull();
+    expect(within(alert).getAllByRole("button")).toHaveLength(1);
+  });
+});
