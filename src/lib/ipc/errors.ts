@@ -30,6 +30,11 @@ const KINDS: Record<AppErrorKind, true> = {
   logStale: true,
   commitNotFound: true,
   binaryFile: true,
+  operationFailed: true,
+  operationInProgress: true,
+  noOperation: true,
+  unresolvedConflicts: true,
+  mergeCommit: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

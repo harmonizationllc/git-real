@@ -5,6 +5,7 @@ import { useBranches } from "../features/branches/useBranches";
 import { CommitBox } from "../features/commit/CommitBox";
 import { DetailPane } from "../features/diff/DetailPane";
 import { GraphPanel } from "../features/graph/GraphPanel";
+import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
@@ -82,6 +83,8 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <p className={styles.path}>{path}</p>
         <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
       </header>
+      {/* Keyed so the abort dialog and mutation state never leak across tabs. */}
+      <OperationBanner key={tab.id} repoId={tab.id} />
       <div
         ref={bodyRef}
         className={styles.body}

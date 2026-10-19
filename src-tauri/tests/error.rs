@@ -620,3 +620,123 @@ fn binary_file_kind_serializes_as_binary_file() {
         json!("binaryFile")
     );
 }
+
+// GR-10a operation errors: each core variant maps to its own kind.
+#[test]
+fn operation_errors_map_to_their_kinds() {
+    let cases = [
+        (
+            GitError::OperationFailed {
+                verb: "merge".into(),
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "boom".into(),
+            },
+            AppErrorKind::OperationFailed,
+        ),
+        (
+            GitError::OperationInProgress,
+            AppErrorKind::OperationInProgress,
+        ),
+        (GitError::NoOperation, AppErrorKind::NoOperation),
+        (
+            GitError::UnresolvedConflicts,
+            AppErrorKind::UnresolvedConflicts,
+        ),
+        (
+            GitError::MergeCommit("abc".into()),
+            AppErrorKind::MergeCommit,
+        ),
+    ];
+    for (err, expected) in cases {
+        let app: AppError = err.into();
+        assert_eq!(app.kind, expected);
+    }
+}
+
+#[test]
+fn operation_error_kinds_serialize_camel_case() {
+    let cases = [
+        (AppErrorKind::OperationFailed, "operationFailed"),
+        (AppErrorKind::OperationInProgress, "operationInProgress"),
+        (AppErrorKind::NoOperation, "noOperation"),
+        (AppErrorKind::UnresolvedConflicts, "unresolvedConflicts"),
+        (AppErrorKind::MergeCommit, "mergeCommit"),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
+    }
+}
+
+fn operation_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
+    GitError::OperationFailed {
+        verb: "merge".into(),
+        code,
+        stdout: stdout.into(),
+        stderr: stderr.into(),
+    }
+    .into()
+}
+
+#[test]
+fn operation_failed_message_prefers_stderr() {
+    assert_eq!(
+        operation_failed(Some(128), "out", "fatal: x").message,
+        "fatal: x"
+    );
+}
+
+#[test]
+fn operation_failed_message_falls_back_to_stdout() {
+    assert_eq!(
+        operation_failed(Some(1), "only out", "").message,
+        "only out"
+    );
+}
+
+#[test]
+fn operation_failed_message_falls_back_to_exit_code_naming_the_verb() {
+    assert_eq!(
+        operation_failed(Some(128), "", "").message,
+        "git merge failed with exit code 128"
+    );
+}
+
+#[test]
+fn operation_failed_message_falls_back_to_signal_naming_the_verb() {
+    assert_eq!(
+        operation_failed(None, "", "").message,
+        "git merge was terminated by a signal"
+    );
+}
+
+#[test]
+fn operation_failed_message_names_the_verb_it_was_given() {
+    let app: AppError = GitError::OperationFailed {
+        verb: "cherry-pick".into(),
+        code: Some(2),
+        stdout: String::new(),
+        stderr: String::new(),
+    }
+    .into();
+    assert_eq!(app.message, "git cherry-pick failed with exit code 2");
+}
+
+#[test]
+fn operation_errors_keep_the_core_display_message() {
+    let in_progress: AppError = GitError::OperationInProgress.into();
+    let none: AppError = GitError::NoOperation.into();
+    let unresolved: AppError = GitError::UnresolvedConflicts.into();
+    let merge_commit: AppError = GitError::MergeCommit("abc".into()).into();
+    assert_eq!(in_progress.message, "another operation is in progress");
+    assert_eq!(
+        none.message,
+        "no merge, rebase, cherry-pick or revert is in progress"
+    );
+    assert_eq!(unresolved.message, "resolve all conflicts first");
+    assert!(
+        merge_commit.message.contains("abc"),
+        "{}",
+        merge_commit.message
+    );
+}

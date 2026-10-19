@@ -5,6 +5,7 @@ mod commit;
 mod diff;
 mod history;
 mod log;
+mod merge;
 mod progress;
 mod recent;
 mod repo;
@@ -20,6 +21,7 @@ pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry};
 pub use log::{
     CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,
 };
+pub use merge::{ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState};
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;
 pub use repo::RepoSummary;

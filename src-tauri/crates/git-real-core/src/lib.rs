@@ -20,6 +20,7 @@ pub mod history;
 pub mod ignore;
 pub mod index_ops;
 pub mod log;
+pub mod merge;
 pub mod model;
 mod paths;
 pub mod progress;

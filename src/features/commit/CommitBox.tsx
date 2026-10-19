@@ -1,5 +1,6 @@
 import type { RepoId } from "../../lib/ipc";
 import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
+import { type ActiveOperation, commitButtonLabel, operationNoun } from "../merge/operationCopy";
 import { RepoError } from "../repo/RepoError";
 import { useStatus } from "../worktree/useStatus";
 import { AuthorLine } from "./AuthorLine";
@@ -9,6 +10,7 @@ import { MessageEditor } from "./MessageEditor";
 import { useCommit } from "./useCommit";
 import { useCommitConfig } from "./useCommitConfig";
 import { useHeadMessage } from "./useHeadMessage";
+import { useOperationPrefill } from "./useOperationPrefill";
 
 export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
   const draft = useCommitDraft((s) => s.drafts[repoId] ?? EMPTY_DRAFT);
@@ -17,11 +19,15 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
   const { config, error: configError, refetch: refetchConfig } = useCommitConfig(repoId);
   const { head } = useHeadMessage(repoId);
   const { commit, pending, error, clearError } = useCommit(repoId);
+  const state = useOperationPrefill(repoId);
+  const operation: ActiveOperation | null =
+    state === undefined || state.kind === "none" ? null : state;
 
   const reason = commitDisabledReason({
     amend: draft.amend,
     subject: draft.subject,
     status,
+    operation: state,
     config,
   });
   const canCommit = reason === null && !pending;
@@ -48,8 +54,14 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
           <input
             type="checkbox"
             checked={draft.amend}
-            disabled={pending || amendHead === null}
-            title={unborn ? "No commit to amend" : undefined}
+            disabled={pending || amendHead === null || operation !== null}
+            title={
+              operation !== null
+                ? `Not available during a ${operationNoun(operation)}`
+                : unborn
+                  ? "No commit to amend"
+                  : undefined
+            }
             onChange={(e) => setAmend(repoId, e.target.checked, amendHead)}
           />
           Amend last commit
@@ -61,7 +73,11 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
           title={pending ? undefined : (reason ?? undefined)}
           onClick={submit}
         >
-          {pending ? "Committing…" : draft.amend ? "Amend commit" : "Commit"}
+          {pending
+            ? "Committing…"
+            : draft.amend
+              ? "Amend commit"
+              : (commitButtonLabel(state) ?? "Commit")}
         </button>
       </div>
       {/* Capped so verbose hook output scrolls here instead of squeezing the editor. */}

@@ -63,7 +63,12 @@ export type AppErrorKind =
   | "pushFailed"
   | "logStale"
   | "commitNotFound"
-  | "binaryFile";
+  | "binaryFile"
+  | "operationFailed"
+  | "operationInProgress"
+  | "noOperation"
+  | "unresolvedConflicts"
+  | "mergeCommit";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -291,3 +296,26 @@ export interface Blame {
   hunks: BlameHunk[];
   lines: string[];
 }
+
+export type MergeMode = "merge" | "fastForward";
+
+/** The operation git has in progress (serde internally tagged on `kind`); oids are full hex. */
+export type OperationState =
+  | { kind: "none" }
+  | { kind: "merge"; head: string; branch: string | null; message: CommitMessage }
+  | {
+      kind: "rebase";
+      onto: string;
+      ontoName: string | null;
+      branch: string | null;
+      step: number;
+      total: number;
+    }
+  | { kind: "cherryPick"; oid: string; message: CommitMessage }
+  | { kind: "revert"; oid: string; message: CommitMessage };
+
+export type OperationOutcome = "completed" | "conflicts";
+
+export type ConflictSide = "ours" | "theirs";
+
+export type FastForwardCheck = "possible" | "upToDate" | "diverged";

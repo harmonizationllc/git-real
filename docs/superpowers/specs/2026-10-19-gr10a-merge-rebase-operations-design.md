@@ -28,9 +28,9 @@ commit box, all without a terminal.
 1. Merge via context menu with fast-forward and no-fast-forward options
    (drag-and-drop is GR-10c).
 2. Rebase the current branch onto another.
-5. Abort and continue for an in-progress merge or rebase. "Resolve all"
+3. Abort and continue for an in-progress merge or rebase. "Resolve all"
    arrives with the editor in GR-10b; this slice resolves per file.
-6. Cherry-pick and revert single commits.
+4. Cherry-pick and revert single commits.
 
 Conflicted files are listed (criterion 4) with keep-one-side actions; the
 three-way editor is GR-10b.
@@ -61,9 +61,13 @@ three-way editor is GR-10b.
   rebase and `rebase --continue` run with `GIT_EDITOR=true` in the
   environment. Cherry-pick opens no editor without `-e`.
 - **A non-zero exit is classified afterwards.** If git2 then reports a
-  repository state other than `Clean`, the operation stopped on conflicts
-  and the result is the `conflicts` outcome. Otherwise it failed (dirty
-  working tree, bad ref, hook refusal) and the error carries git's output.
+  repository state other than `Clean` AND the index has conflicts, the
+  operation stopped on conflicts and the result is the `conflicts` outcome.
+  Every other non-zero exit failed and the error carries git's output: a
+  dirty working tree or bad ref (state stays `Clean`), or a `pre-merge-commit`
+  hook refusal or an empty cherry-pick (git leaves the operation in progress
+  with no conflicts; the banner then shows it and the user commits or
+  aborts). The front end refetches the operation state after that error.
 - **In-progress state comes from git2 plus the `.git` marker files**
   (`MERGE_HEAD`, `MERGE_MSG`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
   `rebase-merge/`, `rebase-apply/`). No subprocess, no text parsing of
@@ -146,15 +150,16 @@ matches (the UI falls back to the short oid).
   - `merge_branch(branch, mode)`: branch resolved via `find_branch(Local)`
     then `find_branch(Remote)` → `BranchNotFound`. `Merge` →
     `merge --no-ff --no-edit <branch>`; `FastForward` → `merge --ff-only
-    <branch>`.
+<branch>`.
   - `rebase_onto(onto)`: same branch resolution; `rebase <onto>` with
     `GIT_EDITOR=true`.
   - `cherry_pick(oid)` / `revert_commit(oid)`: `find_commit` →
     `CommitNotFound`; `parent_count() > 1` → `MergeCommit(oid)`. Then
     `cherry-pick <oid>` / `revert --no-edit <oid>`.
-  - Exit 0 → `Completed`. Non-zero and `repo.state() != Clean` →
-    `Conflicts`. Non-zero and `Clean` → `OperationFailed { verb, code,
-    stdout, stderr }`.
+  - Exit 0 → `Completed`. Non-zero, `repo.state() != Clean` and
+    `fresh_index().has_conflicts()` → `Conflicts`. Any other non-zero →
+    `OperationFailed { verb, code, stdout, stderr }` (the operation may
+    still be in progress, e.g. after a hook refusal).
 - **`abort_operation()`**: by state, `merge --abort`, `rebase --abort`,
   `cherry-pick --abort`, `revert --abort`; `Clean` → `NoOperation`. Non-zero
   → `OperationFailed`.
@@ -168,14 +173,16 @@ matches (the UI falls back to the short oid).
   `Theirs`): present → blob written to `<workdir>/<path>` (parents created,
   mode from the entry, executable bit honoured), then `index.add_path`;
   absent → file removed if it exists, then `index.remove_path`. Index
-  written once at the end; an error mid-way leaves earlier paths resolved
-  (the status refetch shows the truth). Paths go through the GR-4 `index_ops::normalise_all` check (no `..`, no
+  written once at the end; every path is validated and its conflict entry
+  located before anything is written, and an I/O error mid-way leaves the
+  index untouched (files already written stay on disk; the status refetch
+  shows the truth). Paths go through the GR-4 `index_ops::normalise_all` check (no `..`, no
   absolute paths) before any write.
 - **`can_fast_forward(branch)`**: branch resolved as above; unborn HEAD →
-  `UnbornHead`; `tip == head` → `UpToDate`; `graph_descendant_of(tip, head)`
-  → `Possible`; else `Diverged`.
+  `UnbornHead`; `tip == head` or `tip` already an ancestor of `head` → `UpToDate`;
+  `graph_descendant_of(tip, head)` → `Possible`; else `Diverged`.
 - `git_ops::run` mirrors `refs/switch.rs`: `git_cli::locate()`, `-C
-  <workdir>`, captured output, environment variables applied with
+<workdir>`, captured output, environment variables applied with
   `Command::env`, no stdin.
 
 ### 3.4 Errors
@@ -241,7 +248,7 @@ Fixtures build on `common::merge_fixture`, `temp_repo_with_conflict`,
   `resolve_conflicts(id, paths: Vec<String>, side) -> ()`,
   `can_fast_forward(id, branch) -> FastForwardCheck`.
 - `error.rs`: `AppErrorKind::{OperationFailed, OperationInProgress,
-  NoOperation, UnresolvedConflicts, MergeCommit}`; `OperationFailed`'s
+NoOperation, UnresolvedConflicts, MergeCommit}`; `OperationFailed`'s
   message uses `cli_failure_message(verb, …)`.
 - The session mutex is held for the whole CLI run, as for commit and
   switch; the UI shows pending state meanwhile.
@@ -291,10 +298,11 @@ side}`.
 `OperationBanner({ repoId })`: renders nothing while the state is loading or
 `none`. Reads `useBranches` for the HEAD name and `useStatus` for the
 conflict count. Title per 5.6. Buttons:
+
 - `Abort…` (danger) opens a `ConfirmDialog` ("Abort merge?" / "Abort
   rebase?" …, body per 5.6, confirm `Abort`); on confirm runs `abort`.
 - Rebase: `Continue`, disabled while conflicts remain (title `Resolve all
-  conflicts first`) or while pending; runs `continue`.
+conflicts first`) or while pending; runs `continue`.
 - Merge, cherry-pick, revert: `Go to commit`, disabled while conflicts
   remain; focuses the commit subject input (`#commit-subject`).
 - A failed action shows `RepoError` inside the banner with Dismiss.
@@ -310,16 +318,16 @@ conflict count. Title per 5.6. Buttons:
   fast-forward item is additionally driven by `useCanFastForward` for the
   menu's target: loading → disabled, title `Checking…`; `upToDate` →
   disabled, `Already up to date`; `diverged` → disabled, `<cur> and <b>
-  have diverged`. Failures show in the panel's existing `RepoError` slot.
+have diverged`. Failures show in the panel's existing `RepoError` slot.
   The `conflicts` outcome is not an error: the banner and the Conflicts
   section appear through the invalidation.
 - **`GraphPanel` menu**, after `Reset to this commit…`: `Cherry-pick
-  commit` and `Revert commit`. Disabled when pending, operation in progress
+commit` and `Revert commit`. Disabled when pending, operation in progress
   (same title), or `row.parents.length > 1` (title `Merge commits are not
-  supported yet`). Cherry-pick is also disabled for the commit HEAD points
+supported yet`). Cherry-pick is also disabled for the commit HEAD points
   at (`Already on this commit`).
 - **`ChangesPanel` conflict rows**: menu becomes `Keep <ours>`, `Take
-  <theirs>`, `Mark resolved (stage)`, with labels from `sideLabels`: merge
+<theirs>`, `Mark resolved (stage)`, with labels from `sideLabels`: merge
   → HEAD branch / merged branch; rebase → onto name / rebased branch;
   cherry-pick and revert → HEAD branch / short oid; no operation (for
   example a conflict left by a stash) → `ours` / `theirs`. Multi-selection
@@ -335,11 +343,15 @@ conflict count. Title per 5.6. Buttons:
   The button label comes from `commitButtonLabel`: `Commit and merge`,
   `Commit and cherry-pick`, `Commit and revert`, else the existing labels.
   The amend checkbox is disabled during any operation (title `Not available
-  during a <merge|rebase|cherry-pick|revert>`).
+during a <merge|rebase|cherry-pick|revert>`).
 - **`commitGate`** takes `operation: OperationState | undefined` after
   `status`: a rebase → `Use Continue in the banner to resume the rebase`
   (placed after the loading check and before the identity check). The
-  existing `Resolve conflicts before committing` rule stays.
+  existing `Resolve conflicts before committing` rule stays. During a merge
+  the `Stage changes to commit` rule is skipped: keeping "ours" on every
+  conflict leaves the index equal to HEAD, and `git commit` with
+  `MERGE_HEAD` records the merge commit anyway. Cherry-pick and revert keep
+  the rule because git refuses an empty commit.
 
 ### 5.5 Wiring
 

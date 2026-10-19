@@ -10,6 +10,7 @@ import {
   getHeadMessage,
   getLogPage,
   getLogSummary,
+  getOperationState,
   getStatus,
   listBranches,
   listTrackedFiles,
@@ -28,6 +29,26 @@ import { RepoPane } from "./RepoPane";
 
 vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
 
+const bannerMounts = vi.hoisted<number[]>(() => []);
+
+// A stand-in that exposes the repo id it received; built lazily so no import is hoisted above it.
+vi.mock("../features/merge/OperationBanner", async () => {
+  const { createElement, useEffect } = await import("react");
+  return {
+    OperationBanner: ({ repoId }: { repoId: number }) => {
+      // Mount-only on purpose: a re-render with a new repoId must not look like a remount.
+      useEffect(() => {
+        bannerMounts.push(repoId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return createElement("div", {
+        "data-testid": "operation-banner",
+        "data-repo-id": String(repoId),
+      });
+    },
+  };
+});
+
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   commit: vi.fn(),
@@ -39,6 +60,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getHeadMessage: vi.fn(),
   getLogPage: vi.fn(),
   getLogSummary: vi.fn(),
+  getOperationState: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
   listTrackedFiles: vi.fn(),
@@ -74,6 +96,7 @@ class StubResizeObserver {
 beforeEach(() => {
   vi.resetAllMocks();
   StubResizeObserver.instances = [];
+  bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
   vi.mocked(listBranches).mockResolvedValue(branchList());
@@ -81,6 +104,7 @@ beforeEach(() => {
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
   vi.mocked(getCommit).mockResolvedValue(commitDetail({ oid: oidOf(0) }));
+  vi.mocked(getOperationState).mockResolvedValue({ kind: "none" });
   useCommitDraft.setState({ drafts: {} });
   vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
@@ -976,5 +1000,57 @@ describe("RepoPane file history shortcut", () => {
     remove.mockRestore();
     expect(added).toHaveLength(1);
     expect(removed).toEqual(added);
+  });
+});
+
+// Contract (spec 5.4): the operation banner sits between the header and the three-column body.
+describe("RepoPane operation banner", () => {
+  const banner = () => screen.getByTestId("operation-banner");
+
+  it("should render the operation banner", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(banner()).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should pass the tab id as the banner repo id", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    expect(banner()).toHaveAttribute("data-repo-id", "7");
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should render the banner directly after the header", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(header().nextElementSibling).toBe(banner());
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should render the banner before the body columns", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const history = screen.getByRole("region", { name: "History" });
+    expect(banner().compareDocumentPosition(history)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should render the banner as a sibling of the body, not inside it", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const history = screen.getByRole("region", { name: "History" });
+    expect(banner().parentElement).toBe(header().parentElement);
+    expect(history.parentElement).not.toBe(banner().parentElement);
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("should remount the banner for a different tab", async () => {
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    view.rerender(<RepoPane tab={tab(2)} />);
+    expect(bannerMounts).toEqual([1, 2]);
+  });
+
+  it("should follow the tab when the pane shows another repository", async () => {
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    view.rerender(<RepoPane tab={tab(2)} />);
+    expect(banner()).toHaveAttribute("data-repo-id", "2");
   });
 });

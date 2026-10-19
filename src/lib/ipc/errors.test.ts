@@ -165,3 +165,31 @@ describe("isAppError commit graph kinds shape", () => {
     });
   });
 });
+
+// Contract: the five GR-10a operation kinds are recognised and wrapped unchanged.
+const operationKinds: AppErrorKind[] = [
+  "operationFailed",
+  "operationInProgress",
+  "noOperation",
+  "unresolvedConflicts",
+  "mergeCommit",
+];
+
+describe("isAppError operation kinds", () => {
+  it.each(operationKinds)("isAppError accepts %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it.each(operationKinds)("isAppError rejects %s with a non-string message", (kind) => {
+    expect(isAppError({ kind, message: 5 })).toBe(false);
+  });
+
+  it.each(operationKinds)("toAppError returns %s unchanged", (kind) => {
+    const err = { kind, message: "m" };
+    expect(toAppError(err)).toBe(err);
+  });
+
+  it("isAppError rejects a near-miss operation kind", () => {
+    expect(isAppError({ kind: "operationfailed", message: "m" })).toBe(false);
+  });
+});

@@ -141,3 +141,26 @@ describe("MessageEditor limit boundary and key modifiers", () => {
     expect(notPrevented).toBe(true);
   });
 });
+
+// Contract (spec 5.4): the subject input has a fixed id so the banner can focus it.
+describe("MessageEditor subject id", () => {
+  it("gives the subject input the id commit-subject", () => {
+    setup();
+    expect(screen.getByLabelText("Subject")).toHaveAttribute("id", "commit-subject");
+  });
+
+  it("associates the Subject label with the fixed id", () => {
+    setup();
+    expect(screen.getByText("Subject")).toHaveAttribute("for", "commit-subject");
+  });
+
+  it("keeps the subject input labelled Subject", () => {
+    setup();
+    expect(screen.getByRole("textbox", { name: "Subject" })).toBeInTheDocument();
+  });
+
+  it("does not give the body input the subject id", () => {
+    setup();
+    expect(screen.getByLabelText("Body")).not.toHaveAttribute("id", "commit-subject");
+  });
+});

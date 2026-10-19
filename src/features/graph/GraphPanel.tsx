@@ -16,6 +16,9 @@ import type {
 import { useWorkspace } from "../../lib/store/workspace";
 import { useBranchActions } from "../branches/useBranchActions";
 import { useBranches } from "../branches/useBranches";
+import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
+import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
+import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import { GraphRow } from "./GraphRow";
 import { GraphToolbar } from "./GraphToolbar";
@@ -56,17 +59,26 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
   const { branches } = useBranches(repoId);
   const commitActions = useCommitActions(repoId);
   const branchActions = useBranchActions(repoId);
+  const { state } = useOperationState(repoId);
+  const integration = useIntegrationActions(repoId);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [copyError, setCopyError] = useState<AppError | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const modeName = useId();
-  const pending = commitActions.pending || branchActions.pending;
+  const pending = commitActions.pending || branchActions.pending || integration.pending;
 
   const clearErrors = () => {
     commitActions.clearError();
     branchActions.clearError();
+    integration.clearError();
     setCopyError(null);
+  };
+
+  // A newer integration failure must not hide behind an older, undismissed panel error.
+  const runIntegration = (req: IntegrationRequest) => {
+    clearErrors();
+    void integration.run(req);
   };
 
   // Every dialog opens clean: an earlier panel error must not reappear inside it.
@@ -98,6 +110,15 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
 
   const menuItems = (row: GraphRowData): MenuItem[] => {
     const short = shortOid(row.oid);
+    // The log marks the current branch's label and a detached HEAD label with `isHead`.
+    const atHead = row.refs.some((r) => r.isHead);
+    const blockTitle =
+      state?.kind !== "none"
+        ? IN_PROGRESS_TITLE
+        : row.parents.length > 1
+          ? "Merge commits are not supported yet"
+          : undefined;
+    const pickTitle = blockTitle ?? (atHead ? "Already on this commit" : undefined);
     return [
       {
         id: "checkout",
@@ -120,6 +141,20 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
         onSelect: () => openDialog({ kind: "reset", oid: row.oid, mode: "mixed" }),
       },
       {
+        id: "cherryPick",
+        label: "Cherry-pick commit",
+        disabled: pending || pickTitle !== undefined,
+        title: pickTitle,
+        onSelect: () => runIntegration({ action: "cherryPick", oid: row.oid }),
+      },
+      {
+        id: "revert",
+        label: "Revert commit",
+        disabled: pending || blockTitle !== undefined,
+        title: blockTitle,
+        onSelect: () => runIntegration({ action: "revert", oid: row.oid }),
+      },
+      {
         id: "copy",
         label: "Copy hash",
         disabled: pending,
@@ -130,7 +165,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
 
   const head = branches?.head;
   const movedRef = head === undefined || head.kind === "detached" ? "HEAD" : head.name;
-  const panelError = commitActions.error ?? copyError;
+  const panelError = commitActions.error ?? integration.error ?? copyError;
 
   let body: React.ReactNode;
   if (summaryError !== null) {

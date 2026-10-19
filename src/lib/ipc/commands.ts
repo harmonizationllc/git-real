@@ -7,8 +7,10 @@ import type {
   CommitFile,
   CommitMessage,
   CommitOutcome,
+  ConflictSide,
   DiffScope,
   DiffSide,
+  FastForwardCheck,
   FileDiff,
   FileHistoryEntry,
   GitCliInfo,
@@ -17,7 +19,10 @@ import type {
   LocalBranch,
   LogPage,
   LogSummary,
+  MergeMode,
   OpenedRepo,
+  OperationOutcome,
+  OperationState,
   RecentEntry,
   RepoId,
   ResetMode,
@@ -222,4 +227,45 @@ export function getFileHistory(
 /** Blame of `path` at `oid`, or at HEAD when `oid` is null. */
 export function getBlame(id: RepoId, path: string, oid: string | null): Promise<Blame> {
   return invoke<Blame>("get_blame", { id, path, oid });
+}
+
+export function getOperationState(id: RepoId): Promise<OperationState> {
+  return invoke<OperationState>("get_operation_state", { id });
+}
+
+export function mergeBranch(
+  id: RepoId,
+  branch: string,
+  mode: MergeMode,
+): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("merge_branch", { id, branch, mode });
+}
+
+export function rebaseOnto(id: RepoId, onto: string): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("rebase_onto", { id, onto });
+}
+
+export function cherryPick(id: RepoId, oid: string): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("cherry_pick", { id, oid });
+}
+
+export function revertCommit(id: RepoId, oid: string): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("revert_commit", { id, oid });
+}
+
+export function abortOperation(id: RepoId): Promise<void> {
+  return invoke<void>("abort_operation", { id });
+}
+
+export function continueRebase(id: RepoId): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("continue_rebase", { id });
+}
+
+/** Keeps `side` of each conflicted path and stages it; every path must be conflicted. */
+export function resolveConflicts(id: RepoId, paths: string[], side: ConflictSide): Promise<void> {
+  return invoke<void>("resolve_conflicts", { id, paths, side });
+}
+
+export function canFastForward(id: RepoId, branch: string): Promise<FastForwardCheck> {
+  return invoke<FastForwardCheck>("can_fast_forward", { id, branch });
 }

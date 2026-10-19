@@ -2,7 +2,11 @@ import { useCallback, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
-import type { BranchList, HeadState, LocalBranch, RepoId } from "../../lib/ipc";
+import type { BranchList, HeadState, RepoId } from "../../lib/ipc";
+import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
+import { useCanFastForward } from "../merge/useCanFastForward";
+import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
+import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import { BranchGroup } from "./BranchGroup";
 import { BranchRow, type BranchTarget } from "./BranchRow";
@@ -37,6 +41,10 @@ const createDialog = (title: string, startPoint: string | null): CreateDialog =>
   checkout: true,
 });
 
+/** The name git resolves for a row: `name` for local, `remote/name` for remote-tracking. */
+const branchId = (t: BranchTarget): string =>
+  t.kind === "local" ? t.branch.name : `${t.branch.remote}/${t.branch.name}`;
+
 /** The non-interactive first Local row for a HEAD that is not on a born branch. */
 function headRow(head: HeadState) {
   if (head.kind === "branch") return undefined;
@@ -54,24 +62,44 @@ function headRow(head: HeadState) {
 export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const { branches, error: listError, refetch } = useBranches(repoId);
   const actions = useBranchActions(repoId);
+  const { state } = useOperationState(repoId);
+  const integration = useIntegrationActions(repoId);
+  const pending = actions.pending || integration.pending;
+  const panelError = actions.error ?? integration.error;
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const menuBranch =
+    menu === null || (menu.target.kind === "local" && menu.target.branch.isHead)
+      ? null
+      : branchId(menu.target);
+  const ff = useCanFastForward(repoId, menuBranch);
+
+  const clearErrors = () => {
+    actions.clearError();
+    integration.clearError();
+  };
+
+  // A newer integration failure must not hide behind an older, undismissed panel error.
+  const runIntegration = (req: IntegrationRequest) => {
+    clearErrors();
+    void integration.run(req);
+  };
 
   // Every dialog opens clean: an earlier panel error must not reappear inside it.
   const openDialog = (d: Dialog) => {
-    actions.clearError();
+    clearErrors();
     setDialog(d);
   };
 
   const closeDialog = () => {
     setDialog(null);
-    actions.clearError();
+    clearErrors();
   };
 
   const activate = (t: BranchTarget) => {
-    if (actions.pending) return;
+    if (pending) return;
     if (t.kind === "local") {
       if (!t.branch.isHead) void actions.run({ action: "checkout", name: t.branch.name });
     } else {
@@ -116,9 +144,51 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     setDialog(null);
   };
 
-  /** `local` is the unfiltered list, so a filtered-out twin still counts as existing. */
-  const menuItems = ({ target }: MenuState, local: LocalBranch[]): MenuItem[] => {
-    const pending = actions.pending;
+  /** Merge, fast-forward and rebase of the current branch with the row's branch. */
+  const integrationItems = (target: BranchTarget, head: HeadState): MenuItem[] => {
+    const b = branchId(target);
+    const cur = headName(head);
+    const gateTitle =
+      state?.kind !== "none"
+        ? IN_PROGRESS_TITLE
+        : head.kind !== "branch"
+          ? "Check out a branch first"
+          : undefined;
+    const ffTitle = ff.isLoading
+      ? "Checking…"
+      : ff.check === "upToDate"
+        ? "Already up to date"
+        : ff.check === "diverged"
+          ? `${cur} and ${b} have diverged`
+          : undefined;
+    const fastForwardTitle = gateTitle ?? ffTitle;
+    return [
+      {
+        id: "merge",
+        label: `Merge ${b} into ${cur}`,
+        disabled: pending || gateTitle !== undefined,
+        title: gateTitle,
+        onSelect: () => runIntegration({ action: "merge", branch: b }),
+      },
+      {
+        id: "fastForward",
+        label: `Fast-forward ${cur} to ${b}`,
+        disabled: pending || fastForwardTitle !== undefined,
+        title: fastForwardTitle,
+        onSelect: () => runIntegration({ action: "fastForward", branch: b }),
+      },
+      {
+        id: "rebase",
+        label: `Rebase ${cur} onto ${b}`,
+        disabled: pending || gateTitle !== undefined,
+        title: gateTitle,
+        onSelect: () => runIntegration({ action: "rebase", onto: b }),
+      },
+    ];
+  };
+
+  /** `list` is unfiltered, so a filtered-out twin still counts as existing. */
+  const menuItems = ({ target }: MenuState, list: BranchList): MenuItem[] => {
     const checkout: MenuItem = {
       id: "checkout",
       label: "Checkout",
@@ -127,12 +197,13 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     };
     if (target.kind === "remote") {
       const { remote, name } = target.branch;
-      const hasLocal = local.some((b) => b.name === name);
+      const hasLocal = list.local.some((b) => b.name === name);
       return [
         {
           ...checkout,
           title: hasLocal ? undefined : `Creates a local branch tracking ${remote}/${name}`,
         },
+        ...integrationItems(target, list.head),
         {
           id: "deleteRemote",
           label: `Delete on ${remote}…`,
@@ -145,6 +216,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     const { name, isHead } = target.branch;
     return [
       { ...checkout, disabled: pending || isHead },
+      ...(isHead ? [] : integrationItems(target, list.head)),
       {
         id: "create",
         label: "Create branch here…",
@@ -200,15 +272,15 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           <button
             type="button"
             className={styles.newBranch}
-            disabled={unborn || actions.pending}
+            disabled={unborn || pending}
             title={unborn ? "Make a commit first" : undefined}
             onClick={() => openDialog(createDialog("New branch", null))}
           >
             New branch…
           </button>
         </div>
-        {dialog === null && actions.error !== null && (
-          <RepoError error={actions.error} path={null} onDismiss={actions.clearError} />
+        {dialog === null && panelError !== null && (
+          <RepoError error={panelError} path={null} onDismiss={clearErrors} />
         )}
         <BranchGroup
           heading="Local"
@@ -238,7 +310,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           open={menu !== null}
           x={menu?.x ?? 0}
           y={menu?.y ?? 0}
-          items={menu === null ? [] : menuItems(menu, list.local)}
+          items={menu === null ? [] : menuItems(menu, list)}
           onClose={closeMenu}
         />
       </>
@@ -255,7 +327,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   }
 
   return (
-    <section aria-label="Branches" aria-busy={actions.pending || undefined} className={styles.root}>
+    <section aria-label="Branches" aria-busy={pending || undefined} className={styles.root}>
       {body}
       {dialog?.kind === "create" && (
         <PromptDialog

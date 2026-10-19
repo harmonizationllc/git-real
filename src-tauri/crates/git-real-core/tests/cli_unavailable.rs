@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use git_real_core::{GitError, RepoSession};
+use git_real_core::{GitError, MergeMode, RepoSession};
 use git2::{BranchType, Repository};
 
 static PATH_LOCK: Mutex<()> = Mutex::new(());
@@ -171,5 +171,123 @@ fn remote_delete_with_a_git_that_cannot_be_executed_fails_with_io() {
     with_path(broken.path().as_os_str().to_owned(), || {
         let push = session.prepare_remote_delete("origin", &head).unwrap();
         assert!(matches!(push.run().unwrap_err(), GitError::Io(_)));
+    });
+}
+
+// GR-10a: every CLI-backed operation reports a missing git.
+fn operation_fixture() -> (tempfile::TempDir, PathBuf, RepoSession) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("other", &commit, false).unwrap();
+    }
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session)
+}
+
+#[test]
+fn merge_branch_without_git_is_git_cli_missing() {
+    let (_d, _path, session) = operation_fixture();
+    let (_e, empty) = empty_path();
+    with_path(empty, || {
+        assert!(matches!(
+            session.merge_branch("other", MergeMode::Merge).unwrap_err(),
+            GitError::GitCliMissing
+        ));
+    });
+}
+
+#[test]
+fn abort_and_continue_without_git_are_git_cli_missing() {
+    let (_d, path, session) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    let (_e, empty) = empty_path();
+    with_path(empty, || {
+        assert!(matches!(
+            session.abort_operation().unwrap_err(),
+            GitError::GitCliMissing
+        ));
+        assert!(matches!(
+            session.continue_rebase().unwrap_err(),
+            GitError::GitCliMissing
+        ));
+    });
+}
+
+// GR-10a: a git that cannot be executed is an Io error for every CLI-backed operation.
+#[test]
+fn operations_with_a_git_that_cannot_be_executed_fail_with_io() {
+    let (_d, path, session) = operation_fixture();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
+        .to_string();
+    let broken = non_executable_git();
+    with_path(broken.path().as_os_str().to_owned(), || {
+        assert!(matches!(
+            session.merge_branch("other", MergeMode::Merge).unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.rebase_onto("other").unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.cherry_pick(&oid).unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.revert_commit(&oid).unwrap_err(),
+            GitError::Io(_)
+        ));
+    });
+}
+
+#[test]
+fn abort_and_continue_with_a_git_that_cannot_be_executed_fail_with_io() {
+    let (_d, path, session) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    let broken = non_executable_git();
+    with_path(broken.path().as_os_str().to_owned(), || {
+        assert!(matches!(
+            session.abort_operation().unwrap_err(),
+            GitError::Io(_)
+        ));
+        assert!(matches!(
+            session.continue_rebase().unwrap_err(),
+            GitError::Io(_)
+        ));
+    });
+}
+
+#[test]
+fn cherry_pick_and_revert_without_git_are_git_cli_missing() {
+    let (_d, path, session) = operation_fixture();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
+        .to_string();
+    let (_e, empty) = empty_path();
+    with_path(empty, || {
+        assert!(matches!(
+            session.cherry_pick(&oid).unwrap_err(),
+            GitError::GitCliMissing
+        ));
+        assert!(matches!(
+            session.revert_commit(&oid).unwrap_err(),
+            GitError::GitCliMissing
+        ));
+        assert!(matches!(
+            session.rebase_onto("other").unwrap_err(),
+            GitError::GitCliMissing
+        ));
     });
 }

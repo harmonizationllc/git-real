@@ -188,7 +188,7 @@ impl RepoSession {
 
     /// The repository's index, re-read from disk so neither external writes
     /// nor dirty state left by an earlier failed call can leak in.
-    fn fresh_index(&self) -> Result<Index, GitError> {
+    pub(crate) fn fresh_index(&self) -> Result<Index, GitError> {
         let mut index = self.repo().index()?;
         index.read(true)?;
         Ok(index)
@@ -205,14 +205,17 @@ impl RepoSession {
 }
 
 /// Validates every path up front so a bad one aborts before any write.
-fn normalise_all(workdir: &Path, paths: &[String]) -> Result<Vec<String>, GitError> {
+pub(crate) fn normalise_all(workdir: &Path, paths: &[String]) -> Result<Vec<String>, GitError> {
     paths.iter().map(|p| checked_relative(workdir, p)).collect()
 }
 
 /// Passes `result` through, but on error first re-reads `index` from disk so
 /// changes made before the failure do not linger in the repository's cached
 /// index, where the same session's later calls would see them.
-fn reload_on_error(index: &mut Index, result: Result<(), GitError>) -> Result<(), GitError> {
+pub(crate) fn reload_on_error(
+    index: &mut Index,
+    result: Result<(), GitError>,
+) -> Result<(), GitError> {
     if result.is_err() {
         let _ = index.read(true);
     }

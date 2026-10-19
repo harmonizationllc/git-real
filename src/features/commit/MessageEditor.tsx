@@ -2,6 +2,9 @@ import { useId, useRef } from "react";
 import { SUBJECT_LIMIT } from "./limits";
 import styles from "./MessageEditor.module.css";
 
+// Fixed so the operation banner's "Go to commit" can focus it (features/merge/OperationBanner).
+const SUBJECT_ID = "commit-subject";
+
 export interface MessageEditorProps {
   subject: string;
   body: string;
@@ -33,7 +36,6 @@ function handleEnter(
 
 export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
   const { subject, body, disabled, onSubjectChange, onBodyChange, onSubmit } = props;
-  const subjectId = useId();
   const bodyId = useId();
   const hintId = useId();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -44,7 +46,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
   return (
     <div className={styles.root}>
       <div className={styles.subjectRow}>
-        <label htmlFor={subjectId} className={styles.label}>
+        <label htmlFor={SUBJECT_ID} className={styles.label}>
           Subject
         </label>
         <span className={over ? styles.counterOver : styles.counter} aria-hidden="true">
@@ -52,7 +54,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
         </span>
       </div>
       <input
-        id={subjectId}
+        id={SUBJECT_ID}
         className={styles.subject}
         type="text"
         value={subject}
