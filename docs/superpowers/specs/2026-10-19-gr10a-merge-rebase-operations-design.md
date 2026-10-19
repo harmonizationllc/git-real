@@ -173,12 +173,14 @@ matches (the UI falls back to the short oid).
   `Theirs`): present → blob written to `<workdir>/<path>` (parents created,
   mode from the entry, executable bit honoured), then `index.add_path`;
   absent → file removed if it exists, then `index.remove_path`. Index
-  written once at the end; an error mid-way leaves earlier paths resolved
-  (the status refetch shows the truth). Paths go through the GR-4 `index_ops::normalise_all` check (no `..`, no
+  written once at the end; every path is validated and its conflict entry
+  located before anything is written, and an I/O error mid-way leaves the
+  index untouched (files already written stay on disk; the status refetch
+  shows the truth). Paths go through the GR-4 `index_ops::normalise_all` check (no `..`, no
   absolute paths) before any write.
 - **`can_fast_forward(branch)`**: branch resolved as above; unborn HEAD →
-  `UnbornHead`; `tip == head` → `UpToDate`; `graph_descendant_of(tip, head)`
-  → `Possible`; else `Diverged`.
+  `UnbornHead`; `tip == head` or `tip` already an ancestor of `head` → `UpToDate`;
+  `graph_descendant_of(tip, head)` → `Possible`; else `Diverged`.
 - `git_ops::run` mirrors `refs/switch.rs`: `git_cli::locate()`, `-C
   <workdir>`, captured output, environment variables applied with
   `Command::env`, no stdin.
