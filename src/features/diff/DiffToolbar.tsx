@@ -71,7 +71,9 @@ export function DiffToolbar({
           />
           Hide whitespace changes
         </label>
-        <CloseDiffButton onClick={onClose} />
+        <span className={styles.close}>
+          <CloseDiffButton onClick={onClose} />
+        </span>
       </div>
       {notice && (
         <div className={styles.notice} data-testid="encoding-notice">
@@ -94,7 +96,7 @@ export function DiffToolbar({
 /** The diff's close control; DetailPane reuses it in states that have no toolbar. */
 export function CloseDiffButton({ onClick }: { onClick(): void }) {
   return (
-    <button type="button" className={styles.close} aria-label="Close diff" onClick={onClick}>
+    <button type="button" aria-label="Close diff" onClick={onClick}>
       ✕
     </button>
   );

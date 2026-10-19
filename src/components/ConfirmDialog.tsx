@@ -32,6 +32,8 @@ function ConfirmDialogBody({
 }: ConfirmDialogProps) {
   const titleId = useId();
   const bodyId = useId();
+  // null, undefined and false (from `cond && <p/>`) all mean no description.
+  const hasBody = body != null && body !== false;
 
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -58,14 +60,14 @@ function ConfirmDialogBody({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={body == null ? undefined : bodyId}
+        aria-describedby={hasBody ? bodyId : undefined}
         className={styles.dialog}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className={styles.title}>
           {title}
         </h2>
-        {body != null && (
+        {hasBody && (
           <div id={bodyId} className={styles.body}>
             {body}
           </div>
