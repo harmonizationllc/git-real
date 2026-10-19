@@ -40,7 +40,11 @@ export function OperationBanner({ repoId }: OperationBannerProps) {
   };
 
   return (
-    <section aria-label="Operation in progress" aria-busy={pending} className={styles.root}>
+    <section
+      aria-label="Operation in progress"
+      aria-busy={pending || undefined}
+      className={styles.root}
+    >
       <p className={styles.title}>{bannerTitle(state, head, conflicts)}</p>
       <div className={styles.actions}>
         <button type="button" className={styles.danger} disabled={pending} onClick={openAbort}>
