@@ -1,0 +1,50 @@
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 140px 90px;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 8px;
+  border-left: 2px solid transparent;
+  color: var(--color-text);
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
+}
+
+.matched {
+  background: var(--color-line-selected);
+}
+
+.selected,
+.selected:hover {
+  background: var(--color-surface-hover);
+  border-left-color: var(--color-accent);
+}
+
+.message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.subject,
+.author,
+.date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject {
+  flex: 1;
+  min-width: 0;
+}
+
+.author,
+.date {
+  color: var(--color-text-muted);
+}

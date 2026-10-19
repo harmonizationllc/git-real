@@ -1,0 +1,45 @@
+.root {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+  max-width: 50%;
+  overflow: hidden;
+}
+
+.pill {
+  flex: none;
+  max-width: 160px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  font-size: 0.8em;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.remote {
+  color: var(--color-text-muted);
+}
+
+.tag {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.head {
+  font-weight: 600;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.more {
+  color: var(--color-text-muted);
+}
