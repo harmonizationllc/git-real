@@ -254,7 +254,7 @@ fn state_after_conflicting_revert() {
     assert!(message.subject.starts_with("Revert"), "{}", message.subject);
 }
 
-// git's own commit flow strips comment lines from the prepared message.
+// Only git's trailing "# Conflicts:" block is removed from the prepared message.
 #[test]
 fn state_message_strips_comment_lines() {
     if !git_available() {
@@ -270,18 +270,21 @@ fn state_message_strips_comment_lines() {
     };
     assert_eq!(message.subject, "Merge branch 'other'");
     assert!(
-        message.body.lines().all(|l| !l.starts_with('#')),
+        message
+            .body
+            .lines()
+            .all(|l| l != "# Conflicts:" && !l.starts_with("#\t")),
         "{:?}",
         message.body
     );
 }
 
 #[test]
-fn state_message_drops_hand_written_comment_lines_from_the_body() {
+fn state_message_keeps_hash_lines_outside_the_conflicts_block() {
     let (_d, path, session) = conflicted_merge();
     std::fs::write(
         path.join(".git").join("MERGE_MSG"),
-        "Subject\n\n# comment\nbody line\n# another\n",
+        "#42 fix thing\n\n# Heading\nbody line\n\n# Conflicts:\n#\tREADME.md\n",
     )
     .unwrap();
 
@@ -290,8 +293,8 @@ fn state_message_drops_hand_written_comment_lines_from_the_body() {
     let OperationState::Merge { message, .. } = state else {
         panic!("expected a merge in progress, got {state:?}");
     };
-    assert_eq!(message.subject, "Subject");
-    assert_eq!(message.body, "body line");
+    assert_eq!(message.subject, "#42 fix thing");
+    assert_eq!(message.body, "# Heading\nbody line");
 }
 
 // Unreadable or missing rebase marker files degrade to empty fields, never an error.
@@ -1379,6 +1382,56 @@ fn resolve_unconflicted_path_writes_nothing() {
     assert!(has_conflicts(&path));
 }
 
+// A symlink at the path is replaced, never written through to its target.
+// (git 2.43 renames the other side of a file/symlink add/add conflict, so the
+// symlink is put in the worktree by hand over a real content conflict.)
+#[cfg(unix)]
+#[test]
+fn resolve_replaces_a_symlink_at_the_path_instead_of_writing_through_it() {
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("target.txt");
+    std::fs::write(&target, "outside\n").unwrap();
+    let (_d, path, session) = conflicted_merge();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::os::unix::fs::symlink(&target, path.join("README.md")).unwrap();
+
+    session
+        .resolve_conflicts(&paths(&["README.md"]), ConflictSide::Theirs)
+        .unwrap();
+
+    let meta = path.join("README.md").symlink_metadata().unwrap();
+    assert!(
+        meta.file_type().is_file(),
+        "README.md must be a regular file"
+    );
+    assert_eq!(read(&path, "README.md"), "# other\n");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "outside\n");
+}
+
+// One clean path in the batch fails the whole call before anything is written.
+#[test]
+fn resolve_with_a_clean_path_in_the_batch_writes_nothing() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session) = diverged();
+    common::commit_file(&path, "clean.txt", "clean\n", "add clean");
+    session.merge_branch("other", MergeMode::Merge).unwrap();
+    let conflicted = read(&path, "README.md");
+    assert!(conflicted.contains("<<<<<<<"), "{conflicted}");
+
+    let err = session
+        .resolve_conflicts(&paths(&["README.md", "clean.txt"]), ConflictSide::Ours)
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::PathNotFound(p) if p.as_path() == Path::new("clean.txt")),
+        "{err:?}"
+    );
+    assert!(has_conflicts(&path));
+    assert_eq!(read(&path, "README.md"), conflicted);
+}
+
 #[test]
 fn resolve_two_paths_in_one_call() {
     if !git_available() {
@@ -1459,6 +1512,28 @@ fn can_fast_forward_is_up_to_date_for_the_same_tip() {
 
     assert_eq!(
         session.can_fast_forward("same").unwrap(),
+        FastForwardCheck::UpToDate
+    );
+}
+
+// A branch already contained in HEAD has nothing to fast-forward.
+#[test]
+fn can_fast_forward_is_up_to_date_for_an_ancestor_branch() {
+    let (_d, path, session) = diverged();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let parent = repo
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .parent(0)
+            .unwrap();
+        repo.branch("behind", &parent, false).unwrap();
+    }
+
+    assert_eq!(
+        session.can_fast_forward("behind").unwrap(),
         FastForwardCheck::UpToDate
     );
 }
