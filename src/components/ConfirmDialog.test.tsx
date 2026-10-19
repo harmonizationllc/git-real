@@ -475,3 +475,11 @@ describe("ConfirmDialog body presence", () => {
     expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
   });
 });
+
+describe("ConfirmDialog null body node", () => {
+  it("should render no body node for a null body", () => {
+    renderDialog({ body: null });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelectorAll("div")).toHaveLength(1); // only the actions row
+  });
+});

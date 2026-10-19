@@ -208,3 +208,14 @@ describe("record reference stability", () => {
     expect(useWorkspace.getState().selectedCommit).toEqual({ 1: null });
   });
 });
+
+describe("clear with only a commit selection", () => {
+  it("should remove the commit selection and keep the untouched file map reference", () => {
+    useWorkspace.getState().selectCommit(1, "abc");
+    useWorkspace.getState().select(2, { path: "a.txt", scope: "staged" });
+    const files = useWorkspace.getState().selected;
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().selectedCommit).toBe(false);
+    expect(useWorkspace.getState().selected).toBe(files);
+  });
+});
