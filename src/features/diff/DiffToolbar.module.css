@@ -34,6 +34,10 @@
   color: var(--color-removed);
 }
 
+.close {
+  margin-left: auto;
+}
+
 .modes {
   display: flex;
   gap: 8px;
