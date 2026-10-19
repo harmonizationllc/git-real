@@ -112,6 +112,12 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::PushFailed,
             Some("git push failed with exit code 1"),
         ),
+        (GitError::LogStale, AppErrorKind::LogStale, None),
+        (
+            GitError::CommitNotFound("abc123".into()),
+            AppErrorKind::CommitNotFound,
+            None,
+        ),
     ];
     for (err, expected, reduced) in cases {
         let message = reduced.map_or_else(|| err.to_string(), str::to_string);
@@ -152,6 +158,8 @@ fn app_error_kind_serializes_camel_case() {
         (AppErrorKind::BadSelection, "badSelection"),
         (AppErrorKind::ApplyFailed, "applyFailed"),
         (AppErrorKind::TooLarge, "tooLarge"),
+        (AppErrorKind::LogStale, "logStale"),
+        (AppErrorKind::CommitNotFound, "commitNotFound"),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
