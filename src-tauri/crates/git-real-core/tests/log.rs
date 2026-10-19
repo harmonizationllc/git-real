@@ -1724,3 +1724,26 @@ fn should_serialize_edges_with_null_ends_and_commit_detail_in_camel_case() {
         )
     );
 }
+
+#[test]
+fn should_serialize_oids_and_parents_as_forty_character_hex_strings() {
+    let (_d, path, oids) = linear(1);
+    let mut s = open(&path);
+    let g = s.log_summary().unwrap().generation;
+    let page = serde_json::to_value(s.log_page(g, 0, 2).unwrap()).unwrap();
+    let detail = serde_json::to_value(s.commit_detail(&oids[1].to_string()).unwrap()).unwrap();
+    assert_eq!(
+        (
+            page["rows"][0]["oid"].clone(),
+            page["rows"][0]["parents"].clone(),
+            detail["oid"].clone(),
+            detail["parents"].clone()
+        ),
+        (
+            serde_json::json!(oids[1].to_string()),
+            serde_json::json!([oids[0].to_string()]),
+            serde_json::json!(oids[1].to_string()),
+            serde_json::json!([oids[0].to_string()])
+        )
+    );
+}
