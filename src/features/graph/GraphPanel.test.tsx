@@ -1583,16 +1583,19 @@ describe("GraphPanel keyboard anchor", () => {
     expect(selectedOid()).toBe(oidOf(0));
   });
 
-  it("should continue from the last keyboard row after the selection is cleared outside", async () => {
-    total = 5;
-    await renderPanel();
-    fireEvent.click(optionAt(1));
-    press("ArrowDown");
-    expect(selectedOid()).toBe(oidOf(2));
-    act(() => useWorkspace.getState().selectCommit(REPO, null));
-    press("ArrowDown");
-    expect(selectedOid()).toBe(oidOf(3));
-  });
+  it.each(["ArrowDown", "Home", "Enter"])(
+    "should select row 0 on %s after the selection is cleared outside",
+    async (key) => {
+      total = 5;
+      await renderPanel();
+      fireEvent.click(optionAt(1));
+      press("ArrowDown");
+      expect(selectedOid()).toBe(oidOf(2));
+      act(() => useWorkspace.getState().selectCommit(REPO, null));
+      press(key);
+      expect(selectedOid()).toBe(oidOf(0));
+    },
+  );
 
   it("should open no menu on Shift+F10 once the selection is cleared outside", async () => {
     await renderPanel();
@@ -1660,5 +1663,43 @@ describe("GraphPanel dialog error hygiene", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+// Final fix pass: a cursor belongs to one search, and an empty window is not a settled one.
+describe("GraphPanel final fix pass", () => {
+  it("should restart the counter at 1 when the box is cleared and the same query retyped", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.mocked(searchLog).mockImplementation((_id, _generation, q) =>
+        Promise.resolve(q === "fix" ? [0, 2] : []),
+      );
+      await renderPanel();
+      const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+      fireEvent.change(searchBox(), { target: { value: "fix" } });
+      await advance(400);
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(screen.getByText("2 of 2")).toBeInTheDocument();
+      fireEvent.change(searchBox(), { target: { value: "" } });
+      fireEvent.change(searchBox(), { target: { value: "fix" } });
+      await advance(400);
+      expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should not search for a remounted selection whose row is on the loaded first page", async () => {
+    useWorkspace.getState().selectCommit(REPO, oidOf(1));
+    mockWindow.size = 0;
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    await screen.findByRole("listbox", { name: "Commits" });
+    await act(async () => undefined);
+    mockWindow.size = Infinity;
+    fireEvent.change(searchBox(), { target: { value: " " } });
+    await screen.findByText("Subject 1");
+    await act(async () => undefined);
+    expect(searchLog).not.toHaveBeenCalled();
+    expect(scrollToIndex).not.toHaveBeenCalled();
   });
 });

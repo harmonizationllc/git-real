@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ref } from "../../test/graphFixtures";
 import { RefLabels } from "./RefLabels";
@@ -113,5 +114,24 @@ describe("RefLabels overflow", () => {
   it("should not render a +n pill for a single label", () => {
     render(<RefLabels refs={[ref("branch", "main")]} />);
     expect(screen.queryByText(/^\+\d+$/)).toBeNull();
+  });
+});
+
+// Contract: pills never shrink, so a narrow centre column clips the strip instead of collapsing a pill.
+describe("RefLabels pill sizing", () => {
+  const css = readFileSync("src/features/graph/RefLabels.module.css", "utf8");
+  const rule = (selector: string) =>
+    new RegExp(`(?:^|\\n)\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+
+  it("should give every pill, including +n, the shared pill class", () => {
+    render(<RefLabels refs={[ref("remote", "origin/main"), ref("tag", "a"), ref("tag", "b")]} />);
+    for (const title of ["origin/main", "a"]) {
+      expect(screen.getByTitle(title).className).toMatch(/pill/);
+    }
+    expect(screen.getByText("+1").className).toMatch(/pill/);
+  });
+
+  it("should declare the pill rule non-shrinking", () => {
+    expect(rule(".pill")).toMatch(/flex(-shrink)?:\s*(none|0)\b/);
   });
 });
