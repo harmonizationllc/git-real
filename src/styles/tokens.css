@@ -29,6 +29,14 @@
   --syntax-punctuation: #24292f;
   --syntax-meta: #116329;
   --syntax-invalid: #cf222e;
+  --graph-lane-0: #396cd8;
+  --graph-lane-1: #1a7f37;
+  --graph-lane-2: #9a6700;
+  --graph-lane-3: #cf222e;
+  --graph-lane-4: #8250df;
+  --graph-lane-5: #0a7ea4;
+  --graph-lane-6: #bf5b16;
+  --graph-lane-7: #6e7781;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -63,5 +71,13 @@
     --syntax-punctuation: #c9d1d9;
     --syntax-meta: #7ee787;
     --syntax-invalid: #ff7b72;
+    --graph-lane-0: #4f8cff;
+    --graph-lane-1: #3fb950;
+    --graph-lane-2: #d29922;
+    --graph-lane-3: #f85149;
+    --graph-lane-4: #d2a8ff;
+    --graph-lane-5: #39c5cf;
+    --graph-lane-6: #f0883e;
+    --graph-lane-7: #8b949e;
   }
 }

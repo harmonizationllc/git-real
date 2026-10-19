@@ -1,0 +1,60 @@
+.root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 8px;
+  color: var(--color-text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.title {
+  flex: 1;
+  margin: 0;
+  font-size: 1em;
+}
+
+.hash {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.person,
+.parents {
+  margin: 0;
+}
+
+.parents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.label {
+  color: var(--color-text-muted);
+}
+
+.parent {
+  font-family: ui-monospace, monospace;
+}
+
+.subject {
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

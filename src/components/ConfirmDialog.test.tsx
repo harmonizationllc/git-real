@@ -393,3 +393,93 @@ describe("ConfirmDialog pending with danger", () => {
     expect(confirm).toHaveAttribute("data-danger", "true");
   });
 });
+
+// Contract: the body may be any ReactNode and renders inside the aria-describedby node.
+describe("ConfirmDialog node body", () => {
+  it("should render an element body inside the described-by node", () => {
+    renderDialog({
+      body: (
+        <p>
+          Reset to <strong>abc1234</strong>
+        </p>
+      ),
+    });
+    const id = screen.getByRole("dialog").getAttribute("aria-describedby");
+    expect(document.getElementById(id ?? "missing")).toContainElement(screen.getByText("abc1234"));
+  });
+
+  it("should keep the structure of an element body", () => {
+    renderDialog({
+      body: (
+        <ul>
+          <li>one</li>
+          <li>two</li>
+        </ul>
+      ),
+    });
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("should render a string body inside the described-by node", () => {
+    renderDialog({ body: "This cannot be undone." });
+    const id = screen.getByRole("dialog").getAttribute("aria-describedby");
+    expect(document.getElementById(id ?? "missing")).toHaveTextContent("This cannot be undone.");
+  });
+
+  it("should not render the element body while closed", () => {
+    renderDialog({ open: false, body: <p>hidden body</p> });
+    expect(screen.queryByText("hidden body")).toBeNull();
+  });
+});
+
+// Coverage: which body values describe the dialog.
+describe("ConfirmDialog body presence", () => {
+  it("should not set aria-describedby for a null body", () => {
+    renderDialog({ body: null });
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("should not set aria-describedby for an explicit undefined body", () => {
+    renderDialog({ body: undefined });
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("should set aria-describedby to an element that exists for an element body", () => {
+    renderDialog({ body: <p>Detached HEAD</p> });
+    const id = screen.getByRole("dialog").getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id ?? "")).not.toBeNull();
+  });
+
+  it("should give the accessible description of an element body", () => {
+    renderDialog({ body: <p>Detached HEAD</p> });
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription("Detached HEAD");
+  });
+
+  it("should use a description id different from the title id", () => {
+    renderDialog({ body: "text" });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-describedby")).not.toBe(
+      dialog.getAttribute("aria-labelledby"),
+    );
+  });
+
+  it("should render a zero body, which is content", () => {
+    renderDialog({ body: 0 });
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription("0");
+  });
+
+  it("should not describe the dialog by an empty element when the body is false", () => {
+    // `{cond && <p/>}` yields false; aria-describedby must not point at an empty node.
+    renderDialog({ body: false });
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
+  });
+});
+
+describe("ConfirmDialog null body node", () => {
+  it("should render no body node for a null body", () => {
+    renderDialog({ body: null });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelectorAll("div")).toHaveLength(1); // only the actions row
+  });
+});

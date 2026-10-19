@@ -22,6 +22,7 @@ function setup(
     onModeChange: vi.fn(),
     onIgnoreWhitespaceChange: vi.fn(),
     onLoadFull: vi.fn(),
+    onClose: vi.fn(),
   };
   const view = render(
     <DiffToolbar
@@ -252,5 +253,30 @@ describe("DiffToolbar notices together", () => {
     setup({ diff: { ...baseDiff, oldEncoding: "utf16Le", newEncoding: "utf16Le" } });
     expect(screen.queryByRole("button", { name: "Load full diff" })).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+// Contract: the toolbar ends with a Close diff button that asks its owner to close the diff.
+describe("DiffToolbar close", () => {
+  it("should render a Close diff button", () => {
+    setup();
+    expect(screen.getByRole("button", { name: "Close diff" })).toBeInTheDocument();
+  });
+
+  it("should call onClose once when Close diff is clicked", () => {
+    const { onClose } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should not call onClose until Close diff is clicked", () => {
+    const { onClose } = setup();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("should not call onClose when other toolbar controls are used", () => {
+    const { onClose } = setup();
+    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

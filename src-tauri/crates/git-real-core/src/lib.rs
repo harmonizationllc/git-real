@@ -18,6 +18,7 @@ pub mod error;
 pub mod git_cli;
 pub mod ignore;
 pub mod index_ops;
+pub mod log;
 pub mod model;
 mod paths;
 pub mod progress;

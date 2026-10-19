@@ -1,0 +1,49 @@
+/* Shrinks to its pills, capped so at least 8ch of the subject always remains beside it. */
+.root {
+  flex: 0 1 auto;
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  max-width: calc(100% - 8ch);
+  overflow: hidden;
+}
+
+/* Under the cap the pills ellipsize together; short names such as "main" never do. */
+.pill {
+  flex: 0 1 auto;
+  min-width: 5ch;
+  max-width: 14ch;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  font-size: 0.8em;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.remote {
+  color: var(--color-text-muted);
+}
+
+.tag {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.head {
+  font-weight: 600;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.more {
+  color: var(--color-text-muted);
+}

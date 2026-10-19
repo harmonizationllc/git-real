@@ -1,0 +1,57 @@
+.row {
+  display: grid;
+  /* The author column gives way first: 20% of the row, never wider than 140px nor narrower
+     than 72px, so a narrow centre keeps its space for the labels and subject. */
+  grid-template-columns: auto minmax(0, 1fr) minmax(72px, min(140px, 20%)) 110px;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 8px;
+  border-left: 2px solid transparent;
+  color: var(--color-text);
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
+}
+
+.matched {
+  background: var(--color-line-selected);
+}
+
+.selected,
+.selected:hover {
+  background: var(--color-surface-hover);
+  border-left-color: var(--color-accent);
+}
+
+.message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.subject,
+.author,
+.date {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The subject gives way first and takes the ellipsis. */
+.subject {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.author,
+.date {
+  color: var(--color-text-muted);
+}
+
+.date {
+  text-align: right;
+}

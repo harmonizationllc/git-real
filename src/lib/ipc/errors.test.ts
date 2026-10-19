@@ -96,6 +96,25 @@ describe("isAppError branch kinds", () => {
   });
 });
 
+// Contract: the commit graph error kinds are recognised by the guard.
+describe("isAppError commit graph kinds", () => {
+  it.each(["logStale", "commitNotFound"])("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it.each(["logstale", "commitnotfound", "LogStale"])(
+    "isAppError rejects the near-miss kind %s",
+    (kind) => {
+      expect(isAppError({ kind, message: "m" })).toBe(false);
+    },
+  );
+
+  it("toAppError returns a logStale error unchanged", () => {
+    const err = { kind: "logStale", message: "m" } as const;
+    expect(toAppError(err)).toBe(err);
+  });
+});
+
 // Contract: toAppError coerces any thrown value into an AppError.
 describe("toAppError", () => {
   it("should return an AppError unchanged", () => {
@@ -109,5 +128,39 @@ describe("toAppError", () => {
 
   it("should map a non-Error to an io error with its string form", () => {
     expect(toAppError("x")).toEqual({ kind: "io", message: "x" });
+  });
+});
+
+// Coverage: the two new kinds obey the same shape rules as the others.
+describe("isAppError commit graph kinds shape", () => {
+  it.each(["logStale", "commitNotFound"])("isAppError rejects %s without a message", (kind) => {
+    expect(isAppError({ kind })).toBe(false);
+  });
+
+  it.each(["logStale", "commitNotFound"])(
+    "isAppError rejects %s with a non-string message",
+    (kind) => {
+      expect(isAppError({ kind, message: 5 })).toBe(false);
+    },
+  );
+
+  it("isAppError rejects a kind the backend might add later", () => {
+    expect(isAppError({ kind: "graphCorrupt", message: "m" })).toBe(false);
+  });
+
+  it("isAppError rejects a kind with a trailing space", () => {
+    expect(isAppError({ kind: "logStale ", message: "m" })).toBe(false);
+  });
+
+  it("toAppError returns a commitNotFound error unchanged", () => {
+    const err = { kind: "commitNotFound", message: "m" } as const;
+    expect(toAppError(err)).toBe(err);
+  });
+
+  it("toAppError wraps a near-miss kind as an io error", () => {
+    expect(toAppError({ kind: "logstale", message: "m" })).toEqual({
+      kind: "io",
+      message: "[object Object]",
+    });
   });
 });

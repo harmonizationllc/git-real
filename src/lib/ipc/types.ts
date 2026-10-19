@@ -60,7 +60,9 @@ export type AppErrorKind =
   | "revisionNotFound"
   | "remoteNotFound"
   | "checkoutFailed"
-  | "pushFailed";
+  | "pushFailed"
+  | "logStale"
+  | "commitNotFound";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -193,3 +195,59 @@ export interface BranchList {
   local: LocalBranch[];
   remotes: RemoteGroup[];
 }
+
+export type RefKind = "head" | "branch" | "remote" | "tag";
+
+export interface RefLabel {
+  kind: RefKind;
+  name: string;
+  isHead: boolean;
+}
+
+/** One segment of a row: the column it occupies at the row's top and bottom; null means at the dot. */
+export interface GraphEdge {
+  top: number | null;
+  bottom: number | null;
+}
+
+export interface GraphRow {
+  /** Full hex object id. */
+  oid: string;
+  parents: string[];
+  subject: string;
+  authorName: string;
+  authorEmail: string;
+  /** Unix seconds. */
+  authorTime: number;
+  lane: number;
+  edges: GraphEdge[];
+  refs: RefLabel[];
+}
+
+export interface LogSummary {
+  generation: number;
+  total: number;
+  maxLanes: number;
+}
+
+export interface LogPage {
+  start: number;
+  rows: GraphRow[];
+}
+
+export interface Signature {
+  name: string;
+  email: string;
+  /** Unix seconds. */
+  time: number;
+}
+
+export interface CommitDetail {
+  oid: string;
+  parents: string[];
+  message: CommitMessage;
+  author: Signature;
+  committer: Signature;
+}
+
+export type ResetMode = "soft" | "mixed" | "hard";

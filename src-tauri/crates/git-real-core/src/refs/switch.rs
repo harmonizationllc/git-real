@@ -12,6 +12,8 @@ pub(crate) enum SwitchTarget<'a> {
     Local(&'a str),
     /// `git switch -c <name> --track <upstream>`, with `upstream` a full refname.
     NewTracking { name: &'a str, upstream: &'a str },
+    /// `git switch --detach <oid>`, with `oid` the full hex of a commit.
+    Detach(&'a str),
 }
 
 /// Runs `git -C <workdir> switch ...`; a non-zero exit is `CheckoutFailed`
@@ -25,6 +27,9 @@ pub(crate) fn run(git: &Path, workdir: &Path, target: SwitchTarget<'_>) -> Resul
         }
         SwitchTarget::NewTracking { name, upstream } => {
             cmd.args(["-c", name, "--track", upstream]);
+        }
+        SwitchTarget::Detach(oid) => {
+            cmd.args(["--detach", oid]);
         }
     }
     let output = git_cli::capture(&mut cmd)?;

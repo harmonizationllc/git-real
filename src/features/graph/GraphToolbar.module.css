@@ -1,0 +1,17 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+}
+
+.counter {
+  flex: none;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}

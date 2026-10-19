@@ -300,3 +300,109 @@ pub fn head_branch_name(path: &Path) -> String {
         .expect("HEAD is symbolic")
         .to_string()
 }
+
+/// Fixed base for the commit times the log fixtures use, so TIME sorting is deterministic.
+pub const FIXTURE_TIME: i64 = 1_700_000_000;
+
+/// A signature at `FIXTURE_TIME + offset` seconds.
+pub fn signature_at(offset: i64) -> Signature<'static> {
+    Signature::new(
+        "Test User",
+        "test@example.com",
+        &git2::Time::new(FIXTURE_TIME + offset, 0),
+    )
+    .expect("signature")
+}
+
+/// Commits a tree holding exactly `files` (name, content) on `update_ref`
+/// (`None` leaves every ref alone), with explicit author and committer.
+pub fn commit_tree_at(
+    path: &Path,
+    update_ref: Option<&str>,
+    files: &[(&str, &str)],
+    message: &str,
+    parents: &[git2::Oid],
+    author: &Signature<'_>,
+    committer: &Signature<'_>,
+) -> git2::Oid {
+    let repo = Repository::open(path).expect("open repo");
+    let mut builder = repo.treebuilder(None).expect("tree builder");
+    for (name, content) in files {
+        let blob = repo.blob(content.as_bytes()).expect("write blob");
+        builder.insert(name, blob, 0o100644).expect("insert blob");
+    }
+    let tree = repo
+        .find_tree(builder.write().expect("write tree"))
+        .expect("find tree");
+    let parent_commits: Vec<git2::Commit> = parents
+        .iter()
+        .map(|p| repo.find_commit(*p).expect("find parent"))
+        .collect();
+    let refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+    repo.commit(update_ref, author, committer, message, &tree, &refs)
+        .expect("commit")
+}
+
+/// R <- A (HEAD branch) ; R <- B (`feature`) ; M = merge(A, B) on the HEAD
+/// branch. Commit times are R, A, B, M = FIXTURE_TIME + 0, 10, 20, 30, so the
+/// TIME sort is deterministic. Returns (dir, path, r, a, b, m).
+pub fn merge_fixture() -> (TempDir, PathBuf, git2::Oid, git2::Oid, git2::Oid, git2::Oid) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let at = signature_at;
+    let r = commit_tree_at(
+        &path,
+        Some("HEAD"),
+        &[("base.txt", "base\n")],
+        "root",
+        &[],
+        &at(0),
+        &at(0),
+    );
+    let a = commit_tree_at(
+        &path,
+        Some("HEAD"),
+        &[("base.txt", "base\n"), ("a.txt", "a\n")],
+        "on main",
+        &[r],
+        &at(10),
+        &at(10),
+    );
+    let b = commit_tree_at(
+        &path,
+        Some("refs/heads/feature"),
+        &[("base.txt", "base\n"), ("b.txt", "b\n")],
+        "on feature",
+        &[r],
+        &at(20),
+        &at(20),
+    );
+    let m = commit_tree_at(
+        &path,
+        Some("HEAD"),
+        &[("base.txt", "base\n"), ("a.txt", "a\n"), ("b.txt", "b\n")],
+        "merge",
+        &[a, b],
+        &at(30),
+        &at(30),
+    );
+    (dir, path, r, a, b, m)
+}
+
+/// Creates a lightweight tag `name` on `target` (any object kind).
+pub fn tag_lightweight(path: &Path, name: &str, target: git2::Oid) {
+    let repo = Repository::open(path).expect("open repo");
+    let object = repo.find_object(target, None).expect("find target");
+    repo.tag_lightweight(name, &object, false)
+        .expect("lightweight tag");
+}
+
+/// Creates an annotated tag `name` (message "release") on `target`.
+pub fn tag_annotated(path: &Path, name: &str, target: git2::Oid) {
+    let repo = Repository::open(path).expect("open repo");
+    let object = repo.find_object(target, None).expect("find target");
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+    repo.tag(name, &object, &sig, "release", false)
+        .expect("annotated tag");
+}

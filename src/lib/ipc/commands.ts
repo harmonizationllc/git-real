@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   BranchList,
   CommitConfig,
+  CommitDetail,
   CommitMessage,
   CommitOutcome,
   DiffScope,
@@ -11,9 +12,12 @@ import type {
   HunkAction,
   HunkSelection,
   LocalBranch,
+  LogPage,
+  LogSummary,
   OpenedRepo,
   RecentEntry,
   RepoId,
+  ResetMode,
   WorkingTreeStatus,
 } from "./types";
 
@@ -158,4 +162,37 @@ export function checkoutRemoteBranch(id: RepoId, remote: string, name: string): 
 /** Deletes `name` on `remote` through `git push --delete`. */
 export function deleteRemoteBranch(id: RepoId, remote: string, name: string): Promise<void> {
   return invoke<void>("delete_remote_branch", { id, remote, name });
+}
+
+/** The cached log's generation, row count and lane width; reading it rebuilds a stale cache. */
+export function getLogSummary(id: RepoId): Promise<LogSummary> {
+  return invoke<LogSummary>("get_log_summary", { id });
+}
+
+/** Rejects with `logStale` when `generation` is no longer the cached one. */
+export function getLogPage(
+  id: RepoId,
+  generation: number,
+  start: number,
+  count: number,
+): Promise<LogPage> {
+  return invoke<LogPage>("get_log_page", { id, generation, start, count });
+}
+
+/** Ascending row indices matching `query`; rejects with `logStale` like `getLogPage`. */
+export function searchLog(id: RepoId, generation: number, query: string): Promise<number[]> {
+  return invoke<number[]>("search_log", { id, generation, query });
+}
+
+export function getCommit(id: RepoId, oid: string): Promise<CommitDetail> {
+  return invoke<CommitDetail>("get_commit", { id, oid });
+}
+
+/** Detaches HEAD at `oid` through `git switch --detach`. */
+export function checkoutCommit(id: RepoId, oid: string): Promise<void> {
+  return invoke<void>("checkout_commit", { id, oid });
+}
+
+export function resetToCommit(id: RepoId, oid: string, mode: ResetMode): Promise<void> {
+  return invoke<void>("reset_to_commit", { id, oid, mode });
 }

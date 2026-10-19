@@ -1,11 +1,12 @@
 import { useId, useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import styles from "./ConfirmDialog.module.css";
 
 export interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  body?: string;
+  /** Block content is allowed; it is the dialog's accessible description. */
+  body?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
@@ -31,6 +32,8 @@ function ConfirmDialogBody({
 }: ConfirmDialogProps) {
   const titleId = useId();
   const bodyId = useId();
+  // null, undefined and false (from `cond && <p/>`) all mean no description.
+  const hasBody = body != null && body !== false;
 
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -57,14 +60,18 @@ function ConfirmDialogBody({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={body === undefined ? undefined : bodyId}
+        aria-describedby={hasBody ? bodyId : undefined}
         className={styles.dialog}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className={styles.title}>
           {title}
         </h2>
-        {body !== undefined && <p id={bodyId}>{body}</p>}
+        {hasBody && (
+          <div id={bodyId} className={styles.body}>
+            {body}
+          </div>
+        )}
         <div className={styles.actions}>
           <button ref={cancelRef} type="button" disabled={pending} onClick={onCancel}>
             {cancelLabel}

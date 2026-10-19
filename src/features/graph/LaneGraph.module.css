@@ -1,0 +1,5 @@
+.root {
+  flex: none;
+  display: block;
+  overflow: hidden;
+}

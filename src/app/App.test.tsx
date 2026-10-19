@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../lib/query/client";
@@ -8,6 +8,7 @@ import {
   closeRepo,
   getCommitConfig,
   getHeadMessage,
+  getLogSummary,
   getStatus,
   listBranches,
   listRecent,
@@ -35,6 +36,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   onCloneProgress: vi.fn(),
   getCommitConfig: vi.fn(),
   getHeadMessage: vi.fn(),
+  getLogSummary: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
   onRepoChanged: vi.fn(),
@@ -67,6 +69,7 @@ beforeEach(() => {
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
+  vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 0, maxLanes: 1 });
 });
 
 function renderApp(...seed: OpenedRepo[]) {
@@ -120,7 +123,7 @@ describe("App repo pane", () => {
   });
 });
 
-// Contract: the repo pane hosts the changes panel and the detail placeholder.
+// Contract: the repo pane hosts the changes panel and the commit history.
 describe("App changes panel", () => {
   it("renders the changes panel for the active repo", async () => {
     renderApp(repo(1, "alpha"));
@@ -128,11 +131,10 @@ describe("App changes panel", () => {
     expect(getStatus).toHaveBeenCalledWith(1);
   });
 
-  it("renders the detail placeholder next to the panel", async () => {
+  it("renders the commit history region next to the panel", async () => {
     renderApp(repo(1, "alpha"));
-    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
-      "Select a file to view its diff",
-    );
+    const history = screen.getByRole("region", { name: "History" });
+    expect(await within(history).findByText("No commits yet")).toBeInTheDocument();
     await screen.findByRole("region", { name: "Changes" });
   });
 });

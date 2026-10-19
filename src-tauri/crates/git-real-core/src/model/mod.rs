@@ -3,6 +3,7 @@
 mod branch;
 mod commit;
 mod diff;
+mod log;
 mod progress;
 mod recent;
 mod repo;
@@ -13,6 +14,9 @@ pub use commit::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
 pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
     HunkSelection, TextEncoding,
+};
+pub use log::{
+    CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,
 };
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;

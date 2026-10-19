@@ -63,6 +63,10 @@ pub enum GitError {
         stdout: String,
         stderr: String,
     },
+    #[error("the commit graph changed; reload it")]
+    LogStale,
+    #[error("{0} is not a commit in this repository")]
+    CommitNotFound(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

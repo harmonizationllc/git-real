@@ -450,3 +450,183 @@ fn checkout_remote_rejects_a_remote_whose_name_starts_with_a_dash() {
         GitError::RemoteNotFound(name) if name == "-x"
     ));
 }
+
+// --- checkout_commit: detached checkout of a commit (GR-8) ---
+
+/// Two commits (README `# fixture` then `# two`); returns (dir, path, session, first, second).
+fn two_commit_fixture() -> (
+    tempfile::TempDir,
+    PathBuf,
+    RepoSession,
+    git2::Oid,
+    git2::Oid,
+) {
+    let (d, path, _session, _head) = fixture();
+    let first = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    let second = common::commit_file(&path, "README.md", "# two\n", "second");
+    let session = RepoSession::open(&path).unwrap();
+    (d, path, session, first, second)
+}
+
+#[test]
+fn should_detach_head_at_the_commit_when_checking_out_a_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, first, _second) = two_commit_fixture();
+    session.checkout_commit(&first.to_string()).unwrap();
+    let repo = Repository::open(&path).unwrap();
+    assert!(repo.head_detached().unwrap());
+}
+
+#[test]
+fn should_point_head_at_the_requested_commit_when_checking_out_a_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, first, _second) = two_commit_fixture();
+    session.checkout_commit(&first.to_string()).unwrap();
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(repo.head().unwrap().target().unwrap(), first);
+}
+
+#[test]
+fn should_update_the_working_tree_when_checking_out_a_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, first, _second) = two_commit_fixture();
+    session.checkout_commit(&first.to_string()).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(path.join("README.md")).unwrap(),
+        "# fixture\n"
+    );
+}
+
+#[test]
+fn should_keep_the_branch_where_it_was_when_checking_out_an_older_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, first, second) = two_commit_fixture();
+    let branch = common::head_branch_name(&path);
+    session.checkout_commit(&first.to_string()).unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let tip = repo
+        .find_branch(&branch, BranchType::Local)
+        .unwrap()
+        .get()
+        .target()
+        .unwrap();
+    assert_eq!(tip, second);
+}
+
+#[test]
+fn should_accept_checking_out_the_commit_head_is_already_on() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, _first, second) = two_commit_fixture();
+    session.checkout_commit(&second.to_string()).unwrap();
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(repo.head().unwrap().target().unwrap(), second);
+}
+
+fn dirty_commit_fixture() -> (
+    tempfile::TempDir,
+    PathBuf,
+    RepoSession,
+    git2::Oid,
+    git2::Oid,
+) {
+    let (d, path, session, first, second) = two_commit_fixture();
+    std::fs::write(path.join("README.md"), "# dirty edit\n").unwrap();
+    (d, path, session, first, second)
+}
+
+#[test]
+fn should_fail_with_gits_stderr_when_a_dirty_file_blocks_a_commit_checkout() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session, first, _second) = dirty_commit_fixture();
+    match session.checkout_commit(&first.to_string()).unwrap_err() {
+        GitError::CheckoutFailed { code, stderr, .. } => {
+            assert_ne!(code, Some(0));
+            assert!(stderr.contains("overwritten"), "stderr was: {stderr}");
+        }
+        other => panic!("expected CheckoutFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_keep_head_unchanged_when_a_dirty_file_blocks_a_commit_checkout() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, first, second) = dirty_commit_fixture();
+    let _ = session.checkout_commit(&first.to_string());
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(
+        (repo.head_detached().unwrap(), repo.head().unwrap().target()),
+        (false, Some(second))
+    );
+}
+
+// Pre-checks need no git CLI, so these always run.
+
+#[test]
+fn should_reject_a_checkout_of_a_well_formed_oid_that_does_not_exist() {
+    let (_d, _p, session, _head) = fixture();
+    let input = "0".repeat(40);
+    assert!(matches!(
+        session.checkout_commit(&input).unwrap_err(),
+        GitError::CommitNotFound(s) if s == input
+    ));
+}
+
+#[test]
+fn should_reject_a_checkout_of_text_that_is_not_hex() {
+    let (_d, _p, session, _head) = fixture();
+    assert!(matches!(
+        session.checkout_commit("zz").unwrap_err(),
+        GitError::CommitNotFound(s) if s == "zz"
+    ));
+}
+
+#[test]
+fn should_reject_a_checkout_target_that_looks_like_a_flag() {
+    let (_d, _p, session, _head) = fixture();
+    assert!(matches!(
+        session.checkout_commit("--orphan").unwrap_err(),
+        GitError::CommitNotFound(_)
+    ));
+}
+
+#[test]
+fn should_reject_a_checkout_of_the_oid_of_a_tree() {
+    let (_d, path, session, _head) = fixture();
+    let tree = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .tree_id();
+    assert!(matches!(
+        session.checkout_commit(&tree.to_string()).unwrap_err(),
+        GitError::CommitNotFound(_)
+    ));
+}
+
+#[test]
+fn should_leave_head_on_its_branch_when_the_checkout_target_is_unknown() {
+    let (_d, path, session, head) = fixture();
+    let _ = session.checkout_commit(&"0".repeat(40));
+    assert_eq!(head_ref(&path), head);
+}

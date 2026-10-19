@@ -181,3 +181,69 @@ describe("branch query keys", () => {
     ]).toEqual([true, false]);
   });
 });
+
+// Contract: the log summary sits under the repo prefix; pages, searches and commits are immutable.
+describe("commit graph query keys", () => {
+  it("should define log(id) as ['repo', id, 'log'] under the repo prefix", () => {
+    expect(queryKeys.log(3)).toEqual(["repo", 3, "log"]);
+    expect(queryKeys.log(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+  });
+
+  it("should define repoImmutable(id) as ['repoImmutable', id]", () => {
+    expect(queryKeys.repoImmutable(3)).toEqual(["repoImmutable", 3]);
+  });
+
+  it("should define logPage with generation and page", () => {
+    expect(queryKeys.logPage(3, 7, 2)).toEqual(["repoImmutable", 3, "logPage", 7, 2]);
+  });
+
+  it("should define logSearch with generation and query", () => {
+    expect(queryKeys.logSearch(3, 7, "fix")).toEqual(["repoImmutable", 3, "logSearch", 7, "fix"]);
+  });
+
+  it("should define commit with the oid", () => {
+    expect(queryKeys.commit(3, "abc")).toEqual(["repoImmutable", 3, "commit", "abc"]);
+  });
+
+  it.each([
+    ["logPage", () => queryKeys.logPage(3, 7, 2)],
+    ["logSearch", () => queryKeys.logSearch(3, 7, "fix")],
+    ["commit", () => queryKeys.commit(3, "abc")],
+  ])("should not start %s with the repo prefix", (_name, key) => {
+    expect(key().slice(0, 2)).not.toEqual(queryKeys.repo(3));
+  });
+
+  it("should start logPage, logSearch and commit with repoImmutable(id)", () => {
+    expect([
+      queryKeys.logPage(3, 7, 2).slice(0, 2),
+      queryKeys.logSearch(3, 7, "x").slice(0, 2),
+      queryKeys.commit(3, "abc").slice(0, 2),
+    ]).toEqual([
+      queryKeys.repoImmutable(3),
+      queryKeys.repoImmutable(3),
+      queryKeys.repoImmutable(3),
+    ]);
+  });
+
+  it("should differ between generations, pages, queries and oids", () => {
+    expect(queryKeys.logPage(3, 7, 2)).not.toEqual(queryKeys.logPage(3, 8, 2));
+    expect(queryKeys.logPage(3, 7, 2)).not.toEqual(queryKeys.logPage(3, 7, 3));
+    expect(queryKeys.logSearch(3, 7, "a")).not.toEqual(queryKeys.logSearch(3, 7, "b"));
+    expect(queryKeys.commit(3, "a")).not.toEqual(queryKeys.commit(3, "b"));
+  });
+
+  it("should invalidate the log summary but keep immutable entries when repo(id) is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.log(1), 1);
+    qc.setQueryData(queryKeys.logPage(1, 7, 0), 1);
+    qc.setQueryData(queryKeys.logSearch(1, 7, "x"), 1);
+    qc.setQueryData(queryKeys.commit(1, "abc"), 1);
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect([
+      qc.getQueryState(queryKeys.log(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.logPage(1, 7, 0))?.isInvalidated,
+      qc.getQueryState(queryKeys.logSearch(1, 7, "x"))?.isInvalidated,
+      qc.getQueryState(queryKeys.commit(1, "abc"))?.isInvalidated,
+    ]).toEqual([true, false, false, false]);
+  });
+});

@@ -5,6 +5,12 @@
   flex-direction: column;
 }
 
+.closeRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px 0;
+}
+
 .empty {
   flex: 1;
   display: flex;

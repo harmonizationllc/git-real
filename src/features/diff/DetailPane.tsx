@@ -6,7 +6,7 @@ import { useWorkspace, type SelectedFile } from "../../lib/store/workspace";
 import { RepoError } from "../repo/RepoError";
 import { useWorktreeActions } from "../worktree/useWorktreeActions";
 import { BinaryPlaceholder } from "./BinaryPlaceholder";
-import { DiffToolbar } from "./DiffToolbar";
+import { CloseDiffButton, DiffToolbar } from "./DiffToolbar";
 import { DiffViewer } from "./DiffViewer";
 import { ImageDiff } from "./ImageDiff";
 import { isDecoded } from "./model/encoding";
@@ -28,9 +28,10 @@ interface PendingDiscard {
   selection: HunkSelection;
 }
 
+/** The selected file's diff; renders nothing without a selection, so RepoPane decides what shows. */
 export function DetailPane({ repoId }: { repoId: RepoId }) {
   const file = useWorkspace((s) => s.selected[repoId] ?? null);
-  if (file === null) return <Empty>Select a file to view its diff</Empty>;
+  if (file === null) return null;
   // Keyed so line cap, dialog, action error and scroll offset never leak to another file.
   return <FileDetail key={`${file.scope}:${file.path}`} repoId={repoId} file={file} />;
 }
@@ -48,6 +49,8 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const selection = useLineSelection(diff);
   const actions = useWorktreeActions(repoId);
   const [pending, setPending] = useState<PendingDiscard | null>(null);
+  const close = () => useWorkspace.getState().select(repoId, null);
+  const closeButton = <CloseDiffButton onClick={close} />;
 
   if (noChanges) {
     // Hiding whitespace can empty a diff; keep the only control that caused it reachable.
@@ -60,27 +63,37 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
             Hide whitespace changes
           </label>
         )}
+        {closeButton}
       </Empty>
     );
   }
   if (error) {
     return (
       <div className={styles.root}>
-        <RepoError
-          error={error}
-          path={null}
-          onRetry={refetch}
-          onDismiss={() => useWorkspace.getState().select(repoId, null)}
-        />
+        <div className={styles.closeRow}>{closeButton}</div>
+        <RepoError error={error} path={null} onRetry={refetch} onDismiss={close} />
       </div>
     );
   }
-  if (loading || !diff) return <Empty role="status">Loading diff…</Empty>;
+  if (loading || !diff) {
+    return (
+      <Empty>
+        {/* Only the text is live, so the button label is not announced as status. */}
+        <span role="status">Loading diff…</span>
+        {closeButton}
+      </Empty>
+    );
+  }
   if (diff.isBinary) {
-    return isImagePath(diff.path) ? (
-      <ImageDiff repoId={repoId} diff={diff} />
-    ) : (
-      <BinaryPlaceholder diff={diff} />
+    return (
+      <div className={styles.root}>
+        <div className={styles.closeRow}>{closeButton}</div>
+        {isImagePath(diff.path) ? (
+          <ImageDiff repoId={repoId} diff={diff} />
+        ) : (
+          <BinaryPlaceholder diff={diff} />
+        )}
+      </div>
     );
   }
 
@@ -109,6 +122,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
         onModeChange={setMode}
         onIgnoreWhitespaceChange={setIgnoreWhitespace}
         onLoadFull={() => setMaxLines(FULL_DIFF_LINES)}
+        onClose={close}
       />
       {actions.error && (
         <RepoError error={actions.error} path={null} onDismiss={actions.clearError} />
@@ -152,10 +166,6 @@ function encodingChanged({ oldEncoding, newEncoding }: FileDiff): boolean {
   return oldEncoding !== null && newEncoding !== null && oldEncoding !== newEncoding;
 }
 
-function Empty({ children, role }: { children: React.ReactNode; role?: string }) {
-  return (
-    <div className={styles.empty} role={role}>
-      {children}
-    </div>
-  );
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div className={styles.empty}>{children}</div>;
 }
