@@ -1,3 +1,115 @@
+//! Streaming lane layout for the commit graph (spec section 3.3).
+//!
+//! Commits arrive in topological order, children before parents. Each column
+//! holds the oid of the commit it is waiting for; a commit's dot takes the
+//! first column expecting it (or a free one), its parents leave from the dot,
+//! and every other occupied column passes straight through the row.
+
+use git2::Oid;
+
+use crate::model::GraphEdge;
+
+pub(crate) struct LaneLayout {
+    /// Per column, the commit that column's line is heading to; `None` is free.
+    columns: Vec<Option<Oid>>,
+    /// The widest the layout has been, sampled before trailing free columns
+    /// are trimmed so a dot in a new last column counts.
+    max_columns: u32,
+}
+
+impl LaneLayout {
+    pub(crate) fn new() -> Self {
+        Self {
+            columns: Vec::new(),
+            max_columns: 0,
+        }
+    }
+
+    /// Places `oid` and returns its column and the row's edges, sorted.
+    pub(crate) fn next(&mut self, oid: Oid, parents: &[Oid]) -> (u32, Vec<GraphEdge>) {
+        let before = self.columns.clone();
+        let mut edges = Vec::new();
+
+        // 1. The dot's column: the first one expecting this commit, else a free one.
+        let expecting: Vec<usize> = before
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| **c == Some(oid))
+            .map(|(k, _)| k)
+            .collect();
+        let lane = match expecting.first() {
+            Some(&k) => k,
+            None => self.take_free(),
+        };
+
+        // 2. Every column expecting this commit joins the dot and is freed.
+        for &k in &expecting {
+            edges.push(edge(Some(k), None));
+            self.columns[k] = None;
+        }
+
+        // 3. Parents leave the dot: the first in the dot's column, the others
+        //    in the column already expecting them or a free one.
+        for (i, parent) in parents.iter().enumerate() {
+            let k = if i == 0 {
+                lane
+            } else {
+                match self.columns.iter().position(|c| *c == Some(*parent)) {
+                    Some(k) => k,
+                    None => self.take_free(),
+                }
+            };
+            self.columns[k] = Some(*parent);
+            edges.push(edge(None, Some(k)));
+        }
+
+        // 4. Columns this commit did not touch pass straight through.
+        for (k, expected) in before.iter().enumerate() {
+            if expected.is_some()
+                && *expected != Some(oid)
+                && self.columns.get(k).is_some_and(Option::is_some)
+            {
+                edges.push(edge(Some(k), Some(k)));
+            }
+        }
+
+        self.max_columns = self.max_columns.max(to_u32(self.columns.len()));
+        while self.columns.last().is_some_and(Option::is_none) {
+            self.columns.pop();
+        }
+        edges.sort();
+        (to_u32(lane), edges)
+    }
+
+    /// The widest row laid out so far.
+    pub(crate) fn max_columns(&self) -> u32 {
+        self.max_columns
+    }
+
+    /// The first free column, or a new one; the slot is left `None` for the
+    /// caller to fill.
+    fn take_free(&mut self) -> usize {
+        match self.columns.iter().position(Option::is_none) {
+            Some(k) => k,
+            None => {
+                self.columns.push(None);
+                self.columns.len() - 1
+            }
+        }
+    }
+}
+
+fn edge(top: Option<usize>, bottom: Option<usize>) -> GraphEdge {
+    GraphEdge {
+        top: top.map(to_u32),
+        bottom: bottom.map(to_u32),
+    }
+}
+
+fn to_u32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
