@@ -18,7 +18,9 @@ impl RepoSession {
     /// and stages the path, which clears the conflict entries.
     ///
     /// Every path must be conflicted, or nothing is written and the call fails
-    /// with `PathNotFound`.
+    /// with `PathNotFound`. Once writing starts it is not atomic on the working
+    /// tree: an I/O failure on one path leaves earlier paths already written,
+    /// while the index is reloaded with its conflicts intact.
     pub fn resolve_conflicts(&self, paths: &[String], side: ConflictSide) -> Result<(), GitError> {
         let workdir = self.workdir()?;
         let paths = normalise_all(workdir, paths)?;
@@ -48,6 +50,14 @@ impl RepoSession {
                         let blob = self.repo().find_blob(*id)?;
                         if let Some(parent) = full.parent() {
                             std::fs::create_dir_all(parent)?;
+                        }
+                        // Never write through a symlink at the path itself: it
+                        // could point outside the working tree.
+                        if full
+                            .symlink_metadata()
+                            .is_ok_and(|m| m.file_type().is_symlink())
+                        {
+                            std::fs::remove_file(&full)?;
                         }
                         std::fs::write(&full, blob.content())?;
                         set_executable(&full, *mode)?;

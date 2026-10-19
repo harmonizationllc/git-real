@@ -124,11 +124,12 @@ impl RepoSession {
     }
 
     /// Whether HEAD can fast-forward to `branch` (local, else `remote/name`).
+    /// A branch whose tip HEAD already contains is `UpToDate`.
     pub fn can_fast_forward(&self, branch: &str) -> Result<FastForwardCheck, GitError> {
         self.ensure_born()?;
         let tip = self.resolve_branch(branch)?;
         let head = self.repo().head()?.peel_to_commit()?.id();
-        if tip == head {
+        if tip == head || self.repo().graph_descendant_of(head, tip)? {
             Ok(FastForwardCheck::UpToDate)
         } else if self.repo().graph_descendant_of(tip, head)? {
             Ok(FastForwardCheck::Possible)

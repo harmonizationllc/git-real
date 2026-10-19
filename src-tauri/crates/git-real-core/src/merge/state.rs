@@ -83,24 +83,27 @@ fn read_rebase(repo: &Repository, git_dir: &Path) -> OperationState {
 }
 
 /// git's prepared message for the commit that will finish the operation,
-/// without its comment lines.
+/// without the `# Conflicts:` block git appends.
 fn prepared_message(git_dir: &Path) -> CommitMessage {
     std::fs::read(git_dir.join("MERGE_MSG"))
-        .map(|raw| message::split(&strip_comments(&String::from_utf8_lossy(&raw))))
+        .map(|raw| message::split(&strip_conflicts_block(&String::from_utf8_lossy(&raw))))
         .unwrap_or_else(|_| CommitMessage {
             subject: String::new(),
             body: String::new(),
         })
 }
 
-/// Drops every line starting with `#` (git's comments, such as the
-/// `# Conflicts:` list); `message::split` then trims the blank lines left
-/// at the edges of the body.
-fn strip_comments(raw: &str) -> String {
-    raw.lines()
-        .filter(|line| !line.starts_with('#'))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Cuts the message at the last `# Conflicts:` line, which git appends with
+/// the conflicted paths. Every other line, `#` lines included, is real
+/// message text (`#42 fix thing`, Markdown headings) and is kept;
+/// `message::split` then trims the blank lines left at the end.
+fn strip_conflicts_block(raw: &str) -> String {
+    let lines: Vec<&str> = raw.lines().collect();
+    let end = lines
+        .iter()
+        .rposition(|line| line.trim_end() == "# Conflicts:")
+        .unwrap_or(lines.len());
+    lines[..end].join("\n")
 }
 
 /// The trimmed first line of an oid file when it is a valid oid, else `""`.
