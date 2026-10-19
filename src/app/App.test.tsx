@@ -128,11 +128,9 @@ describe("App changes panel", () => {
     expect(getStatus).toHaveBeenCalledWith(1);
   });
 
-  it("renders the detail placeholder next to the panel", async () => {
+  it("renders an empty detail region next to the panel", async () => {
     renderApp(repo(1, "alpha"));
-    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
-      "Select a file to view its diff",
-    );
+    expect(screen.getByRole("region", { name: "Detail" })).toBeEmptyDOMElement();
     await screen.findByRole("region", { name: "Changes" });
   });
 });

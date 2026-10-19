@@ -102,11 +102,9 @@ describe("RepoPane", () => {
     expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
   });
 
-  it("should render the detail pane with its empty prompt", async () => {
+  it("should render an empty detail region when no file is selected", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
-      "Select a file to view its diff",
-    );
+    expect(screen.getByRole("region", { name: "Detail" })).toBeEmptyDOMElement();
     await screen.findByRole("region", { name: "Changes" });
   });
 
@@ -184,9 +182,7 @@ describe("RepoPane detail pane per tab", () => {
   it("should not show another repo's selection in the detail pane", async () => {
     useWorkspace.getState().select(1, { path: "a.txt", scope: "unstaged" });
     renderWithProviders(<RepoPane tab={tab(2)} />);
-    expect(screen.getByRole("region", { name: "Detail" })).toHaveTextContent(
-      "Select a file to view its diff",
-    );
+    expect(screen.getByRole("region", { name: "Detail" })).toBeEmptyDOMElement();
     expect(getFileDiff).not.toHaveBeenCalled();
     await screen.findByRole("region", { name: "Changes" });
   });

@@ -1,4 +1,5 @@
 import type { Key } from "react";
+import { vi } from "vitest";
 
 // happy-dom has no layout, so the real virtualizer would render nothing. Tests load this
 // module as a fake through a hoisted factory:
@@ -12,6 +13,8 @@ interface Options {
 }
 
 const measureElement = (): void => undefined; // stable, like the real instance method
+/** Stable and shared so tests can assert calls; reset it in beforeEach where it is used. */
+export const scrollToIndex = vi.fn<(index: number) => void>();
 
 /** Renders every row, and calls each option callback the way the real hook would. */
 export function useVirtualizer({ count, getScrollElement, estimateSize, getItemKey }: Options) {
@@ -22,5 +25,11 @@ export function useVirtualizer({ count, getScrollElement, estimateSize, getItemK
     start: index * estimateSize(index),
     size: estimateSize(index),
   }));
-  return { getTotalSize: () => count * 22, getVirtualItems: () => items, measureElement };
+  return {
+    getTotalSize: () => count * 22,
+    getVirtualItems: () => items,
+    measureElement,
+    scrollToIndex,
+    scrollElement: null,
+  };
 }

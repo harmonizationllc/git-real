@@ -989,6 +989,38 @@ describe("DetailPane Close diff", () => {
     expectClosed();
   });
 
+  it("should offer Close diff for a binary image preview", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "logo.png", isBinary: true, change: "added" }),
+    );
+    setup("logo.png");
+    await screen.findByAltText("New image");
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
+  it("should offer exactly one Close diff for the empty-hunks state", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([]));
+    setup();
+    await screen.findByText("No line changes in this file");
+    expect(screen.getByRole("button", { name: "Close diff" })).toBeInTheDocument();
+  });
+
+  it("should keep the loading Close diff button outside the status region", async () => {
+    vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
+    setup();
+    const button = await closeButton();
+    expect(screen.getByRole("status")).not.toContainElement(button);
+  });
+
+  it("should offer Close diff alongside Dismiss on a load error", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    await screen.findByRole("alert");
+    fireEvent.click(await closeButton());
+    expectClosed();
+  });
+
   it("should offer Dismiss on a load error and clear the selection", async () => {
     vi.mocked(getFileDiff).mockRejectedValue(gitError);
     setup();
