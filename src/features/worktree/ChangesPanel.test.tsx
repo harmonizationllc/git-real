@@ -11,10 +11,25 @@ import {
   unstageAll,
   unstagePaths,
 } from "../../lib/ipc";
-import type { ChangeKind, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
+import type {
+  AppError,
+  BranchList,
+  ChangeKind,
+  OperationState,
+  StatusEntry,
+  WorkingTreeStatus,
+} from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import { useBranches } from "../branches/useBranches";
+import { useIntegrationActions } from "../merge/useIntegrationActions";
+import type { UseIntegrationActions } from "../merge/useIntegrationActions";
+import { useOperationState } from "../merge/useOperationState";
 import { ChangesPanel } from "./ChangesPanel";
+
+vi.mock("../branches/useBranches", () => ({ useBranches: vi.fn() }));
+vi.mock("../merge/useOperationState", () => ({ useOperationState: vi.fn() }));
+vi.mock("../merge/useIntegrationActions", () => ({ useIntegrationActions: vi.fn() }));
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -40,8 +55,38 @@ const staged = (path: string, index: ChangeKind = "modified") => entry({ path, i
 const conflict = (path: string) => entry({ path, worktree: "conflicted", conflicted: true });
 const status = (...entries: StatusEntry[]): WorkingTreeStatus => ({ entries, headUnborn: false });
 
+const integrationRun = vi.fn<UseIntegrationActions["run"]>();
+const integrationClear = vi.fn();
+
+/** Drives the merge and branch hooks; defaults model HEAD on main with no operation. */
+function provideMerge(
+  opts: {
+    state?: OperationState | undefined;
+    head?: BranchList["head"];
+    pending?: boolean;
+    error?: AppError | null;
+  } = {},
+) {
+  const { state = { kind: "none" }, head = { kind: "branch", name: "main" } } = opts;
+  vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
+  vi.mocked(useBranches).mockReturnValue({
+    branches: { head, local: [], remotes: [] },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+  vi.mocked(useIntegrationActions).mockReturnValue({
+    run: integrationRun,
+    pending: opts.pending ?? false,
+    error: opts.error ?? null,
+    clearError: integrationClear,
+  });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
+  integrationRun.mockResolvedValue(null);
+  provideMerge();
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue(status());
   vi.mocked(stagePaths).mockResolvedValue(undefined);
@@ -431,7 +476,12 @@ describe("ChangesPanel context menu", () => {
   it("should offer Mark resolved (stage) for a conflicts row", async () => {
     await renderPanel(conflict("c.txt"));
     rightClick(btn("conflicted c.txt"));
-    expect(itemLabels()).toEqual(["Mark resolved (stage)", "File history"]);
+    expect(itemLabels()).toEqual([
+      "Keep ours",
+      "Take theirs",
+      "Mark resolved (stage)",
+      "File history",
+    ]);
   });
 
   it("should not show a menu until a row is right-clicked", async () => {
@@ -1046,5 +1096,213 @@ describe("ChangesPanel File history menu item", () => {
     await renderPanel(unstaged("a.txt"));
     rightClick(btn("modified a.txt"));
     expect(useWorkspace.getState().historyPath[1]).toBeUndefined();
+  });
+});
+
+// Contract (spec 5.4): conflict rows offer Keep/Take with side names from the operation.
+describe("ChangesPanel conflict sides", () => {
+  const message = { subject: "s", body: "" };
+  const oid = (c: string) => c.repeat(40);
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: oid("a"),
+    branch: "feature",
+    message,
+  };
+  const rebaseState: OperationState = {
+    kind: "rebase",
+    onto: oid("b"),
+    ontoName: "develop",
+    branch: "topic",
+    step: 1,
+    total: 3,
+  };
+  const dirty: AppError = { kind: "unresolvedConflicts", message: "still conflicted" };
+
+  const menuLabels = () => itemLabels().slice(0, 3);
+
+  it("should offer Keep main, Take feature and Mark resolved for a merge with branch feature", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep main", "Take feature", "Mark resolved (stage)"]);
+  });
+
+  it("should label rebase sides with the onto name and the rebased branch", async () => {
+    provideMerge({ state: rebaseState });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep develop", "Take topic", "Mark resolved (stage)"]);
+  });
+
+  it("should label cherry-pick sides with the head branch and the short oid", async () => {
+    provideMerge({ state: { kind: "cherryPick", oid: oid("c"), message } });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep main", "Take ccccccc", "Mark resolved (stage)"]);
+  });
+
+  it("should label revert sides with the head branch and the short oid", async () => {
+    provideMerge({ state: { kind: "revert", oid: oid("d"), message } });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep main", "Take ddddddd", "Mark resolved (stage)"]);
+  });
+
+  it("should use HEAD as the ours label when HEAD is detached during a merge", async () => {
+    provideMerge({ state: mergeState, head: { kind: "detached", oid: oid("a") } });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep HEAD", "Take feature", "Mark resolved (stage)"]);
+  });
+
+  it("should fall back to ours and theirs without an operation", async () => {
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep ours", "Take theirs", "Mark resolved (stage)"]);
+  });
+
+  it("should fall back to ours and theirs while the operation state is unknown", async () => {
+    provideMerge({ state: undefined });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(menuLabels()).toEqual(["Keep ours", "Take theirs", "Mark resolved (stage)"]);
+  });
+
+  it("should not offer Keep or Take on unstaged or staged rows", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel(unstaged("a.txt"), staged("s.txt"));
+    rightClick(btn("modified a.txt"));
+    expect(itemLabels()).toEqual(["Stage", "Discard…", "File history"]);
+  });
+
+  // Contract: Keep and Take resolve the targeted paths with the matching side.
+  it("should resolve the row path keeping ours from the Keep item", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep main" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["README.md"],
+      side: "ours",
+    });
+  });
+
+  it("should resolve the row path taking theirs from the Take item", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    await user.click(screen.getByRole("menuitem", { name: "Take feature" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["README.md"],
+      side: "theirs",
+    });
+  });
+
+  it("should resolve every selected conflict when the row is part of the selection", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("x.txt"), conflict("y.txt"));
+    await user.click(btn("conflicted x.txt"));
+    await modClick(user, btn("conflicted y.txt"), "Control");
+    rightClick(btn("conflicted y.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Take feature" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["x.txt", "y.txt"],
+      side: "theirs",
+    });
+  });
+
+  it("should resolve only the right-clicked row when it is not selected", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("x.txt"), conflict("y.txt"));
+    await user.click(btn("conflicted x.txt"));
+    rightClick(btn("conflicted y.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Keep main" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["y.txt"],
+      side: "ours",
+    });
+  });
+
+  it("should keep Mark resolved on the staging action, not the integration run", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("c.txt"));
+    rightClick(btn("conflicted c.txt"));
+    await user.click(screen.getByRole("menuitem", { name: "Mark resolved (stage)" }));
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+
+  // Contract: items are disabled while either hook is pending.
+  it("should disable Keep and Take while an integration action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(screen.getByRole("menuitem", { name: "Keep main" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Take feature" })).toBeDisabled();
+  });
+
+  it("should disable Mark resolved while an integration action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(screen.getByRole("menuitem", { name: "Mark resolved (stage)" })).toBeDisabled();
+  });
+
+  it("should keep Keep and Take enabled when nothing is pending", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(screen.getByRole("menuitem", { name: "Keep main" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Take feature" })).toBeEnabled();
+  });
+
+  it("should keep File history enabled while an integration action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("README.md"));
+    rightClick(btn("conflicted README.md"));
+    expect(screen.getByRole("menuitem", { name: "File history" })).toBeEnabled();
+  });
+
+  it("should disable the row buttons while an integration action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("README.md"), unstaged("a.txt"));
+    expect(btn("Stage README.md")).toBeDisabled();
+    expect(btn("Stage a.txt")).toBeDisabled();
+  });
+
+  it("should keep the row buttons enabled when the integration is idle", async () => {
+    await renderPanel(conflict("README.md"));
+    expect(btn("Stage README.md")).toBeEnabled();
+  });
+
+  // Contract: integration errors share the panel's error slot.
+  it("should show an integration error as an alert with its message", async () => {
+    provideMerge({ error: dirty });
+    await renderPanel(conflict("README.md"));
+    expect(screen.getByRole("alert")).toHaveTextContent(dirty.message);
+  });
+
+  it("should show no alert when the integration has no error", async () => {
+    await renderPanel(conflict("README.md"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should clear the integration error on Dismiss", async () => {
+    provideMerge({ error: dirty });
+    const { user } = await renderPanel(conflict("README.md"));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("should show a staging error before the integration error", async () => {
+    provideMerge({ error: dirty });
+    vi.mocked(stagePaths).mockRejectedValue({ kind: "io", message: "stage exploded" });
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("stage exploded");
   });
 });

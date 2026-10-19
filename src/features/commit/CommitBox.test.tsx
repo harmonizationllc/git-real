@@ -1,10 +1,14 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commit, getCommitConfig, getHeadMessage, getStatus, onRepoChanged } from "../../lib/ipc";
-import type { CommitConfig, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
-import { useCommitDraft } from "../../lib/store/commitDraft";
+import type { CommitConfig, OperationState, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
+import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CommitBox } from "./CommitBox";
+
+// Hoisted so the mock factory can reference it without importing the not-yet-written hook.
+const prefill = vi.hoisted(() => vi.fn());
+vi.mock("./useOperationPrefill", () => ({ useOperationPrefill: prefill }));
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -30,6 +34,7 @@ const config: CommitConfig = { name: "Ada", email: "ada@x.org", signing: null };
 beforeEach(() => {
   vi.resetAllMocks();
   useCommitDraft.setState({ drafts: {} });
+  prefill.mockReturnValue(undefined);
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue(staged);
   vi.mocked(getCommitConfig).mockResolvedValue(config);
@@ -291,5 +296,179 @@ describe("CommitBox spec behaviours", () => {
     await waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(screen.getByLabelText("Subject")).toHaveValue("");
+  });
+});
+
+// Contract (spec 5.4): the box reads the operation through useOperationPrefill.
+describe("CommitBox during an operation", () => {
+  const message = { subject: "Merge branch 'feature'", body: "" };
+  const merge: OperationState = { kind: "merge", head: "a".repeat(40), branch: "feature", message };
+  const pick: OperationState = { kind: "cherryPick", oid: "c".repeat(40), message };
+  const revert: OperationState = { kind: "revert", oid: "d".repeat(40), message };
+  const rebase: OperationState = {
+    kind: "rebase",
+    onto: "b".repeat(40),
+    ontoName: "main",
+    branch: "feature",
+    step: 1,
+    total: 2,
+  };
+  const amendBox = () => screen.getByRole("checkbox", { name: "Amend last commit" });
+
+  it("should ask for the operation of its own repository", async () => {
+    renderWithProviders(<CommitBox repoId={7} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(prefill).toHaveBeenCalledWith(7);
+  });
+
+  it("should label the button Commit and merge during a merge", async () => {
+    prefill.mockReturnValue(merge);
+    renderWithProviders(<CommitBox repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Commit and merge" })).toBeInTheDocument();
+  });
+
+  it("should label the button Commit and cherry-pick during a cherry-pick", async () => {
+    prefill.mockReturnValue(pick);
+    renderWithProviders(<CommitBox repoId={1} />);
+    expect(
+      await screen.findByRole("button", { name: "Commit and cherry-pick" }),
+    ).toBeInTheDocument();
+  });
+
+  it("should label the button Commit and revert during a revert", async () => {
+    prefill.mockReturnValue(revert);
+    renderWithProviders(<CommitBox repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Commit and revert" })).toBeInTheDocument();
+  });
+
+  it("should label the button Commit when there is no operation", async () => {
+    prefill.mockReturnValue({ kind: "none" });
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+  });
+
+  it("should label the button Commit while the operation is unknown", async () => {
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+  });
+
+  it("should label the button Commit during a rebase", async () => {
+    prefill.mockReturnValue(rebase);
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+  });
+
+  it("should commit through the box with the operation label", async () => {
+    prefill.mockReturnValue(merge);
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "Merge it" } } });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and merge" });
+    await waitFor(() => expect(go).toBeEnabled());
+    await user.click(go);
+    expect(commit).toHaveBeenCalledExactlyOnceWith(1, { subject: "Merge it", body: "" }, false);
+  });
+
+  it("should say Committing… rather than the operation label while pending", async () => {
+    prefill.mockReturnValue(merge);
+    vi.mocked(commit).mockReturnValue(new Promise(() => undefined));
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "Merge it" } } });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and merge" });
+    await waitFor(() => expect(go).toBeEnabled());
+    await user.click(go);
+    expect(screen.getByRole("button", { name: "Committing…" })).toBeDisabled();
+  });
+
+  it("should keep the Amend commit label when amend is on during an operation", async () => {
+    prefill.mockReturnValue(merge);
+    useCommitDraft.setState({
+      drafts: {
+        1: {
+          ...EMPTY_DRAFT,
+          subject: "Head subject",
+          amend: true,
+          stash: { subject: "", body: "" },
+        },
+      },
+    });
+    renderWithProviders(<CommitBox repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Amend commit" })).toBeInTheDocument();
+  });
+
+  // Contract: amend is unavailable while any operation is in progress.
+  it.each([
+    ["merge", merge, "Not available during a merge"],
+    ["rebase", rebase, "Not available during a rebase"],
+    ["cherry-pick", pick, "Not available during a cherry-pick"],
+    ["revert", revert, "Not available during a revert"],
+  ] as const)("should disable Amend with a title during a %s", async (_name, state, title) => {
+    prefill.mockReturnValue(state);
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await waitFor(() => expect(amendBox()).toHaveAttribute("title", title));
+    expect(amendBox()).toBeDisabled();
+  });
+
+  it("should keep Amend enabled with no title when there is no operation", async () => {
+    prefill.mockReturnValue({ kind: "none" });
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await waitFor(() => expect(amendBox()).toBeEnabled());
+    expect(amendBox()).not.toHaveAttribute("title");
+  });
+
+  it("should keep Amend working when there is no operation", async () => {
+    prefill.mockReturnValue({ kind: "none" });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await waitFor(() => expect(amendBox()).toBeEnabled());
+    await user.click(amendBox());
+    expect(screen.getByLabelText("Subject")).toHaveValue("Head subject");
+  });
+
+  it("should keep Amend enabled while the operation is still unknown", async () => {
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await waitFor(() => expect(amendBox()).toBeEnabled());
+  });
+
+  it("should not let a click on the disabled Amend checkbox turn amend on", async () => {
+    prefill.mockReturnValue(merge);
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.click(amendBox());
+    expect(amendBox()).not.toBeChecked();
+  });
+
+  // Contract: the commit gate learns about a rebase.
+  it("should disable the button with the rebase reason during a rebase", async () => {
+    prefill.mockReturnValue(rebase);
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "S" } } });
+    renderWithProviders(<CommitBox repoId={1} />);
+    await waitFor(() =>
+      expect(button()).toHaveAttribute("title", "Use Continue in the banner to resume the rebase"),
+    );
+    expect(button()).toBeDisabled();
+  });
+
+  it("should not commit on Ctrl+Enter during a rebase", async () => {
+    prefill.mockReturnValue(rebase);
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: "S" } } });
+    const { user } = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await user.click(screen.getByLabelText("Subject"));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("should enable the button for a merge with a prepared message", async () => {
+    prefill.mockReturnValue(merge);
+    useCommitDraft.setState({ drafts: { 1: { ...EMPTY_DRAFT, subject: message.subject } } });
+    renderWithProviders(<CommitBox repoId={1} />);
+    const go = await screen.findByRole("button", { name: "Commit and merge" });
+    await waitFor(() => expect(go).toBeEnabled());
   });
 });

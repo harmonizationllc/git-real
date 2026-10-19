@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { CommitConfig, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
-import { commitDisabledReason } from "./commitGate";
+import type { CommitConfig, OperationState, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
+import { commitDisabledReason as gateReason } from "./commitGate";
+import type { CommitGateInput } from "./commitGate";
+
+// The gate takes the in-progress operation; existing cases run with none unless they say otherwise.
+const commitDisabledReason = (
+  input: Omit<CommitGateInput, "operation"> & { operation?: OperationState },
+) => gateReason({ operation: undefined, ...input });
 
 const entry = (over: Partial<StatusEntry>): StatusEntry => ({
   path: "a.txt",
@@ -86,5 +92,82 @@ describe("commitDisabledReason", () => {
     expect(commitDisabledReason({ amend: false, subject: "", status: s, config })).toBe(
       "Resolve conflicts before committing",
     );
+  });
+});
+
+// Contract (spec 5.4): a rebase continues from the banner, not the commit box.
+describe("commitDisabledReason during an operation", () => {
+  const REBASE_REASON = "Use Continue in the banner to resume the rebase";
+  const message = { subject: "s", body: "" };
+  const rebase: OperationState = {
+    kind: "rebase",
+    onto: "b".repeat(40),
+    ontoName: "main",
+    branch: "feature",
+    step: 1,
+    total: 2,
+  };
+  const ready = { amend: false, subject: "s", status: staged, config } as const;
+
+  it("is the rebase reason when a rebase is in progress and everything else is in place", () => {
+    expect(gateReason({ ...ready, operation: rebase })).toBe(REBASE_REASON);
+  });
+
+  it("puts the rebase reason before the identity check", () => {
+    expect(gateReason({ ...ready, config: { ...config, name: null }, operation: rebase })).toBe(
+      REBASE_REASON,
+    );
+  });
+
+  it("puts the rebase reason before the conflicts check", () => {
+    const s = status([entry({ conflicted: true })]);
+    expect(gateReason({ ...ready, status: s, operation: rebase })).toBe(REBASE_REASON);
+  });
+
+  it("puts the rebase reason before the staged and subject checks", () => {
+    const unstaged = status([entry({ worktree: "modified" })]);
+    expect(gateReason({ ...ready, status: unstaged, subject: "", operation: rebase })).toBe(
+      REBASE_REASON,
+    );
+  });
+
+  it("keeps Loading… ahead of the rebase reason", () => {
+    expect(gateReason({ ...ready, status: undefined, operation: rebase })).toBe("Loading…");
+    expect(gateReason({ ...ready, config: undefined, operation: rebase })).toBe("Loading…");
+  });
+
+  it("changes nothing when the operation is undefined", () => {
+    expect(gateReason({ ...ready, operation: undefined })).toBeNull();
+    expect(gateReason({ ...ready, subject: "", operation: undefined })).toBe(
+      "Enter a commit subject",
+    );
+  });
+
+  it("changes nothing when the operation is none", () => {
+    expect(gateReason({ ...ready, operation: { kind: "none" } })).toBeNull();
+    expect(gateReason({ ...ready, subject: "", operation: { kind: "none" } })).toBe(
+      "Enter a commit subject",
+    );
+  });
+
+  it("does not block a merge, cherry-pick or revert that is ready to commit", () => {
+    for (const operation of [
+      { kind: "merge", head: "a".repeat(40), branch: "f", message },
+      { kind: "cherryPick", oid: "a".repeat(40), message },
+      { kind: "revert", oid: "a".repeat(40), message },
+    ] satisfies OperationState[]) {
+      expect(gateReason({ ...ready, operation })).toBeNull();
+    }
+  });
+
+  it("keeps the conflicts rule during a merge", () => {
+    const s = status([entry({ conflicted: true })]);
+    expect(
+      gateReason({
+        ...ready,
+        status: s,
+        operation: { kind: "merge", head: "a".repeat(40), branch: "f", message },
+      }),
+    ).toBe("Resolve conflicts before committing");
   });
 });

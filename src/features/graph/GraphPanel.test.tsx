@@ -11,16 +11,22 @@ import {
   resetToCommit,
   searchLog,
 } from "../../lib/ipc";
-import type { BranchList, LogSummary, RefLabel } from "../../lib/ipc";
+import type { AppError, BranchList, LogSummary, OperationState, RefLabel } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useWorkspace } from "../../lib/store/workspace";
 import { makeRow, oidOf, ref, shortOf } from "../../test/graphFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
+import { useIntegrationActions } from "../merge/useIntegrationActions";
+import type { UseIntegrationActions } from "../merge/useIntegrationActions";
+import { useOperationState } from "../merge/useOperationState";
 import { GraphPanel } from "./GraphPanel";
 import { gutterWidth } from "./model/edges";
 
 vi.mock("@tanstack/react-virtual", () => import("../../test/mockVirtualizer"));
+vi.mock("../merge/useOperationState", () => ({ useOperationState: vi.fn() }));
+vi.mock("../merge/useIntegrationActions", () => ({ useIntegrationActions: vi.fn() }));
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -47,6 +53,28 @@ const scrolledCentred = (index: number) =>
 
 let total = 3;
 let refsByIndex: Record<number, RefLabel[]> = {};
+let parentsByIndex: Record<number, string[]> = {};
+
+const integrationRun = vi.fn<UseIntegrationActions["run"]>();
+const integrationClear = vi.fn();
+
+/** Drives the merge hooks; defaults model a clean repository with nothing pending. */
+function provideMerge(
+  opts: {
+    state?: OperationState | undefined;
+    pending?: boolean;
+    error?: AppError | null;
+  } = {},
+) {
+  const { state = { kind: "none" } } = opts;
+  vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
+  vi.mocked(useIntegrationActions).mockReturnValue({
+    run: integrationRun,
+    pending: opts.pending ?? false,
+    error: opts.error ?? null,
+    clearError: integrationClear,
+  });
+}
 
 const summary = (over: Partial<LogSummary> = {}): LogSummary => ({
   generation: 1,
@@ -75,13 +103,19 @@ beforeEach(() => {
   mockWindow.size = Infinity;
   total = 3;
   refsByIndex = { 0: [ref("branch", "main", true)] };
+  parentsByIndex = {};
+  integrationRun.mockResolvedValue(null);
+  provideMerge();
   useWorkspace.setState({ selected: {}, selectedCommit: {} });
   vi.mocked(getLogSummary).mockImplementation(() => Promise.resolve(summary()));
   vi.mocked(getLogPage).mockImplementation((_id, _generation, start, count) =>
     Promise.resolve({
       start,
       rows: Array.from({ length: Math.max(0, Math.min(count, total - start)) }, (_, i) =>
-        makeRow(start + i, { refs: refsByIndex[start + i] ?? [] }),
+        makeRow(start + i, {
+          refs: refsByIndex[start + i] ?? [],
+          ...(parentsByIndex[start + i] ? { parents: parentsByIndex[start + i] } : {}),
+        }),
       ),
     }),
   );
@@ -883,13 +917,15 @@ describe("GraphPanel search lifecycle", () => {
 
 // Contract: the row context menu, its labels, titles and enabled states.
 describe("GraphPanel context menu", () => {
-  it("should list the four items in order on right-click", async () => {
+  it("should list the six items in order on right-click", async () => {
     await renderPanel();
     rightClick(optionAt(1));
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Checkout",
       "Create branch here…",
       "Reset to this commit…",
+      "Cherry-pick commit",
+      "Revert commit",
       "Copy hash",
     ]);
   });
@@ -1710,5 +1746,204 @@ describe("GraphPanel final fix pass", () => {
     await act(async () => undefined);
     expect(searchLog).not.toHaveBeenCalled();
     expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (spec 5.4): Cherry-pick commit and Revert commit after Reset to this commit….
+describe("GraphPanel cherry-pick and revert", () => {
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: oidOf(5),
+    branch: "feature",
+    message: { subject: "Merge branch 'feature'", body: "" },
+  };
+  const twoParents = (n: number) => [oidOf(n + 1), oidOf(n + 2)];
+  const dirty: AppError = {
+    kind: "operationFailed",
+    message: "error: could not apply abc1234",
+  };
+  /** Waits until the branch list has landed so HEAD-dependent items are final. */
+  async function renderWithHead() {
+    const view = await renderPanel();
+    await waitFor(() => expect(listBranches).toHaveBeenCalled());
+    await act(async () => {});
+    return view;
+  }
+
+  it("should enable Cherry-pick commit and Revert commit on an ordinary commit", async () => {
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toBeEnabled();
+    expect(menuItem("Revert commit")).toBeEnabled();
+  });
+
+  it("should give the enabled items no title", async () => {
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).not.toHaveAttribute("title");
+    expect(menuItem("Revert commit")).not.toHaveAttribute("title");
+  });
+
+  // Contract: merge commits are not supported yet.
+  it("should disable both items on a merge commit with the unsupported title", async () => {
+    parentsByIndex = { 1: twoParents(1) };
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toBeDisabled();
+    expect(menuItem("Revert commit")).toBeDisabled();
+    expect(menuItem("Cherry-pick commit")).toHaveAttribute(
+      "title",
+      "Merge commits are not supported yet",
+    );
+    expect(menuItem("Revert commit")).toHaveAttribute(
+      "title",
+      "Merge commits are not supported yet",
+    );
+  });
+
+  it("should keep the items enabled on a root commit without parents", async () => {
+    parentsByIndex = { 1: [] };
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toBeEnabled();
+  });
+
+  // Contract: cherry-pick of the commit HEAD points at is a no-op, so it is refused.
+  it("should disable Cherry-pick on the HEAD branch commit with the already-here title", async () => {
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem("Cherry-pick commit")).toBeDisabled();
+    expect(menuItem("Cherry-pick commit")).toHaveAttribute("title", "Already on this commit");
+  });
+
+  it("should keep Revert enabled on the HEAD branch commit", async () => {
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem("Revert commit")).toBeEnabled();
+  });
+
+  it("should disable Cherry-pick on the commit a detached HEAD points at", async () => {
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "detached", oid: oidOf(1) },
+      local: [],
+      remotes: [],
+    });
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toHaveAttribute("title", "Already on this commit");
+  });
+
+  it("should keep Cherry-pick enabled on a commit other than the detached HEAD", async () => {
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "detached", oid: oidOf(1) },
+      local: [],
+      remotes: [],
+    });
+    await renderWithHead();
+    rightClick(optionAt(2));
+    expect(menuItem("Cherry-pick commit")).toBeEnabled();
+  });
+
+  it("should prefer the unsupported title over the already-here title on a HEAD merge commit", async () => {
+    parentsByIndex = { 0: twoParents(0) };
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem("Cherry-pick commit")).toHaveAttribute(
+      "title",
+      "Merge commits are not supported yet",
+    );
+  });
+
+  // Contract: an operation in progress disables both items.
+  it("should disable both items with the in-progress title during an operation", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel();
+    rightClick(optionAt(1));
+    for (const label of ["Cherry-pick commit", "Revert commit"]) {
+      expect(menuItem(label)).toBeDisabled();
+      expect(menuItem(label)).toHaveAttribute("title", IN_PROGRESS_TITLE);
+    }
+  });
+
+  it("should disable both items while the operation state is still unknown", async () => {
+    provideMerge({ state: undefined });
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toBeDisabled();
+    expect(menuItem("Revert commit")).toBeDisabled();
+  });
+
+  it("should disable both items while an integration action is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem("Cherry-pick commit")).toBeDisabled();
+    expect(menuItem("Revert commit")).toBeDisabled();
+  });
+
+  // Contract: choosing an item runs the request with the full oid and closes the menu.
+  it("should run a cherry-pick with the full oid when Cherry-pick commit is chosen", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Cherry-pick commit"));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "cherryPick",
+      oid: oidOf(1),
+    });
+  });
+
+  it("should run a revert with the full oid when Revert commit is chosen", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Revert commit"));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({ action: "revert", oid: oidOf(1) });
+  });
+
+  it("should close the menu after Cherry-pick commit", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Cherry-pick commit"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should run nothing when a disabled item is clicked", async () => {
+    parentsByIndex = { 1: twoParents(1) };
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Revert commit"));
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+
+  // Contract: integration errors and pending share the panel slot.
+  it("should show an integration error in the panel alert", async () => {
+    provideMerge({ error: dirty });
+    await renderPanel();
+    expect(screen.getByRole("alert")).toHaveTextContent(dirty.message);
+  });
+
+  it("should show no alert when the integration has no error", async () => {
+    await renderPanel();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should clear the integration error when Dismiss is pressed", async () => {
+    provideMerge({ error: dirty });
+    const { user } = await renderPanel();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(integrationClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("should be aria-busy while an integration action is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    expect(screen.getByRole("region", { name: "Commit graph" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  });
+
+  it("should not be busy when the integration is idle", async () => {
+    await renderPanel();
+    expect(screen.getByRole("region", { name: "Commit graph" })).not.toHaveAttribute("aria-busy");
   });
 });
