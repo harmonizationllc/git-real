@@ -263,14 +263,9 @@ fn commit_files_order_is_by_path() {
 fn commit_files_of_an_empty_commit_is_empty() {
     let (_d, path) = common::temp_repo_with_commit();
     let head = head_oid(&path);
-    let same_tree = Repository::open(&path)
-        .unwrap()
-        .find_commit(head)
-        .unwrap()
-        .tree()
-        .unwrap();
     let repo = Repository::open(&path).unwrap();
     let parent = repo.find_commit(head).unwrap();
+    let same_tree = parent.tree().unwrap();
     let sig = Signature::now("Test User", "test@example.com").unwrap();
     let empty = repo
         .commit(Some("HEAD"), &sig, &sig, "empty", &same_tree, &[&parent])
