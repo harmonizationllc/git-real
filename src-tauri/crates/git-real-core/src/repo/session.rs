@@ -3,12 +3,15 @@ use std::path::{Path, PathBuf};
 use git2::{ErrorCode, Repository};
 
 use crate::error::GitError;
+use crate::log::cache::LogCache;
 use crate::model::RepoSummary;
 
 /// An open repository together with its canonical root path.
 pub struct RepoSession {
     repo: Repository,
     root: PathBuf,
+    /// The commit graph from the last `log_summary`, if any.
+    pub(crate) log_cache: Option<LogCache>,
 }
 
 impl RepoSession {
@@ -78,7 +81,11 @@ impl RepoSession {
 
     fn from_repo(repo: Repository) -> Result<Self, GitError> {
         let root = std::fs::canonicalize(repo.workdir().unwrap_or_else(|| repo.path()))?;
-        Ok(Self { repo, root })
+        Ok(Self {
+            repo,
+            root,
+            log_cache: None,
+        })
     }
 }
 
