@@ -63,12 +63,10 @@ impl LaneLayout {
             edges.push(edge(None, Some(k)));
         }
 
-        // 4. Columns this commit did not touch pass straight through.
+        // 4. Columns that were waiting for another commit pass straight
+        //    through: steps 2 and 3 never free or move them.
         for (k, expected) in before.iter().enumerate() {
-            if expected.is_some()
-                && *expected != Some(oid)
-                && self.columns.get(k).is_some_and(Option::is_some)
-            {
+            if expected.is_some_and(|e| e != oid) {
                 edges.push(edge(Some(k), Some(k)));
             }
         }

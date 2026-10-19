@@ -124,7 +124,11 @@ describe("RefLabels pill sizing", () => {
     new RegExp(`(?:^|\\n)\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
 
   it("should give every pill, including +n, the shared pill class", () => {
-    render(<RefLabels refs={[ref("remote", "origin/main"), ref("tag", "a"), ref("tag", "b")]} />);
+    render(
+      <RefLabels
+        refs={[ref("remote", "origin/main"), ref("tag", "a"), ref("tag", "b"), ref("tag", "c")]}
+      />,
+    );
     for (const title of ["origin/main", "a"]) {
       expect(screen.getByTitle(title).className).toMatch(/pill/);
     }
