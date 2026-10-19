@@ -67,7 +67,8 @@ function provideMerge(
     error?: AppError | null;
   } = {},
 ) {
-  const { state = { kind: "none" }, head = { kind: "branch", name: "main" } } = opts;
+  const { head = { kind: "branch", name: "main" } } = opts;
+  const state = "state" in opts ? opts.state : ({ kind: "none" } as const);
   vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
   vi.mocked(useBranches).mockReturnValue({
     branches: { head, local: [], remotes: [] },

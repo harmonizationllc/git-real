@@ -89,7 +89,8 @@ function provideMerge(
     error?: AppError | null;
   } = {},
 ) {
-  const { state = { kind: "none" }, check = "possible", checking = false } = opts;
+  const { check = "possible", checking = false } = opts;
+  const state = "state" in opts ? opts.state : ({ kind: "none" } as const);
   vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
   vi.mocked(useCanFastForward).mockReturnValue({ check, isLoading: checking });
   vi.mocked(useIntegrationActions).mockReturnValue({
@@ -1228,7 +1229,13 @@ describe("BranchesPanel busy state after failure", () => {
     );
     rightClick(remoteRow("origin", "other"));
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Checkout",
+      "Merge origin/other into main",
+      "Fast-forward main to origin/other",
+      "Rebase main onto origin/other",
+      "Delete on origin…",
+    ]);
     for (const item of items) expect(item).toBeDisabled();
   });
 });
@@ -1405,7 +1412,7 @@ describe("BranchesPanel integration menu items", () => {
     provideMerge({ state: undefined });
     await renderPanel();
     rightClick(localRow("feature"));
-    expect(menuItem("Merge feature into main")).toBeDisabled();
+    for (const label of INTEGRATION) expect(menuItem(label)).toBeDisabled();
   });
 
   // Contract: a HEAD that is not on a branch cannot merge, fast-forward or rebase.

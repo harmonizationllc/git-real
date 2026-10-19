@@ -66,7 +66,7 @@ function provideMerge(
     error?: AppError | null;
   } = {},
 ) {
-  const { state = { kind: "none" } } = opts;
+  const state = "state" in opts ? opts.state : ({ kind: "none" } as const);
   vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
   vi.mocked(useIntegrationActions).mockReturnValue({
     run: integrationRun,

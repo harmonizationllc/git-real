@@ -38,7 +38,7 @@ vi.mock("../features/merge/OperationBanner", async () => {
     OperationBanner: ({ repoId }: { repoId: number }) => {
       useEffect(() => {
         bannerMounts.push(repoId);
-      }, []);
+      }, [repoId]);
       return createElement("div", {
         "data-testid": "operation-banner",
         "data-repo-id": String(repoId),
