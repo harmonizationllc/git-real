@@ -1569,3 +1569,29 @@ fn commit_scope_on_a_merge_shows_a_file_from_the_second_parent_as_added() {
 
     assert_eq!(diff.change, Some(ChangeKind::Added));
 }
+
+#[test]
+fn commit_scope_deleted_file_is_all_deletions() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "gone.txt", "one\ntwo\n", "add gone");
+    std::fs::remove_file(path.join("gone.txt")).unwrap();
+    let second = common::commit_all(&path, "delete gone");
+
+    let diff = diff_of(
+        &path,
+        "gone.txt",
+        commit_scope(second),
+        DiffOptions::default(),
+    )
+    .unwrap();
+
+    let kinds: Vec<DiffLineKind> = all_lines(&diff).iter().map(|l| l.kind).collect();
+    assert_eq!(
+        (diff.change, diff.old_path.as_deref(), kinds),
+        (
+            Some(ChangeKind::Deleted),
+            None,
+            vec![DiffLineKind::Deletion, DiffLineKind::Deletion]
+        )
+    );
+}

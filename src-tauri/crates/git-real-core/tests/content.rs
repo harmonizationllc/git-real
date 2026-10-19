@@ -653,3 +653,18 @@ fn commit_scope_old_side_over_the_limit_is_too_large() {
         "{result:?}"
     );
 }
+
+#[test]
+fn commit_scope_of_a_deleted_file_has_an_old_side_and_no_new_side() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "gone.txt", "one\ntwo\n", "add gone");
+    std::fs::remove_file(path.join("gone.txt")).unwrap();
+    let second = common::commit_all(&path, "delete gone");
+    let scope = || DiffScope::Commit(second.to_string());
+
+    let old = content(&path, "gone.txt", scope(), DiffSide::Old);
+    let new = content(&path, "gone.txt", scope(), DiffSide::New);
+
+    assert_eq!(old.unwrap(), b"one\ntwo\n");
+    assert_not_found(new);
+}
