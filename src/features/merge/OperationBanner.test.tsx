@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AppError,
@@ -490,5 +491,75 @@ describe("OperationBanner state transitions", () => {
     provide({ state: { kind: "none" } });
     rerender(<OperationBanner repoId={1} />);
     expect(screen.queryByRole("region")).toBeNull();
+  });
+});
+
+// Contract: a failed action and an open dialog belong to one operation and never carry over.
+describe("OperationBanner failed abort and pending", () => {
+  const failure: AppError = { kind: "operationFailed", message: "abort refused" };
+
+  it("should close the dialog and show the error when abort fails", async () => {
+    provide({ state: mergeState, error: failure });
+    run.mockResolvedValue(failure);
+    const { user } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Abort" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("abort refused");
+  });
+
+  it("should disable Abort… while an action is pending", () => {
+    provide({ state: mergeState, pending: true });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.getByRole("button", { name: "Abort…" })).toBeDisabled();
+  });
+});
+
+describe("OperationBanner across operations", () => {
+  const failure: AppError = { kind: "operationFailed", message: "hook refused" };
+
+  // A stateful stand-in: each mount of the component using it starts without an error.
+  function useFakeActions(): UseIntegrationActions {
+    const [error, setError] = useState<AppError | null>(null);
+    return {
+      run: () => {
+        setError(failure);
+        return Promise.resolve(failure);
+      },
+      pending: false,
+      error,
+      clearError: () => setError(null),
+    };
+  }
+
+  function setState(state: OperationState) {
+    vi.mocked(useOperationState).mockReturnValue({ state, error: null, refetch: vi.fn() });
+  }
+
+  it("should not show a previous operation's error for the next one", async () => {
+    provide({ state: mergeState });
+    vi.mocked(useIntegrationActions).mockImplementation(useFakeActions);
+    const { user, rerender } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Abort" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("hook refused");
+    setState({ kind: "none" });
+    rerender(<OperationBanner repoId={1} />);
+    setState(rebaseState);
+    rerender(<OperationBanner repoId={1} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should not keep an open Abort dialog for the next operation", async () => {
+    provide({ state: mergeState });
+    vi.mocked(useIntegrationActions).mockImplementation(useFakeActions);
+    const { user, rerender } = renderWithProviders(<OperationBanner repoId={1} />);
+    await user.click(screen.getByRole("button", { name: "Abort…" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    setState({ kind: "none" });
+    rerender(<OperationBanner repoId={1} />);
+    setState(rebaseState);
+    rerender(<OperationBanner repoId={1} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

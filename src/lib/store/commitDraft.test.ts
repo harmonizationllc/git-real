@@ -439,4 +439,19 @@ describe("commitDraft syncPrefill edge rules", () => {
       stash: null,
     });
   });
+
+  it("should restore typed stash text, drop amend and leave prefilled unchanged", () => {
+    const s = useCommitDraft.getState();
+    s.setSubject(1, "typed");
+    s.setBody(1, "typed body");
+    s.setAmend(1, true, head);
+    s.syncPrefill(1, mergeMsg);
+    expect(useCommitDraft.getState().drafts[1]).toEqual({
+      subject: "typed",
+      body: "typed body",
+      amend: false,
+      stash: null,
+      prefilled: null,
+    });
+  });
 });
