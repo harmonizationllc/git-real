@@ -1,18 +1,18 @@
-/* Shrinks to its pills, capped so a few subject characters always remain beside it. */
+/* Shrinks to its pills, capped so at least 8ch of the subject always remains beside it. */
 .root {
   flex: 0 1 auto;
   display: inline-flex;
   gap: 4px;
   min-width: 0;
-  max-width: 60%;
+  max-width: calc(100% - 8ch);
   overflow: hidden;
 }
 
-/* Under the cap the pills ellipsize together instead of the last one being clipped away. */
+/* Under the cap the pills ellipsize together; short names such as "main" never do. */
 .pill {
   flex: 0 1 auto;
-  min-width: 3em;
-  max-width: 160px;
+  min-width: 5ch;
+  max-width: 14ch;
   padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: 9px;

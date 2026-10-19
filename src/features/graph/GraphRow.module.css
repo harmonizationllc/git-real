@@ -1,6 +1,8 @@
 .row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 140px 110px;
+  /* The author column gives way first: 20% of the row, never wider than 140px nor narrower
+     than 72px, so a narrow centre keeps its space for the labels and subject. */
+  grid-template-columns: auto minmax(0, 1fr) minmax(72px, min(140px, 20%)) 110px;
   align-items: center;
   gap: 8px;
   height: 28px;
