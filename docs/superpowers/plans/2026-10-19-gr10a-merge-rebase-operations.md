@@ -16,7 +16,7 @@
 - Only `src/lib/ipc` imports `@tauri-apps/api/*` (ESLint-enforced).
 - `git2` stays `default-features = false`; no direct `tokio`; blocking work runs through `run_blocking`; `git-real-core` has no Tauri dependency.
 - Operations run through the CLI with `git_cli::command(git)` and `-C <workdir>`: `merge --no-ff --no-edit <branch>`, `merge --ff-only <branch>`, `rebase <onto>` (env `GIT_EDITOR=true`), `cherry-pick <oid>`, `revert --no-edit <oid>`, `merge|rebase|cherry-pick|revert --abort`, `rebase --continue` (env `GIT_EDITOR=true`). State reads and conflict resolution are git2.
-- Classification: exit 0 → `Completed`; non-zero with `repo.state() != Clean` → `Conflicts`; non-zero with `Clean` → `OperationFailed { verb, code, stdout, stderr }`.
+- Classification: exit 0 → `Completed`; non-zero with `repo.state() != Clean` AND a conflicted fresh index → `Conflicts`; every other non-zero → `OperationFailed { verb, code, stdout, stderr }` (a hook-refused merge or an empty cherry-pick stays in progress with no conflicts; the UI refetches the operation state after an `operationFailed` error).
 - Serde: every new type is `rename_all = "camelCase"`; `OperationState` is internally tagged on `kind` with camelCase variant names and fields (`#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]`); oids are full hex.
 - New error kinds, Rust ↔ TS: `OperationFailed` ↔ `operationFailed`, `OperationInProgress` ↔ `operationInProgress`, `NoOperation` ↔ `noOperation`, `UnresolvedConflicts` ↔ `unresolvedConflicts`, `MergeCommit` ↔ `mergeCommit`.
 - Query keys under the repo prefix: `operation(id) = ["repo", id, "operation"]`, `fastForward(id, branch) = ["repo", id, "fastForward", branch]`.

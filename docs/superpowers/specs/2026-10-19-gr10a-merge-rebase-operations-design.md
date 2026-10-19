@@ -61,9 +61,13 @@ three-way editor is GR-10b.
   rebase and `rebase --continue` run with `GIT_EDITOR=true` in the
   environment. Cherry-pick opens no editor without `-e`.
 - **A non-zero exit is classified afterwards.** If git2 then reports a
-  repository state other than `Clean`, the operation stopped on conflicts
-  and the result is the `conflicts` outcome. Otherwise it failed (dirty
-  working tree, bad ref, hook refusal) and the error carries git's output.
+  repository state other than `Clean` AND the index has conflicts, the
+  operation stopped on conflicts and the result is the `conflicts` outcome.
+  Every other non-zero exit failed and the error carries git's output: a
+  dirty working tree or bad ref (state stays `Clean`), or a `pre-merge-commit`
+  hook refusal or an empty cherry-pick (git leaves the operation in progress
+  with no conflicts; the banner then shows it and the user commits or
+  aborts). The front end refetches the operation state after that error.
 - **In-progress state comes from git2 plus the `.git` marker files**
   (`MERGE_HEAD`, `MERGE_MSG`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
   `rebase-merge/`, `rebase-apply/`). No subprocess, no text parsing of
@@ -152,9 +156,10 @@ matches (the UI falls back to the short oid).
   - `cherry_pick(oid)` / `revert_commit(oid)`: `find_commit` →
     `CommitNotFound`; `parent_count() > 1` → `MergeCommit(oid)`. Then
     `cherry-pick <oid>` / `revert --no-edit <oid>`.
-  - Exit 0 → `Completed`. Non-zero and `repo.state() != Clean` →
-    `Conflicts`. Non-zero and `Clean` → `OperationFailed { verb, code,
-    stdout, stderr }`.
+  - Exit 0 → `Completed`. Non-zero, `repo.state() != Clean` and
+    `fresh_index().has_conflicts()` → `Conflicts`. Any other non-zero →
+    `OperationFailed { verb, code, stdout, stderr }` (the operation may
+    still be in progress, e.g. after a hook refusal).
 - **`abort_operation()`**: by state, `merge --abort`, `rebase --abort`,
   `cherry-pick --abort`, `revert --abort`; `Clean` → `NoOperation`. Non-zero
   → `OperationFailed`.
