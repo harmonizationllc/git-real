@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
@@ -259,7 +259,8 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
   // An empty window gives Infinity..-Infinity, which useLogPages reads as no pages.
   const pages = useLogPages(repoId, generation, Math.min(...indices), Math.max(...indices));
   const rendered = items.map((item) => ({ item, row: pages.rowAt(item.index) }));
-  const settled = rendered.every(({ row }) => row !== undefined);
+  // An empty window (the real virtualizer before it measures) has not shown anything yet.
+  const settled = rendered.length > 0 && rendered.every(({ row }) => row !== undefined);
   const selectedIndex = rendered.find(({ row }) => row?.oid === selected)?.item.index;
 
   // The oid the panel already scrolled to (or found rendered); never reset by a new generation.
@@ -337,6 +338,9 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const searched = useRef("");
+  // The cursor belongs to a query, so a new query starts at its first match while a new
+  // generation of the same query keeps the position when the match count allows.
+  const [cursor, setCursor] = useState({ query: "", index: 0 });
   const clearSearch = () => {
     searched.current = "";
     setQuery("");
@@ -348,6 +352,8 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     }
     searched.current = q;
     setQuery(q);
+    // Every submission starts at the first match, even a retyped query.
+    setCursor({ query: q, index: 0 });
     queryClient
       .fetchQuery(logSearchOptions(repoId, generation, q))
       .then((found) => {
@@ -362,10 +368,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     return () => clearTimeout(timer);
   }, [input]);
   const { matches, isFetching } = useLogSearch(repoId, generation, query);
-  const matchSet = new Set(matches);
-  // The cursor belongs to a query, so a new query starts at its first match while a new
-  // generation of the same query keeps the position when the match count allows.
-  const [cursor, setCursor] = useState({ query: "", index: 0 });
+  const matchSet = useMemo(() => new Set(matches), [matches]);
   const current =
     cursor.query === query ? Math.min(cursor.index, Math.max(matches.length - 1, 0)) : 0;
 
@@ -388,7 +391,8 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
       onContextMenu(r.left, r.bottom, pages.rowAt(selectedIndex) as GraphRowData);
       return;
     }
-    const at = selectedIndex ?? lastIndex.current;
+    // -1 makes ArrowDown, ArrowUp and Enter start at row 0 when nothing is selected.
+    const at = selected === null ? -1 : (selectedIndex ?? lastIndex.current);
     let target: number;
     switch (e.key) {
       case "ArrowDown":

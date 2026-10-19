@@ -1,13 +1,17 @@
+/* Shrinks to its pills, capped so a few subject characters always remain beside it. */
 .root {
-  flex: none;
+  flex: 0 1 auto;
   display: inline-flex;
   gap: 4px;
-  max-width: 50%;
+  min-width: 0;
+  max-width: 60%;
   overflow: hidden;
 }
 
+/* Under the cap the pills ellipsize together instead of the last one being clipped away. */
 .pill {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 3em;
   max-width: 160px;
   padding: 0 6px;
   border: 1px solid var(--color-border);
