@@ -1,7 +1,7 @@
 //! Branch listing and local branch operations through git2; checkout and
 //! remote deletion shell out (see [`switch`] and [`crate::remote::push_delete`]).
 
-mod switch;
+pub(crate) mod switch;
 
 use git2::{Branch, BranchType, Commit, ErrorCode, Repository};
 

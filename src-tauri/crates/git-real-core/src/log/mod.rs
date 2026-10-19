@@ -1,16 +1,18 @@
 //! The commit graph: one cached topological walk with lane layout, read in
-//! pages and searched.
+//! pages, searched, and acted on (detached checkout, reset).
 
 pub(crate) mod cache;
 mod lanes;
 mod search;
 mod walk;
 
-use git2::{Commit, Oid};
+use git2::{Commit, Oid, ResetType};
 
 use self::cache::{CachedRow, LogCache};
 use crate::error::GitError;
-use crate::model::{CommitDetail, LogPage, LogSummary, Signature};
+use crate::git_cli;
+use crate::model::{CommitDetail, LogPage, LogSummary, ResetMode, Signature};
+use crate::refs::switch::{self, SwitchTarget};
 use crate::repo::RepoSession;
 
 /// The most rows one page may hold.
@@ -89,6 +91,27 @@ impl RepoSession {
             author: signature(&commit.author()),
             committer: signature(&commit.committer()),
         })
+    }
+
+    /// Detaches HEAD at `oid` through `git switch --detach`. Only the
+    /// canonical hex of a commit that exists reaches the command line.
+    pub fn checkout_commit(&self, oid: &str) -> Result<(), GitError> {
+        let hex = self.find_commit_hex(oid)?.id().to_string();
+        let git = git_cli::locate()?;
+        switch::run(&git, self.workdir()?, SwitchTarget::Detach(&hex))
+    }
+
+    /// Moves HEAD (and the branch it is on) to `oid`, resetting the index
+    /// and working tree as `mode` says.
+    pub fn reset_to_commit(&self, oid: &str, mode: ResetMode) -> Result<(), GitError> {
+        let commit = self.find_commit_hex(oid)?;
+        let kind = match mode {
+            ResetMode::Soft => ResetType::Soft,
+            ResetMode::Mixed => ResetType::Mixed,
+            ResetMode::Hard => ResetType::Hard,
+        };
+        self.repo().reset(commit.as_object(), kind, None)?;
+        Ok(())
     }
 
     /// The cache built as `generation`, or `LogStale`.
