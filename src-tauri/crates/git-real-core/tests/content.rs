@@ -387,3 +387,139 @@ fn too_large_workdir_file_reports_its_real_length() {
         other => panic!("expected TooLarge with the real size, got {other:?}"),
     }
 }
+
+// --- GR-9: commit scope reads the blob from the commit or its first parent ---
+
+fn head_hex(path: &Path) -> String {
+    git2::Repository::open(path)
+        .expect("open repo")
+        .head()
+        .expect("head")
+        .target()
+        .expect("direct head")
+        .to_string()
+}
+
+#[test]
+fn commit_scope_new_side_reads_the_commit_blob() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "README.md", "# v2\n", "second");
+    common::write_file(&path, "README.md", "# workdir\n");
+
+    let bytes = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+    );
+
+    assert_eq!(bytes.unwrap(), b"# v2\n");
+}
+
+#[test]
+fn commit_scope_old_side_reads_the_parent_blob() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "README.md", "# v2\n", "second");
+
+    let bytes = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_eq!(bytes.unwrap(), b"# fixture\n");
+}
+
+#[test]
+fn commit_scope_old_side_of_added_file_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "new.txt", "new\n", "add new");
+
+    let result = content(
+        &path,
+        "new.txt",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_old_side_on_root_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_new_side_of_missing_path_is_path_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "missing.txt",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+    );
+
+    assert_not_found(result);
+}
+
+#[test]
+fn commit_scope_bad_oid_is_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content(
+        &path,
+        "README.md",
+        DiffScope::Commit("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into()),
+        DiffSide::New,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::CommitNotFound(_))),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_new_side_over_the_limit_is_too_large() {
+    let (_d, path) = common::temp_repo_with_commit();
+
+    let result = content_with(
+        &path,
+        "README.md",
+        DiffScope::Commit(head_hex(&path)),
+        DiffSide::New,
+        3,
+    );
+
+    assert!(
+        matches!(result, Err(GitError::TooLarge { .. })),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn commit_scope_old_side_looks_up_the_requested_path_not_the_rename_source() {
+    let (_d, path, oids) = common::rename_fixture();
+
+    // The old side is the requested path in the parent tree; b.txt is absent there.
+    let result = content(
+        &path,
+        "b.txt",
+        DiffScope::Commit(oids[2].to_string()),
+        DiffSide::Old,
+    );
+
+    assert_not_found(result);
+}

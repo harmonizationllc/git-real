@@ -576,3 +576,41 @@ fn commit_not_found_serializes_as_camel_case() {
         json!("commitNotFound")
     );
 }
+
+// GR-9: BinaryFile crosses IPC as `binaryFile`.
+#[test]
+fn binary_file_maps_to_the_binary_file_kind_with_the_core_message() {
+    let err = GitError::BinaryFile("x".into());
+    let message = err.to_string();
+    let app: AppError = err.into();
+    assert_eq!(
+        app,
+        AppError {
+            kind: AppErrorKind::BinaryFile,
+            message
+        }
+    );
+}
+
+#[test]
+fn binary_file_message_names_the_path() {
+    let app: AppError = GitError::BinaryFile("x".into()).into();
+    assert_eq!(app.message, "x is a binary file");
+}
+
+#[test]
+fn binary_file_serializes_as_camel_case() {
+    let app: AppError = GitError::BinaryFile("x".into()).into();
+    assert_eq!(
+        serde_json::to_value(&app).unwrap()["kind"],
+        json!("binaryFile")
+    );
+}
+
+#[test]
+fn binary_file_kind_serializes_as_binary_file() {
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::BinaryFile).unwrap(),
+        json!("binaryFile")
+    );
+}

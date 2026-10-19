@@ -1277,3 +1277,220 @@ fn diff_max_lines_zero_is_ok_truncated_with_no_hunks() {
     let diff = diff_of(&path, "twenty.txt", DiffScope::Unstaged, opts).expect("Ok, not NoChanges");
     assert_eq!((diff.truncated, diff.hunks.is_empty()), (true, true));
 }
+
+// --- GR-9: commit scope (a commit against its first parent) ---
+
+const ABSENT_OID: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+fn commit_scope(oid: impl ToString) -> DiffScope {
+    DiffScope::Commit(oid.to_string())
+}
+
+fn head_oid(path: &std::path::Path) -> git2::Oid {
+    git2::Repository::open(path)
+        .expect("open repo")
+        .head()
+        .expect("head")
+        .target()
+        .expect("direct head")
+}
+
+#[test]
+fn commit_scope_on_root_commit_is_all_additions() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(diff.change, Some(ChangeKind::Added));
+    assert!(
+        all_lines(&diff)
+            .iter()
+            .all(|l| l.kind == DiffLineKind::Addition)
+    );
+}
+
+#[test]
+fn commit_scope_on_root_commit_has_lines() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(all_lines(&diff).len(), 1);
+}
+
+#[test]
+fn commit_scope_echoes_the_scope_in_the_result() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+
+    let diff = diff_of(&path, "README.md", scope.clone(), DiffOptions::default()).expect("diff");
+
+    assert_eq!(diff.scope, scope);
+}
+
+#[test]
+fn commit_scope_diffs_child_against_first_parent() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let child = common::commit_file(&path, "README.md", "# fixture\ntwo\n", "add two");
+
+    let diff = diff_of(
+        &path,
+        "README.md",
+        commit_scope(child),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    let added: Vec<&str> = all_lines(&diff)
+        .iter()
+        .filter(|l| l.kind == DiffLineKind::Addition)
+        .map(|l| l.content.as_str())
+        .collect();
+    assert_eq!(added, ["two"]);
+}
+
+#[test]
+fn commit_scope_child_diff_is_modified() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let child = common::commit_file(&path, "README.md", "# fixture\ntwo\n", "add two");
+
+    let diff = diff_of(
+        &path,
+        "README.md",
+        commit_scope(child),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    assert_eq!(diff.change, Some(ChangeKind::Modified));
+}
+
+#[test]
+fn commit_scope_on_merge_uses_first_parent() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    let diff = diff_of(&path, "b.txt", commit_scope(m), DiffOptions::default()).expect("diff");
+
+    assert_eq!(
+        (diff.change, diff.hunks[0].lines[0].content.as_str()),
+        (Some(ChangeKind::Added), "b")
+    );
+}
+
+#[test]
+fn commit_scope_on_merge_ignores_second_parent_only_changes() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    // a.txt is already in the first parent, so the merge does not change it.
+    let err = diff_of(&path, "a.txt", commit_scope(m), DiffOptions::default()).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::NoChanges(p) if p == "a.txt"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn commit_scope_rename_reports_old_path() {
+    let (_dir, path, oids) = common::rename_fixture();
+
+    let diff = diff_of(
+        &path,
+        "b.txt",
+        commit_scope(oids[2]),
+        DiffOptions::default(),
+    )
+    .expect("diff");
+
+    assert_eq!(
+        (diff.change, diff.old_path.as_deref()),
+        (Some(ChangeKind::Renamed), Some("a.txt"))
+    );
+}
+
+#[test]
+fn commit_scope_bad_oid_is_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+
+    let err = diff_of(
+        &path,
+        "README.md",
+        commit_scope(ABSENT_OID),
+        DiffOptions::default(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_non_hex_oid_is_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+
+    let err = diff_of(
+        &path,
+        "README.md",
+        commit_scope("not-a-hash"),
+        DiffOptions::default(),
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_untouched_path_is_no_changes() {
+    let (_dir, path, _r, a, _b, _m) = common::merge_fixture();
+
+    let err = diff_of(&path, "base.txt", commit_scope(a), DiffOptions::default()).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::NoChanges(p) if p == "base.txt"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn commit_scope_ignores_uncommitted_workdir_edits() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let scope = commit_scope(head_oid(&path));
+    common::write_file(&path, "README.md", "# edited in the workdir\n");
+
+    let diff = diff_of(&path, "README.md", scope, DiffOptions::default()).expect("diff");
+
+    assert_eq!(all_lines(&diff)[0].content, "# fixture");
+}
+
+// DiffScope::Commit crosses IPC as a tagged object.
+#[test]
+fn diff_scope_commit_serializes_tagged() {
+    let scope = DiffScope::Commit("abc123".into());
+
+    let json = serde_json::to_string(&scope).expect("serialize");
+
+    assert_eq!(json, r#"{"commit":"abc123"}"#);
+}
+
+#[test]
+fn diff_scope_commit_round_trips() {
+    let scope: DiffScope = serde_json::from_str(r#"{"commit":"abc123"}"#).expect("deserialize");
+
+    assert_eq!(scope, DiffScope::Commit("abc123".into()));
+}
+
+#[test]
+fn diff_scope_unit_variants_still_serialize_as_plain_strings() {
+    assert_eq!(
+        serde_json::to_string(&DiffScope::Staged).expect("serialize"),
+        r#""staged""#
+    );
+}
+
+#[test]
+fn diff_scope_rejects_a_commit_payload_without_an_oid() {
+    let result = serde_json::from_str::<DiffScope>(r#"{"commit":null}"#);
+
+    assert!(result.is_err());
+}

@@ -406,3 +406,57 @@ pub fn tag_annotated(path: &Path, name: &str, target: git2::Oid) {
     repo.tag(name, &object, &sig, "release", false)
         .expect("annotated tag");
 }
+
+/// Four commits on one file, oldest first: `a.txt` "one\n"; `a.txt` "one\ntwo\n";
+/// `a.txt` renamed to `b.txt` unchanged; `b.txt` "one\ntwo\nthree\n".
+/// Returns (dir, path, the four oids oldest first).
+pub fn rename_fixture() -> (TempDir, PathBuf, Vec<git2::Oid>) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let c1 = commit_file(&path, "a.txt", "one\n", "add a");
+    let c2 = commit_file(&path, "a.txt", "one\ntwo\n", "modify a");
+    let c3 = {
+        let repo = Repository::open(&path).expect("open repo");
+        std::fs::rename(path.join("a.txt"), path.join("b.txt")).expect("rename on disk");
+        let mut index = repo.index().expect("open index");
+        index.remove_path(Path::new("a.txt")).expect("unstage a");
+        index.add_path(Path::new("b.txt")).expect("stage b");
+        index.write().expect("write index");
+        let tree = repo
+            .find_tree(index.write_tree().expect("write tree"))
+            .expect("find tree");
+        let sig = Signature::now("Test User", "test@example.com").expect("signature");
+        let parent = repo.head().expect("head").peel_to_commit().expect("commit");
+        repo.commit(Some("HEAD"), &sig, &sig, "rename a to b", &tree, &[&parent])
+            .expect("commit rename")
+    };
+    let c4 = commit_file(&path, "b.txt", "one\ntwo\nthree\n", "modify b");
+    (dir, path, vec![c1, c2, c3, c4])
+}
+
+/// Writes raw `bytes` (which may contain `\0`) to `name`, stages and commits on HEAD.
+pub fn commit_binary(path: &Path, name: &str, bytes: &[u8], message: &str) -> git2::Oid {
+    let repo = Repository::open(path).expect("open repo");
+    let full = path.join(name);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dirs");
+    }
+    std::fs::write(&full, bytes).expect("write bytes");
+    let mut index = repo.index().expect("open index");
+    index.add_path(Path::new(name)).expect("stage file");
+    index.write().expect("write index");
+    let tree = repo
+        .find_tree(index.write_tree().expect("write tree"))
+        .expect("find tree");
+    let sig = Signature::now("Test User", "test@example.com").expect("signature");
+    let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+        .expect("commit")
+}
+
+/// Commits `text` with every `\n` written as `\r\n`, on HEAD.
+pub fn commit_crlf(path: &Path, name: &str, text: &str, message: &str) -> git2::Oid {
+    commit_binary(path, name, text.replace('\n', "\r\n").as_bytes(), message)
+}
