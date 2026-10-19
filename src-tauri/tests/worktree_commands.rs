@@ -709,3 +709,90 @@ fn diff_scope_rejects_an_unknown_tagged_payload() {
 
     assert!(result.is_err());
 }
+
+// GR-9 coverage audit: the tagged scope payload drives the commands end to end.
+#[test]
+fn get_file_content_inner_accepts_a_scope_decoded_from_the_ipc_payload() {
+    let (_dir, path, reg, id) = open_fixture();
+    let payload = format!(r#"{{"commit":"{}"}}"#, head_hex(&path));
+    let scope: DiffScope = serde_json::from_str(&payload).unwrap();
+
+    let bytes = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        scope,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap();
+
+    assert_eq!(bytes, b"# fixture\n");
+}
+
+#[test]
+fn get_file_content_inner_with_commit_scope_old_side_on_a_root_maps_to_path_not_found() {
+    let (_dir, path, reg, id) = open_fixture();
+    let scope = DiffScope::Commit(head_hex(&path));
+
+    let err = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        scope,
+        DiffSide::Old,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn get_file_content_inner_with_an_unknown_commit_maps_to_commit_not_found() {
+    let (_dir, _path, reg, id) = open_fixture();
+    let scope = DiffScope::Commit("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into());
+
+    let err = get_file_content_inner(
+        &reg,
+        id,
+        "README.md",
+        scope,
+        DiffSide::New,
+        MAX_PREVIEW_BYTES,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn get_file_content_inner_with_commit_scope_over_the_limit_maps_to_too_large() {
+    let (_dir, path, reg, id) = open_fixture();
+    let scope = DiffScope::Commit(head_hex(&path));
+
+    let err = get_file_content_inner(&reg, id, "README.md", scope, DiffSide::New, 3).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::TooLarge);
+}
+
+#[test]
+fn get_file_diff_inner_with_commit_scope_echoes_the_scope_as_tagged_json() {
+    let (_dir, path, reg, id) = open_fixture();
+    let hex = head_hex(&path);
+
+    let diff = get_file_diff_inner(
+        &reg,
+        id,
+        "README.md",
+        DiffScope::Commit(hex.clone()),
+        false,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        serde_json::to_value(&diff.scope).unwrap(),
+        serde_json::json!({ "commit": hex })
+    );
+}

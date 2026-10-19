@@ -1494,3 +1494,78 @@ fn diff_scope_rejects_a_commit_payload_without_an_oid() {
 
     assert!(result.is_err());
 }
+
+// --- GR-9 coverage audit: commit scope on directories, type changes and malformed ids ---
+
+#[test]
+fn commit_scope_directory_path_is_no_changes() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let c = common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let err = diff_of(&path, "dir", commit_scope(c), DiffOptions::default()).unwrap_err();
+
+    assert!(matches!(err, GitError::NoChanges(_)), "{err:?}");
+}
+
+#[test]
+fn commit_scope_nested_file_diffs_by_its_full_path() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let c = common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let diff = diff_of(&path, "dir/x.txt", commit_scope(c), DiffOptions::default()).unwrap();
+
+    assert_eq!(
+        (diff.path.as_str(), diff.change),
+        ("dir/x.txt", Some(ChangeKind::Added))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn commit_scope_reports_a_file_replaced_by_a_symlink_as_a_type_change() {
+    let (_dir, path) = common::temp_repo_unborn();
+    common::commit_file(&path, "f", "target\n", "file");
+    std::fs::remove_file(path.join("f")).unwrap();
+    std::os::unix::fs::symlink("elsewhere", path.join("f")).unwrap();
+    let c = common::commit_all(&path, "now a symlink");
+
+    let diff = diff_of(&path, "f", commit_scope(c), DiffOptions::default()).unwrap();
+
+    assert_eq!(diff.change, Some(ChangeKind::TypeChange));
+}
+
+#[test]
+fn commit_scope_wrong_length_or_object_kind_ids_are_commit_not_found() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let head = head_oid(&path);
+    let tree = git2::Repository::open(&path)
+        .unwrap()
+        .find_commit(head)
+        .unwrap()
+        .tree_id();
+    let bad = [
+        head.to_string()[..39].to_owned(),
+        format!("{head}0"),
+        tree.to_string(),
+    ];
+
+    for oid in bad {
+        let err = diff_of(
+            &path,
+            "README.md",
+            commit_scope(&oid),
+            DiffOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, GitError::CommitNotFound(_)), "{oid}: {err:?}");
+    }
+}
+
+#[test]
+fn commit_scope_on_a_merge_shows_a_file_from_the_second_parent_as_added() {
+    let (_dir, path, _r, _a, _b, m) = common::merge_fixture();
+
+    let diff = diff_of(&path, "b.txt", commit_scope(m), DiffOptions::default()).unwrap();
+
+    assert_eq!(diff.change, Some(ChangeKind::Added));
+}

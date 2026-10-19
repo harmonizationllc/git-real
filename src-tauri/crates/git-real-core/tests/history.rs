@@ -844,3 +844,412 @@ fn file_history_treats_a_file_replaced_by_a_directory_as_deleted() {
     let changes: Vec<ChangeKind> = entries.iter().map(|e| e.change).collect();
     assert_eq!(changes, [ChangeKind::Deleted, ChangeKind::Added]);
 }
+
+// --- GR-9 coverage audit: oid kinds, merges, rename chains, blame shapes, tree shapes ---
+
+/// Object ids that exist but are not commits: the root tree and an annotated tag.
+fn non_commit_oids(path: &Path) -> Vec<(&'static str, String)> {
+    let head = head_oid(path);
+    common::tag_annotated(path, "v1", head);
+    let repo = Repository::open(path).unwrap();
+    let tag = repo
+        .find_reference("refs/tags/v1")
+        .unwrap()
+        .target()
+        .unwrap();
+    let tree = repo.find_commit(head).unwrap().tree_id();
+    vec![("tree", tree.to_string()), ("tag", tag.to_string())]
+}
+
+#[test]
+fn commit_files_of_a_tree_or_tag_object_is_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let s = open(&path);
+
+    for (kind, oid) in non_commit_oids(&path) {
+        let err = s.commit_files(&oid).unwrap_err();
+        assert!(
+            matches!(err, GitError::CommitNotFound(_)),
+            "{kind}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn commit_files_requires_exactly_forty_hex_characters() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let head = head_oid(&path).to_string();
+    let s = open(&path);
+
+    let short = s.commit_files(&head[..39]);
+    let long = s.commit_files(&format!("{head}0"));
+
+    assert!(
+        matches!(short, Err(GitError::CommitNotFound(_))),
+        "{short:?}"
+    );
+    assert!(matches!(long, Err(GitError::CommitNotFound(_))), "{long:?}");
+}
+
+#[test]
+fn commit_files_lists_a_file_replaced_by_a_directory_as_delete_plus_add() {
+    let (_d, path) = common::temp_repo_unborn();
+    common::commit_file(&path, "x", "file\n", "x is a file");
+    std::fs::remove_file(path.join("x")).unwrap();
+    common::write_file(&path, "x/inner.txt", "inner\n");
+    let c = common::commit_all(&path, "x becomes a directory");
+
+    let files = open(&path).commit_files(&c.to_string()).unwrap();
+
+    assert_eq!(
+        files,
+        [
+            cf("x", None, ChangeKind::Deleted),
+            cf("x/inner.txt", None, ChangeKind::Added)
+        ]
+    );
+}
+
+#[test]
+fn commit_files_lists_an_added_gitlink() {
+    let (_d, path) = common::temp_repo_with_commit();
+    add_gitlink(&path, "sub");
+    let c = commit_index(&path, "add submodule entry");
+
+    let files = open(&path).commit_files(&c.to_string()).unwrap();
+
+    assert_eq!(files, [cf("sub", None, ChangeKind::Added)]);
+}
+
+#[test]
+fn file_history_lists_a_merge_that_brought_the_file_in_from_its_second_parent() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let r = commit_as(&path, &[("base.txt", "base\n")], "root", &[], "Ann", 0);
+    let a = commit_as(&path, &[("base.txt", "base\n")], "main", &[r], "Ann", 10);
+    let b = common::commit_tree_at(
+        &path,
+        Some("refs/heads/feature"),
+        &[("base.txt", "base\n"), ("g.txt", "g\n")],
+        "feature adds g",
+        &[r],
+        &at("Ann", 20),
+        &at("Ann", 20),
+    );
+    let m = commit_as(
+        &path,
+        &[("base.txt", "base\n"), ("g.txt", "g\n")],
+        "merge",
+        &[a, b],
+        "Ann",
+        30,
+    );
+
+    let entries = history(&path, "g.txt").unwrap();
+
+    // Against its first parent the merge added g.txt, and no rename explains it.
+    let seen: Vec<(String, ChangeKind, Option<String>)> = entries
+        .iter()
+        .map(|e| (e.oid.clone(), e.change, e.old_path.clone()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (m.to_string(), ChangeKind::Added, None),
+            (b.to_string(), ChangeKind::Added, None)
+        ]
+    );
+}
+
+#[test]
+fn file_history_only_reports_a_rename_of_the_followed_path() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let body = "one\ntwo\nthree\nfour\n";
+    let c1 = commit_as(&path, &[("x.txt", body)], "add x", &[], "Ann", 0);
+    // The same commit renames x to y and adds an unrelated z.
+    commit_as(
+        &path,
+        &[("y.txt", body), ("z.txt", "z\n")],
+        "rename x, add z",
+        &[c1],
+        "Ann",
+        10,
+    );
+
+    let z = history(&path, "z.txt").unwrap();
+    let y = history(&path, "y.txt").unwrap();
+
+    assert_eq!(shape(&z), [(ChangeKind::Added, "z.txt".to_owned(), None)]);
+    assert_eq!(
+        shape(&y),
+        [
+            (
+                ChangeKind::Renamed,
+                "y.txt".to_owned(),
+                Some("x.txt".to_owned())
+            ),
+            (ChangeKind::Added, "x.txt".to_owned(), None)
+        ]
+    );
+}
+
+#[test]
+fn file_history_follows_a_rename_that_also_edits_the_file() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let c1 = commit_as(
+        &path,
+        &[("old.txt", "1\n2\n3\n4\n5\n6\n7\n8\n")],
+        "add old",
+        &[],
+        "Ann",
+        0,
+    );
+    commit_as(
+        &path,
+        &[("new.txt", "1\n2\n3\n4\n5\n6\n7\n8 changed\n")],
+        "rename and edit",
+        &[c1],
+        "Ann",
+        10,
+    );
+
+    let entries = history(&path, "new.txt").unwrap();
+
+    assert_eq!(
+        shape(&entries),
+        [
+            (
+                ChangeKind::Renamed,
+                "new.txt".to_owned(),
+                Some("old.txt".to_owned())
+            ),
+            (ChangeKind::Added, "old.txt".to_owned(), None)
+        ]
+    );
+}
+
+#[test]
+fn file_history_follows_a_chain_of_two_renames() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let body = "alpha\nbeta\ngamma\ndelta\n";
+    let c1 = commit_as(&path, &[("a.txt", body)], "add a", &[], "Ann", 0);
+    let c2 = commit_as(&path, &[("b.txt", body)], "a to b", &[c1], "Ann", 10);
+    commit_as(&path, &[("c.txt", body)], "b to c", &[c2], "Ann", 20);
+
+    let entries = history(&path, "c.txt").unwrap();
+
+    assert_eq!(
+        shape(&entries),
+        [
+            (
+                ChangeKind::Renamed,
+                "c.txt".to_owned(),
+                Some("b.txt".to_owned())
+            ),
+            (
+                ChangeKind::Renamed,
+                "b.txt".to_owned(),
+                Some("a.txt".to_owned())
+            ),
+            (ChangeKind::Added, "a.txt".to_owned(), None)
+        ]
+    );
+}
+
+#[test]
+fn file_history_of_a_directory_path_is_empty() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let entries = history(&path, "dir").unwrap();
+
+    assert!(entries.is_empty(), "{entries:?}");
+}
+
+#[test]
+fn file_history_ignores_a_gitlink_at_the_path() {
+    let (_d, path) = common::temp_repo_with_commit();
+    add_gitlink(&path, "sub");
+    commit_index(&path, "add submodule entry");
+
+    let entries = history(&path, "sub").unwrap();
+
+    assert!(entries.is_empty(), "{entries:?}");
+}
+
+// --- blame shapes ---
+
+#[test]
+fn blame_attributes_interleaved_edits_to_three_hunks_that_cover_every_line() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let c1 = commit_as(&path, &[("f.txt", "a\nb\nc\n")], "one", &[], "Ann", 0);
+    let c2 = commit_as(&path, &[("f.txt", "a\nB\nc\n")], "two", &[c1], "Bob", 10);
+    let c3 = commit_as(
+        &path,
+        &[("f.txt", "a\nB\nc\nd\n")],
+        "three",
+        &[c2],
+        "Cy",
+        20,
+    );
+
+    let blame = open(&path).blame("f.txt", None).unwrap();
+
+    let spans: Vec<(u32, u32, String)> = blame
+        .hunks
+        .iter()
+        .map(|h| (h.start, h.lines, h.oid.clone()))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            (1, 1, c1.to_string()),
+            (2, 1, c2.to_string()),
+            (3, 1, c1.to_string()),
+            (4, 1, c3.to_string())
+        ]
+    );
+    let covered: u32 = blame.hunks.iter().map(|h| h.lines).sum();
+    assert_eq!(covered as usize, blame.lines.len());
+}
+
+#[test]
+fn blame_of_a_merge_attributes_lines_to_the_commits_that_wrote_them() {
+    let (_d, path, r, a, b, m) = merge_changing_file();
+
+    let blame = open(&path).blame("f.txt", Some(&m.to_string())).unwrap();
+
+    assert_eq!(blame.lines, ["B", "base", "A"]);
+    let owners: Vec<(u32, String)> = blame
+        .hunks
+        .iter()
+        .map(|h| (h.start, h.oid.clone()))
+        .collect();
+    assert_eq!(
+        owners,
+        [(1, b.to_string()), (2, r.to_string()), (3, a.to_string())]
+    );
+}
+
+#[test]
+fn blame_follows_a_file_across_a_rename() {
+    let (_d, path, oids) = common::rename_fixture();
+
+    let blame = open(&path).blame("b.txt", None).unwrap();
+
+    let owners: Vec<(u32, String)> = blame
+        .hunks
+        .iter()
+        .map(|h| (h.start, h.oid.clone()))
+        .collect();
+    assert_eq!(
+        owners,
+        [
+            (1, oids[0].to_string()),
+            (2, oids[1].to_string()),
+            (3, oids[3].to_string())
+        ]
+    );
+}
+
+#[test]
+fn blame_of_an_empty_file_has_no_lines_and_no_covered_lines() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "empty.txt", "", "add empty file");
+
+    let blame = open(&path).blame("empty.txt", None).unwrap();
+
+    // libgit2 may report one zero-line hunk for an empty file; it must cover nothing.
+    let covered: u32 = blame.hunks.iter().map(|h| h.lines).sum();
+    assert_eq!((blame.lines, covered), (Vec::<String>::new(), 0));
+}
+
+#[test]
+fn blame_keeps_blank_lines_and_decodes_invalid_utf8_lossily() {
+    let (_d, path) = common::temp_repo_with_commit();
+    common::commit_binary(&path, "mixed.txt", b"a\n\ncaf\xe9\n", "latin-1 text");
+
+    let blame = open(&path).blame("mixed.txt", None).unwrap();
+
+    assert_eq!(blame.lines, ["a", "", "caf\u{fffd}"]);
+    let covered: u32 = blame.hunks.iter().map(|h| h.lines).sum();
+    assert_eq!(covered, 3);
+}
+
+#[test]
+fn blame_of_a_tree_or_tag_object_id_is_commit_not_found() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let s = open(&path);
+
+    for (kind, oid) in non_commit_oids(&path) {
+        let err = s.blame("README.md", Some(&oid)).unwrap_err();
+        assert!(
+            matches!(err, GitError::CommitNotFound(_)),
+            "{kind}: {err:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn blame_of_a_symlink_blames_its_target_text() {
+    let (_d, path) = common::temp_repo_with_commit();
+    std::os::unix::fs::symlink("README.md", path.join("link")).unwrap();
+    let c = common::commit_all(&path, "add symlink");
+
+    let blame = open(&path).blame("link", None).unwrap();
+
+    assert_eq!(blame.lines, ["README.md"]);
+    let oids: Vec<&str> = blame.hunks.iter().map(|h| h.oid.as_str()).collect();
+    assert_eq!(oids, [c.to_string()]);
+}
+
+// --- tracked_files: tree shapes ---
+
+#[cfg(unix)]
+#[test]
+fn tracked_files_lists_a_symlink_entry() {
+    let (_d, path) = common::temp_repo_with_commit();
+    std::os::unix::fs::symlink("README.md", path.join("link")).unwrap();
+    common::commit_all(&path, "add symlink");
+
+    let files = open(&path).tracked_files().unwrap();
+
+    assert_eq!(files, ["README.md", "link"]);
+}
+
+#[test]
+fn tracked_files_skips_an_empty_subtree_and_descends_into_deep_ones() {
+    let (_d, path) = common::temp_repo_unborn();
+    let repo = Repository::open(&path).unwrap();
+    let blob = repo.blob(b"x\n").unwrap();
+    let empty = repo.treebuilder(None).unwrap().write().unwrap();
+    let mut leaf = repo.treebuilder(None).unwrap();
+    leaf.insert("deep.txt", blob, 0o100644).unwrap();
+    let leaf = leaf.write().unwrap();
+    let mut mid = repo.treebuilder(None).unwrap();
+    mid.insert("c", leaf, 0o040000).unwrap();
+    let mid = mid.write().unwrap();
+    let mut top = repo.treebuilder(None).unwrap();
+    top.insert("a", mid, 0o040000).unwrap();
+    top.insert("hollow", empty, 0o040000).unwrap();
+    top.insert("a-b.txt", blob, 0o100644).unwrap();
+    top.insert("a.txt", blob, 0o100644).unwrap();
+    let tree = repo.find_tree(top.write().unwrap()).unwrap();
+    let sig = Signature::now("Test User", "test@example.com").unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "shapes", &tree, &[])
+        .unwrap();
+
+    let files = open(&path).tracked_files().unwrap();
+
+    assert_eq!(files, ["a-b.txt", "a.txt", "a/c/deep.txt"]);
+}

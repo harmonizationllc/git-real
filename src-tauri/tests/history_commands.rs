@@ -211,3 +211,80 @@ fn get_blame_inner_maps_unknown_repo() {
     let err = get_blame_inner(&reg, MISSING_ID, "a.txt", None).unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
+
+// --- GR-9 coverage audit: unborn repos, malformed input, non-commit ids ---
+
+fn open_unborn() -> (TempDir, RepoRegistry, RepoId) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    Repository::init(&path).expect("init repo");
+    let reg = RepoRegistry::default();
+    let id = reg.register(RepoSession::open(&path).expect("open"));
+    (dir, reg, id)
+}
+
+#[test]
+fn get_blame_inner_with_no_oid_on_an_unborn_repo_maps_to_unborn_head() {
+    let (_d, reg, id) = open_unborn();
+
+    let err = get_blame_inner(&reg, id, "README.md", None).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::UnbornHead);
+}
+
+#[test]
+fn list_tracked_files_inner_on_an_unborn_repo_is_empty() {
+    let (_d, reg, id) = open_unborn();
+
+    let files = list_tracked_files_inner(&reg, id).unwrap();
+
+    assert!(files.is_empty());
+}
+
+#[test]
+fn get_blame_inner_maps_a_malformed_path_to_path_not_found() {
+    let (_d, _p, reg, id) = open_fixture();
+
+    let err = get_blame_inner(&reg, id, "../escape", None).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn get_file_history_inner_maps_a_malformed_path_to_path_not_found() {
+    let (_d, _p, reg, id) = open_fixture();
+    let summary = get_log_summary_inner(&reg, id).unwrap();
+
+    let err = get_file_history_inner(&reg, id, summary.generation, "").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn get_commit_files_inner_maps_a_non_hex_oid_to_commit_not_found() {
+    let (_d, _p, reg, id) = open_fixture();
+
+    let err = get_commit_files_inner(&reg, id, "HEAD").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn get_blame_inner_maps_a_non_hex_oid_to_commit_not_found() {
+    let (_d, _p, reg, id) = open_fixture();
+
+    let err = get_blame_inner(&reg, id, "README.md", Some("HEAD")).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn get_blame_inner_maps_a_directory_path_to_path_not_found() {
+    let (_d, path, reg, id) = open_fixture();
+    std::fs::create_dir(path.join("dir")).unwrap();
+    common::commit_file(&path, "dir/x.txt", "x\n", "nested");
+
+    let err = get_blame_inner(&reg, id, "dir", None).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
