@@ -310,3 +310,27 @@ describe("clear with history state", () => {
     expect(useWorkspace.getState().centreView).toEqual({});
   });
 });
+
+describe("reference stability with history state", () => {
+  it("should return the same state object when clearing an absent repo", () => {
+    useWorkspace.getState().showHistory(2, "b.ts");
+    useWorkspace.getState().setCentreView(2, "blame");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState()).toBe(before);
+  });
+
+  it("should keep the centreView record when a file is selected", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    const before = useWorkspace.getState().centreView;
+    useWorkspace.getState().select(1, { path: "a", scope: "staged" });
+    expect(useWorkspace.getState().centreView).toBe(before);
+  });
+
+  it("should keep the centreView record when the selection is cleared with null", () => {
+    useWorkspace.getState().setCentreView(1, "blame");
+    const before = useWorkspace.getState().centreView;
+    useWorkspace.getState().select(1, null);
+    expect(useWorkspace.getState().centreView).toBe(before);
+  });
+});

@@ -3,8 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { FileDiff } from "../../lib/ipc";
 import type { DiffMode } from "../../lib/store/diffPrefs";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
-import { CloseDiffButton as HeaderClose } from "./FileHeader";
-import { CloseDiffButton, DiffToolbar } from "./DiffToolbar";
+import { DiffToolbar } from "./DiffToolbar";
 
 // Two hunks: 2 additions and 1 deletion over 5 lines in total.
 const baseDiff = fileDiff([
@@ -253,12 +252,5 @@ describe("DiffToolbar close removal", () => {
   it("should not render a Close diff button", () => {
     setup();
     expect(screen.queryByRole("button", { name: "Close diff" })).toBeNull();
-  });
-});
-
-// Contract: CloseDiffButton stays importable from DiffToolbar for existing imports.
-describe("DiffToolbar re-export", () => {
-  it("should re-export the CloseDiffButton defined in FileHeader", () => {
-    expect(CloseDiffButton).toBe(HeaderClose);
   });
 });

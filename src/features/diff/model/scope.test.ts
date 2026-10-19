@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import type { DiffScope } from "../../../lib/ipc";
 import { commitOf, isReadOnly, scopeId } from "./scope";
 
 // Contract: scope helpers turn a DiffScope into a key, a commit oid and a read-only flag.
@@ -38,5 +39,13 @@ describe("isReadOnly", () => {
   });
   it("should be true for a commit scope", () => {
     expect(isReadOnly({ commit: "abc123" })).toBe(true);
+  });
+});
+
+describe("isReadOnly narrowing", () => {
+  it("should narrow a DiffScope to a commit scope", () => {
+    const s = { commit: "abc" } as DiffScope;
+    if (isReadOnly(s)) expectTypeOf(s).toEqualTypeOf<{ commit: string }>();
+    expect(isReadOnly(s)).toBe(true);
   });
 });

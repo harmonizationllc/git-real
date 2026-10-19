@@ -217,3 +217,10 @@ describe("HunkHeader commit scope", () => {
     expect(names()).toEqual([]);
   });
 });
+
+describe("HunkHeader commit scope regression", () => {
+  it("should not render Unstage hunk for a commit scope", () => {
+    setup({ scope: { commit: "abc" } });
+    expect(screen.queryByRole("button", { name: "Unstage hunk" })).toBeNull();
+  });
+});

@@ -7,6 +7,7 @@ import { useWorkspace } from "../../lib/store/workspace";
 import type { DiffScope } from "../../lib/ipc";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import { BlameView } from "../history/BlameView";
 import { DetailPane } from "./DetailPane";
 import { FULL_DIFF_LINES } from "./model/limits";
 
@@ -15,6 +16,9 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   getFileDiff: vi.fn(),
   getFileContent: vi.fn(),
   applyHunk: vi.fn(),
+}));
+vi.mock("../history/BlameView", () => ({
+  BlameView: vi.fn(() => <div role="table" aria-label="Blame" />),
 }));
 vi.mock("@tanstack/react-virtual", () => import("../../test/mockVirtualizer"));
 // Highlighting loads CodeMirror grammars asynchronously; it has its own tests.
@@ -983,7 +987,7 @@ describe("DetailPane Close diff", () => {
     expectClosed();
   });
 
-  it("should offer Close diff in the toolbar of a loaded diff", async () => {
+  it("should offer Close diff in the file header of a loaded diff", async () => {
     setup();
     await diffRegion();
     fireEvent.click(await closeButton());
@@ -1328,6 +1332,43 @@ describe("DetailPane blame view", () => {
     blameSetup(COMMIT);
     await screen.findByRole("table", { name: "Blame" });
     expect(screen.getByRole("radio", { name: "Blame" })).toBeChecked();
+  });
+
+  it("should pass a null oid to BlameView for an unstaged scope", async () => {
+    blameSetup("unstaged");
+    await screen.findByRole("table", { name: "Blame" });
+    expect(vi.mocked(BlameView)).toHaveBeenLastCalledWith(
+      { repoId: REPO, path: "a.ts", oid: null },
+      undefined,
+    );
+  });
+
+  it("should pass a null oid to BlameView for a staged scope", async () => {
+    blameSetup("staged");
+    await screen.findByRole("table", { name: "Blame" });
+    expect(vi.mocked(BlameView)).toHaveBeenLastCalledWith(
+      { repoId: REPO, path: "a.ts", oid: null },
+      undefined,
+    );
+  });
+
+  it("should pass the commit oid to BlameView for a commit scope", async () => {
+    blameSetup(COMMIT);
+    await screen.findByRole("table", { name: "Blame" });
+    expect(vi.mocked(BlameView)).toHaveBeenLastCalledWith(
+      { repoId: REPO, path: "a.ts", oid: "abc1234" },
+      undefined,
+    );
+  });
+
+  it("should toggle Diff, Blame, Diff on one file without throwing or refetching", async () => {
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("radio", { name: "Blame" }));
+    await screen.findByRole("table", { name: "Blame" });
+    fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
+    await diffRegion();
+    expect(getFileDiff).toHaveBeenCalledTimes(1);
   });
 
   it("should render no diff region in blame mode", async () => {

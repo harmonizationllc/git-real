@@ -213,4 +213,10 @@ describe("highlightText", () => {
     const out = highlightText(["/* a", "b */"], parser);
     expect(out[1]?.[0]?.className).toBe("tok-comment");
   });
+  it("should return [] for no lines", () => {
+    expect(highlightText([], parser)).toEqual([]);
+  });
+  it("should return one entry per line for lines with a blank in the middle", () => {
+    expect(highlightText(["a", "", "b"], parser)).toHaveLength(3);
+  });
 });

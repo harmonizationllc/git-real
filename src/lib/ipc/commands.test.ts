@@ -631,6 +631,7 @@ describe("history command wrappers", () => {
   it("getBlame passes a null oid through unchanged", async () => {
     const calls = mockWith({ oid: "abc", path: "a", hunks: [], lines: [] });
     await getBlame(5, "a", null);
+    expect(calls[0]?.args).toHaveProperty("oid", null);
     expect(calls).toEqual([{ cmd: "get_blame", args: { id: 5, path: "a", oid: null } }]);
   });
 
@@ -644,5 +645,13 @@ describe("history command wrappers", () => {
     const err = { kind: "commitNotFound", message: "nope" };
     mockThrowing(err);
     await expect(getCommitFiles(5, "dead")).rejects.toBe(err);
+  });
+});
+
+describe("getFileDiff with a commit scope", () => {
+  it("getFileDiff sends scope as a { commit } object", async () => {
+    const calls = mockWith({});
+    await getFileDiff(1, "a.ts", { commit: "abc" }, false);
+    expect((calls[0]?.args as { scope: unknown }).scope).toEqual({ commit: "abc" });
   });
 });
