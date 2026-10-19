@@ -82,14 +82,25 @@ fn read_rebase(repo: &Repository, git_dir: &Path) -> OperationState {
     }
 }
 
-/// git's prepared message for the commit that will finish the operation.
+/// git's prepared message for the commit that will finish the operation,
+/// without its comment lines.
 fn prepared_message(git_dir: &Path) -> CommitMessage {
     std::fs::read(git_dir.join("MERGE_MSG"))
-        .map(|raw| message::split(&String::from_utf8_lossy(&raw)))
+        .map(|raw| message::split(&strip_comments(&String::from_utf8_lossy(&raw))))
         .unwrap_or_else(|_| CommitMessage {
             subject: String::new(),
             body: String::new(),
         })
+}
+
+/// Drops every line starting with `#` (git's comments, such as the
+/// `# Conflicts:` list); `message::split` then trims the blank lines left
+/// at the edges of the body.
+fn strip_comments(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The trimmed first line of an oid file when it is a valid oid, else `""`.
