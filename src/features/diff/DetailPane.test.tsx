@@ -1055,3 +1055,103 @@ describe("DetailPane Close diff", () => {
     expect(screen.queryByRole("button", { name: "Close diff" })).toBeNull();
   });
 });
+
+// Coverage: Close diff scoping, side effects and state combinations.
+describe("DetailPane Close diff edges", () => {
+  const closeButton = () => screen.findByRole("button", { name: "Close diff" });
+
+  it("should clear only the pane's own repository when it is not repository 1", async () => {
+    useWorkspace.getState().select(1, { path: "keep.ts", scope: "staged" });
+    useWorkspace.getState().select(2, { path: "b.ts", scope: "unstaged" });
+    renderWithProviders(<DetailPane repoId={2} />);
+    await screen.findByRole("region", { name: "Diff" });
+    fireEvent.click(await closeButton());
+    expect(useWorkspace.getState().selected).toEqual({
+      1: { path: "keep.ts", scope: "staged" },
+      2: null,
+    });
+  });
+
+  it("should not touch the selected commit when the diff is closed", async () => {
+    useWorkspace.getState().selectCommit(REPO, "abc");
+    setup();
+    await diffRegion();
+    fireEvent.click(await closeButton());
+    expect(useWorkspace.getState().selectedCommit[REPO]).toBe("abc");
+  });
+
+  it("should not refetch the diff when it is closed", async () => {
+    setup();
+    await diffRegion();
+    fireEvent.click(await closeButton());
+    expect(getFileDiff).toHaveBeenCalledOnce();
+  });
+
+  it("should keep the whitespace control next to Close diff in the no-changes state", async () => {
+    useDiffPrefs.setState({ ignoreWhitespace: true });
+    vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "no changes" });
+    setup();
+    await screen.findByText("No unstaged changes in a.ts");
+    expect(screen.getByRole("checkbox", { name: "Hide whitespace changes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close diff" })).toBeInTheDocument();
+  });
+
+  it("should offer exactly one Close diff button in the load error state", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    await screen.findByRole("alert");
+    expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  it("should not refetch after Close diff in the load error state", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    await screen.findByRole("alert");
+    const calls = vi.mocked(getFileDiff).mock.calls.length;
+    fireEvent.click(await closeButton());
+    expect(vi.mocked(getFileDiff).mock.calls).toHaveLength(calls);
+  });
+
+  it("should remove the error alert once Close diff clears the selection", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    await screen.findByRole("alert");
+    fireEvent.click(await closeButton());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("should offer exactly one Close diff button for a binary file", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "blob.bin", isBinary: true, change: "modified" }),
+    );
+    setup("blob.bin");
+    await screen.findByText("Binary file — no preview available");
+    expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  it("should offer exactly one Close diff button for a binary image", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "logo.png", isBinary: true, change: "added" }),
+    );
+    setup("logo.png");
+    await screen.findByAltText("New image");
+    expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  it("should offer exactly one Close diff button while loading and keep the status text", async () => {
+    vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
+    setup();
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading diff…");
+    expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  it("should show the Close diff button of the newly selected file's state after switching", async () => {
+    setup();
+    await diffRegion();
+    vi.mocked(getFileDiff).mockReturnValue(new Promise(() => undefined));
+    select("b.ts");
+    expect(await screen.findByRole("status")).toBeInTheDocument();
+    fireEvent.click(await closeButton());
+    expect(useWorkspace.getState().selected[REPO]).toBeNull();
+  });
+});

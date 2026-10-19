@@ -130,3 +130,37 @@ describe("toAppError", () => {
     expect(toAppError("x")).toEqual({ kind: "io", message: "x" });
   });
 });
+
+// Coverage: the two new kinds obey the same shape rules as the others.
+describe("isAppError commit graph kinds shape", () => {
+  it.each(["logStale", "commitNotFound"])("isAppError rejects %s without a message", (kind) => {
+    expect(isAppError({ kind })).toBe(false);
+  });
+
+  it.each(["logStale", "commitNotFound"])(
+    "isAppError rejects %s with a non-string message",
+    (kind) => {
+      expect(isAppError({ kind, message: 5 })).toBe(false);
+    },
+  );
+
+  it("isAppError rejects a kind the backend might add later", () => {
+    expect(isAppError({ kind: "graphCorrupt", message: "m" })).toBe(false);
+  });
+
+  it("isAppError rejects a kind with a trailing space", () => {
+    expect(isAppError({ kind: "logStale ", message: "m" })).toBe(false);
+  });
+
+  it("toAppError returns a commitNotFound error unchanged", () => {
+    const err = { kind: "commitNotFound", message: "m" } as const;
+    expect(toAppError(err)).toBe(err);
+  });
+
+  it("toAppError wraps a near-miss kind as an io error", () => {
+    expect(toAppError({ kind: "logstale", message: "m" })).toEqual({
+      kind: "io",
+      message: "[object Object]",
+    });
+  });
+});

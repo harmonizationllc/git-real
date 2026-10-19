@@ -140,3 +140,71 @@ describe("clear with a selected commit", () => {
     expect(useWorkspace.getState().selectedCommit[1]).toBe("abc");
   });
 });
+
+// Coverage: untouched records keep their identity so subscribers do not re-render.
+describe("record reference stability", () => {
+  it("should keep the selectedCommit record when a file is selected", () => {
+    useWorkspace.getState().selectCommit(1, "abc");
+    const before = useWorkspace.getState().selectedCommit;
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    expect(useWorkspace.getState().selectedCommit).toBe(before);
+  });
+
+  it("should keep the selected record when a commit is selected", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    const before = useWorkspace.getState().selected;
+    useWorkspace.getState().selectCommit(1, "abc");
+    expect(useWorkspace.getState().selected).toBe(before);
+  });
+
+  it("should keep the whole state when clearing a repo with no selections", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    useWorkspace.getState().selectCommit(1, "abc");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(99);
+    expect(useWorkspace.getState()).toBe(before);
+  });
+
+  it("should keep the selectedCommit record when clearing a repo that only has a file", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    useWorkspace.getState().selectCommit(2, "abc");
+    const before = useWorkspace.getState().selectedCommit;
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().selectedCommit).toBe(before);
+  });
+
+  it("should keep the selected record when clearing a repo that only has a commit", () => {
+    useWorkspace.getState().selectCommit(1, "abc");
+    useWorkspace.getState().select(2, { path: "a.txt", scope: "staged" });
+    const before = useWorkspace.getState().selected;
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().selected).toBe(before);
+  });
+
+  it("should replace both records when clearing a repo with both selections", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    useWorkspace.getState().selectCommit(1, "abc");
+    const { selected, selectedCommit } = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().selected).not.toBe(selected);
+    expect(useWorkspace.getState().selectedCommit).not.toBe(selectedCommit);
+  });
+
+  it("should not mutate the previous selectedCommit record when clearing", () => {
+    useWorkspace.getState().selectCommit(1, "abc");
+    const before = useWorkspace.getState().selectedCommit;
+    useWorkspace.getState().clear(1);
+    expect(before).toEqual({ 1: "abc" });
+  });
+
+  it("should remove the key rather than store null when clearing", () => {
+    useWorkspace.getState().selectCommit(1, "abc");
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().selectedCommit).toBe(false);
+  });
+
+  it("should keep a commit selection that was set to null as an own key", () => {
+    useWorkspace.getState().selectCommit(1, null);
+    expect(useWorkspace.getState().selectedCommit).toEqual({ 1: null });
+  });
+});

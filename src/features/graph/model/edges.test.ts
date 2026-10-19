@@ -84,3 +84,69 @@ describe("gutterWidth", () => {
     expect(gutterWidth(40)).toBe(168);
   });
 });
+
+// Coverage: every edge shape on non-zero dot lanes, in both curve directions.
+describe("edgePath on higher lanes", () => {
+  it("should ignore the dot's lane for a pass-through", () => {
+    expect(edgePath({ top: 0, bottom: 0 }, 3)).toBe("M 7 0 V 28");
+  });
+
+  it("should draw a half line when a join's column is the dot's own on a higher lane", () => {
+    expect(edgePath({ top: 2, bottom: null }, 2)).toBe("M 35 0 V 14");
+  });
+
+  it("should draw a half line when a fork's column is the dot's own on a higher lane", () => {
+    expect(edgePath({ top: null, bottom: 2 }, 2)).toBe("M 35 14 V 28");
+  });
+
+  it("should curve a join leftwards into a dot on a lower lane", () => {
+    expect(edgePath({ top: 3, bottom: null }, 1)).toBe("M 49 0 C 49 7 21 7 21 14");
+  });
+
+  it("should curve a join rightwards into a dot on a higher lane that is not zero", () => {
+    expect(edgePath({ top: 1, bottom: null }, 3)).toBe("M 21 0 C 21 7 49 7 49 14");
+  });
+
+  it("should curve a fork rightwards out of a dot on a lane that is not zero", () => {
+    expect(edgePath({ top: null, bottom: 3 }, 1)).toBe("M 21 14 C 21 21 49 21 49 28");
+  });
+
+  it("should curve a fork leftwards out of a dot on a higher lane that is not zero", () => {
+    expect(edgePath({ top: null, bottom: 1 }, 3)).toBe("M 49 14 C 49 21 21 21 21 28");
+  });
+});
+
+// Coverage: column 0 is falsy; it must not be mistaken for an absent end.
+describe("edgePath column zero", () => {
+  it("should treat top 0 with a null bottom as a join, not a fork", () => {
+    expect(edgePath({ top: 0, bottom: null }, 1)).toBe("M 7 0 C 7 7 21 7 21 14");
+  });
+
+  it("should treat bottom 0 with a null top as a fork, not a join", () => {
+    expect(edgePath({ top: null, bottom: 0 }, 1)).toBe("M 21 14 C 21 21 7 21 7 28");
+  });
+});
+
+describe("laneColour boundaries", () => {
+  it("should use token 7 for column 7", () => {
+    expect(laneColour(7)).toBe("var(--graph-lane-7)");
+  });
+
+  it("should wrap column 16 back to token 0", () => {
+    expect(laneColour(16)).toBe("var(--graph-lane-0)");
+  });
+});
+
+describe("gutterWidth boundaries", () => {
+  it("should be one lane wide for exactly one lane", () => {
+    expect(gutterWidth(1)).toBe(14);
+  });
+
+  it("should still grow by one lane just below the cap", () => {
+    expect(gutterWidth(11)).toBe(154);
+  });
+
+  it("should be one lane wide for a negative count", () => {
+    expect(gutterWidth(-3)).toBe(14);
+  });
+});

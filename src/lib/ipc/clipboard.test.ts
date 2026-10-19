@@ -41,3 +41,23 @@ describe("ipc index", () => {
     expect(ipc.copyText).toBe(copyText);
   });
 });
+
+// Coverage: text is passed through verbatim and failures are not swallowed or rewrapped.
+describe("copyText edges", () => {
+  it("should pass multi-line and non-ASCII text through unchanged", async () => {
+    vi.mocked(writeText).mockResolvedValue(undefined);
+    await copyText("feat: ünï\n\nbody ✓");
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("feat: ünï\n\nbody ✓");
+  });
+
+  it("should reject with a non-Error rejection value as is", async () => {
+    vi.mocked(writeText).mockRejectedValue("denied");
+    await expect(copyText("abc")).rejects.toBe("denied");
+  });
+
+  it("should not call the plugin a second time on failure", async () => {
+    vi.mocked(writeText).mockRejectedValue(new Error("no"));
+    await copyText("abc").catch(() => undefined);
+    expect(writeText).toHaveBeenCalledOnce();
+  });
+});

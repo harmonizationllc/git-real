@@ -533,3 +533,64 @@ describe("commit graph command rejections", () => {
     await expect(call()).rejects.toBe(err);
   });
 });
+
+// Coverage: zero and empty arguments are sent, not dropped, and keep their number type.
+describe("commit graph command argument edges", () => {
+  it("getLogPage sends zero generation and start as numbers", async () => {
+    const calls = mockWith({ start: 0, rows: [] });
+    await getLogPage(0, 0, 0, 1);
+    expect(calls).toEqual([
+      { cmd: "get_log_page", args: { id: 0, generation: 0, start: 0, count: 1 } },
+    ]);
+  });
+
+  it("getLogPage sends count and generation as numbers, not strings", async () => {
+    const calls = mockWith({ start: 500, rows: [] });
+    await getLogPage(3, 12, 500, 500);
+    const args = calls[0]?.args as Record<string, unknown>;
+    expect([typeof args.generation, typeof args.start, typeof args.count]).toEqual([
+      "number",
+      "number",
+      "number",
+    ]);
+  });
+
+  it("getLogPage sends only the four documented keys", async () => {
+    const calls = mockWith({ start: 0, rows: [] });
+    await getLogPage(3, 4, 0, 500);
+    expect(Object.keys(calls[0]?.args as object).sort()).toEqual([
+      "count",
+      "generation",
+      "id",
+      "start",
+    ]);
+  });
+
+  it("searchLog sends an empty query unchanged", async () => {
+    const calls = mockWith([]);
+    await searchLog(3, 4, "");
+    expect(calls).toEqual([{ cmd: "search_log", args: { id: 3, generation: 4, query: "" } }]);
+  });
+
+  it("searchLog resolves to an empty array when nothing matches", async () => {
+    mockWith([]);
+    await expect(searchLog(3, 4, "zzz")).resolves.toEqual([]);
+  });
+
+  it("getLogPage rejects with a logStale error as is", async () => {
+    const err = { kind: "logStale", message: "stale" };
+    mockThrowing(err);
+    await expect(getLogPage(1, 1, 0, 500)).rejects.toMatchObject({ kind: "logStale" });
+  });
+
+  it("getCommit rejects with a commitNotFound error as is", async () => {
+    const err = { kind: "commitNotFound", message: "nope" };
+    mockThrowing(err);
+    await expect(getCommit(1, "dead")).rejects.toBe(err);
+  });
+
+  it("checkoutCommit resolves to undefined", async () => {
+    mockWith(null);
+    await expect(checkoutCommit(1, "abc")).resolves.toBeNull();
+  });
+});

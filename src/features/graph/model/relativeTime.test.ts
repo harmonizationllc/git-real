@@ -68,3 +68,53 @@ describe("fullDate", () => {
     expect(fullDate(1_700_000_000)).toBe(new Date(1_700_000_000_000).toLocaleString());
   });
 });
+
+// Coverage: rounding and the cut-over between units.
+describe("relativeTime rounding", () => {
+  it.each([
+    [89, "1 minute ago"],
+    [90, "2 minutes ago"],
+    [150, "3 minutes ago"],
+    [5 * HOUR + 29 * MIN, "5 hours ago"],
+    [5 * HOUR + 30 * MIN, "6 hours ago"],
+    [36 * HOUR, "2 days ago"],
+    [47 * HOUR, "2 days ago"],
+  ])("should format %i seconds ago as %s", (secs, text) => {
+    expect(relativeTime(t(secs), now)).toBe(text);
+  });
+});
+
+describe("relativeTime unit cut-overs", () => {
+  it.each([
+    [2 * HOUR, "2 hours ago"],
+    [21 * HOUR + 29 * MIN, "21 hours ago"],
+    [22 * HOUR - 1, "22 hours ago"],
+    [26 * DAY - 1, "26 days ago"],
+    [45 * DAY, "2 months ago"],
+    [329 * DAY, "11 months ago"],
+    [330 * DAY - 1, "11 months ago"],
+    [547 * DAY, "last year"],
+    [548 * DAY, "2 years ago"],
+    [10 * 365 * DAY, "10 years ago"],
+  ])("should format %i seconds ago as %s", (secs, text) => {
+    expect(relativeTime(t(secs), now)).toBe(text);
+  });
+});
+
+describe("relativeTime edges", () => {
+  it("should say just now for a time one second in the future", () => {
+    expect(relativeTime(now / 1000 + 1, now)).toBe("just now");
+  });
+
+  it("should say just now just under 45 seconds, with a fractional age", () => {
+    expect(relativeTime(t(44.9), now)).toBe("just now");
+  });
+
+  it("should leave just now at exactly 45 seconds", () => {
+    expect(relativeTime(t(45), now)).not.toBe("just now");
+  });
+
+  it("should say just now for the epoch measured against the epoch", () => {
+    expect(relativeTime(0, 0)).toBe("just now");
+  });
+});
