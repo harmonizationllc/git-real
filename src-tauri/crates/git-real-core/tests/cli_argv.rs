@@ -14,10 +14,11 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use git_real_core::{GitError, RepoSession};
+use git_real_core::{GitError, MergeMode, OperationOutcome, RepoSession};
 use git2::{BranchType, Repository};
 
 const SCRIPT: &str = r#"printf '%s\n' "$@" > "$2/.git/argv.txt"
+printf '%s' "$GIT_EDITOR" > "$2/.git/editor.txt"
 [ -f "$2/.git/behaviour" ] && . "$2/.git/behaviour"
 exit 0"#;
 
@@ -336,5 +337,162 @@ fn checkout_commit_maps_a_failing_switch_to_checkout_failed_with_the_output() {
             assert!(stderr.contains("boom"));
         }
         other => panic!("expected CheckoutFailed, got {other:?}"),
+    }
+}
+
+// --- GR-10a: merge, rebase, cherry-pick, revert, abort and continue ---
+
+fn editor(path: &Path) -> String {
+    std::fs::read_to_string(path.join(".git").join("editor.txt"))
+        .expect("the stand-in git was not run")
+}
+
+/// A repo with one commit and a branch `other` at it; nothing in progress.
+fn operation_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
+    use_fake_git();
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    let oid = {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("other", &commit, false).unwrap();
+        commit.id().to_string()
+    };
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session, oid)
+}
+
+#[test]
+fn merge_runs_no_ff_no_edit() {
+    let (_d, path, session, _oid) = operation_fixture();
+    session.merge_branch("other", MergeMode::Merge).unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["merge", "--no-ff", "--no-edit", "other"]
+    );
+}
+
+#[test]
+fn fast_forward_runs_ff_only() {
+    let (_d, path, session, _oid) = operation_fixture();
+    session
+        .merge_branch("other", MergeMode::FastForward)
+        .unwrap();
+    assert_eq!(after_workdir(&path), ["merge", "--ff-only", "other"]);
+}
+
+#[test]
+fn rebase_runs_git_rebase_with_the_branch() {
+    let (_d, path, session, _oid) = operation_fixture();
+    session.rebase_onto("other").unwrap();
+    assert_eq!(after_workdir(&path), ["rebase", "other"]);
+}
+
+#[test]
+fn rebase_runs_git_with_editor_disabled() {
+    let (_d, path, session, _oid) = operation_fixture();
+    session.rebase_onto("other").unwrap();
+    assert_eq!(editor(&path), "true");
+}
+
+#[test]
+fn rebase_reports_completed_when_git_exits_zero() {
+    let (_d, _p, session, _oid) = operation_fixture();
+    assert_eq!(
+        session.rebase_onto("other").unwrap(),
+        OperationOutcome::Completed
+    );
+}
+
+#[test]
+fn cherry_pick_runs_git_cherry_pick_with_the_full_oid() {
+    let (_d, path, session, oid) = operation_fixture();
+    session.cherry_pick(&oid).unwrap();
+    assert_eq!(after_workdir(&path), ["cherry-pick", oid.as_str()]);
+}
+
+#[test]
+fn revert_runs_no_edit_with_the_full_oid() {
+    let (_d, path, session, oid) = operation_fixture();
+    session.revert_commit(&oid).unwrap();
+    assert_eq!(after_workdir(&path), ["revert", "--no-edit", oid.as_str()]);
+}
+
+#[test]
+fn abort_during_a_merge_runs_merge_abort() {
+    let (_d, path, session, oid) = operation_fixture();
+    std::fs::write(path.join(".git").join("MERGE_HEAD"), format!("{oid}\n")).unwrap();
+    session.abort_operation().unwrap();
+    assert_eq!(after_workdir(&path), ["merge", "--abort"]);
+}
+
+#[test]
+fn abort_during_a_cherry_pick_runs_cherry_pick_abort() {
+    let (_d, path, session, oid) = operation_fixture();
+    std::fs::write(
+        path.join(".git").join("CHERRY_PICK_HEAD"),
+        format!("{oid}\n"),
+    )
+    .unwrap();
+    session.abort_operation().unwrap();
+    assert_eq!(after_workdir(&path), ["cherry-pick", "--abort"]);
+}
+
+#[test]
+fn abort_during_a_revert_runs_revert_abort() {
+    let (_d, path, session, oid) = operation_fixture();
+    std::fs::write(path.join(".git").join("REVERT_HEAD"), format!("{oid}\n")).unwrap();
+    session.abort_operation().unwrap();
+    assert_eq!(after_workdir(&path), ["revert", "--abort"]);
+}
+
+#[test]
+fn abort_during_a_rebase_runs_rebase_abort() {
+    let (_d, path, session, _oid) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    session.abort_operation().unwrap();
+    assert_eq!(after_workdir(&path), ["rebase", "--abort"]);
+}
+
+#[test]
+fn continue_rebase_runs_rebase_continue() {
+    let (_d, path, session, _oid) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    session.continue_rebase().unwrap();
+    assert_eq!(after_workdir(&path), ["rebase", "--continue"]);
+}
+
+#[test]
+fn continue_rebase_runs_git_with_editor_disabled() {
+    let (_d, path, session, _oid) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    session.continue_rebase().unwrap();
+    assert_eq!(editor(&path), "true");
+}
+
+#[test]
+fn merge_does_not_run_git_when_the_branch_is_unknown() {
+    let (_d, path, session, _oid) = operation_fixture();
+    let _ = session.merge_branch("nope", MergeMode::Merge);
+    assert!(!path.join(".git").join("argv.txt").exists());
+}
+
+#[test]
+fn a_nonzero_exit_on_a_clean_repo_is_operation_failed_with_the_captured_output() {
+    let (_d, path, session, _oid) = operation_fixture();
+    script_behaviour(&path, "echo out\necho err >&2\nexit 3");
+    match session.merge_branch("other", MergeMode::Merge).unwrap_err() {
+        GitError::OperationFailed {
+            verb,
+            code,
+            stdout,
+            stderr,
+        } => {
+            assert_eq!(verb, "merge");
+            assert_eq!(code, Some(3));
+            assert_eq!(stdout.trim(), "out");
+            assert_eq!(stderr.trim(), "err");
+        }
+        other => panic!("expected OperationFailed, got {other:?}"),
     }
 }

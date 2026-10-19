@@ -1,7 +1,7 @@
 //! GR-10a: merge, rebase, cherry-pick, revert, abort, continue, keep-one-side
 //! conflict resolution and the fast-forward check. Tests that reach the git
-//! CLI return early when it is not on PATH. The tests that need a scripted
-//! stand-in for `git` live in `merge_cli.rs`, because `PATH` is process-wide.
+//! CLI return early when it is not on PATH. The scripted stand-in tests live in
+//! `cli_argv.rs` and `cli_unavailable.rs`, which own `PATH`.
 
 mod common;
 
@@ -437,6 +437,18 @@ fn merge_while_in_progress_is_operation_in_progress() {
 }
 
 #[test]
+fn merge_rejects_a_dash_prefixed_branch_name() {
+    let (_d, _p, session) = diverged();
+
+    let err = session.merge_branch("-x", MergeMode::Merge).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::BranchNotFound(n) if n == "-x"),
+        "{err:?}"
+    );
+}
+
+#[test]
 fn merge_on_unborn_is_unborn_head() {
     let (_d, path) = common::temp_repo_unborn();
     let session = open(&path);
@@ -446,11 +458,9 @@ fn merge_on_unborn_is_unborn_head() {
     assert!(matches!(err, GitError::UnbornHead), "{err:?}");
 }
 
-// A pre-merge-commit hook that refuses surfaces as a failure, not as a conflict
-// and not as a banner. NOTE for the developer: git 2.43 leaves MERGE_HEAD in
-// place when this hook refuses ("Not committing merge"), so classifying purely
-// on `repo.state() != Clean` would report Conflicts. The expectation below is
-// the specified behaviour and needs the implementation to tell this case apart.
+// A pre-merge-commit hook that refuses is a failure, not a conflict. git 2.43
+// leaves MERGE_HEAD behind ("Not committing merge"), so the operation stays in
+// progress with no conflicts in the index.
 #[cfg(unix)]
 #[test]
 fn merge_refused_by_pre_merge_commit_hook_is_operation_failed() {
@@ -462,12 +472,15 @@ fn merge_refused_by_pre_merge_commit_hook_is_operation_failed() {
 
     let err = session.merge_branch("fast", MergeMode::Merge).unwrap_err();
 
-    assert!(matches!(err, GitError::OperationFailed { .. }), "{err:?}");
+    assert!(
+        matches!(&err, GitError::OperationFailed { verb, .. } if verb == "merge"),
+        "{err:?}"
+    );
 }
 
 #[cfg(unix)]
 #[test]
-fn merge_refused_by_hook_leaves_no_operation_state() {
+fn merge_refused_by_hook_leaves_the_merge_in_progress() {
     if !git_available() {
         return;
     }
@@ -475,7 +488,9 @@ fn merge_refused_by_hook_leaves_no_operation_state() {
     common::install_hook(&path, "pre-merge-commit", "exit 1");
     let _ = session.merge_branch("fast", MergeMode::Merge);
 
-    assert_eq!(session.operation_state(), OperationState::None);
+    let state = session.operation_state();
+
+    assert!(matches!(state, OperationState::Merge { .. }), "{state:?}");
 }
 
 #[cfg(unix)]
@@ -778,6 +793,46 @@ fn cherry_pick_merge_commit_is_merge_commit() {
         matches!(&err, GitError::MergeCommit(o) if *o == m.to_string()),
         "{err:?}"
     );
+}
+
+#[test]
+fn cherry_pick_malformed_oid_is_commit_not_found() {
+    let (_d, _p, session) = diverged();
+
+    let err = session.cherry_pick("not-an-oid").unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn revert_malformed_oid_is_commit_not_found() {
+    let (_d, _p, session) = diverged();
+
+    let err = session.revert_commit("not-an-oid").unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+// Picking a commit whose change HEAD already contains is empty: git stops
+// without conflicts, so it is a failure while the pick stays in progress.
+#[test]
+fn empty_cherry_pick_is_operation_failed_with_state_cherry_pick() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session, tip) = ahead();
+    session.cherry_pick(&tip.to_string()).unwrap();
+
+    let err = session.cherry_pick(&tip.to_string()).unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::OperationFailed { verb, .. } if verb == "cherry-pick"),
+        "{err:?}"
+    );
+    assert!(matches!(
+        session.operation_state(),
+        OperationState::CherryPick { .. }
+    ));
 }
 
 #[test]
@@ -1377,6 +1432,18 @@ fn can_fast_forward_unknown_is_branch_not_found() {
 
     assert!(
         matches!(&err, GitError::BranchNotFound(n) if n == "nope"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn can_fast_forward_rejects_a_dash_prefixed_branch_name() {
+    let (_d, _p, session, _tip) = ahead();
+
+    let err = session.can_fast_forward("-x").unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::BranchNotFound(n) if n == "-x"),
         "{err:?}"
     );
 }
