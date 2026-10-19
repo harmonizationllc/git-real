@@ -128,9 +128,11 @@ pub fn commit_all(root: &Path, message: &str) -> git2::Oid {
         .expect("commit")
 }
 
-/// Creates a repo whose index holds a conflict on `README.md` (line 1 edited
-/// differently on `other` and on the original branch, then merged).
-pub fn temp_repo_with_conflict() -> (TempDir, PathBuf) {
+/// Two branches that edited `README.md` line 1 differently and have not been
+/// merged: `other` holds `# other\n` ("change on other"), the original branch
+/// holds `# main\n` ("change on base"). HEAD is on the original branch, the
+/// tree is clean and no merge is in progress. No identity is configured.
+pub fn diverged_fixture() -> (TempDir, PathBuf) {
     let (dir, path) = temp_repo_with_commit();
     let base_ref = {
         let repo = Repository::open(&path).expect("open repo");
@@ -162,7 +164,13 @@ pub fn temp_repo_with_conflict() -> (TempDir, PathBuf) {
     }
     write_file(&path, "README.md", "# main\n");
     commit_all(&path, "change on base");
+    (dir, path)
+}
 
+/// Creates a repo whose index holds a conflict on `README.md` (line 1 edited
+/// differently on `other` and on the original branch, then merged).
+pub fn temp_repo_with_conflict() -> (TempDir, PathBuf) {
+    let (dir, path) = diverged_fixture();
     let repo = Repository::open(&path).expect("open repo");
     let other = repo
         .find_branch("other", git2::BranchType::Local)
@@ -179,6 +187,39 @@ pub fn temp_repo_with_conflict() -> (TempDir, PathBuf) {
     drop(other);
     drop(repo);
     (dir, path)
+}
+
+/// Base commit plus a branch `fast` one commit ahead of it (`fast.txt`), HEAD
+/// still on the base branch. Returns the `fast` tip. No identity is configured.
+pub fn ahead_fixture() -> (TempDir, PathBuf, git2::Oid) {
+    let (dir, path) = temp_repo_with_commit();
+    let tip = branch_with_commit(&path, "fast", "fast.txt", "fast\n");
+    (dir, path, tip)
+}
+
+/// Runs the real `git -C root <args>` and returns its output without judging
+/// the exit status, so a test can create a conflicted state the way git does
+/// (`git merge` exits non-zero on conflicts). Panics only when git cannot be
+/// spawned. Callers configure the identity first.
+pub fn run_git(root: &Path, args: &[&str]) -> std::process::Output {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_EDITOR", "true")
+        .output()
+        .expect("spawn git")
+}
+
+/// Like `run_git`, but panics with git's stderr when the command fails.
+pub fn run_git_ok(root: &Path, args: &[&str]) -> std::process::Output {
+    let out = run_git(root, args);
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out
 }
 
 /// Creates an initialised repo with no commits (unborn HEAD).

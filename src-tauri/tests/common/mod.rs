@@ -176,3 +176,51 @@ pub fn head_branch_name(path: &Path) -> String {
         .expect("HEAD is symbolic")
         .to_string()
 }
+
+/// Writes `rel` under `root`, creating parent directories.
+pub fn write_file(root: &Path, rel: &str, contents: &str) {
+    let full = root.join(rel);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dirs");
+    }
+    std::fs::write(&full, contents).expect("write file");
+}
+
+/// Two branches that edited `README.md` line 1 differently and have not been
+/// merged: `other` holds `# other\n`, the original branch holds `# main\n`.
+/// HEAD is on the original branch, the tree is clean. No identity is configured.
+pub fn diverged_fixture() -> (TempDir, PathBuf) {
+    let (dir, path) = temp_repo_with_commit();
+    let base_ref = {
+        let repo = Repository::open(&path).expect("open repo");
+        let name = repo
+            .head()
+            .expect("head")
+            .name()
+            .expect("utf-8")
+            .to_string();
+        let commit = repo.head().unwrap().peel_to_commit().expect("head commit");
+        repo.branch("other", &commit, false).expect("create other");
+        repo.set_head("refs/heads/other").expect("switch to other");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout other");
+        name
+    };
+    commit_file(&path, "README.md", "# other\n", "change on other");
+    {
+        let repo = Repository::open(&path).expect("open repo");
+        repo.set_head(&base_ref).expect("switch back");
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("checkout base");
+    }
+    commit_file(&path, "README.md", "# main\n", "change on base");
+    (dir, path)
+}
+
+/// Base commit plus a branch `fast` one commit ahead of it (`fast.txt`), HEAD
+/// still on the base branch. Returns the `fast` tip. No identity is configured.
+pub fn ahead_fixture() -> (TempDir, PathBuf, git2::Oid) {
+    let (dir, path) = temp_repo_with_commit();
+    let tip = branch_with_commit(&path, "fast", "fast.txt", "fast\n");
+    (dir, path, tip)
+}
