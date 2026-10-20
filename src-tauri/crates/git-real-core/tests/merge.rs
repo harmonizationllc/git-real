@@ -3559,3 +3559,258 @@ fn rebase_plan_subject_excludes_the_body() {
 
     assert_eq!(plan[3].subject, "weird subject #1");
 }
+
+// --- GR-10c cycle 1 coverage additions ---
+
+// A second `edit` step makes `continue_rebase` stop again: exit 0 mid-rebase is Stopped there too.
+#[test]
+fn continue_after_an_edit_stop_stops_again_at_a_later_edit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Edit, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Edit, c),
+    ];
+    let session = feature_session(&path);
+    assert_eq!(
+        session.rebase_interactive("main", &steps).unwrap(),
+        OperationOutcome::Stopped
+    );
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+    match session.operation_state() {
+        OperationState::Rebase {
+            stopped_for_edit,
+            step,
+            total,
+            ..
+        } => {
+            assert!(stopped_for_edit);
+            assert_eq!((step, total), (3, 3));
+        }
+        other => panic!("expected a rebase in progress, got {other:?}"),
+    }
+    assert!(head_tree_has(&path, "c.txt"));
+}
+
+// Finishing the last edit stop completes: the Stopped arm is not sticky.
+#[test]
+fn continue_after_the_last_edit_stop_completes() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Edit, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Edit, c),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+    session.continue_rebase().unwrap();
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(session.operation_state(), OperationState::None);
+}
+
+// A plan commit missing from the steps is left out of the todo, so git removes it.
+#[test]
+fn rebase_interactive_omitting_a_commit_removes_it() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, _b, c], _) = feature_fixture();
+    let steps = [step(RebaseAction::Pick, a), step(RebaseAction::Pick, c)];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(subjects(&path), ["add c", "add a"]);
+    assert!(!head_tree_has(&path, "b.txt"));
+}
+
+// A base given as 40 uppercase hex digits is still a commit, not a branch name.
+#[test]
+fn rebase_plan_accepts_an_uppercase_full_oid_base() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], main_tip) = feature_fixture();
+
+    let plan = feature_session(&path)
+        .rebase_plan(&main_tip.to_string().to_uppercase())
+        .unwrap();
+
+    assert_eq!(
+        plan_oids(&plan),
+        [a.to_string(), b.to_string(), c.to_string()]
+    );
+}
+
+// 40 hex digits naming a tree (not a commit) are CommitNotFound, never a branch lookup.
+#[test]
+fn rebase_plan_with_a_tree_oid_as_base_is_commit_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    let out = common::run_git_ok(&path, &["rev-parse", "HEAD^{tree}"]);
+    let tree = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+
+    let err = feature_session(&path).rebase_plan(&tree).unwrap_err();
+
+    assert!(
+        matches!(err, GitError::CommitNotFound(ref s) if *s == tree),
+        "{err:?}"
+    );
+}
+
+// An abbreviated oid is read as a branch name, so a short hash of a real commit is not found.
+#[test]
+fn rebase_plan_with_an_abbreviated_oid_base_is_branch_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, _, main_tip) = feature_fixture();
+    let short = main_tip.to_string()[..12].to_owned();
+
+    let err = feature_session(&path).rebase_plan(&short).unwrap_err();
+
+    assert!(
+        matches!(err, GitError::BranchNotFound(ref s) if *s == short),
+        "{err:?}"
+    );
+}
+
+// A detached HEAD still has a plan: the range is read from the commit, not a branch.
+#[test]
+fn rebase_plan_works_on_a_detached_head() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    common::run_git_ok(&path, &["checkout", "--detach"]);
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(
+        plan_oids(&plan),
+        [a.to_string(), b.to_string(), c.to_string()]
+    );
+}
+
+// A commit with an empty message has an empty subject, and rebasing over it still works.
+#[test]
+fn rebase_interactive_replays_a_commit_with_an_empty_message() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let empty = common::commit_file(&path, "e.txt", "e\n", "");
+    let session = feature_session(&path);
+    let plan = session.rebase_plan("main").unwrap();
+    assert_eq!(plan[3].subject, "");
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, empty),
+    ];
+
+    let outcome = session.rebase_interactive("main", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert!(head_tree_has(&path, "e.txt"));
+}
+
+// A merge commit in the range is refused by the run as well as by the plan, before git starts.
+#[test]
+fn rebase_interactive_with_a_merge_commit_in_range_is_merge_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    common::run_git_ok(&path, &["switch", "-c", "side", "main"]);
+    common::commit_file(&path, "s.txt", "s\n", "side work");
+    common::run_git_ok(&path, &["switch", "feature"]);
+    common::run_git_ok(&path, &["merge", "--no-ff", "-m", "merge side", "side"]);
+    let session = feature_session(&path);
+    let before = head_oid(&path);
+
+    let err = session.rebase_interactive("main", &[]).unwrap_err();
+
+    assert!(matches!(err, GitError::MergeCommit(_)), "{err:?}");
+    assert_eq!(session.operation_state(), OperationState::None);
+    assert_eq!(head_oid(&path), before);
+}
+
+// A base that is not an ancestor of HEAD is refused by the run, with nothing started.
+#[test]
+fn rebase_interactive_with_a_non_ancestor_base_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, ..], _) = feature_fixture();
+    common::run_git_ok(&path, &["branch", "elsewhere", "main"]);
+    common::run_git_ok(&path, &["switch", "elsewhere"]);
+    common::commit_file(&path, "z.txt", "z\n", "elsewhere work");
+    common::run_git_ok(&path, &["switch", "feature"]);
+    let session = feature_session(&path);
+
+    let err = session
+        .rebase_interactive("elsewhere", &[step(RebaseAction::Pick, a)])
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert_eq!(session.operation_state(), OperationState::None);
+}
+
+// The new wire types survive a JSON round trip, so the front end and back end agree on them.
+#[test]
+fn rebase_commit_and_step_round_trip_through_json() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+    let json = serde_json::to_value(&plan).unwrap();
+    let back: Vec<RebaseCommit> = serde_json::from_value(json).unwrap();
+    assert_eq!(back, plan);
+
+    let steps = [
+        step(RebaseAction::Pick, Oid::zero()),
+        step(RebaseAction::Squash, Oid::zero()),
+        step(RebaseAction::Fixup, Oid::zero()),
+        step(RebaseAction::Edit, Oid::zero()),
+        step(RebaseAction::Drop, Oid::zero()),
+    ];
+    let back: Vec<RebaseStep> =
+        serde_json::from_value(serde_json::to_value(steps.to_vec()).unwrap()).unwrap();
+    assert_eq!(back, steps);
+}
+
+#[test]
+fn stopped_outcome_and_the_edit_flag_round_trip_through_json() {
+    let outcome: OperationOutcome = serde_json::from_value(json!("stopped")).unwrap();
+    assert_eq!(outcome, OperationOutcome::Stopped);
+    let state = OperationState::Rebase {
+        onto: "a".repeat(40),
+        onto_name: None,
+        branch: Some("feature".into()),
+        step: 2,
+        total: 3,
+        stopped_for_edit: true,
+    };
+    let back: OperationState =
+        serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
+    assert_eq!(back, state);
+}

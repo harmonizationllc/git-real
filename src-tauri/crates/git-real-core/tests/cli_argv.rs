@@ -23,6 +23,9 @@ printf '%s' "$GIT_EDITOR" > "$2/.git/editor.txt"
 exit 0"#;
 
 static FAKE_DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+/// A temp root whose name holds a `'`, so every todo file this binary writes
+/// has to be shell-quoted to survive `GIT_SEQUENCE_EDITOR`.
+static QUOTED_TMP: OnceLock<tempfile::TempDir> = OnceLock::new();
 
 fn use_fake_git() {
     FAKE_DIR.get_or_init(|| {
@@ -33,6 +36,13 @@ fn use_fake_git() {
         paths.extend(std::env::split_paths(&old));
         // SAFETY: runs inside `get_or_init`, before any test body reads PATH.
         unsafe { std::env::set_var("PATH", std::env::join_paths(paths).unwrap()) };
+        let quoted = tempfile::Builder::new()
+            .prefix("it's-a-tmp-")
+            .tempdir()
+            .expect("quoted temp root");
+        // SAFETY: as above, inside `get_or_init`, before any test body runs.
+        unsafe { std::env::set_var("TMPDIR", quoted.path()) };
+        let _ = QUOTED_TMP.set(quoted);
         dir
     });
 }
@@ -726,7 +736,24 @@ fn todo_path(path: &Path) -> PathBuf {
         .strip_prefix("cp '")
         .and_then(|rest| rest.strip_suffix('\''))
         .unwrap_or_else(|| panic!("unexpected sequence editor {editor:?}"));
-    PathBuf::from(quoted)
+    // Undo the shell quoting: each `'` in the path was written as `'\''`.
+    PathBuf::from(quoted.replace("'\\''", "'"))
+}
+
+// The temp root of this binary holds a `'` (see `QUOTED_TMP`), so the quoted
+// editor command only works if the quote is escaped: the shell would otherwise
+// split the path and `cp` would not find the todo.
+#[test]
+fn rebase_interactive_quotes_a_temp_path_that_contains_a_single_quote() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, CAPTURE_EDITOR);
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    let editor = std::fs::read_to_string(path.join(".git").join("seq-editor.txt")).unwrap();
+    assert!(editor.contains(r"it'\''s-a-tmp-"), "{editor:?}");
+    let todo = std::fs::read_to_string(path.join(".git").join("todo.txt")).unwrap();
+    assert_eq!(todo, format!("pick {oid} add x\n"));
 }
 
 #[test]
@@ -864,4 +891,37 @@ fn branch_oid(path: &Path, name: &str) -> String {
         .target()
         .unwrap()
         .to_string()
+}
+
+// `outcome` is shared by every rebase entry point: exit 0 with a rebase still
+// in progress is Stopped for `rebase_onto` and `continue_rebase` as well.
+#[test]
+fn rebase_onto_reports_stopped_when_git_exits_zero_mid_rebase() {
+    let (_d, path, session, _oid) = operation_fixture();
+    script_behaviour(&path, "mkdir -p \"$2/.git/rebase-merge\"\nexit 0");
+
+    let outcome = session.rebase_onto("other").unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+}
+
+#[test]
+fn continue_rebase_reports_stopped_when_git_exits_zero_and_the_rebase_goes_on() {
+    let (_d, path, session, _oid) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+}
+
+#[test]
+fn continue_rebase_reports_completed_when_git_exits_zero_and_the_rebase_is_over() {
+    let (_d, path, session, _oid) = operation_fixture();
+    std::fs::create_dir_all(path.join(".git").join("rebase-merge")).unwrap();
+    script_behaviour(&path, "rm -r \"$2/.git/rebase-merge\"\nexit 0");
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
 }
