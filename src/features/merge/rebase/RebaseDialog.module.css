@@ -1,0 +1,36 @@
+.backdrop {
+  composes: backdrop from "../../../components/ConfirmDialog.module.css";
+}
+
+.dialog {
+  composes: dialog from "../../../components/ConfirmDialog.module.css";
+  max-width: 48rem;
+}
+
+.title {
+  composes: title from "../../../components/ConfirmDialog.module.css";
+}
+
+.actions {
+  composes: actions from "../../../components/ConfirmDialog.module.css";
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.message {
+  margin: 0;
+}
+
+.summary {
+  margin: 0;
+  color: var(--color-text-muted);
+}

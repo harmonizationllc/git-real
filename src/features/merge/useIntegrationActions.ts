@@ -4,18 +4,20 @@ import {
   cherryPick,
   continueRebase,
   mergeBranch,
+  rebaseInteractive,
   rebaseOnto,
   resolveConflicts,
   revertCommit,
   toAppError,
 } from "../../lib/ipc";
-import type { AppError, ConflictSide, RepoId } from "../../lib/ipc";
+import type { AppError, ConflictSide, RebaseStep, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 
 export type IntegrationRequest =
   | { action: "merge"; branch: string }
   | { action: "fastForward"; branch: string }
   | { action: "rebase"; onto: string }
+  | { action: "rebaseInteractive"; base: string; steps: RebaseStep[] }
   | { action: "cherryPick"; oid: string }
   | { action: "revert"; oid: string }
   | { action: "abort" }
@@ -38,6 +40,8 @@ function execute(repoId: RepoId, req: IntegrationRequest): Promise<unknown> {
       return mergeBranch(repoId, req.branch, "fastForward");
     case "rebase":
       return rebaseOnto(repoId, req.onto);
+    case "rebaseInteractive":
+      return rebaseInteractive(repoId, req.base, req.steps);
     case "cherryPick":
       return cherryPick(repoId, req.oid);
     case "revert":
