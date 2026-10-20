@@ -267,16 +267,17 @@ States, in order of precedence:
 3. Editable: the toolbar, an error strip (`RepoError` with Dismiss) when the
    writer reports an error, and the pane (`aria-label="Conflict editor"`).
 
-Reload rule: the editor remembers `lastSaved` (the last text it loaded or
-wrote). When the query delivers new bytes that decode to `source`:
-`source === lastSaved` → ignore (our own write echoed by the watcher);
-otherwise the document is replaced with `source` via `resetBlocks`
-(history cleared, blocks re-parsed) and `lastSaved = source`. In both cases
-unsent autosave work is dropped first.
+Reload rule: the writer remembers the last 32 texts it sent. When the
+query delivers new bytes that decode to `source`: `source` equal to the
+current document, or to one of those sent texts, is ignored (our own write
+echoed by the watcher, possibly after more typing); anything else replaces
+the document with `source` via `resetBlocks` (blocks re-parsed) after
+dropping unsent autosave work.
 
 ### 4.8 Toolbar (`ConflictToolbar.tsx`)
 
-Left: the path. Centre: `{n} conflicts remaining` (`1 conflict remaining`,
+While loading or showing the placeholder the toolbar renders only the path
+and `Close`. In the editable state — left: the path. Centre: `{n} conflicts remaining` (`1 conflict remaining`,
 `All conflicts resolved` at zero), then `Previous` and `Next` (disabled at
 zero). Right: `Keep all {ours}`, `Take all {theirs}` (disabled at zero or
 while pending), `Mark resolved`, `Close`.
@@ -314,6 +315,8 @@ export function useResolutionWriter(
   on settle, like every other integration action.
 - Unmount flushes a pending save (fire and forget).
 - `pending` is true while any write is in flight.
+- `wasWritten(text)` reports whether `text` is among the last 32 texts sent
+  (`WRITTEN_MEMORY`); `discardPending()` drops a queued, unsent save.
 
 ### 4.10 Routing (`DetailPane.tsx`)
 
