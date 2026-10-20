@@ -266,6 +266,16 @@ export function resolveConflicts(id: RepoId, paths: string[], side: ConflictSide
   return invoke<void>("resolve_conflicts", { id, paths, side });
 }
 
+/** Writes an edited resolution to a conflicted path; `stage` also stages it. */
+export function writeResolution(
+  id: RepoId,
+  path: string,
+  text: string,
+  stage: boolean,
+): Promise<void> {
+  return invoke<void>("write_resolution", { id, path, text, stage });
+}
+
 export function canFastForward(id: RepoId, branch: string): Promise<FastForwardCheck> {
   return invoke<FastForwardCheck>("can_fast_forward", { id, branch });
 }

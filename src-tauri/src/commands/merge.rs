@@ -70,6 +70,16 @@ pub fn resolve_conflicts_inner(
     with_session(reg, id, |s| s.resolve_conflicts(paths, side))
 }
 
+pub fn write_resolution_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    path: &str,
+    text: &str,
+    stage: bool,
+) -> Result<(), AppError> {
+    with_session(reg, id, |s| s.write_resolution(path, text, stage))
+}
+
 pub fn can_fast_forward_inner(
     reg: &RepoRegistry,
     id: RepoId,
@@ -155,6 +165,18 @@ pub async fn resolve_conflicts(
 ) -> Result<(), AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || resolve_conflicts_inner(&reg, id, &paths, side)).await
+}
+
+#[tauri::command]
+pub async fn write_resolution(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    path: String,
+    text: String,
+    stage: bool,
+) -> Result<(), AppError> {
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || write_resolution_inner(&reg, id, &path, &text, stage)).await
 }
 
 #[tauri::command]

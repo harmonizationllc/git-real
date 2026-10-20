@@ -4,7 +4,9 @@ import type { FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc"
 import { useDiffPrefs } from "../../lib/store/diffPrefs";
 import { useWorkspace, type SelectedFile } from "../../lib/store/workspace";
 import { BlameView } from "../history/BlameView";
+import { ConflictEditor } from "../merge/editor/ConflictEditor";
 import { RepoError } from "../repo/RepoError";
+import { useStatus } from "../worktree/useStatus";
 import { useWorktreeActions } from "../worktree/useWorktreeActions";
 import { BinaryPlaceholder } from "./BinaryPlaceholder";
 import { DiffToolbar } from "./DiffToolbar";
@@ -34,7 +36,15 @@ interface PendingDiscard {
 /** The selected file's diff or blame; renders nothing without a selection, so RepoPane decides what shows. */
 export function DetailPane({ repoId }: { repoId: RepoId }) {
   const file = useWorkspace((s) => s.selected[repoId] ?? null);
+  const { status } = useStatus(repoId);
   if (file === null) return null;
+  // A conflicted path's working-tree side is edited in place; its staged side keeps the diff.
+  const conflicted =
+    file.scope === "unstaged" &&
+    (status?.entries.some((e) => e.path === file.path && e.conflicted) ?? false);
+  if (conflicted) {
+    return <ConflictEditor key={`conflict:${file.path}`} repoId={repoId} path={file.path} />;
+  }
   // Keyed so line cap, dialog, action error and scroll offset never leak to another file.
   return <FileDetail key={`${scopeId(file.scope)}:${file.path}`} repoId={repoId} file={file} />;
 }

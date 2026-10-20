@@ -1416,3 +1416,188 @@ describe("ChangesPanel conflict sides gaps", () => {
     expect(staging.length).toBeGreaterThan(0);
   });
 });
+
+// Contract (spec 4.11): the Conflicts header offers Resolve all… with Keep/Take for every conflicted path.
+describe("ChangesPanel Resolve all", () => {
+  const message = { subject: "s", body: "" };
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "feature",
+    message,
+  };
+  const conflictsSection = () => screen.getByRole("region", { name: /^Conflicts/ });
+  const resolveAll = () => within(conflictsSection()).getByRole("button", { name: "Resolve all…" });
+  const openMenu = async (user: UserEvent) => {
+    await user.click(resolveAll());
+  };
+
+  it("Conflicts header shows Resolve all… and no Stage all", async () => {
+    await renderPanel(conflict("a.txt"));
+    expect(resolveAll()).toBeInTheDocument();
+    expect(within(conflictsSection()).queryByRole("button", { name: "Stage all" })).toBeNull();
+  });
+
+  it("does not show Resolve all… in the Staged or Unstaged sections", async () => {
+    await renderPanel(conflict("a.txt"), staged("s.txt"), unstaged("u.txt"));
+    expect(screen.getAllByRole("button", { name: "Resolve all…" })).toHaveLength(1);
+  });
+
+  it("does not show Resolve all… without conflicts", async () => {
+    await renderPanel(unstaged("u.txt"));
+    expect(screen.queryByRole("button", { name: "Resolve all…" })).toBeNull();
+  });
+
+  it("does not open the menu before the button is clicked", async () => {
+    await renderPanel(conflict("a.txt"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Resolve all… opens a menu with Keep {ours} for all files and Take {theirs} for all files", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"));
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep main for all files", "Take feature for all files"]);
+  });
+
+  it("falls back to ours and theirs in the Resolve all… menu without an operation", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep ours for all files", "Take theirs for all files"]);
+  });
+
+  it("Keep … for all files resolves every conflicted path with ours", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"), unstaged("u.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Keep main for all files" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "ours",
+    });
+  });
+
+  it("Take … for all files resolves every conflicted path with theirs", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"), staged("s.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Take feature for all files" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "theirs",
+    });
+  });
+
+  it("closes the menu after an item is chosen", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Keep ours for all files" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Resolve all… is disabled while an action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("a.txt"));
+    expect(resolveAll()).toBeDisabled();
+  });
+
+  it("disables both bulk items when an action becomes pending while the menu is open", async () => {
+    provideMerge({ state: mergeState });
+    const { user, rerender } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    for (const item of screen.getAllByRole("menuitem")) expect(item).toBeEnabled();
+    provideMerge({ state: mergeState, pending: true });
+    rerender(<ChangesPanel repoId={1} />);
+    expect(screen.getByRole("menuitem", { name: "Keep main for all files" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Take feature for all files" })).toBeDisabled();
+  });
+
+  it("a failure shows in the panel error slot", async () => {
+    provideMerge({
+      state: mergeState,
+      error: { kind: "operationFailed", message: "could not resolve" },
+    });
+    await renderPanel(conflict("a.txt"));
+    expect(screen.getByRole("alert")).toHaveTextContent("could not resolve");
+  });
+
+  it("Escape closes the menu", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("does not run an integration action when the menu is dismissed", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.keyboard("{Escape}");
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+  it("opens from the keyboard with the first item focused and returns focus to the button on close", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    resolveAll().focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "Keep ours for all files" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(resolveAll()).toHaveFocus();
+  });
+
+  it("chooses Take … for all files with ArrowDown and Enter", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"));
+    resolveAll().focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "theirs",
+    });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("closes the menu after Take … for all files is chosen", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Take theirs for all files" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("anchors the menu under the Resolve all… button", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    vi.spyOn(resolveAll(), "getBoundingClientRect").mockReturnValue({
+      left: 30,
+      bottom: 70,
+      top: 50,
+      right: 130,
+      width: 100,
+      height: 20,
+      x: 30,
+      y: 50,
+      toJSON: () => ({}),
+    });
+    await openMenu(user);
+    expect(screen.getByRole("menu")).toHaveStyle({ left: "30px", top: "70px" });
+  });
+
+  it("a row's context menu replaces the open Resolve all… menu", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    rightClick(btn("conflicted a.txt"));
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(itemLabels()).not.toContain("Keep ours for all files");
+    expect(itemLabels()).toContain("Mark resolved (stage)");
+  });
+
+  it("Resolve all… after a row's context menu shows only the bulk items", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    rightClick(btn("conflicted a.txt"));
+    await user.keyboard("{Escape}");
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep ours for all files", "Take theirs for all files"]);
+  });
+});

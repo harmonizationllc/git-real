@@ -71,6 +71,7 @@ pub fn run() {
             commands::merge::abort_operation,
             commands::merge::continue_rebase,
             commands::merge::resolve_conflicts,
+            commands::merge::write_resolution,
             commands::merge::can_fast_forward,
         ])
         .run(tauri::generate_context!())

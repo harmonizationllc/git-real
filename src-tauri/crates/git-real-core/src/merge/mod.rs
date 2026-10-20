@@ -4,11 +4,13 @@
 //! signing behave exactly as on the command line (ADR 0001). A non-zero exit
 //! is classified by the repository afterwards: conflicts are a normal
 //! outcome, anything else is `OperationFailed` carrying git's output. State
-//! reads use git2 and the `.git` marker files.
+//! reads use git2 and the `.git` marker files. Resolving conflicts writes the
+//! working tree and index through git2 (ADR 0001: index writes are git2).
 
 mod git_ops;
 mod resolve;
 mod state;
+mod write_resolution;
 
 use std::path::{Path, PathBuf};
 use std::process::Output;

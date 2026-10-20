@@ -25,11 +25,8 @@ interface Row {
   kind: ChangeKind;
 }
 
-interface MenuState {
-  x: number;
-  y: number;
-  row: Row;
-}
+/** One menu at a time: a row's context menu or the Conflicts section's Resolve all… menu. */
+type MenuState = { x: number; y: number } & ({ kind: "row"; row: Row } | { kind: "resolveAll" });
 
 interface ConfirmState {
   paths: string[];
@@ -143,7 +140,25 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
 
   const openDiscard = (row: Row) => setConfirm(discardCopy(targetRows(row)));
 
-  const menuItems = ({ row }: MenuState): MenuItem[] => {
+  const resolveAllItems = (): MenuItem[] => {
+    const paths = rows.conflicts.flatMap(pathsOf);
+    return [
+      {
+        id: "keepAll",
+        label: `Keep ${sides.ours} for all files`,
+        disabled: pending,
+        onSelect: () => runIntegration({ action: "resolve", paths, side: "ours" }),
+      },
+      {
+        id: "takeAll",
+        label: `Take ${sides.theirs} for all files`,
+        disabled: pending,
+        onSelect: () => runIntegration({ action: "resolve", paths, side: "theirs" }),
+      },
+    ];
+  };
+
+  const rowMenuItems = (row: Row): MenuItem[] => {
     const stage: MenuItem = { id: "stage", label: "Stage", onSelect: () => primary(row) };
     let items: MenuItem[];
     if (row.section === "staged") {
@@ -190,6 +205,9 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     ];
   };
 
+  const menuItems = (state: MenuState): MenuItem[] =>
+    state.kind === "row" ? rowMenuItems(state.row) : resolveAllItems();
+
   const selectRow = (row: Row, mods: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
     selection.click(row.key, { ctrl: mods.ctrlKey || mods.metaKey, shift: mods.shiftKey });
     useWorkspace.getState().select(repoId, {
@@ -199,7 +217,20 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   };
 
   const headerAction = (section: Section) => {
-    if (section === "conflicts") return null;
+    if (section === "conflicts")
+      return (
+        <button
+          type="button"
+          className={styles.headerAction}
+          disabled={pending}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: r.left, y: r.bottom, kind: "resolveAll" });
+          }}
+        >
+          Resolve all…
+        </button>
+      );
     const [label, run] =
       section === "staged" ? ["Unstage all", actions.unstageAll] : ["Stage all", actions.stageAll];
     return (
@@ -247,7 +278,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
                     selected={selection.isSelected(row.key)}
                     disabled={pending}
                     onClick={(mods) => selectRow(row, mods)}
-                    onContextMenu={(x, y) => setMenu({ x, y, row })}
+                    onContextMenu={(x, y) => setMenu({ x, y, kind: "row", row })}
                     onPrimary={() => primary(row)}
                     onDiscard={section === "unstaged" ? () => openDiscard(row) : undefined}
                   />

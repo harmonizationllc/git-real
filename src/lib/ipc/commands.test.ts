@@ -47,6 +47,7 @@ import {
   stagePaths,
   unstageAll,
   unstagePaths,
+  writeResolution,
 } from "./commands";
 import { isAppError } from "./errors";
 import type {
@@ -730,6 +731,14 @@ describe("merge operation wrappers", () => {
     ]);
   });
 
+  it("writeResolution sends write_resolution with id, path, text and stage", async () => {
+    const calls = mockWith(null);
+    await writeResolution(2, "a.txt", "x\n", true);
+    expect(calls).toEqual([
+      { cmd: "write_resolution", args: { id: 2, path: "a.txt", text: "x\n", stage: true } },
+    ]);
+  });
+
   it("canFastForward sends can_fast_forward with id and branch", async () => {
     const check: FastForwardCheck = "diverged";
     const calls = mockWith(check);
@@ -747,6 +756,7 @@ describe("merge operation wrappers", () => {
     ["abortOperation", () => abortOperation(1)],
     ["continueRebase", () => continueRebase(1)],
     ["resolveConflicts", () => resolveConflicts(1, ["a"], "ours")],
+    ["writeResolution", () => writeResolution(1, "a", "x", false)],
     ["canFastForward", () => canFastForward(1, "b")],
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing({ kind: "operationInProgress", message: "busy" });
