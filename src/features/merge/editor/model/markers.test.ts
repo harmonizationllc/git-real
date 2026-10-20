@@ -123,3 +123,31 @@ describe("parseConflicts at the end of the file", () => {
     expect(block.to).toBe(unterminated.length);
   });
 });
+
+// Contract: markers that appear after the separator are plain theirs text and never move the block's anchors.
+describe("parseConflicts markers inside theirs", () => {
+  it("should keep a ||||||| after the separator as theirs text with no base", () => {
+    const [block] = parseConflicts("<<<<<<< a\nx\n=======\ny\n||||||| z\n>>>>>>> b\n");
+    expect([block.ours, block.base, block.theirs]).toEqual(["x\n", null, "y\n||||||| z\n"]);
+  });
+  it("should keep a second ======= as theirs text and not move the separator", () => {
+    const [block] = parseConflicts("<<<<<<< a\nx\n=======\ny\n=======\nz\n>>>>>>> b\n");
+    expect([block.ours, block.theirs]).toEqual(["x\n", "y\n=======\nz\n"]);
+  });
+  it("should keep a diff3 base intact when a ||||||| also appears in theirs", () => {
+    const [block] = parseConflicts(
+      "<<<<<<< a\nx\n||||||| base\nb\n=======\ny\n||||||| late\n>>>>>>> b\n",
+    );
+    expect([block.ours, block.base, block.theirs]).toEqual(["x\n", "b\n", "y\n||||||| late\n"]);
+  });
+});
+
+// Contract: degenerate texts produce no blocks and never throw.
+describe("parseConflicts degenerate text", () => {
+  it("should return no blocks for a lone newline", () => {
+    expect(parseConflicts("\n")).toEqual([]);
+  });
+  it("should return no blocks for a lone marker line", () => {
+    expect(parseConflicts("<<<<<<< HEAD")).toEqual([]);
+  });
+});

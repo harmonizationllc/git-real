@@ -2452,11 +2452,15 @@ fn write_resolution_on_a_missing_path_is_path_not_found() {
 #[test]
 fn write_resolution_rejects_a_path_outside_the_work_tree() {
     let (_d, path, session) = conflicted_merge();
+    // A name derived from the unique temp dir cannot collide with an unrelated file in its parent.
+    let sentinel = format!("escaped-{}", path.file_name().unwrap().to_string_lossy());
+    let escaped = path.parent().unwrap().join(&sentinel);
+    assert!(!escaped.exists());
 
-    let result = session.write_resolution("../x", "x\n", true);
+    let result = session.write_resolution(&format!("../{sentinel}"), "x\n", true);
 
     assert!(result.is_err());
-    assert!(!path.parent().unwrap().join("x").exists());
+    assert!(!escaped.exists());
 }
 
 // Contract: a symlink at the path is refused and left alone.

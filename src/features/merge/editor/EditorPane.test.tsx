@@ -70,4 +70,11 @@ describe("EditorPane extensions", () => {
       "yes",
     );
   });
+  it("should still report document changes when extra extensions are supplied", () => {
+    const { viewRef, onDocChange } = mount({
+      extensions: [EditorView.contentAttributes.of({ "data-extra": "yes" })],
+    });
+    viewRef.current!.dispatch({ changes: { from: 0, insert: "zero\n" } });
+    expect(onDocChange).toHaveBeenLastCalledWith("zero\none\ntwo\n");
+  });
 });

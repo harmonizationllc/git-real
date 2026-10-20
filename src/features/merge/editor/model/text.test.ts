@@ -23,6 +23,14 @@ describe("decodeEditable", () => {
   it("should not report tooLarge at exactly MAX_EDIT_BYTES", () => {
     expect(decodeEditable(new ArrayBuffer(MAX_EDIT_BYTES))).not.toBe("tooLarge");
   });
+  it("should decode text of exactly MAX_EDIT_BYTES in full", () => {
+    const decoded = decodeEditable(new TextEncoder().encode("a".repeat(MAX_EDIT_BYTES)).buffer);
+    expect(decoded).toEqual({ text: "a".repeat(MAX_EDIT_BYTES), crlf: false });
+  });
+  it("should return tooLarge for text one byte over MAX_EDIT_BYTES", () => {
+    const over = new TextEncoder().encode("a".repeat(MAX_EDIT_BYTES + 1)).buffer;
+    expect(decodeEditable(over)).toBe("tooLarge");
+  });
   it("should return notText for invalid UTF-8", () => {
     expect(decodeEditable(new Uint8Array([0xff, 0xfe, 0x41]).buffer)).toBe("notText");
   });
@@ -38,6 +46,11 @@ describe("decodeEditable", () => {
 describe("encodeForDisk", () => {
   it("should restore CRLF when asked", () => {
     expect(encodeForDisk("a\nb\n", true)).toBe("a\r\nb\r\n");
+  });
+  it("should round-trip CRLF text through decode and encode", () => {
+    const decoded = decodeEditable(bytes("a\r\n\r\nb\r\n"));
+    expect(decoded).toEqual({ text: "a\n\nb\n", crlf: true });
+    expect(encodeForDisk("a\n\nb\n", true)).toBe("a\r\n\r\nb\r\n");
   });
   it("should leave LF text alone when CRLF is not asked for", () => {
     expect(encodeForDisk("a\nb\n", false)).toBe("a\nb\n");

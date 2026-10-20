@@ -254,6 +254,13 @@ describe("pick and pickAll", () => {
     pickAll(view, "both");
     expect(view.state.doc.toString()).toBe("pre\nx\ny\nmid\nm\nn\npost\n");
   });
+  it("should not dispatch from pickAll when every block is already resolved", () => {
+    const view = viewOf(TWO);
+    pickAll(view, "ours");
+    const before = view.state;
+    pickAll(view, "theirs");
+    expect(view.state).toBe(before);
+  });
   it("should not dispatch from pickAll when nothing is unresolved", () => {
     const view = viewOf("plain\n");
     const before = view.state;
@@ -289,6 +296,33 @@ describe("goToConflict", () => {
     view.dispatch({ selection: { anchor: 0 } });
     goToConflict(view, -1);
     expect(view.state.selection.main.head).toBe(starts(TWO)[1]);
+  });
+  it("should go forward from inside a block to the next block, not the current one", () => {
+    const view = viewOf(TWO);
+    view.dispatch({ selection: { anchor: starts(TWO)[0] + 5 } });
+    goToConflict(view, 1);
+    expect(view.state.selection.main.head).toBe(starts(TWO)[1]);
+  });
+  it("should go backward from inside a block to that block's own start", () => {
+    const view = viewOf(TWO);
+    view.dispatch({ selection: { anchor: starts(TWO)[1] + 5 } });
+    goToConflict(view, -1);
+    expect(view.state.selection.main.head).toBe(starts(TWO)[1]);
+  });
+  it("should stay on the only block when going either way from its start", () => {
+    const view = viewOf(ONE);
+    const start = ONE.indexOf("<<<<<<<");
+    view.dispatch({ selection: { anchor: start } });
+    goToConflict(view, 1);
+    expect(view.state.selection.main.head).toBe(start);
+    goToConflict(view, -1);
+    expect(view.state.selection.main.head).toBe(start);
+  });
+  it("should leave the selection alone when there are no conflicts", () => {
+    const view = viewOf("plain\ntext\n");
+    view.dispatch({ selection: { anchor: 3 } });
+    goToConflict(view, 1);
+    expect(view.state.selection.main.head).toBe(3);
   });
   it("should return true when it moved", () => {
     expect(goToConflict(viewOf(TWO), 1)).toBe(true);
