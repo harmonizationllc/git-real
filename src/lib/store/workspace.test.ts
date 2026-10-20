@@ -383,3 +383,85 @@ describe("clear with every record set", () => {
     expect(s.centreView).toBe(centreView);
   });
 });
+
+// Contract (GR-11a): a selected stash and a selected commit are mutually exclusive per repo.
+describe("selectStash", () => {
+  it("should store the selected stash for the repo", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    expect(useWorkspace.getState().selectedStash[1]).toBe("w1");
+  });
+
+  it("should start with no selected stash for any repo", () => {
+    expect(useWorkspace.getState().selectedStash).toEqual({});
+  });
+
+  it("selectStash with an oid clears the selected commit", () => {
+    useWorkspace.getState().selectCommit(1, "c1");
+    useWorkspace.getState().selectStash(1, "w1");
+    expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
+  });
+
+  it("selectStash with null leaves the selected commit alone", () => {
+    useWorkspace.getState().selectCommit(1, "c1");
+    useWorkspace.getState().selectStash(1, null);
+    expect(useWorkspace.getState().selectedCommit[1]).toBe("c1");
+  });
+
+  it("selectStash with null stores null for the stash", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    useWorkspace.getState().selectStash(1, null);
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+  });
+
+  it("selectCommit with an oid clears the selected stash", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    useWorkspace.getState().selectCommit(1, "c1");
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+  });
+
+  it("selectCommit with null leaves the selected stash alone", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    useWorkspace.getState().selectCommit(1, null);
+    expect(useWorkspace.getState().selectedStash[1]).toBe("w1");
+  });
+
+  it("should keep other repos untouched", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    useWorkspace.getState().selectCommit(2, "c");
+    expect(useWorkspace.getState().selectedStash[1]).toBe("w1");
+  });
+
+  it("should keep the stash selection of another repo when a stash is selected", () => {
+    useWorkspace.getState().selectCommit(2, "c2");
+    useWorkspace.getState().selectStash(1, "w1");
+    expect(useWorkspace.getState().selectedCommit[2]).toBe("c2");
+  });
+
+  it("should not touch the selected file", () => {
+    useWorkspace.getState().select(1, { path: "a.txt", scope: "staged" });
+    useWorkspace.getState().selectStash(1, "w1");
+    expect(useWorkspace.getState().selected[1]).toEqual({ path: "a.txt", scope: "staged" });
+  });
+});
+
+describe("clear with a selected stash", () => {
+  it("should forget the selected stash", () => {
+    useWorkspace.getState().selectStash(1, "w");
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().selectedStash).toBe(false);
+  });
+
+  it("should clear a repo whose only stored value is a selected stash", () => {
+    useWorkspace.getState().selectStash(1, "w");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState()).not.toBe(before);
+  });
+
+  it("should leave the stash selection of other repos untouched", () => {
+    useWorkspace.getState().selectStash(1, "w1");
+    useWorkspace.getState().selectStash(2, "w2");
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().selectedStash[2]).toBe("w2");
+  });
+});
