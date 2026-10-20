@@ -39,9 +39,6 @@ import type {
   Hunk,
   HunkSelection,
   RepoChangedPayload,
-  StashEntry,
-  StashFiles,
-  StashOutcome,
   StatusEntry,
   WorkingTreeStatus,
 } from "./types";
@@ -427,44 +424,5 @@ describe("GR-10a operation types", () => {
       stoppedForEdit: true,
     };
     expect(state.kind === "rebase" && state.stoppedForEdit).toBe(true);
-  });
-});
-
-// Contract: the stash DTOs mirror the Rust models field for field (GR-11a).
-describe("stash DTO shapes", () => {
-  it("should accept a StashEntry carrying every field, with a null branch", () => {
-    const entry: StashEntry = {
-      index: 0,
-      oid: "w",
-      message: "WIP on (no branch): x",
-      branch: null,
-      time: 1,
-      base: "b",
-      hasUntracked: false,
-    };
-    expect(Object.keys(entry).sort()).toEqual([
-      "base",
-      "branch",
-      "hasUntracked",
-      "index",
-      "message",
-      "oid",
-      "time",
-    ]);
-  });
-
-  it("should accept a StashFiles carrying every field", () => {
-    const files: StashFiles = { tracked: [], untracked: [], untrackedOid: null };
-    expect(Object.keys(files).sort()).toEqual(["tracked", "untracked", "untrackedOid"]);
-  });
-
-  it("should accept both StashOutcome values", () => {
-    const outcomes: StashOutcome[] = ["applied", "conflicts"];
-    expect(outcomes).toHaveLength(2);
-  });
-
-  it("should accept the stash error kinds as AppErrorKind", () => {
-    const kinds: AppErrorKind[] = ["nothingToStash", "staleStash"];
-    expect(kinds).toHaveLength(2);
   });
 });

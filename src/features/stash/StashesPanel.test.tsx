@@ -185,7 +185,7 @@ describe("StashesPanel + button", () => {
     expect(plus()).toHaveAttribute("title", "Stash changes…");
   });
 
-  it("is disabled with no title while status and operation load", async () => {
+  it("is disabled with the default title while status and operation load", async () => {
     vi.mocked(getStatus).mockReturnValue(new Promise(() => undefined));
     await renderPanel();
     expect(plus()).toBeDisabled();
@@ -206,6 +206,26 @@ describe("StashesPanel + button", () => {
     await renderPanel();
     await waitFor(() => expect(plus()).toHaveAttribute("title", title));
     expect(plus()).toBeDisabled();
+  });
+});
+
+// Contract (F9): after a push empties the tree the + button is disabled, so focus lands on the heading.
+describe("StashesPanel focus after a push", () => {
+  it("after a push that empties the tree, focus lands on the Stashes heading", async () => {
+    let pushed = false;
+    vi.mocked(getStatus).mockImplementation(() =>
+      Promise.resolve(pushed ? workingStatus([]) : workingStatus()),
+    );
+    vi.mocked(stashPush).mockImplementation(() => {
+      pushed = true;
+      return Promise.resolve(undefined);
+    });
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    await user.click(plus());
+    await user.click(await screen.findByRole("button", { name: "Stash" }));
+    await waitFor(() => expect(plus()).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus());
   });
 });
 
@@ -302,6 +322,16 @@ describe("StashesPanel drop", () => {
     await user.click(await screen.findByRole("button", { name: "Drop" }));
     expect(stashDrop).toHaveBeenCalledExactlyOnceWith(1, 1, entries()[1]!.oid);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("closes the confirm as soon as Drop is confirmed, before the drop settles", async () => {
+    vi.mocked(stashDrop).mockReturnValue(new Promise(() => undefined));
+    const { user } = await askDrop();
+    await user.click(await screen.findByRole("button", { name: "Drop" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /^Stashes/ })).toHaveAttribute("aria-busy", "true"),
+    );
   });
 
   it("Cancel calls nothing", async () => {

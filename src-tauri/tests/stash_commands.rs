@@ -205,4 +205,8 @@ fn stash_models_serialise_camel_case() {
         serde_json::to_value(StashOutcome::Applied).unwrap(),
         json!("applied")
     );
+    assert_eq!(
+        serde_json::to_value(StashOutcome::AppliedNotDropped).unwrap(),
+        json!("appliedNotDropped")
+    );
 }

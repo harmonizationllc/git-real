@@ -2,6 +2,7 @@ import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stashApply, stashDrop, stashPop, stashPush } from "../../lib/ipc";
 import type { StashOutcome } from "../../lib/ipc";
+import { mutationKeys } from "../../lib/query/keys";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useStashActions } from "./useStashActions";
 
@@ -75,6 +76,20 @@ describe("useStashActions", () => {
     const { result } = renderHookWithProviders(() => useStashActions(1));
     await act(() => result.current.pop(entry));
     expect(result.current.notice).toEqual({ kind: "pop", index: 2 });
+  });
+
+  it('pop resolving "appliedNotDropped" sets a popKept notice and no error', async () => {
+    vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
+    const { result } = renderHookWithProviders(() => useStashActions(1));
+    await act(() => result.current.pop(entry));
+    expect(result.current.notice).toEqual({ kind: "popKept", index: 2 });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('pop resolving "applied" leaves no notice', async () => {
+    const { result } = renderHookWithProviders(() => useStashActions(1));
+    await act(() => result.current.pop(entry));
+    expect(result.current.notice).toBeNull();
   });
 
   it('apply resolving "applied" leaves no notice', async () => {
@@ -171,5 +186,24 @@ describe("useStashActions", () => {
     expect(spy).toHaveBeenCalledTimes(2);
     expect(spy).toHaveBeenNthCalledWith(1, { queryKey: ["repo", 1] });
     expect(spy).toHaveBeenNthCalledWith(2, { queryKey: ["repo", 1] });
+  });
+
+  it("counts a running action under the repo's stash mutation key only", async () => {
+    let finish: (o: StashOutcome) => void = () => undefined;
+    vi.mocked(stashApply).mockReturnValue(new Promise((r) => (finish = r)));
+    const { result, queryClient } = renderHookWithProviders(() => useStashActions(1));
+    let done: Promise<unknown> = Promise.resolve();
+    act(() => {
+      done = result.current.apply(entry);
+    });
+    await waitFor(() =>
+      expect(queryClient.isMutating({ mutationKey: mutationKeys.stash(1) })).toBe(1),
+    );
+    expect(queryClient.isMutating({ mutationKey: mutationKeys.stash(2) })).toBe(0);
+    await act(async () => {
+      finish("applied");
+      await done;
+    });
+    expect(queryClient.isMutating({ mutationKey: mutationKeys.stash(1) })).toBe(0);
   });
 });

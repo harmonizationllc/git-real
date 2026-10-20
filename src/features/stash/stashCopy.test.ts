@@ -44,6 +44,14 @@ describe("noticeText", () => {
   });
 });
 
+describe("noticeText for a pop that kept its stash", () => {
+  it("should say it applied but the stash could not be dropped", () => {
+    expect(noticeText({ kind: "popKept", index: 0 })).toBe(
+      "Applied, but the stash could not be dropped. Drop it once you no longer need it.",
+    );
+  });
+});
+
 describe("displayError", () => {
   it("should swap the message for staleStash and keep the kind", () => {
     expect(displayError({ kind: "staleStash", message: "raw" })).toEqual({
@@ -72,6 +80,10 @@ describe("stashSubject", () => {
     ["WIP on (no branch): abc1234 s", "abc1234 s"],
     ["custom note", "custom note"],
     ["On main:no-space", "On main:no-space"],
+    ["On the fence: thinking", "On the fence: thinking"],
+    ["On : nameless", "On : nameless"],
+    ["On main:wip", "On main:wip"],
+    ["On a:b: x", "On a:b: x"],
   ])("should turn %j into %j", (message, expected) => {
     expect(stashSubject(message)).toBe(expected);
   });

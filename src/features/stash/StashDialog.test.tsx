@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stashPush } from "../../lib/ipc";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -221,5 +222,48 @@ describe("StashDialog reopening", () => {
     expect(messageField()).toHaveValue("");
     expect(untrackedBox()).not.toBeChecked();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+// Contract (F9): on close, focus returns to the opener unless it is gone or disabled; then the fallback.
+describe("StashDialog focus on close", () => {
+  function Harness({ openerDisabled = false }: { openerDisabled?: boolean }) {
+    const [open, setOpen] = useState(false);
+    const fallback = useRef<HTMLDivElement>(null);
+    return (
+      <>
+        <div ref={fallback} tabIndex={-1} data-testid="fallback" />
+        <button type="button" disabled={openerDisabled} onClick={() => setOpen(true)}>
+          Opener
+        </button>
+        <StashDialog
+          repoId={1}
+          open={open}
+          onClose={() => setOpen(false)}
+          fallbackFocus={fallback}
+        />
+      </>
+    );
+  }
+
+  it("restores focus to the opener when it is still enabled", async () => {
+    const { user } = renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+
+  it("restores focus to the fallback when the opener is disabled at close", async () => {
+    const { user, rerender } = renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    rerender(<Harness openerDisabled />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("does not throw or move focus to the fallback when no fallback is given", async () => {
+    const { user } = renderWithProviders(<StashDialog repoId={1} open onClose={onClose} />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

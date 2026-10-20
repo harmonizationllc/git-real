@@ -9,7 +9,7 @@ import {
   stashDrop,
   stashPop,
 } from "../../lib/ipc";
-import type { OperationState, StashEntry } from "../../lib/ipc";
+import type { OperationState, StashEntry, StashOutcome } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useWorkspace } from "../../lib/store/workspace";
 import { oidOf } from "../../test/graphFixtures";
@@ -154,14 +154,22 @@ describe("StashSummary files", () => {
   it("clicking a tracked file selects it with the stash commit scope", async () => {
     const { user } = await renderSummary();
     await user.click(await inDetails().findByRole("button", { name: "modified a.txt" }));
-    expect(useWorkspace.getState().selected[1]).toEqual({ path: "a.txt", scope: { commit: W } });
+    expect(useWorkspace.getState().selected[1]).toEqual({
+      path: "a.txt",
+      scope: { commit: W },
+      source: "stash",
+    });
     expect(fileBtn("modified a.txt")).toHaveAttribute("aria-current", "true");
   });
 
   it("clicking an untracked file selects it with the untracked commit scope", async () => {
     const { user } = await renderSummary();
     await user.click(await inDetails().findByRole("button", { name: "added new.txt" }));
-    expect(useWorkspace.getState().selected[1]).toEqual({ path: "new.txt", scope: { commit: U } });
+    expect(useWorkspace.getState().selected[1]).toEqual({
+      path: "new.txt",
+      scope: { commit: U },
+      source: "stash",
+    });
     expect(fileBtn("added new.txt")).toHaveAttribute("aria-current", "true");
   });
 
@@ -211,6 +219,29 @@ describe("StashSummary actions", () => {
     expect(dialog).toHaveTextContent("This can't be undone.");
     await user.click(within(dialog).getByRole("button", { name: "Drop" }));
     expect(stashDrop).toHaveBeenCalledExactlyOnceWith(1, 1, W);
+  });
+
+  it("closes the confirm as soon as Drop is confirmed, before the drop settles", async () => {
+    vi.mocked(stashDrop).mockReturnValue(new Promise(() => undefined));
+    const { user } = await renderSummary();
+    await user.click(inDetails().getByRole("button", { name: "Drop…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
+    await user.click(within(dialog).getByRole("button", { name: "Drop" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(details()).toHaveAttribute("aria-busy", "true"));
+    expect(inDetails().getByRole("button", { name: "Drop…" })).toBeDisabled();
+  });
+
+  it("Pop that applies but keeps the stash shows the kept notice and stays open", async () => {
+    vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
+    const { user } = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    await user.click(pop);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Applied, but the stash could not be dropped. Drop it once you no longer need it.",
+    );
+    expect(details()).toBeInTheDocument();
   });
 
   it("Cancel on the drop dialog drops nothing", async () => {

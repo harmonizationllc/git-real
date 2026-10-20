@@ -1686,6 +1686,41 @@ describe("ChangesPanel Stash button", () => {
     expect(stashBtn()).not.toHaveAttribute("title");
   });
 
+  it("renders no Stash… button while the status loads", async () => {
+    vi.mocked(getStatus).mockReturnValue(new Promise(() => {}));
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    await screen.findByRole("status");
+    expect(screen.queryByRole("button", { name: "Stash…" })).toBeNull();
+  });
+
+  it("renders no Stash… button when the status fails to load", async () => {
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("status exploded");
+    expect(screen.queryByRole("button", { name: "Stash…" })).toBeNull();
+  });
+
+  it("after a push that empties the tree, focus lands on the Changes region", async () => {
+    let pushed = false;
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    vi.mocked(getStatus).mockImplementation(() =>
+      Promise.resolve(pushed ? status() : status(unstaged("a.txt"))),
+    );
+    // The dialog's own hook is stubbed in this file: its push empties the tree and refreshes the repo.
+    vi.mocked(useStashActions).mockReturnValue({
+      ...stashActionsStub(),
+      push: async () => {
+        pushed = true;
+        await queryClient.invalidateQueries({ queryKey: ["repo", 1] });
+        return null;
+      },
+    });
+    await user.click(stashBtn());
+    await user.click(await screen.findByRole("button", { name: "Stash" }));
+    await waitFor(() => expect(stashBtn()).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus());
+  });
+
   it("disables Stash… while an action is pending", async () => {
     const gate = deferred();
     vi.mocked(stagePaths).mockReturnValue(gate.promise);

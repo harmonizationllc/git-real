@@ -1,19 +1,12 @@
 mod common;
 
+use common::git_available;
+
 use std::path::Path;
 
 use git_real_core::commit::git_commit;
-use git_real_core::git_cli;
 use git_real_core::{CommitMessage, GitError, RepoSession, SigningFormat};
 use git2::Repository;
-
-fn git_available() -> bool {
-    if git_cli::locate().is_err() {
-        eprintln!("skipping: git not on PATH");
-        return false;
-    }
-    true
-}
 
 fn msg(subject: &str, body: &str) -> CommitMessage {
     CommitMessage {

@@ -3,13 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import type { CentreView } from "../../lib/store/workspace";
 import { CloseDiffButton, FileHeader } from "./FileHeader";
 
-function setup(over: { path?: string; oldPath?: string | null; view?: CentreView } = {}) {
+function setup(
+  over: {
+    path?: string;
+    oldPath?: string | null;
+    view?: CentreView;
+    blameDisabledReason?: string;
+  } = {},
+) {
   const props = { onViewChange: vi.fn(), onHistory: vi.fn(), onClose: vi.fn() };
   const view = render(
     <FileHeader
       path={over.path ?? "src/a.ts"}
       oldPath={over.oldPath}
       view={over.view ?? "diff"}
+      blameDisabledReason={over.blameDisabledReason}
       {...props}
     />,
   );
@@ -76,6 +84,32 @@ describe("FileHeader view toggle", () => {
     const { onViewChange } = setup({ view: "diff" });
     fireEvent.click(screen.getByRole("radio", { name: "Diff" }));
     expect(onViewChange).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (F17): a reason disables the Blame option and explains itself in its title.
+describe("FileHeader blame availability", () => {
+  it("should disable the Blame option and title it with the reason when blameDisabledReason is set", () => {
+    setup({ blameDisabledReason: "No blame here" });
+    expect(screen.getByRole("radio", { name: "Blame" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Blame" }).closest("label")).toHaveAttribute(
+      "title",
+      "No blame here",
+    );
+  });
+
+  it("should keep the Diff option enabled when blameDisabledReason is set", () => {
+    setup({ blameDisabledReason: "No blame here" });
+    expect(screen.getByRole("radio", { name: "Diff" })).toBeEnabled();
+  });
+
+  it("should enable both options and set no title without a reason", () => {
+    setup();
+    expect(screen.getByRole("radio", { name: "Diff" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "Blame" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "Blame" }).closest("label")).not.toHaveAttribute(
+      "title",
+    );
   });
 });
 

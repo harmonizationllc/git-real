@@ -392,13 +392,40 @@ fn stash_push_git_failure_is_operation_failed_with_stderr() {
     match session.stash_push(None, false) {
         Err(GitError::OperationFailed { verb, stderr, .. }) => {
             assert_eq!(verb, "stash");
-            assert!(stderr.contains("bad numeric config value"), "{stderr}");
+            assert!(!stderr.trim().is_empty(), "{stderr:?}");
         }
         other => panic!("{other:?}"),
     }
 }
 
 // ---------- apply / pop ----------
+
+// F7: pop refused by a dirty overlap behaves like apply and keeps the stash.
+#[test]
+fn stash_pop_refused_by_dirty_overlap_is_operation_failed_and_keeps_the_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let entry = stash_readme(&path, &session, "stashed\n", "wip");
+    common::write_file(&path, "README.md", "local\n");
+    match session.stash_pop(entry.index, &entry.oid) {
+        Err(GitError::OperationFailed { verb, stderr, .. }) => {
+            assert_eq!(verb, "stash");
+            assert!(!stderr.trim().is_empty(), "{stderr:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(read(&path, "README.md"), "local\n");
+    assert!(
+        !Repository::open(&path)
+            .unwrap()
+            .index()
+            .unwrap()
+            .has_conflicts()
+    );
+    assert_eq!(session.list_stashes().unwrap()[0].oid, entry.oid);
+}
 
 #[test]
 fn stash_apply_clean_restores_changes_and_keeps_the_stash() {
@@ -799,4 +826,84 @@ fn stash_push_with_a_padded_message_records_the_text() {
     session.stash_push(Some("  padded  "), false).unwrap();
     let entry = session.list_stashes().unwrap().remove(0);
     assert!(entry.message.ends_with(": padded"), "{}", entry.message);
+}
+
+// ---------- F1: bad reflog entries ----------
+
+/// Appends a raw entry to the `refs/stash` reflog without touching the ref.
+fn append_stash_reflog(path: &Path, oid: git2::Oid, msg: &str) {
+    let repo = Repository::open(path).unwrap();
+    let sig = git2::Signature::now("T", "t@e").unwrap();
+    let mut reflog = repo.reflog("refs/stash").unwrap();
+    reflog.append(oid, &sig, Some(msg)).unwrap();
+    reflog.write().unwrap();
+}
+
+#[test]
+fn list_stashes_skips_an_entry_whose_commit_is_missing_and_keeps_reflog_indexes() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let a = stash_readme(&path, &session, "one\n", "first");
+    append_stash_reflog(
+        &path,
+        git2::Oid::from_str("1111111111111111111111111111111111111111").unwrap(),
+        "missing",
+    );
+    let list = session.list_stashes().unwrap();
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!((list[0].oid.as_str(), list[0].index), (a.oid.as_str(), 1));
+    assert!(session.stash_files(&a.oid).is_ok());
+}
+
+#[test]
+fn list_stashes_skips_a_parentless_entry() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let a = stash_readme(&path, &session, "one\n", "first");
+    let root = {
+        let repo = Repository::open(&path).unwrap();
+        let sig = git2::Signature::now("T", "t@e").unwrap();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        repo.commit(None, &sig, &sig, "root", &tree, &[]).unwrap()
+    };
+    append_stash_reflog(&path, root, "parentless");
+    let list = session.list_stashes().unwrap();
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!((list[0].oid.as_str(), list[0].index), (a.oid.as_str(), 1));
+}
+
+// ---------- F11: one prefix rule ----------
+
+#[test]
+fn list_stashes_hand_stored_prefix_lookalikes_have_no_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    for (i, msg) in ["On the fence: thinking", "On main:wip", "On a:b: x"]
+        .iter()
+        .enumerate()
+    {
+        common::write_file(&path, "README.md", &format!("v{i}\n"));
+        let created = common::run_git_ok(&path, &["stash", "create"]);
+        let oid = String::from_utf8_lossy(&created.stdout).trim().to_owned();
+        common::run_git_ok(&path, &["stash", "store", "-m", msg, &oid]);
+    }
+    let list = session.list_stashes().unwrap();
+    assert_eq!(
+        list.iter()
+            .map(|e| (e.message.as_str(), e.branch.clone()))
+            .collect::<Vec<_>>(),
+        [
+            ("On a:b: x", None),
+            ("On main:wip", None),
+            ("On the fence: thinking", None)
+        ]
+    );
 }

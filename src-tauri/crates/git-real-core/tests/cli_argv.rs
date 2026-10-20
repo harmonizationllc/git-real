@@ -14,7 +14,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use git_real_core::{GitError, MergeMode, OperationOutcome, RepoSession};
+use git_real_core::{GitError, MergeMode, OperationOutcome, RepoSession, StashOutcome};
 use git2::{BranchType, Repository};
 
 const SCRIPT: &str = r#"printf '%s\n' "$@" > "$2/.git/argv.txt"
@@ -996,6 +996,7 @@ fn stash_repo() -> (tempfile::TempDir, PathBuf, RepoSession) {
 #[test]
 fn stash_push_passes_the_message_as_one_argv_element() {
     let (_d, path, session) = stash_repo();
+    script_behaviour(&path, "echo 'No local changes to save'");
     let err = session.stash_push(Some("-x; rm -rf /"), true).unwrap_err();
     assert!(matches!(err, GitError::NothingToStash));
     assert_eq!(
@@ -1025,9 +1026,70 @@ fn stash_apply_pop_and_drop_name_the_stash_by_index() {
     );
     assert_eq!(after_workdir(&path), ["stash", "apply", "stash@{0}"]);
     session.stash_pop(0, &oid).unwrap();
-    assert_eq!(after_workdir(&path), ["stash", "pop", "stash@{0}"]);
+    assert_eq!(after_workdir(&path), ["stash", "drop", "stash@{0}"]);
     session.stash_drop(0, &oid).unwrap();
     assert_eq!(after_workdir(&path), ["stash", "drop", "stash@{0}"]);
+}
+
+/// Creates a stash with git2 (so `refs/stash` exists) and returns its oid.
+fn git2_stash(path: &Path) -> String {
+    let mut repo = Repository::open(path).unwrap();
+    let sig = git2::Signature::now("T", "t@e").unwrap();
+    repo.stash_save(&sig, "via git2", None).unwrap().to_string()
+}
+
+fn verbs(path: &Path) -> Vec<String> {
+    std::fs::read_to_string(path.join(".git").join("verbs.txt"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+// F2: exit 0 with an unchanged tip and no "No local changes" message is a push.
+#[test]
+fn stash_push_exit_zero_with_an_unchanged_tip_and_no_message_is_ok() {
+    let (_d, _path, session) = stash_repo();
+    assert!(matches!(session.stash_push(None, false), Ok(())));
+}
+
+// F4: pop is apply then drop of the same index.
+#[test]
+fn stash_pop_runs_apply_then_drop_of_the_same_index() {
+    let (_d, path, session) = stash_repo();
+    let oid = git2_stash(&path);
+    script_behaviour(
+        &path,
+        r#"printf '%s %s\n' "$4" "$5" >> "$2/.git/verbs.txt""#,
+    );
+    let outcome = session.stash_pop(0, &oid).unwrap();
+    assert_eq!(verbs(&path), ["apply stash@{0}", "drop stash@{0}"]);
+    assert_eq!(outcome, StashOutcome::Applied);
+}
+
+#[test]
+fn stash_pop_whose_drop_fails_is_applied_not_dropped() {
+    let (_d, path, session) = stash_repo();
+    let oid = git2_stash(&path);
+    script_behaviour(&path, r#"[ "$4" = drop ] && { echo boom >&2; exit 1; }"#);
+    assert!(matches!(
+        session.stash_pop(0, &oid),
+        Ok(StashOutcome::AppliedNotDropped)
+    ));
+}
+
+#[test]
+fn stash_pop_whose_apply_fails_never_drops() {
+    let (_d, path, session) = stash_repo();
+    let oid = git2_stash(&path);
+    script_behaviour(
+        &path,
+        r#"printf '%s\n' "$4" >> "$2/.git/verbs.txt"; [ "$4" = apply ] && { echo boom >&2; exit 1; }"#,
+    );
+    assert!(
+        matches!(session.stash_pop(0, &oid), Err(GitError::OperationFailed { verb, .. }) if verb == "stash")
+    );
+    assert_eq!(verbs(&path), ["apply"]);
 }
 
 #[test]

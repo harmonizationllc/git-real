@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createQueryClient } from "./client";
-import { queryKeys } from "./keys";
+import { mutationKeys, queryKeys } from "./keys";
 
 // Contract: the git CLI availability check has its own cache key, distinct from other queries.
 describe("queryKeys", () => {
@@ -369,5 +369,20 @@ describe("queryKeys stashes", () => {
 
   it("should differ between two stash oids", () => {
     expect(queryKeys.stashFiles(3, "a")).not.toEqual(queryKeys.stashFiles(3, "b"));
+  });
+});
+
+// Contract: mutation keys are separate from query keys, so repo invalidation never touches them.
+describe("mutationKeys", () => {
+  it("should define stash(id) as ['stash', id]", () => {
+    expect(mutationKeys.stash(3)).toEqual(["stash", 3]);
+  });
+
+  it("should give different repos different stash keys", () => {
+    expect(mutationKeys.stash(3)).not.toEqual(mutationKeys.stash(4));
+  });
+
+  it("should not sit under the repo query prefix", () => {
+    expect(mutationKeys.stash(3)[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });
