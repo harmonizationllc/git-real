@@ -83,7 +83,7 @@ fn blob_and_mode(entry: &IndexEntry) -> (Oid, u32) {
 }
 
 /// Whether any stage of `conflict` is at `path`.
-fn conflict_path_is(conflict: &IndexConflict, path: &str) -> bool {
+pub(super) fn conflict_path_is(conflict: &IndexConflict, path: &str) -> bool {
     [&conflict.ancestor, &conflict.our, &conflict.their]
         .into_iter()
         .flatten()
