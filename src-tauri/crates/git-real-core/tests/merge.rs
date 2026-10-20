@@ -2685,12 +2685,11 @@ fn rebase_plan_accepts_a_remote_tracking_base() {
     if !git_available() {
         return;
     }
-    let (_d, path, ..) = feature_fixture();
-    let (_bare_dir, bare) = common::temp_bare_clone(&path);
-    common::add_remote_and_fetch(&path, &bare, "feature");
-    let repo = Repository::open(&path).unwrap();
-    assert!(repo.find_reference("refs/remotes/origin/main").is_ok());
-    drop(repo);
+    let (_d, path, _, main_tip) = feature_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .reference("refs/remotes/origin/main", main_tip, true, "test")
+        .unwrap();
 
     let plan = feature_session(&path).rebase_plan("origin/main").unwrap();
 
