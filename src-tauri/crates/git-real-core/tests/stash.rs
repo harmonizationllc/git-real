@@ -656,3 +656,147 @@ fn stash_guard_accepts_an_uppercase_oid() {
     session.stash_drop(0, &upper).unwrap();
     assert!(session.list_stashes().unwrap().is_empty());
 }
+
+// ---------- coverage additions (GR-11a cycle 1) ----------
+
+#[test]
+fn stash_files_non_hex_oid_is_revision_not_found() {
+    let (_d, _p, session) = repo();
+    assert!(matches!(
+        session.stash_files("not-a-hex-oid"),
+        Err(GitError::RevisionNotFound(o)) if o == "not-a-hex-oid"
+    ));
+}
+
+#[test]
+fn stash_files_finds_an_older_listed_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let older = stash_readme(&path, &session, "one\n", "older");
+    common::write_file(&path, "other.txt", "o\n");
+    common::run_git_ok(&path, &["add", "other.txt"]);
+    common::run_git_ok(&path, &["stash", "push", "-m", "newer"]);
+    let files = session.stash_files(&older.oid).unwrap();
+    assert_eq!(
+        files
+            .tracked
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect::<Vec<_>>(),
+        ["README.md"]
+    );
+}
+
+#[test]
+fn list_stashes_message_without_a_colon_or_with_an_empty_branch_has_no_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    common::write_file(&path, "README.md", "x\n");
+    let created = common::run_git_ok(&path, &["stash", "create"]);
+    let oid = String::from_utf8_lossy(&created.stdout).trim().to_owned();
+    common::run_git_ok(&path, &["stash", "store", "-m", "On main", &oid]);
+    common::write_file(&path, "README.md", "y\n");
+    let created = common::run_git_ok(&path, &["stash", "create"]);
+    let oid = String::from_utf8_lossy(&created.stdout).trim().to_owned();
+    common::run_git_ok(&path, &["stash", "store", "-m", "On : nameless", &oid]);
+    let list = session.list_stashes().unwrap();
+    assert_eq!(
+        list.iter()
+            .map(|e| (e.message.as_str(), e.branch.clone()))
+            .collect::<Vec<_>>(),
+        [("On : nameless", None), ("On main", None)]
+    );
+}
+
+#[test]
+fn stash_pop_restores_untracked_files_of_an_include_untracked_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    common::write_file(&path, "new.txt", "n\n");
+    session.stash_push(Some("u"), true).unwrap();
+    assert!(!path.join("new.txt").exists());
+    let entry = session.list_stashes().unwrap().remove(0);
+    assert!(entry.has_untracked);
+    assert_eq!(
+        session.stash_pop(entry.index, &entry.oid).unwrap(),
+        StashOutcome::Applied
+    );
+    assert_eq!(read(&path, "new.txt"), "n\n");
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
+#[test]
+fn stash_pop_of_an_older_stash_removes_only_that_one() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let older = stash_readme(&path, &session, "one\n", "older");
+    let newer = stash_readme(&path, &session, "two\n", "newer");
+    assert_eq!(
+        session.stash_pop(1, &older.oid).unwrap(),
+        StashOutcome::Applied
+    );
+    assert_eq!(read(&path, "README.md"), "one\n");
+    let list = session.list_stashes().unwrap();
+    assert_eq!(
+        list.iter().map(|e| e.oid.as_str()).collect::<Vec<_>>(),
+        [newer.oid.as_str()]
+    );
+}
+
+#[test]
+fn stash_pop_wrong_oid_for_the_index_is_stale_and_changes_nothing() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    stash_readme(&path, &session, "x\n", "wip");
+    assert!(matches!(
+        session.stash_pop(0, &"b".repeat(40)),
+        Err(GitError::StaleStash)
+    ));
+    assert!(is_clean(&path));
+    assert_eq!(session.list_stashes().unwrap().len(), 1);
+}
+
+#[test]
+fn stash_drop_out_of_range_index_is_stale_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let entry = stash_readme(&path, &session, "x\n", "wip");
+    assert!(matches!(
+        session.stash_drop(3, &entry.oid),
+        Err(GitError::StaleStash)
+    ));
+    assert_eq!(session.list_stashes().unwrap().len(), 1);
+}
+
+#[test]
+fn stash_drop_without_any_stash_ref_is_stale_stash() {
+    let (_d, _p, session) = repo();
+    assert!(matches!(
+        session.stash_drop(0, &"a".repeat(40)),
+        Err(GitError::StaleStash)
+    ));
+}
+
+#[test]
+fn stash_push_with_a_padded_message_records_the_text() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    common::write_file(&path, "README.md", "x\n");
+    session.stash_push(Some("  padded  "), false).unwrap();
+    let entry = session.list_stashes().unwrap().remove(0);
+    assert!(entry.message.ends_with(": padded"), "{}", entry.message);
+}
