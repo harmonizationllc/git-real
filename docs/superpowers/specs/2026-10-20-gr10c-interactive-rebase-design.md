@@ -139,13 +139,24 @@ OperationOutcome`, registered in `lib.rs`. `AppError` needs no new kind.
 
 ```ts
 export type RebaseAction = "pick" | "squash" | "fixup" | "edit" | "drop";
-export interface RebaseCommit { oid: string; subject: string; author: Signature }
-export interface RebaseStep { action: RebaseAction; oid: string }
+export interface RebaseCommit {
+  oid: string;
+  subject: string;
+  author: Signature;
+}
+export interface RebaseStep {
+  action: RebaseAction;
+  oid: string;
+}
 export type OperationOutcome = "completed" | "conflicts" | "stopped";
 // OperationState rebase variant gains `stoppedForEdit: boolean`.
 
 export function rebasePlan(id: RepoId, base: string): Promise<RebaseCommit[]>;
-export function rebaseInteractive(id: RepoId, base: string, steps: RebaseStep[]): Promise<OperationOutcome>;
+export function rebaseInteractive(
+  id: RepoId,
+  base: string,
+  steps: RebaseStep[],
+): Promise<OperationOutcome>;
 ```
 
 Both call `invoke("rebase_plan", { id, base })` and
@@ -172,20 +183,25 @@ repository change refetches an open dialog's plan.
 ### 4.2 Plan state (`model/plan.ts`)
 
 ```ts
-export interface PlanStep { oid: string; subject: string; author: Signature; action: RebaseAction }
-export const ACTIONS: { action: RebaseAction; label: string; hint: string }[];  // §5 order
-export function initialPlan(commits: RebaseCommit[]): PlanStep[];   // newest first, all "pick"
+export interface PlanStep {
+  oid: string;
+  subject: string;
+  author: Signature;
+  action: RebaseAction;
+}
+export const ACTIONS: { action: RebaseAction; label: string; hint: string }[]; // §5 order
+export function initialPlan(commits: RebaseCommit[]): PlanStep[]; // newest first, all "pick"
 export function move(steps: PlanStep[], from: number, to: number): PlanStep[];
 export function setAction(steps: PlanStep[], index: number, action: RebaseAction): PlanStep[];
 /** Why a step cannot take squash/fixup: it is the oldest kept commit. */
 export function foldBlocked(steps: PlanStep[], index: number): boolean;
 export function summary(steps: PlanStep[]): { kept: number; squashed: number; dropped: number };
-export function toSteps(steps: PlanStep[]): RebaseStep[];             // oldest first, for the IPC
-export function canStart(steps: PlanStep[]): boolean;                 // kept > 0 and no blocked fold
+export function toSteps(steps: PlanStep[]): RebaseStep[]; // oldest first, for the IPC
+export function canStart(steps: PlanStep[]): boolean; // kept > 0 and no blocked fold
 ```
 
 The dialog lists newest first, like the graph; `toSteps` reverses to git's
-order. `foldBlocked` is true for the *last* step in dialog order whose
+order. `foldBlocked` is true for the _last_ step in dialog order whose
 action is not `drop`, when its action is squash or fixup — moving or dropping
 can create this state, so it is validated rather than prevented, and the
 row shows the hint. `summary.kept` counts steps that are not dropped and
@@ -241,12 +257,17 @@ because the banner and status carry the rest.
 
 ```ts
 export interface RebaseStepRowProps {
-  step: PlanStep; index: number; count: number;
-  blocked: boolean;              // foldBlocked
+  step: PlanStep;
+  index: number;
+  count: number;
+  blocked: boolean; // foldBlocked
   onAction(action: RebaseAction): void;
-  onMove(to: number): void;      // Move up = index-1, Move down = index+1
-  onDragStart(): void; onDragOver(): void; onDrop(): void;
-  dragging: boolean; dropTarget: boolean;
+  onMove(to: number): void; // Move up = index-1, Move down = index+1
+  onDragStart(): void;
+  onDragOver(): void;
+  onDrop(): void;
+  dragging: boolean;
+  dropTarget: boolean;
 }
 ```
 
@@ -264,15 +285,15 @@ calls `move(from, to)` on drop. Keyboard users have the buttons.
 ### 4.6 Entry points
 
 - `GraphPanel` commit menu, after `Revert commit`: `Rebase interactively from
-  here…` → `setDialog({ kind: "rebase", oid: row.oid })`, which renders
+here…` → `setDialog({ kind: "rebase", oid: row.oid })`, which renders
   `<RebaseDialog base={oid} label={shortOid(oid)}>`. Disabled with `title`:
   `IN_PROGRESS_TITLE` during an operation; `Check out a branch first` when
   HEAD is detached or unborn (`branches?.head.kind !== "branch"`); `Already
-  at HEAD` for the row whose refs include `isHead`. Ancestry is not known in
+at HEAD` for the row whose refs include `isHead`. Ancestry is not known in
   the front end: a commit that is not an ancestor comes back as
   `badSelection` and the dialog shows it (§5 maps the message).
 - `BranchesPanel` menu, after `Rebase {cur} onto {b}`: `Rebase {cur} onto
-  {b} interactively…` with the same `gateTitle`, opening
+{b} interactively…` with the same `gateTitle`, opening
   `<RebaseDialog base={b} label={b}>`.
 
 ### 4.7 Drag-to-merge (`BranchRow.tsx`, `BranchesPanel.tsx`)

@@ -329,7 +329,7 @@ pub struct RebaseStep {
 }
 ```
 
-`OperationOutcome` gains `/// Exit 0 with the rebase still in progress: an `edit` step stopped it.` `Stopped`. `Rebase` gains `/// `rebase-merge/amend` exists: git stopped at an `edit` step; staged changes are amended on continue.` `stopped_for_edit: bool`. `Signature` needs `Deserialize` (it is in `model/log.rs`; add the derive). Re-export in `model/mod.rs`.
+`OperationOutcome` gains `/// Exit 0 with the rebase still in progress: an `edit` step stopped it.` `Stopped`. `Rebase` gains `/// `rebase-merge/amend`exists: git stopped at an`edit` step; staged changes are amended on continue.` `stopped_for_edit: bool`. `Signature` needs `Deserialize` (it is in `model/log.rs`; add the derive). Re-export in `model/mod.rs`.
 
 - [ ] **Step 6: Implement the state flag** (`state.rs::read_rebase`): `stopped_for_edit: merge_dir_used && dir.join("amend").exists()` — compute `let interactive = merge_dir.is_dir();` before choosing the layout and use it.
 
@@ -581,7 +581,16 @@ export function RebaseDialog(props: RebaseDialogProps): JSX.Element;
 ```ts
 import { describe, expect, it } from "vitest";
 import type { RebaseCommit } from "../../../../lib/ipc";
-import { canStart, foldBlocked, initialPlan, move, setAction, summary, summaryText, toSteps } from "./plan";
+import {
+  canStart,
+  foldBlocked,
+  initialPlan,
+  move,
+  setAction,
+  summary,
+  summaryText,
+  toSteps,
+} from "./plan";
 
 const commit = (c: string, subject = `commit ${c}`): RebaseCommit => ({
   oid: c.repeat(40),
@@ -593,7 +602,11 @@ const commits = [commit("a"), commit("b"), commit("c")];
 
 describe("initialPlan", () => {
   it("should list newest first with every action pick", () => {
-    expect(initialPlan(commits).map((s) => [s.oid[0], s.action])).toEqual([["c", "pick"], ["b", "pick"], ["a", "pick"]]);
+    expect(initialPlan(commits).map((s) => [s.oid[0], s.action])).toEqual([
+      ["c", "pick"],
+      ["b", "pick"],
+      ["a", "pick"],
+    ]);
   });
 });
 
@@ -609,11 +622,15 @@ describe("move", () => {
     expect(move(steps, 0, -1)).toBe(steps);
     expect(move(steps, 2, 3)).toBe(steps);
   });
-  it("should not mutate the input", () => { /* … */ });
+  it("should not mutate the input", () => {
+    /* … */
+  });
 });
 
 describe("setAction", () => {
-  it("should change one step's action and keep the others", () => { /* … */ });
+  it("should change one step's action and keep the others", () => {
+    /* … */
+  });
 });
 
 describe("foldBlocked", () => {
@@ -629,7 +646,9 @@ describe("foldBlocked", () => {
   it("should not block a squash with a kept step below it", () => {
     expect(foldBlocked(setAction(initialPlan(commits), 1, "squash"), 1)).toBe(false);
   });
-  it("should not block a dropped step", () => { /* drop on index 2 → false */ });
+  it("should not block a dropped step", () => {
+    /* drop on index 2 → false */
+  });
 });
 
 describe("summary", () => {
@@ -637,16 +656,24 @@ describe("summary", () => {
     const steps = setAction(setAction(initialPlan(commits), 0, "squash"), 2, "drop");
     expect(summary(steps)).toEqual({ kept: 1, squashed: 1, dropped: 1 });
   });
-  it("should count an edit as kept", () => { /* … kept 3 */ });
-  it("should count fixup as squashed", () => { /* … */ });
+  it("should count an edit as kept", () => {
+    /* … kept 3 */
+  });
+  it("should count fixup as squashed", () => {
+    /* … */
+  });
 });
 
 describe("summaryText", () => {
   it("should use plurals", () => {
-    expect(summaryText({ kept: 3, squashed: 2, dropped: 0 })).toBe("3 commits, 2 squashed, 0 dropped");
+    expect(summaryText({ kept: 3, squashed: 2, dropped: 0 })).toBe(
+      "3 commits, 2 squashed, 0 dropped",
+    );
   });
   it("should use singulars", () => {
-    expect(summaryText({ kept: 1, squashed: 1, dropped: 1 })).toBe("1 commit, 1 squashed, 1 dropped");
+    expect(summaryText({ kept: 1, squashed: 1, dropped: 1 })).toBe(
+      "1 commit, 1 squashed, 1 dropped",
+    );
   });
 });
 
@@ -662,10 +689,18 @@ describe("toSteps", () => {
 });
 
 describe("canStart", () => {
-  it("should be false when everything is dropped", () => { /* … */ });
-  it("should be false with a blocked fold", () => { /* … */ });
-  it("should be true for the initial plan", () => { /* … */ });
-  it("should be false for an empty plan", () => { expect(canStart([])).toBe(false); });
+  it("should be false when everything is dropped", () => {
+    /* … */
+  });
+  it("should be false with a blocked fold", () => {
+    /* … */
+  });
+  it("should be true for the initial plan", () => {
+    /* … */
+  });
+  it("should be false for an empty plan", () => {
+    expect(canStart([])).toBe(false);
+  });
 });
 ```
 
@@ -674,6 +709,7 @@ describe("canStart", () => {
 `useRebasePlan.test.tsx` (mock `rebasePlan` from `../../../lib/ipc`): resolves `commits` and `loading` false; maps a rejection through `toAppError` into `error`; uses `queryKeys.rebasePlan(repoId, base)` (`queryClient.getQueryData`); does not retry (`rebasePlan` called once after a failure).
 
 `RebaseStepRow.test.tsx` (render with props from a `renderRow(over)` helper like `BranchRow.test.tsx`):
+
 - renders the short oid, subject (with `title` = full subject), author name;
 - the select has `aria-label="Action for {short}"` and the five options in order with the spec labels;
 - changing the select calls `onAction("squash")`;
@@ -684,6 +720,7 @@ describe("canStart", () => {
 - `dragging` sets `aria-grabbed`-free visual class via `data-dragging`; `dropTarget` sets `data-drop-target`.
 
 `RebaseDialog.test.tsx` (mock `rebasePlan`; pass `run = vi.fn()` and `pending`):
+
 - `Loading commits…` with `role="status"` while pending;
 - lists rows newest first under `Commits to rebase`, title `Rebase feature onto main interactively`;
 - empty plan shows `Nothing to rebase: feature has no commits after main.` and no Start button;
@@ -726,9 +763,7 @@ const isFold = (a: RebaseAction) => a === "squash" || a === "fixup";
 
 /** Newest first, like the graph; every commit picked. */
 export function initialPlan(commits: RebaseCommit[]): PlanStep[] {
-  return commits
-    .map((c) => ({ ...c, action: "pick" as const }))
-    .reverse();
+  return commits.map((c) => ({ ...c, action: "pick" as const })).reverse();
 }
 
 /** The steps with the one at `from` moved to `to`; the same array when `to` is out of range. */
@@ -751,7 +786,9 @@ export function foldBlocked(steps: PlanStep[], index: number): boolean {
 }
 
 export function summary(steps: PlanStep[]): { kept: number; squashed: number; dropped: number } {
-  let kept = 0, squashed = 0, dropped = 0;
+  let kept = 0,
+    squashed = 0,
+    dropped = 0;
   for (const s of steps) {
     if (s.action === "drop") dropped += 1;
     else if (isFold(s.action)) squashed += 1;
@@ -766,9 +803,7 @@ export function summaryText({ kept, squashed, dropped }: ReturnType<typeof summa
 
 /** git's order: oldest first. */
 export function toSteps(steps: PlanStep[]): RebaseStep[] {
-  return steps
-    .map(({ action, oid }) => ({ action, oid }))
-    .reverse();
+  return steps.map(({ action, oid }) => ({ action, oid })).reverse();
 }
 
 export function canStart(steps: PlanStep[]): boolean {
@@ -788,7 +823,10 @@ import { queryKeys } from "../../../lib/query/keys";
 export function useRebasePlan(repoId: RepoId, base: string) {
   const query = useQuery<RebaseCommit[], AppError>({
     queryKey: queryKeys.rebasePlan(repoId, base),
-    queryFn: () => rebasePlan(repoId, base).catch((e: unknown) => { throw toAppError(e); }),
+    queryFn: () =>
+      rebasePlan(repoId, base).catch((e: unknown) => {
+        throw toAppError(e);
+      }),
     retry: false,
   });
   return { commits: query.data, error: query.error ?? null, loading: query.isPending };
@@ -819,11 +857,30 @@ export interface RebaseStepRowProps {
   onDrop(): void;
 }
 
-export function RebaseStepRow({ step, index, count, blocked, disabled, dragging, dropTarget, onAction, onMove, onDragStart, onDragOver, onDrop }: RebaseStepRowProps) {
+export function RebaseStepRow({
+  step,
+  index,
+  count,
+  blocked,
+  disabled,
+  dragging,
+  dropTarget,
+  onAction,
+  onMove,
+  onDragStart,
+  onDragOver,
+  onDrop,
+}: RebaseStepRowProps) {
   const short = shortOid(step.oid);
   const fold = step.action === "squash" || step.action === "fixup";
-  const over = (e: DragEvent) => { e.preventDefault(); onDragOver(); };
-  const drop = (e: DragEvent) => { e.preventDefault(); onDrop(); };
+  const over = (e: DragEvent) => {
+    e.preventDefault();
+    onDragOver();
+  };
+  const drop = (e: DragEvent) => {
+    e.preventDefault();
+    onDrop();
+  };
   return (
     <li
       className={styles.row}
@@ -836,16 +893,47 @@ export function RebaseStepRow({ step, index, count, blocked, disabled, dragging,
       onDragOver={over}
       onDrop={drop}
     >
-      <span className={styles.handle} aria-hidden="true">⋮⋮</span>
-      <select aria-label={`Action for ${short}`} value={step.action} disabled={disabled} onChange={(e) => onAction(e.target.value as RebaseAction)}>
-        {ACTIONS.map(({ action, label }) => <option key={action} value={action}>{label}</option>)}
+      <span className={styles.handle} aria-hidden="true">
+        ⋮⋮
+      </span>
+      <select
+        aria-label={`Action for ${short}`}
+        value={step.action}
+        disabled={disabled}
+        onChange={(e) => onAction(e.target.value as RebaseAction)}
+      >
+        {ACTIONS.map(({ action, label }) => (
+          <option key={action} value={action}>
+            {label}
+          </option>
+        ))}
       </select>
       <code className={styles.oid}>{short}</code>
-      <span className={styles.subject} title={step.subject}>{step.subject}</span>
+      <span className={styles.subject} title={step.subject}>
+        {step.subject}
+      </span>
       <span className={styles.author}>{step.author.name}</span>
-      <button type="button" aria-label="Move up" disabled={disabled || index === 0} onClick={() => onMove(index - 1)}>↑</button>
-      <button type="button" aria-label="Move down" disabled={disabled || index === count - 1} onClick={() => onMove(index + 1)}>↓</button>
-      {blocked && <p role="alert" className={styles.alert}>Cannot squash the oldest commit</p>}
+      <button
+        type="button"
+        aria-label="Move up"
+        disabled={disabled || index === 0}
+        onClick={() => onMove(index - 1)}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        aria-label="Move down"
+        disabled={disabled || index === count - 1}
+        onClick={() => onMove(index + 1)}
+      >
+        ↓
+      </button>
+      {blocked && (
+        <p role="alert" className={styles.alert}>
+          Cannot squash the oldest commit
+        </p>
+      )}
     </li>
   );
 }
@@ -863,7 +951,16 @@ import { RepoError } from "../../repo/RepoError";
 import type { UseIntegrationActions } from "../useIntegrationActions";
 import styles from "./RebaseDialog.module.css";
 import { RebaseStepRow } from "./RebaseStepRow";
-import { canStart, foldBlocked, initialPlan, move, setAction, summary, summaryText, toSteps } from "./model/plan";
+import {
+  canStart,
+  foldBlocked,
+  initialPlan,
+  move,
+  setAction,
+  summary,
+  summaryText,
+  toSteps,
+} from "./model/plan";
 import { useRebasePlan } from "./useRebasePlan";
 
 export interface RebaseDialogProps {
@@ -887,7 +984,15 @@ function planMessage(error: AppError, head: string): string {
 }
 
 /** The interactive rebase plan: rendered only while open, so its state starts fresh each time. */
-export function RebaseDialog({ repoId, base, label, head, run, pending, onClose }: RebaseDialogProps) {
+export function RebaseDialog({
+  repoId,
+  base,
+  label,
+  head,
+  run,
+  pending,
+  onClose,
+}: RebaseDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const { commits, error, loading } = useRebasePlan(repoId, base);
@@ -900,29 +1005,56 @@ export function RebaseDialog({ repoId, base, label, head, run, pending, onClose 
     return () => previous.focus();
   }, []);
 
-  const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape" && !pending) onClose(); };
-  const onBackdropClick = (e: MouseEvent) => { if (e.target === e.currentTarget && !pending) onClose(); };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !pending) onClose();
+  };
+  const onBackdropClick = (e: MouseEvent) => {
+    if (e.target === e.currentTarget && !pending) onClose();
+  };
 
   let body: React.ReactNode;
   if (loading) body = <p role="status">Loading commits…</p>;
   else if (error !== null) body = <p className={styles.message}>{planMessage(error, head)}</p>;
   else if ((commits as RebaseCommit[]).length === 0)
-    body = <p className={styles.message}>{`Nothing to rebase: ${head} has no commits after ${label}.`}</p>;
+    body = (
+      <p
+        className={styles.message}
+      >{`Nothing to rebase: ${head} has no commits after ${label}.`}</p>
+    );
   else
     body = (
       // Keyed by the commit list so a refetch that changes it resets the plan.
-      <Plan key={(commits as RebaseCommit[]).map((c) => c.oid).join()} commits={commits as RebaseCommit[]} base={base} run={run} pending={pending} onClose={onClose} />
+      <Plan
+        key={(commits as RebaseCommit[]).map((c) => c.oid).join()}
+        commits={commits as RebaseCommit[]}
+        base={base}
+        run={run}
+        pending={pending}
+        onClose={onClose}
+      />
     );
 
   return (
     <div className={styles.backdrop} onClick={onBackdropClick}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className={styles.dialog} onKeyDown={onKeyDown}>
-        <h2 id={titleId} className={styles.title}>{`Rebase ${head} onto ${label} interactively`}</h2>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={styles.dialog}
+        onKeyDown={onKeyDown}
+      >
+        <h2
+          id={titleId}
+          className={styles.title}
+        >{`Rebase ${head} onto ${label} interactively`}</h2>
         {body}
         {/* Plan renders its own actions row (Cancel + Start); the other states get Cancel alone. */}
         {!showingPlan && (
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onClose}>Cancel</button>
+            <button type="button" disabled={pending} onClick={onClose}>
+              Cancel
+            </button>
           </div>
         )}
       </div>
@@ -982,6 +1114,7 @@ export interface BranchDrag {
 - [ ] **Step 1: Write the failing tests**
 
 `BranchRow.test.tsx`:
+
 - without `drag` the `<li>` has no `draggable` attribute and no drag handlers fire anything;
 - `drag.draggable` sets `draggable="true"`; `fireEvent.dragStart(li, { dataTransfer })` calls `onDragStart` and sets `effectAllowed = "move"` and `setData("text/plain", "<branchId>")` on a fake `dataTransfer` object (`{ setData: vi.fn(), effectAllowed: "", dropEffect: "" }`); `dragEnd` calls `onDragEnd`;
 - `drag.target`: `dragEnter` calls `onDragEnter`; `dragLeave` calls `onDragLeave`; `fireEvent.dragOver` returns `false` (default prevented) and sets `dropEffect = "move"`; `fireEvent.drop(li, { clientX: 10, clientY: 20 })` calls `onDrop(10, 20)` and prevents default;
@@ -989,6 +1122,7 @@ export interface BranchDrag {
 - `drag.over` adds `data-drop-over="true"`; dragging state is the panel's concern (no prop); the test for the dragged row's class uses `data-dragging` set by the panel via the same prop? No — keep the row ignorant: the panel passes `draggable: false` for the row being dragged? No. Simplest: row shows `data-drop-over` only; the dragged row's dimming comes from the `:active`-less CSS `[draggable="true"]:active`? Rule: dimming the dragged row is dropped from scope (the browser's drag image already shows it); only the target highlight is tested.
 
 `BranchesPanel.test.tsx`:
+
 - `Rebase main onto feature interactively…` item in the local `feature` row's menu (after `Rebase main onto feature`), disabled with `IN_PROGRESS_TITLE` during an operation and `Check out a branch first` when detached; selecting it opens a dialog titled `Rebase main onto feature interactively` (mock `rebasePlan` to resolve `[]` so the dialog shows the empty message — enough to prove wiring); the remote row's item reads `Rebase main onto origin/other interactively…`; Cancel closes it;
 - drag-to-merge: with `main` current, the `feature` row `<li>` is `draggable="true"` and the `main` row is not; `dragStart` on `feature` then `dragEnter` on `main` sets `data-drop-over` on `main`; `drop` on `main` at `(5, 6)` opens the menu with exactly `Merge feature into main`, `Fast-forward main to feature`, `Rebase main onto feature` (no checkout/rename/delete items — assert the menu has three items); choosing `Merge feature into main` calls `integrationRun({ action: "merge", branch: "feature" })`; `dragEnd` without a drop clears `data-drop-over`;
 - `ignores a drop on a non-current row`: `dragStart` on `feature`, `dragEnter`/`drop` on `origin/other` → no highlight, no menu;
@@ -997,6 +1131,7 @@ export interface BranchDrag {
 - the current row is a target only while dragging: without a prior `dragStart`, `dragOver` on `main` is not prevented.
 
 `GraphPanel.test.tsx`:
+
 - `Rebase interactively from here…` after `Revert commit`; disabled with `Already at HEAD` on the row with the `isHead` ref, `IN_PROGRESS_TITLE` during an operation, `Check out a branch first` when `branches.head.kind === "detached"`; selecting opens the dialog titled `Rebase main onto <short> interactively` with `rebasePlan` called with `(repoId, <full oid>)`; Cancel closes it.
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1017,28 +1152,35 @@ export interface BranchDrag {
   onDrop(x: number, y: number): void;
 }
 // in BranchRow, with `drag` destructured (optional):
-const dragProps = drag === undefined ? {} : {
-  draggable: drag.draggable || undefined,
-  onDragStart: (e: DragEvent<HTMLLIElement>) => {
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", branchId);   // `${remote}/${name}` or name
-    drag.onDragStart();
-  },
-  onDragEnd: drag.onDragEnd,
-  onDragEnter: () => { if (drag.target) drag.onDragEnter(); },
-  onDragLeave: () => { if (drag.target) drag.onDragLeave(); },
-  onDragOver: (e: DragEvent<HTMLLIElement>) => {
-    if (!drag.target) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  },
-  onDrop: (e: DragEvent<HTMLLIElement>) => {
-    if (!drag.target) return;
-    e.preventDefault();
-    drag.onDrop(e.clientX, e.clientY);
-  },
-  "data-drop-over": drag.over ? "true" : undefined,
-};
+const dragProps =
+  drag === undefined
+    ? {}
+    : {
+        draggable: drag.draggable || undefined,
+        onDragStart: (e: DragEvent<HTMLLIElement>) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", branchId); // `${remote}/${name}` or name
+          drag.onDragStart();
+        },
+        onDragEnd: drag.onDragEnd,
+        onDragEnter: () => {
+          if (drag.target) drag.onDragEnter();
+        },
+        onDragLeave: () => {
+          if (drag.target) drag.onDragLeave();
+        },
+        onDragOver: (e: DragEvent<HTMLLIElement>) => {
+          if (!drag.target) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        },
+        onDrop: (e: DragEvent<HTMLLIElement>) => {
+          if (!drag.target) return;
+          e.preventDefault();
+          drag.onDrop(e.clientX, e.clientY);
+        },
+        "data-drop-over": drag.over ? "true" : undefined,
+      };
 ```
 
 Spread `dragProps` on the `<li>`. CSS: `.item[data-drop-over] { outline: 2px solid var(--color-accent); outline-offset: -2px; }`. `dragEnter`/`dragLeave` bubble from children: track a depth counter in the panel (`enter` increments, `leave` decrements, `over = depth > 0`), so moving over the inner button does not flicker.
@@ -1046,6 +1188,7 @@ Spread `dragProps` on the `<li>`. CSS: `.item[data-drop-over] { outline: 2px sol
 - [ ] **Step 4: Implement the panels**
 
 `BranchesPanel.tsx`:
+
 - `Dialog` gains `| { kind: "rebase"; base: string; label: string }`; the menu item after `rebase`:
 
 ```ts
@@ -1109,10 +1252,10 @@ git commit -m "feat(ui): GR-10c rebase entry points and drag-to-merge on the cur
 
 ## Execution: batched agent cycles
 
-| Cycle | Tasks | architect + tdd-tester | developer | coverage + reviewer |
-| --- | --- | --- | --- | --- |
-| 1 | T1 (Rust + IPC) | 1 + 1 | 1 | 1 + 1 |
-| 2 | T2 + T3 (front end) | 1 + 1 | 1 | 1 + 1 |
+| Cycle | Tasks               | architect + tdd-tester | developer | coverage + reviewer |
+| ----- | ------------------- | ---------------------- | --------- | ------------------- |
+| 1     | T1 (Rust + IPC)     | 1 + 1                  | 1         | 1 + 1               |
+| 2     | T2 + T3 (front end) | 1 + 1                  | 1         | 1 + 1               |
 
 Cycle 2's architect and tester may start once cycle 1's developer has committed (they need the IPC names, which Task 1's Interfaces block already fixes). Models: architect and developer `opus`; tester, coverage and reviewer `sonnet`. Final architect sign-off on the whole branch after cycle 2's review is clean.
 
