@@ -2258,9 +2258,16 @@ describe("BranchesPanel focus fallback", () => {
     const { user } = await renderPanel();
     rightClick(localRow("feature"));
     await user.click(menuItem("Rename…"));
-    await user.click(
-      within(await dialogNamed("Rename feature")).getByRole("button", { name: "Cancel" }),
-    );
+    const rename = await dialogNamed("Rename feature");
+    expect(within(rename).getByRole("textbox")).toHaveFocus();
+    await user.click(within(rename).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
+
+  it("should mark the Branches region as a programmatic focus target", async () => {
+    await renderPanel();
+    const target = screen.getByRole("region", { name: "Branches" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
   });
 });

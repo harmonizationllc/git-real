@@ -619,6 +619,13 @@ describe("ChangesPanel context menu", () => {
     await user.keyboard("{Escape}");
     expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus();
   });
+
+  it("should mark the Changes region as a programmatic focus target", async () => {
+    await renderPanel(unstaged("a.txt"));
+    const target = screen.getByRole("region", { name: "Changes" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract: discard goes through a confirm dialog with copy that depends on the targets.

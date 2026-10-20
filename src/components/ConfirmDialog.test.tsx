@@ -106,6 +106,14 @@ describe("ConfirmDialog initial focus", () => {
   });
 });
 
+// Contract: the dialog box is not a global focus target; only code-focused regions are.
+describe("ConfirmDialog focus target", () => {
+  it("should not mark the dialog box as a focus target", () => {
+    renderDialog();
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("data-focus-target");
+  });
+});
+
 // Contract: Escape and backdrop click cancel; clicks inside the dialog do not.
 describe("ConfirmDialog cancellation", () => {
   it("should call onCancel when Escape is pressed", async () => {

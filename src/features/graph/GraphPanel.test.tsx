@@ -2287,9 +2287,9 @@ describe("GraphPanel focus fallback", () => {
     const { user } = await renderPanel();
     rightClick(optionAt(0));
     await user.click(menuItem("Create branch here…"));
-    await user.click(
-      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
-    );
+    const prompt = await screen.findByRole("dialog");
+    expect(within(prompt).getByRole("textbox")).toHaveFocus();
+    await user.click(within(prompt).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("region", { name: "Commit graph" })).toHaveFocus();
   });
 
@@ -2299,5 +2299,12 @@ describe("GraphPanel focus fallback", () => {
     await user.click(menuItem("Create branch here…"));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("should mark the Commit graph region as a programmatic focus target", async () => {
+    await renderPanel();
+    const target = screen.getByRole("region", { name: "Commit graph" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
   });
 });

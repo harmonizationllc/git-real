@@ -215,6 +215,13 @@ describe("CommitFiles context menu", () => {
     await user.keyboard("{Escape}");
     expect(screen.getByRole("heading", { name: "Files (3)" })).toHaveFocus();
   });
+
+  it("should mark the Files heading as a programmatic focus target", async () => {
+    await renderFiles();
+    const target = screen.getByRole("heading", { name: "Files (3)" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract: loading shows a status; a failure shows an alert with Retry.

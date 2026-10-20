@@ -307,6 +307,13 @@ describe("StashesPanel context menu", () => {
     await user.keyboard("{Escape}");
     expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus();
   });
+
+  it("should mark the Stashes heading as a programmatic focus target", async () => {
+    await renderPanel();
+    const target = screen.getByRole("heading", { name: /^Stashes/ });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract: Drop… confirms before dropping.
