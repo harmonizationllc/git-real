@@ -324,6 +324,12 @@ describe("StashesPanel drop", () => {
     expect(dialog).toHaveTextContent("This can't be undone.");
   });
 
+  it("keeps focus inside the Drop dialog when the menu item that opened it is activated", async () => {
+    await askDrop();
+    const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
   it("Cancel returns focus to the Stashes heading when the menu item that opened it is gone", async () => {
     const { user } = await askDrop();
     await user.click(await screen.findByRole("button", { name: "Cancel" }));

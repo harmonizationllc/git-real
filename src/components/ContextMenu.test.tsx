@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StrictMode, useState } from "react";
+import { StrictMode, useLayoutEffect, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
@@ -454,6 +454,42 @@ describe("ContextMenu focus fallback", () => {
     opener.remove();
     view.rerender(ui(false));
     expect(fallback).toHaveFocus();
+  });
+
+  // A menu item that opens a dialog swaps the menu for the dialog in one commit; the menu's
+  // restore must not leave focus outside the dialog.
+  it("should leave focus in a dialog that an activated item opens", async () => {
+    const user = userEvent.setup();
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+    nodes.push(fallback);
+    const ref = { current: fallback };
+    function Host() {
+      const [dialog, setDialog] = useState(false);
+      return (
+        <>
+          <ContextMenu
+            open={!dialog}
+            x={0}
+            y={0}
+            items={makeItems([{ onSelect: () => setDialog(true) }])}
+            onClose={vi.fn()}
+            fallbackFocus={ref}
+          />
+          {dialog && <DialogProbe />}
+        </>
+      );
+    }
+    function DialogProbe() {
+      const input = useRef<HTMLInputElement>(null);
+      useLayoutEffect(() => input.current?.focus(), []);
+      return <input aria-label="dialog input" ref={input} />;
+    }
+    (document.activeElement as HTMLElement).blur();
+    render(<Host />);
+    await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
+    expect(screen.getByLabelText("dialog input")).toHaveFocus();
   });
 });
 

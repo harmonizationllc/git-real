@@ -2292,4 +2292,12 @@ describe("GraphPanel focus fallback", () => {
     );
     expect(screen.getByRole("region", { name: "Commit graph" })).toHaveFocus();
   });
+
+  it("should keep focus in the dialog when the menu item that opened it is activated", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(0));
+    await user.click(menuItem("Create branch here…"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
 });

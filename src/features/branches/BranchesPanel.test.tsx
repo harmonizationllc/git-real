@@ -546,6 +546,14 @@ describe("BranchesPanel rename", () => {
     expect(within(dialog).getByLabelText("New name")).toHaveValue("feature");
   });
 
+  it("should keep focus in the Rename dialog when the menu item that opened it is activated", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rename…"));
+    const dialog = await dialogNamed("Rename feature");
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
   it("should rename to the typed name when confirmed", async () => {
     const { user } = await renderPanel();
     rightClick(localRow("feature"));
