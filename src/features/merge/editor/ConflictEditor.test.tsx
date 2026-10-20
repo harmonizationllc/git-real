@@ -421,6 +421,16 @@ describe("ConflictEditor hand edits", () => {
     expect(btn("Mark resolved")).toBeEnabled();
   });
 
+  it("disables Keep all and Take all when only edited blocks remain", async () => {
+    setup({ text: ONE });
+    const view = await editor();
+    type(view, "z", ONE.indexOf("only-a"));
+    expect(screen.getByText("1 conflict remaining")).toBeInTheDocument();
+    expect(btn("Mark resolved")).toBeDisabled();
+    expect(btn("Keep all main")).toBeDisabled();
+    expect(btn("Take all feature")).toBeDisabled();
+  });
+
   it("marks a hand-edited block as Edited", async () => {
     setup();
     const view = await editor();
@@ -444,6 +454,20 @@ describe("ConflictEditor Mark resolved", () => {
       [REPO, PATH, "clean\n", false],
       [REPO, PATH, "clean\n", true],
     ]);
+  });
+
+  it("Mark resolved reselects as staged without waiting for the refetch", async () => {
+    setup();
+    await editor();
+    click(btn("Keep all main"));
+    // Every refetch triggered by the invalidation stays pending.
+    vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(getOperationState).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    click(btn("Mark resolved"));
+    await waitFor(() =>
+      expect(useWorkspace.getState().selected[REPO]).toEqual({ path: PATH, scope: "staged" }),
+    );
   });
 
   it("Mark resolved after Keep all stages the resolved text", async () => {
@@ -536,6 +560,28 @@ describe("ConflictEditor reload", () => {
     await tick(SAVE_DELAY_MS * 2);
     const sent = vi.mocked(writeResolution).mock.calls.map((c) => c[2]);
     expect(sent.some((text) => text.includes("unsent"))).toBe(false);
+  });
+
+  it("a disk reload does not schedule an autosave", async () => {
+    const { queryClient } = setup();
+    const view = await editor();
+    writeToDisk(ONE);
+    await refetch(queryClient);
+    await waitFor(() => expect(doc(view)).toBe(ONE));
+    await tick(SAVE_DELAY_MS * 2);
+    expect(writeResolution).not.toHaveBeenCalled();
+  });
+
+  it("keeps the editor when a background refetch fails", async () => {
+    const { queryClient } = setup();
+    const view = await editor();
+    vi.mocked(getFileContent).mockRejectedValueOnce({ kind: "io", message: "flaky" });
+    await refetch(queryClient);
+    await tick(0);
+    expect(getFileContent).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("textbox", { name: "Conflict editor" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Can’t edit/ })).toBeNull();
+    expect(doc(view)).toBe(TWO);
   });
 
   it("ignores a watcher echo of an earlier write", async () => {

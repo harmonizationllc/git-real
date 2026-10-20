@@ -231,6 +231,39 @@ describe("useResolutionWriter markResolved", () => {
   });
 });
 
+// Contract (architect R1): changing the line-ending mode must not flush or lose a queued save.
+describe("useResolutionWriter crlf change", () => {
+  it("a crlf change does not flush a queued save", async () => {
+    let crlf = false;
+    const { result, rerender } = renderHookWithProviders(() =>
+      useResolutionWriter(REPO, PATH, crlf),
+    );
+    act(() => result.current.scheduleSave("a\n"));
+    crlf = true;
+    rerender();
+    await advance(0);
+    expect(writeResolution).not.toHaveBeenCalled();
+    await advance(SAVE_DELAY_MS);
+    expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, "a\r\n", false);
+  });
+});
+
+// Contract (architect R4): markResolved settles with the staging write; invalidation is fire and forget.
+describe("useResolutionWriter markResolved invalidation", () => {
+  it("markResolved does not wait for the invalidation", async () => {
+    const { result, queryClient } = setup();
+    const invalidate = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockReturnValue(new Promise(() => undefined));
+    let outcome: AppError | null | undefined;
+    await act(async () => {
+      outcome = await result.current.markResolved("final");
+    });
+    expect(outcome).toBeNull();
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: queryKeys.repo(REPO) });
+  });
+});
+
 // Contract: a failed autosave is reported through error until dismissed.
 describe("useResolutionWriter errors", () => {
   it("a failed autosave sets error; clearError clears it", async () => {
