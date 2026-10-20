@@ -387,11 +387,12 @@ fn stash_push_git_failure_is_operation_failed_with_stderr() {
     }
     let (_d, path, session) = repo();
     common::write_file(&path, "README.md", "x\n");
-    std::fs::write(path.join(".git/index.lock"), "").unwrap();
+    // A malformed numeric setting makes `git stash push` die with a message on stderr.
+    common::run_git_ok(&path, &["config", "core.bigFileThreshold", "bad"]);
     match session.stash_push(None, false) {
         Err(GitError::OperationFailed { verb, stderr, .. }) => {
             assert_eq!(verb, "stash");
-            assert!(stderr.contains("index.lock"), "{stderr}");
+            assert!(stderr.contains("bad numeric config value"), "{stderr}");
         }
         other => panic!("{other:?}"),
     }
