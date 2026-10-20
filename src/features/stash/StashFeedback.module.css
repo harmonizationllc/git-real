@@ -1,0 +1,15 @@
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-warning);
+  border-radius: 4px;
+  color: var(--color-text);
+}
+
+.text {
+  flex: 1;
+  margin: 0;
+}

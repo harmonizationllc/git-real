@@ -8,6 +8,8 @@ import { headName, sideLabels } from "../merge/operationCopy";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
+import { StashDialog } from "../stash/StashDialog";
+import { pushGate } from "../stash/stashGate";
 import styles from "./ChangesPanel.module.css";
 import { FileRow, type Section } from "./FileRow";
 import { useFileSelection } from "./useFileSelection";
@@ -114,6 +116,8 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   );
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [stashOpen, setStashOpen] = useState(false);
+  const stashGate = pushGate(status, state);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const clearErrors = () => {
@@ -254,6 +258,17 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
       <>
+        <div className={styles.toolbar}>
+          <button
+            type="button"
+            className={styles.headerAction}
+            disabled={stashGate.disabled || pending}
+            title={stashGate.title}
+            onClick={() => setStashOpen(true)}
+          >
+            Stash…
+          </button>
+        </div>
         {panelError !== null && (
           <RepoError error={panelError} path={null} onDismiss={clearErrors} />
         )}
@@ -313,6 +328,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
         }}
         onCancel={() => setConfirm(null)}
       />
+      <StashDialog repoId={repoId} open={stashOpen} onClose={() => setStashOpen(false)} />
     </section>
   );
 }

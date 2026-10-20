@@ -9,6 +9,8 @@ import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
+import { StashSummary } from "../features/stash/StashSummary";
+import { StashesPanel } from "../features/stash/StashesPanel";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { HeadState } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
@@ -44,6 +46,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const resetWidth = useLayoutPrefs((s) => s.reset);
   const fileSelected = useWorkspace((s) => Boolean(s.selected[tab.id]));
   const selectedCommit = useWorkspace((s) => s.selectedCommit[tab.id] ?? null);
+  const selectedStash = useWorkspace((s) => s.selectedStash[tab.id] ?? null);
   const historyPath = useWorkspace((s) => s.historyPath[tab.id] ?? null);
   const showHistory = useWorkspace((s) => s.showHistory);
   const [picker, setPicker] = useState(false);
@@ -93,7 +96,10 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         {/* Keyed so filter, menu, dialog and mutation state never leak across tabs. */}
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
-            <BranchesPanel repoId={tab.id} />
+            <>
+              <BranchesPanel repoId={tab.id} />
+              <StashesPanel repoId={tab.id} />
+            </>
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.
             <FileHistoryPanel key={historyPath} repoId={tab.id} path={historyPath} />
@@ -129,13 +135,16 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         />
         {/* Keyed so selection, menu, dialog, draft and mutation state never leak across tabs. */}
         <div key={tab.id} className={styles.sidebar}>
-          {selectedCommit === null ? (
+          {selectedCommit !== null ? (
+            <CommitSummary repoId={tab.id} oid={selectedCommit} />
+          ) : selectedStash !== null ? (
+            // Keyed so a newly selected stash never shows the previous one's notice or dialog.
+            <StashSummary key={selectedStash} repoId={tab.id} oid={selectedStash} />
+          ) : (
             <>
               <ChangesPanel repoId={tab.id} />
               <CommitBox repoId={tab.id} />
             </>
-          ) : (
-            <CommitSummary repoId={tab.id} oid={selectedCommit} />
           )}
         </div>
       </div>
