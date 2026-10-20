@@ -2,11 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { stashApply, stashDrop, stashPop, stashPush, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, StashEntry, StashOutcome } from "../../lib/ipc";
-import { queryKeys } from "../../lib/query/keys";
+import { mutationKeys, queryKeys } from "../../lib/query/keys";
 
-/** An apply or pop that left conflicts in the working tree. */
+/** An apply or pop that left conflicts, or a pop that applied but kept the stash (`popKept`). */
 export interface StashNotice {
-  kind: "apply" | "pop";
+  kind: "apply" | "pop" | "popKept";
   index: number;
 }
 
@@ -29,13 +29,21 @@ type StashRequest =
   | { action: "push"; message: string | null; includeUntracked: boolean }
   | { action: "apply" | "pop" | "drop"; index: number; oid: string };
 
-/** The notice an apply or pop outcome calls for: one only when it left conflicts. */
+/** The notice an apply or pop outcome calls for: none when it applied and (for pop) dropped. */
 const noticeOf =
-  (kind: StashNotice["kind"], index: number) =>
-  (outcome: StashOutcome): StashNotice | null =>
-    outcome === "conflicts" ? { kind, index } : null;
+  (kind: "apply" | "pop", index: number) =>
+  (outcome: StashOutcome): StashNotice | null => {
+    switch (outcome) {
+      case "conflicts":
+        return { kind, index };
+      case "appliedNotDropped":
+        return { kind: "popKept", index };
+      case "applied":
+        return null;
+    }
+  };
 
-/** The conflict notice of an apply or pop; null otherwise. */
+/** The notice of an apply or pop; null otherwise. */
 function execute(repoId: RepoId, req: StashRequest): Promise<StashNotice | null> {
   switch (req.action) {
     case "push":
@@ -55,6 +63,7 @@ export function useStashActions(repoId: RepoId): UseStashActions {
   // Counted here rather than read from `isPending`, whose observer update lands a tick later.
   const [busy, setBusy] = useState(0);
   const mutation = useMutation<StashNotice | null, AppError, StashRequest>({
+    mutationKey: mutationKeys.stash(repoId),
     mutationFn: (req) =>
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);

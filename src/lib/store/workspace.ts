@@ -4,6 +4,8 @@ import type { DiffScope, RepoId } from "../ipc";
 export interface SelectedFile {
   path: string;
   scope: DiffScope;
+  /** Set when opened from a stash; such a file has no blame. */
+  source?: "stash";
 }
 
 /** What the centre pane shows for the selected file. */

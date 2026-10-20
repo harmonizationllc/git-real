@@ -7,42 +7,34 @@
 //! drop, so a terminal changing the list between the check and the git run
 //! is not caught; that window is milliseconds. A conflicting apply leaves no
 //! operation in progress (no MERGE_HEAD), so results are classified by the
-//! index alone.
+//! index alone. Pop is apply then drop, so a drop that fails after a clean
+//! apply is reported as `AppliedNotDropped` rather than as a failure.
 
 use std::process::Output;
 
 use git2::Oid;
 
 use crate::error::GitError;
-use crate::merge::{git_ops, operation_failed};
+use crate::git_ops::{self, operation_failed};
 use crate::model::{StashEntry, StashFiles, StashOutcome};
 use crate::repo::RepoSession;
 
 const STASH_REF: &str = "refs/stash";
+/// What `git stash push` prints when there was nothing to stash (`LC_ALL=C`).
+const NO_LOCAL_CHANGES: &str = "No local changes to save";
 
 impl RepoSession {
-    /// The stashes, newest first; entry n is `stash@{n}`.
+    /// The stashes, newest first; entry n is `stash@{n}`. Entries git2
+    /// cannot read, or without a parent, are skipped; `index` stays the
+    /// reflog position.
     pub fn list_stashes(&self) -> Result<Vec<StashEntry>, GitError> {
-        let repo = self.repo();
         // A missing `refs/stash` reflog reads as empty.
-        let reflog = repo.reflog(STASH_REF)?;
-        reflog
+        let reflog = self.repo().reflog(STASH_REF)?;
+        Ok(reflog
             .iter()
-            .enumerate()
-            .map(|(i, entry)| {
-                let commit = repo.find_commit(entry.id_new())?;
-                let message = entry.message().unwrap_or("").to_owned();
-                Ok(StashEntry {
-                    index: u32::try_from(i).unwrap_or(u32::MAX),
-                    oid: commit.id().to_string(),
-                    branch: branch_of(&message),
-                    message,
-                    time: entry.committer().when().seconds(),
-                    base: commit.parent_id(0)?.to_string(),
-                    has_untracked: commit.parent_count() >= 3,
-                })
-            })
-            .collect()
+            .zip(0u32..)
+            .filter_map(|(entry, index)| self.stash_entry(&entry, index))
+            .collect())
     }
 
     /// The files of the listed stash `oid`; anything else is `RevisionNotFound`.
@@ -94,8 +86,11 @@ impl RepoSession {
         if !output.status.success() {
             return Err(operation_failed("stash", &output));
         }
-        // git exits 0 with "No local changes to save"; the ref is the reliable signal.
-        if self.stash_tip() == before {
+        // git exits 0 both when nothing was stashed and when the new stash
+        // equals the tip; its message tells them apart.
+        if self.stash_tip() == before
+            && String::from_utf8_lossy(&output.stdout).contains(NO_LOCAL_CHANGES)
+        {
             return Err(GitError::NothingToStash);
         }
         Ok(())
@@ -103,12 +98,24 @@ impl RepoSession {
 
     /// `git stash apply stash@{index}` after checking it is still `oid`.
     pub fn stash_apply(&self, index: u32, oid: &str) -> Result<StashOutcome, GitError> {
-        self.apply_like("apply", index, oid)
+        self.ensure_stash(index, oid)?;
+        self.ensure_clean()?;
+        self.ensure_no_conflicts()?;
+        let output = self.run_stash(&["apply", &stash_ref(index)])?;
+        self.stash_outcome(&output)
     }
 
-    /// As apply, then git drops the stash; on conflicts git keeps it.
+    /// As apply; after a clean apply the stash is dropped. A failed drop (or a
+    /// list that changed meanwhile) leaves the stash and is
+    /// `AppliedNotDropped`. On conflicts it is kept.
     pub fn stash_pop(&self, index: u32, oid: &str) -> Result<StashOutcome, GitError> {
-        self.apply_like("pop", index, oid)
+        match self.stash_apply(index, oid)? {
+            StashOutcome::Applied => Ok(match self.stash_drop(index, oid) {
+                Ok(()) => StashOutcome::Applied,
+                Err(_) => StashOutcome::AppliedNotDropped,
+            }),
+            other => Ok(other),
+        }
     }
 
     /// `git stash drop stash@{index}` after checking it is still `oid`.
@@ -122,12 +129,20 @@ impl RepoSession {
         }
     }
 
-    fn apply_like(&self, verb: &str, index: u32, oid: &str) -> Result<StashOutcome, GitError> {
-        self.ensure_stash(index, oid)?;
-        self.ensure_clean()?;
-        self.ensure_no_conflicts()?;
-        let output = self.run_stash(&[verb, &stash_ref(index)])?;
-        self.stash_outcome(&output)
+    /// `None` for an entry whose commit is unreadable or parentless (e.g. hand-stored).
+    fn stash_entry(&self, entry: &git2::ReflogEntry<'_>, index: u32) -> Option<StashEntry> {
+        let commit = self.repo().find_commit(entry.id_new()).ok()?;
+        let base = commit.parent_id(0).ok()?;
+        let message = entry.message().unwrap_or("").to_owned();
+        Some(StashEntry {
+            index,
+            oid: commit.id().to_string(),
+            branch: branch_of(&message),
+            message,
+            time: entry.committer().when().seconds(),
+            base: base.to_string(),
+            has_untracked: commit.parent_count() >= 3,
+        })
     }
 
     /// `StaleStash` unless reflog entry `index` of `refs/stash` is `oid`
@@ -167,11 +182,12 @@ fn stash_ref(index: u32) -> String {
     format!("stash@{{{index}}}")
 }
 
-/// "On <b>: …" / "WIP on <b>: …" → `<b>`; "(no branch)" and anything else → `None`.
+/// git's "WIP on <b>: " / "On <b>: " → `<b>`. Ref names hold no space or ':', so
+/// "(no branch)" and hand-stored text ("On the fence: …") are `None`. Mirrors `stashSubject`.
 fn branch_of(message: &str) -> Option<String> {
     let rest = message
         .strip_prefix("WIP on ")
         .or_else(|| message.strip_prefix("On "))?;
-    let (branch, _) = rest.split_once(':')?;
-    (branch != "(no branch)" && !branch.is_empty()).then(|| branch.to_owned())
+    let (branch, _) = rest.split_once(": ")?;
+    (!branch.is_empty() && !branch.contains([' ', ':'])).then(|| branch.to_owned())
 }

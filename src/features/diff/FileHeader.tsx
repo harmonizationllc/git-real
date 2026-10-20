@@ -9,6 +9,8 @@ export interface FileHeaderProps {
   onViewChange(view: CentreView): void;
   onHistory(): void;
   onClose(): void;
+  /** Disables the Blame option; shown as its title. */
+  blameDisabledReason?: string;
 }
 
 const VIEW_LABELS: Record<CentreView, string> = { diff: "Diff", blame: "Blame" };
@@ -21,24 +23,29 @@ export function FileHeader({
   onViewChange,
   onHistory,
   onClose,
+  blameDisabledReason,
 }: FileHeaderProps) {
   const groupName = useId();
   return (
     <div className={styles.root}>
       <span className={styles.path}>{oldPath ? `${oldPath} → ${path}` : path}</span>
       <div role="radiogroup" aria-label="View" className={styles.views}>
-        {(["diff", "blame"] as const).map((v) => (
-          <label key={v} className={styles.option}>
-            <input
-              type="radio"
-              name={groupName}
-              value={v}
-              checked={view === v}
-              onChange={() => onViewChange(v)}
-            />
-            {VIEW_LABELS[v]}
-          </label>
-        ))}
+        {(["diff", "blame"] as const).map((v) => {
+          const reason = v === "blame" ? blameDisabledReason : undefined;
+          return (
+            <label key={v} className={styles.option} title={reason}>
+              <input
+                type="radio"
+                name={groupName}
+                value={v}
+                checked={view === v}
+                disabled={reason !== undefined}
+                onChange={() => onViewChange(v)}
+              />
+              {VIEW_LABELS[v]}
+            </label>
+          );
+        })}
       </div>
       <button type="button" aria-label="Show file history" onClick={onHistory}>
         History

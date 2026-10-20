@@ -39,6 +39,8 @@ npm run tauri dev  # run the desktop app in development
 | `npm run build`          | Type-check and build the front-end bundle |
 | `cargo test --workspace` | Run the Rust tests (from `src-tauri`)     |
 
+Rust tests need `git` on PATH; set `GIT_REAL_SKIP_GIT_TESTS=1` to skip the git CLI tests.
+
 ## Architecture
 
 Design decisions are recorded as ADRs in [docs/adr](docs/adr). The project uses a

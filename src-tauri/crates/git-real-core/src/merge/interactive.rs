@@ -12,9 +12,9 @@ use std::path::PathBuf;
 
 use git2::{Oid, Sort};
 
-use super::git_ops;
 use crate::commit::message;
 use crate::error::GitError;
+use crate::git_ops;
 use crate::model::{OperationOutcome, RebaseAction, RebaseCommit, RebaseStep};
 use crate::repo::RepoSession;
 use crate::revision;

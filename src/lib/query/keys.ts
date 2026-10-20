@@ -44,3 +44,9 @@ export const queryKeys = {
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
   rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
 };
+
+/** Mutation keys; separate from query keys, so repo invalidation never touches them. */
+export const mutationKeys = {
+  /** Every stash action of a repo: one key, so any trigger can see a push or drop running elsewhere. */
+  stash: (id: RepoId) => ["stash", id] as const,
+};

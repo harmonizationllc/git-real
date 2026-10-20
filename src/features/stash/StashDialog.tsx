@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent, MouseEvent } from "react";
+import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 import type { AppError, RepoId } from "../../lib/ipc";
 import styles from "./StashDialog.module.css";
 import { displayError } from "./stashCopy";
@@ -9,14 +9,22 @@ export interface StashDialogProps {
   repoId: RepoId;
   open: boolean;
   onClose(): void;
+  /** Takes focus on close when the opener is gone or disabled. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
 export function StashDialog(props: StashDialogProps) {
   // Mounting the body per open starts every open with an empty form and no error.
-  return props.open ? <StashDialogBody repoId={props.repoId} onClose={props.onClose} /> : null;
+  return props.open ? (
+    <StashDialogBody
+      repoId={props.repoId}
+      onClose={props.onClose}
+      fallbackFocus={props.fallbackFocus}
+    />
+  ) : null;
 }
 
-function StashDialogBody({ repoId, onClose }: Omit<StashDialogProps, "open">) {
+function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogProps, "open">) {
   // Its own instance, so a push error stays in the dialog and never reaches the opener's panel.
   const actions = useStashActions(repoId);
   const { pending } = actions;
@@ -28,12 +36,18 @@ function StashDialogBody({ repoId, onClose }: Omit<StashDialogProps, "open">) {
   const [error, setError] = useState<AppError | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus the input on open and restore focus on close, as PromptDialog does.
+  // Focus the input on open and restore focus on close, as PromptDialog does; an opener that
+  // is gone or disabled cannot take focus, so the host's fallback does.
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement;
+    // The host's fallback is rendered before the dialog opens.
+    const fallback = fallbackFocus?.current;
     (inputRef.current as HTMLInputElement).focus();
-    return () => previous.focus();
-  }, []);
+    return () => {
+      if (previous.isConnected && !previous.matches(":disabled")) previous.focus();
+      else fallback?.focus();
+    };
+  }, [fallbackFocus]);
 
   const onSubmit = async (e: FormEvent) => {
     // No pending guard: the input and submit button are disabled, so the form cannot submit.

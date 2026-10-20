@@ -31,7 +31,9 @@ export function StashFileGroup({ repoId, title, listLabel, files, commit }: Stas
               type="button"
               className={styles.row}
               aria-current={isSelected(file) ? "true" : undefined}
-              onClick={() => select(repoId, { path: file.path, scope: { commit } })}
+              onClick={() =>
+                select(repoId, { path: file.path, scope: { commit }, source: "stash" })
+              }
             >
               <StatusBadge kind={file.change} />
               <span className={styles.path}>

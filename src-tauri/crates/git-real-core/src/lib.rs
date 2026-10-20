@@ -16,6 +16,7 @@ pub mod diff;
 pub mod encoding;
 pub mod error;
 pub mod git_cli;
+mod git_ops;
 pub mod history;
 pub mod ignore;
 pub mod index_ops;

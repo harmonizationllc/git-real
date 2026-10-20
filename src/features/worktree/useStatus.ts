@@ -10,7 +10,12 @@ export interface UseStatus {
   refetch(): void;
 }
 
-export function useStatus(repoId: RepoId): UseStatus {
+export interface UseStatusOptions {
+  /** False for a reader that mounts once its host has loaded the status, so it adds no fetch. */
+  refetchOnMount?: boolean;
+}
+
+export function useStatus(repoId: RepoId, options: UseStatusOptions = {}): UseStatus {
   const query = useQuery<WorkingTreeStatus, AppError>({
     queryKey: queryKeys.status(repoId),
     queryFn: () =>
@@ -18,6 +23,7 @@ export function useStatus(repoId: RepoId): UseStatus {
         throw toAppError(e);
       }),
     refetchOnWindowFocus: true,
+    refetchOnMount: options.refetchOnMount ?? true,
   });
 
   return {

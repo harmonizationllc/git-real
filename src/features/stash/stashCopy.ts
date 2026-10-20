@@ -8,9 +8,18 @@ export const NOTHING_TO_STASH_MESSAGE = "No local changes to stash.";
 
 const CONFLICTS = "Applied with conflicts. Resolve them in Changes.";
 const KEPT = " The stash was kept; drop it once resolved.";
+const POP_KEPT = "Applied, but the stash could not be dropped. Drop it once you no longer need it.";
 
-export const noticeText = (notice: StashNotice): string =>
-  notice.kind === "pop" ? CONFLICTS + KEPT : CONFLICTS;
+export function noticeText(notice: StashNotice): string {
+  switch (notice.kind) {
+    case "popKept":
+      return POP_KEPT;
+    case "pop":
+      return CONFLICTS + KEPT;
+    case "apply":
+      return CONFLICTS;
+  }
+}
 
 /** The error as shown to the user: stash-specific kinds get the app's own wording. */
 export function displayError(error: AppError): AppError {
@@ -19,8 +28,12 @@ export function displayError(error: AppError): AppError {
   return error;
 }
 
-/** The message without git's branch prefix; the row and summary show the branch separately. */
+/**
+ * The message without git's "WIP on <b>: " / "On <b>: " prefix; the row and summary show the
+ * branch separately. A branch is "(no branch)" or holds no space or ':' (git forbids both in
+ * ref names), so hand-stored text like "On the fence: …" is kept. Mirrors core `branch_of`.
+ */
 export function stashSubject(message: string): string {
-  const prefix = /^(?:WIP on|On) [^:]*: /.exec(message);
+  const prefix = /^(?:WIP on|On) (?:\(no branch\)|[^ :]+): /.exec(message);
   return prefix ? message.slice(prefix[0].length) : message;
 }

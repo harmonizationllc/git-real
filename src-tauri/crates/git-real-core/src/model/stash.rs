@@ -13,7 +13,8 @@ pub struct StashEntry {
     pub oid: String,
     /// The reflog message, e.g. "On main: wip" or "WIP on main: abc1234 subject".
     pub message: String,
-    /// Parsed from the message; `None` for "(no branch)" or an unparseable message.
+    /// The branch of git's "On <b>: " / "WIP on <b>: " prefix; `None` for
+    /// "(no branch)" or a message without that prefix (a branch holds no space or ':').
     pub branch: Option<String>,
     /// Reflog committer time in Unix seconds.
     pub time: i64,
@@ -39,4 +40,6 @@ pub struct StashFiles {
 pub enum StashOutcome {
     Applied,
     Conflicts,
+    /// A pop applied cleanly but its stash could not be dropped; the stash is still listed.
+    AppliedNotDropped,
 }

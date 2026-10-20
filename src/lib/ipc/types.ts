@@ -358,8 +358,11 @@ export interface StashFiles {
   untrackedOid: string | null;
 }
 
-/** How an apply or pop ended; conflicts are an outcome, not an error. */
-export type StashOutcome = "applied" | "conflicts";
+/**
+ * How an apply or pop ended; conflicts are an outcome, not an error.
+ * `appliedNotDropped`: only from pop, which applied cleanly but could not drop the stash.
+ */
+export type StashOutcome = "applied" | "conflicts" | "appliedNotDropped";
 
 export type ConflictSide = "ours" | "theirs";
 

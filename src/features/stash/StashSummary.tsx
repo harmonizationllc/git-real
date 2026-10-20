@@ -96,10 +96,10 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
     void action();
   };
 
-  const confirmDrop = async () => {
-    actions.clearError();
-    await actions.drop(entry);
+  // Closes at once, as the Changes discard confirm does; the drop's pending state disables the actions.
+  const confirmDrop = () => {
     setConfirming(false);
+    run(() => actions.drop(entry));
   };
 
   let fileList: React.ReactNode;
@@ -192,8 +192,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         body="This can't be undone."
         confirmLabel="Drop"
         danger
-        pending={actions.pending}
-        onConfirm={() => void confirmDrop()}
+        onConfirm={confirmDrop}
         onCancel={() => setConfirming(false)}
       />
     </section>
