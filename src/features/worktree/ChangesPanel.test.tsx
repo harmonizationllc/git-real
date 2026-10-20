@@ -1526,4 +1526,67 @@ describe("ChangesPanel Resolve all", () => {
     await user.keyboard("{Escape}");
     expect(integrationRun).not.toHaveBeenCalled();
   });
+  it("opens from the keyboard with the first item focused and returns focus to the button on close", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    resolveAll().focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "Keep ours for all files" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(resolveAll()).toHaveFocus();
+  });
+
+  it("chooses Take … for all files with ArrowDown and Enter", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"));
+    resolveAll().focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "theirs",
+    });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("closes the menu after Take … for all files is chosen", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Take theirs for all files" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("anchors the menu under the Resolve all… button", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    vi.spyOn(resolveAll(), "getBoundingClientRect").mockReturnValue({
+      left: 30,
+      bottom: 70,
+      top: 50,
+      right: 130,
+      width: 100,
+      height: 20,
+      x: 30,
+      y: 50,
+      toJSON: () => ({}),
+    });
+    await openMenu(user);
+    expect(screen.getByRole("menu")).toHaveStyle({ left: "30px", top: "70px" });
+  });
+
+  it("a row's context menu replaces the open Resolve all… menu", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    rightClick(btn("conflicted a.txt"));
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(itemLabels()).not.toContain("Keep ours for all files");
+    expect(itemLabels()).toContain("Mark resolved (stage)");
+  });
+
+  it("Resolve all… after a row's context menu shows only the bulk items", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    rightClick(btn("conflicted a.txt"));
+    await user.keyboard("{Escape}");
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep ours for all files", "Take theirs for all files"]);
+  });
 });

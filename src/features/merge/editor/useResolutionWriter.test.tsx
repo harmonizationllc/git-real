@@ -23,10 +23,12 @@ const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 function deferred() {
   let resolve!: () => void;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -374,5 +376,105 @@ describe("useResolutionWriter unmount", () => {
     unmount();
     await advance(0);
     expect(writeResolution).not.toHaveBeenCalled();
+  });
+});
+
+// Coverage audit (cycle 2): ordering, memory boundary and cancellation edge cases.
+describe("useResolutionWriter edge cases", () => {
+  it("sends the next save after the first, in-flight write is rejected", async () => {
+    const first = deferred();
+    vi.mocked(writeResolution).mockReturnValueOnce(first.promise);
+    const { result } = setup();
+    act(() => result.current.scheduleSave("one"));
+    await advance(SAVE_DELAY_MS);
+    act(() => result.current.scheduleSave("two"));
+    await advance(SAVE_DELAY_MS);
+    expect(writeResolution).toHaveBeenCalledOnce();
+    first.reject(unresolved);
+    await advance(0);
+    expect(vi.mocked(writeResolution).mock.calls).toEqual([
+      [REPO, PATH, "one", false],
+      [REPO, PATH, "two", false],
+    ]);
+    expect(result.current.error).toEqual(unresolved);
+  });
+
+  it("a flush with nothing queued resolves only after an in-flight write has failed, without a new error", async () => {
+    const write = deferred();
+    vi.mocked(writeResolution).mockReturnValueOnce(write.promise);
+    const { result } = setup();
+    act(() => result.current.scheduleSave("text"));
+    await advance(SAVE_DELAY_MS);
+    let settled = false;
+    let flushing!: Promise<void>;
+    act(() => {
+      flushing = result.current.flush().then(() => {
+        settled = true;
+      });
+    });
+    await advance(0);
+    expect(settled).toBe(false);
+    write.reject(unresolved);
+    await act(() => flushing);
+    expect(settled).toBe(true);
+    expect(writeResolution).toHaveBeenCalledOnce();
+  });
+
+  it("wasWritten still remembers the oldest text when exactly WRITTEN_MEMORY texts were sent", async () => {
+    const { result } = setup();
+    for (let i = 0; i < WRITTEN_MEMORY; i++) {
+      act(() => result.current.scheduleSave(`text ${i}`));
+      await advance(SAVE_DELAY_MS);
+    }
+    expect(result.current.wasWritten("text 0")).toBe(true);
+    expect(result.current.wasWritten(`text ${WRITTEN_MEMORY - 1}`)).toBe(true);
+  });
+
+  it("discardPending during an in-flight write neither cancels it nor forgets its text", async () => {
+    const write = deferred();
+    vi.mocked(writeResolution).mockReturnValueOnce(write.promise);
+    const { result } = setup();
+    act(() => result.current.scheduleSave("sent"));
+    await advance(SAVE_DELAY_MS);
+    act(() => result.current.scheduleSave("queued"));
+    act(() => result.current.discardPending());
+    write.resolve();
+    await advance(SAVE_DELAY_MS * 2);
+    expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, "sent", false);
+    expect(result.current.wasWritten("sent")).toBe(true);
+    expect(result.current.wasWritten("queued")).toBe(false);
+  });
+
+  it("pending is true from the markResolved call until the staging write ends", async () => {
+    const stage = deferred();
+    vi.mocked(writeResolution).mockReturnValueOnce(stage.promise);
+    const { result } = setup();
+    let marking!: Promise<AppError | null>;
+    act(() => {
+      marking = result.current.markResolved("final");
+    });
+    expect(result.current.pending).toBe(true);
+    stage.resolve();
+    await act(() => marking);
+    expect(result.current.pending).toBe(false);
+  });
+
+  it("markResolved still stages when the flushed autosave failed, and reports the staging outcome", async () => {
+    vi.mocked(writeResolution).mockRejectedValueOnce(unresolved);
+    const { result } = setup();
+    act(() => result.current.scheduleSave("draft"));
+    let outcome: AppError | null | undefined;
+    await act(async () => {
+      outcome = await result.current.markResolved("final");
+    });
+    expect(writeResolution).toHaveBeenLastCalledWith(REPO, PATH, "final", true);
+    expect(outcome).toBeNull();
+  });
+
+  it("pending is false after markResolved fails", async () => {
+    vi.mocked(writeResolution).mockRejectedValue(unresolved);
+    const { result } = setup();
+    await act(() => result.current.markResolved("final"));
+    expect(result.current.pending).toBe(false);
   });
 });

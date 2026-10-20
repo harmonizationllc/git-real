@@ -1676,4 +1676,60 @@ describe("DetailPane conflict routing", () => {
     await act(() => queryClient.invalidateQueries());
     expect(await diffRegion()).toBeInTheDocument();
   });
+  it("shows the diff while the status is still loading, then the editor once it is conflicted", async () => {
+    let release!: (s: { entries: StatusEntry[]; headUnborn: boolean }) => void;
+    vi.mocked(getStatus).mockReturnValue(
+      new Promise((r) => {
+        release = r;
+      }),
+    );
+    setup("a.ts", "unstaged");
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+    await act(async () => release({ entries: [statusEntry({ path: "a.ts" })], headUnborn: false }));
+    expect(await screen.findByTestId("conflict-editor")).toHaveTextContent("a.ts");
+    expect(screen.queryByRole("region", { name: "Diff" })).toBeNull();
+  });
+
+  it("keeps the diff when the status query failed", async () => {
+    vi.mocked(getStatus).mockRejectedValue(gitError);
+    setup("a.ts", "unstaged");
+    expect(await diffRegion()).toBeInTheDocument();
+    await waitFor(() => expect(getStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("swaps the editor for the staged diff when the selection moves from unstaged to staged", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    select("a.ts", "staged");
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("swaps the staged diff for the editor when the selection moves back to unstaged", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    setup("a.ts", "staged");
+    await diffRegion();
+    select("a.ts", "unstaged");
+    expect(await screen.findByTestId("conflict-editor")).toHaveTextContent("a.ts");
+    expect(screen.queryByRole("region", { name: "Diff" })).toBeNull();
+  });
+
+  it("shows another conflicted file in the editor when the selection moves between conflicts", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }), statusEntry({ path: "b.ts" }));
+    setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    select("b.ts", "unstaged");
+    await waitFor(() => expect(screen.getByTestId("conflict-editor")).toHaveTextContent("b.ts"));
+  });
+
+  it("renders nothing once the selection is cleared", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    const { container } = setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    act(() => useWorkspace.getState().select(REPO, null));
+    expect(container).toBeEmptyDOMElement();
+  });
 });

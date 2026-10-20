@@ -1,4 +1,5 @@
 import { undo } from "@codemirror/commands";
+import { language } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -703,6 +704,73 @@ describe("ConflictEditor language", () => {
     expect(loadLanguage).not.toHaveBeenCalled();
   });
 
+  it("applies the loaded language to the editor", async () => {
+    setup({ path: TS_PATH });
+    const view = await editor();
+    await waitFor(() => expect(view.state.facet(language)).not.toBeNull());
+  });
+
+  it("ignores a language that finishes loading after the editor closed", async () => {
+    const actual = await vi.importActual<typeof import("../../diff/model/highlight")>(
+      "../../diff/model/highlight",
+    );
+    let release!: () => void;
+    vi.mocked(loadLanguage).mockImplementation(async (desc) => {
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return actual.loadLanguage(desc);
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { unmount } = setup({ path: TS_PATH });
+    await editor();
+    await waitFor(() => expect(loadLanguage).toHaveBeenCalledOnce());
+    unmount();
+    const dispatch = vi.spyOn(EditorView.prototype, "dispatch");
+    await act(async () => {
+      release();
+      await tick(50);
+    });
+    const calls = dispatch.mock.calls.length;
+    dispatch.mockRestore();
+    expect(calls).toBe(0);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("drops highlighting when a reload takes the file above HIGHLIGHT_LIMIT", async () => {
+    const { queryClient } = setup({ path: TS_PATH });
+    const view = await editor();
+    await waitFor(() => expect(view.state.facet(language)).not.toBeNull());
+    writeToDisk("x\n".repeat(HIGHLIGHT_LIMIT));
+    await refetch(queryClient);
+    await waitFor(() => expect(view.state.doc.lines).toBeGreaterThan(HIGHLIGHT_LIMIT));
+    await waitFor(() => expect(view.state.facet(language)).toBeNull());
+  });
+
+  it("does not apply a language that was still loading when a reload crossed HIGHLIGHT_LIMIT", async () => {
+    const actual = await vi.importActual<typeof import("../../diff/model/highlight")>(
+      "../../diff/model/highlight",
+    );
+    let release!: () => void;
+    vi.mocked(loadLanguage).mockImplementation(async (desc) => {
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return actual.loadLanguage(desc);
+    });
+    const { queryClient } = setup({ path: TS_PATH });
+    const view = await editor();
+    await waitFor(() => expect(loadLanguage).toHaveBeenCalledOnce());
+    writeToDisk("x\n".repeat(HIGHLIGHT_LIMIT));
+    await refetch(queryClient);
+    await waitFor(() => expect(view.state.doc.lines).toBeGreaterThan(HIGHLIGHT_LIMIT));
+    await act(async () => {
+      release();
+      await tick(50);
+    });
+    expect(view.state.facet(language)).toBeNull();
+  });
+
   it("logs the failure and keeps the editor usable when the language fails to load", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const failure = new Error("grammar missing");
@@ -722,6 +790,19 @@ describe("ConflictEditor Close", () => {
     useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
     click(btn("Close"));
     expect(useWorkspace.getState().selected[REPO]).toBeNull();
+  });
+
+  it("Close with an unsent autosave still saves it exactly once", async () => {
+    const { unmount } = setup();
+    const view = await editor();
+    useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
+    type(view, "x", 0);
+    click(btn("Close"));
+    expect(useWorkspace.getState().selected[REPO]).toBeNull();
+    await tick(SAVE_DELAY_MS);
+    unmount();
+    await tick(0);
+    expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, "x" + TWO, false);
   });
 
   it("Close clears the selection while loading", () => {
