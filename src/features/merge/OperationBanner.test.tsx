@@ -173,6 +173,22 @@ describe("OperationBanner titles", () => {
     ).toBeInTheDocument();
   });
 
+  it("should add the edit stop to a rebase title when it stopped for an edit", () => {
+    provide({ state: { ...rebaseState, stoppedForEdit: true } as OperationState, conflicts: 0 });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(
+      screen.getByText(
+        "Rebasing feature onto main, step 2 of 5, stopped to edit, no conflicts remaining",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("should not add the edit stop to a rebase title that did not stop for an edit", () => {
+    provide({ state: rebaseState, conflicts: 0 });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    expect(screen.queryByText(/stopped to edit/)).not.toBeInTheDocument();
+  });
+
   it("should title a cherry-pick with the short oid", () => {
     provide({ state: pickState, conflicts: 1 });
     renderWithProviders(<OperationBanner repoId={1} />);

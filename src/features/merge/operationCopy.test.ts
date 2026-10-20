@@ -97,6 +97,22 @@ describe("bannerTitle", () => {
     );
   });
 
+  it("should append stopped to edit before the conflict suffix when the rebase stopped for an edit", () => {
+    expect(bannerTitle(rebase({ stoppedForEdit: true }), "HEAD", 0)).toBe(
+      "Rebasing feature onto main, step 2 of 5, stopped to edit, no conflicts remaining",
+    );
+  });
+
+  it("should not mention an edit stop when the rebase did not stop for an edit", () => {
+    expect(bannerTitle(rebase({ stoppedForEdit: false }), "HEAD", 0)).not.toMatch(/stopped/);
+  });
+
+  it("should keep the conflict count after the edit stop suffix", () => {
+    expect(bannerTitle(rebase({ stoppedForEdit: true }), "HEAD", 2)).toBe(
+      "Rebasing feature onto main, step 2 of 5, stopped to edit, 2 conflicts remaining",
+    );
+  });
+
   it("should fall back to the short onto oid when the onto name is unknown", () => {
     expect(bannerTitle(rebase({ ontoName: null }), "HEAD", 0)).toBe(
       "Rebasing feature onto 1234567, step 2 of 5, no conflicts remaining",
