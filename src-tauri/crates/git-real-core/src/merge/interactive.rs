@@ -20,14 +20,19 @@ use crate::repo::RepoSession;
 use crate::revision;
 
 impl RepoSession {
-    /// The commits `git rebase -i base` would replay, oldest first. `base` is
-    /// a full hex oid or a branch name and must be a strict ancestor of HEAD;
-    /// a range holding a merge commit is `MergeCommit`.
+    /// The commits `git rebase -i base` would replay, oldest first: the range
+    /// `merge_base(HEAD, base)..HEAD`. `base` is a full hex oid or a branch
+    /// name. The plan is empty when `base` is HEAD or ahead of it; no common
+    /// history is `BadSelection`; a range holding a merge commit is
+    /// `MergeCommit`.
     pub fn rebase_plan(&self, base: &str) -> Result<Vec<RebaseCommit>, GitError> {
         Ok(self.plan_range(base)?.1)
     }
 
-    /// Runs `git rebase -i base` with `steps` as the todo, oldest first.
+    /// Runs `git rebase -i base` with `steps` as the todo, oldest first; git
+    /// is given the resolved tip of `base`, so a diverged base is replayed
+    /// onto. Steps are validated against the plan before git runs, so an
+    /// empty plan (nothing kept) is `BadSelection`.
     pub fn rebase_interactive(
         &self,
         base: &str,
@@ -48,20 +53,25 @@ impl RepoSession {
         self.outcome("rebase", &output?)
     }
 
-    /// The resolved base and the commits of `base..HEAD`, oldest first.
+    /// The resolved tip of `base` and the commits of
+    /// `merge_base(HEAD, base)..HEAD`, oldest first.
     fn plan_range(&self, base: &str) -> Result<(Oid, Vec<RebaseCommit>), GitError> {
         self.ensure_clean()?;
         self.ensure_born()?;
         let base_oid = self.resolve_base(base)?;
         let repo = self.repo();
         let head = repo.head()?.peel_to_commit()?.id();
-        if base_oid == head || !repo.graph_descendant_of(head, base_oid)? {
-            return Err(GitError::BadSelection);
-        }
+        let fork = match repo.merge_base(head, base_oid) {
+            Ok(oid) => oid,
+            Err(e) if e.code() == git2::ErrorCode::NotFound => {
+                return Err(GitError::BadSelection);
+            }
+            Err(e) => return Err(e.into()),
+        };
         let mut walk = repo.revwalk()?;
         walk.set_sorting(Sort::TOPOLOGICAL | Sort::REVERSE)?;
         walk.push(head)?;
-        walk.hide(base_oid)?;
+        walk.hide(fork)?;
         let mut plan = Vec::new();
         for oid in walk {
             let commit = repo.find_commit(oid?)?;
@@ -146,7 +156,7 @@ struct TodoFile {
 
 impl TodoFile {
     /// Creates the file exclusively (never following a planted symlink or
-    /// claiming an existing file) and writes `text`; the guard owns the path
+    /// claiming an existing file; owner-only on Unix) and writes `text`; the guard owns the path
     /// from the moment the file is ours, so a failed write still removes it.
     fn write(text: &str) -> Result<Self, GitError> {
         let nanos = std::time::SystemTime::now()
@@ -157,10 +167,14 @@ impl TodoFile {
             "git-real-rebase-{}-{nanos}.todo",
             std::process::id()
         ));
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path)?;
         let todo = Self { path };
         file.write_all(text.as_bytes())?;
         Ok(todo)
