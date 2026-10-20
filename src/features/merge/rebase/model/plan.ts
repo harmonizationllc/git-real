@@ -10,8 +10,8 @@ export interface PlanStep {
 
 export const ACTIONS: readonly { action: RebaseAction; label: string }[] = [
   { action: "pick", label: "Pick — keep the commit" },
-  { action: "squash", label: "Squash — fold into the commit above, keep both messages" },
-  { action: "fixup", label: "Fixup — fold into the commit above, discard its message" },
+  { action: "squash", label: "Squash — fold into the commit below, keep both messages" },
+  { action: "fixup", label: "Fixup — fold into the commit below, discard its message" },
   { action: "edit", label: "Edit — stop after applying it to amend" },
   { action: "drop", label: "Drop — leave the commit out" },
 ];
@@ -36,7 +36,7 @@ export function setAction(steps: PlanStep[], index: number, action: RebaseAction
   return steps.map((s, i) => (i === index ? { ...s, action } : s));
 }
 
-/** The oldest kept step cannot fold into the commit above it in git's order: there is none. */
+/** The oldest kept step cannot fold into the commit below it (the older one git folds into): there is none. */
 export function foldBlocked(steps: PlanStep[], index: number): boolean {
   if (!isFold(steps[index].action)) return false;
   return !steps.slice(index + 1).some((s) => s.action !== "drop");
