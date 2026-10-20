@@ -258,7 +258,11 @@ Tests are written first by the tester role; the developer never edits them.
   4. Pop onto a conflicting change → notice, conflicted file in Changes,
      resolve in the GR-10b editor, stash still listed.
   5. Drop… → confirm → row gone.
-  6. Create a stash in a terminal, then act on a now-shifted row →
-     stale message, list refreshed.
+  6. Note a row's index and oid, create a stash in a terminal (the watcher
+     refreshes the list), then call `stash_drop` with the old index and oid
+     through the inspector → `staleStash`, nothing dropped. (The UI refetch
+     makes the race hard to hit by hand.)
+  8. Stash with only an untracked file and the checkbox off → inline
+     "No local changes to stash."; dialog stays open.
   7. "Stash…" from the Changes panel with nothing to stash → disabled with
      reason.
