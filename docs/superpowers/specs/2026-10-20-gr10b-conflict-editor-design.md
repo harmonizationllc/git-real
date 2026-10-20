@@ -175,16 +175,19 @@ export interface TrackedBlock extends ConflictBlock {
 }
 export const pickBlock: StateEffectType<{ id: number; choice: Choice | "restore" }>;
 export const resetBlocks: StateEffectType<string>; // reload from new text
-export function conflictBlocks(initial: string): Extension;
+export function conflictBlocks(): Extension; // reads the document; blockLabels is a Facet
 export function blocksOf(state: EditorState): TrackedBlock[];
 export function remainingConflicts(state: EditorState): number; // parseConflicts(doc).length
 export function pickAll(view: EditorView, choice: Choice): void; // every "unresolved" block
 export function goToConflict(view: EditorView, dir: 1 | -1): boolean;
 ```
 
-- On every transaction `from`/`to` map through `changes` (`assoc` -1 and 1).
-  A change that touches the open interval of a block and does not carry
-  that block's `pickBlock` effect sets its state to `"custom"`.
+- On every transaction a block that is not picked maps `from` with `assoc`
+  1 and `to` with `assoc` -1, clamped to `to >= from`, so text typed at
+  either boundary stays outside the block; a picked block takes
+  `from = mapPos(from, -1)` and `to = from + inserted length`. A change that
+  touches the open interval of a block and does not carry that block's
+  `pickBlock` effect sets its state to `"custom"`.
 - `pickBlock` with a choice replaces `[from, to)` with
   `replacementFor(block, choice)`, sets the state, and keeps `original`
   (the marker text); `"restore"` writes `original` back and sets
@@ -279,8 +282,9 @@ dropping unsent autosave work.
 While loading or showing the placeholder the toolbar renders only the path
 and `Close`. In the editable state — left: the path. Centre: `{n} conflicts remaining` (`1 conflict remaining`,
 `All conflicts resolved` at zero), then `Previous` and `Next` (disabled at
-zero). Right: `Keep all {ours}`, `Take all {theirs}` (disabled at zero or
-while pending), `Mark resolved`, `Close`.
+zero). Right: `Keep all {ours}`, `Take all {theirs}` (disabled at zero, while
+pending, or when no tracked block is still `unresolved` — `canPickAll`),
+`Mark resolved`, `Close`.
 
 `Mark resolved`: disabled with title `Resolve all conflicts first` while
 remaining > 0, or `Saving…` while the writer is pending. On click: flush
