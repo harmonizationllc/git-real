@@ -85,15 +85,15 @@ impl RepoSession {
 ```
 
 `rebase_plan` checks, in this order: `ensure_clean` (`OperationInProgress`),
-`ensure_born` (`UnbornHead`), `base` resolves through `revision::resolve_commit`
-(`RevisionNotFound`), base is a strict ancestor of HEAD via
-`graph_descendant_of(head, base)` and `base != head` (`BadSelection`), then a
-revwalk of `base..HEAD` in topological + reverse order. Any commit in the
-range with more than one parent is `MergeCommit(hex)`. `base` is a full or
-short oid or a branch name; a name starting with `-` is `RevisionNotFound`
-(it must never reach git's argv as an option — same rule as
-`resolve_branch`). The oid git is given is the resolved full hex, never the
-user's text.
+`ensure_born` (`UnbornHead`), `base` resolves — exactly 40 hex characters go
+through `revision::resolve_commit` (`CommitNotFound`), anything else through
+`resolve_branch` (local, else `remote/name`; `BranchNotFound`, which already
+refuses a leading `-` so no user text reaches git's argv as an option) —
+base is a strict ancestor of HEAD via `graph_descendant_of(head, base)` and
+`base != head` (`BadSelection`), then a revwalk of `base..HEAD` in
+topological + reverse order. Any commit in the range with more than one
+parent is `MergeCommit(hex)`. The oid git is given is the resolved full hex,
+never the user's text.
 
 `rebase_interactive` re-runs `rebase_plan(base)` and validates `steps`
 against it: every step oid is in the plan and no oid appears twice
@@ -347,8 +347,8 @@ Other errors show their own message through `RepoError`.
 
 - Rust (`crates/git-real-core/tests/merge.rs`): plan order and fields on a
   three-commit branch; plan errors for each precondition (in progress,
-  unborn, unknown base, `-` prefixed base, base not an ancestor, base ==
-  HEAD, merge commit in range); interactive run with reorder + squash +
+  unborn, unknown oid base, unknown branch base, `-` prefixed base, base not
+  an ancestor, base == HEAD, merge commit in range); interactive run with reorder + squash +
   drop produces the expected log and messages; fixup keeps the first
   message; an `edit` step yields `Stopped`, state `stoppedForEdit: true`,
   step/total, and `continue_rebase` after staging a change amends it;
