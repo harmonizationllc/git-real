@@ -529,6 +529,15 @@ describe("DetailPane discard", () => {
       }),
     );
   });
+
+  it("should focus the file detail when the discard dialog is cancelled and its opener never had focus", async () => {
+    setup();
+    const region = await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    // The fallback is FileDetail's root, the Diff region's parent.
+    expect(region.parentElement).toHaveFocus();
+  });
 });
 
 // Contract: a discard confirmation never applies to a diff other than the one it was opened on.

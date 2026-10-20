@@ -410,6 +410,13 @@ describe("BranchesPanel context menu", () => {
     await renderPanel();
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("should focus the Branches region when the menu closes and nothing held focus", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
 });
 
 // Contract: create dialog from the header button and from the row menu.
@@ -2225,5 +2232,27 @@ describe("BranchesPanel drag-to-merge", () => {
     provideMerge({ state: undefined });
     await renderPanel();
     expect(draggableRows()).toHaveLength(0);
+  });
+});
+
+// Contract: when a dialog closes and its opener cannot take focus, the Branches region does.
+describe("BranchesPanel focus fallback", () => {
+  it("should focus the Branches region when New branch is cancelled and its opener never had focus", async () => {
+    const { user } = await renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "New branch…" }));
+    await user.click(
+      within(await dialogNamed("New branch")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
+
+  it("should focus the Branches region when a dialog opened from the menu is cancelled", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Rename…"));
+    await user.click(
+      within(await dialogNamed("Rename feature")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
   });
 });

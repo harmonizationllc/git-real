@@ -327,6 +327,43 @@ describe("RebaseDialog focus", () => {
     expect(opener).toHaveFocus();
     opener.remove();
   });
+
+  it("should focus the fallback on close when nothing held focus at open", () => {
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.appendChild(fallback);
+    (document.activeElement as HTMLElement).blur();
+    const { unmount } = renderDialog({ fallbackFocus: { current: fallback } });
+    unmount();
+    expect(fallback).toHaveFocus();
+    fallback.remove();
+  });
+
+  it("should focus the fallback when the opener was removed while open", () => {
+    const opener = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(opener, fallback);
+    opener.focus();
+    const { unmount } = renderDialog({ fallbackFocus: { current: fallback } });
+    opener.remove();
+    unmount();
+    expect(fallback).toHaveFocus();
+    fallback.remove();
+  });
+
+  it("should prefer the opener over the fallback when the opener can take focus", () => {
+    const opener = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(opener, fallback);
+    opener.focus();
+    const { unmount } = renderDialog({ fallbackFocus: { current: fallback } });
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+    fallback.remove();
+  });
 });
 
 // Contract: Escape and a backdrop click close the dialog; nothing else does.

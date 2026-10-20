@@ -1034,6 +1034,13 @@ describe("GraphPanel context menu", () => {
     press("F10");
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("should focus the Commit graph region when the menu closes and nothing held focus", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(0));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("region", { name: "Commit graph" })).toHaveFocus();
+  });
 });
 
 // Contract: Create branch here… opens a prompt bound to the commit's full oid.
@@ -2271,5 +2278,18 @@ describe("GraphPanel rebase interactively", () => {
     await renderWithHead();
     rightClick(optionAt(1));
     expect(menuItem(ITEM)).toBeEnabled();
+  });
+});
+
+// Contract: when a dialog closes and its opener cannot take focus, the Commit graph region does.
+describe("GraphPanel focus fallback", () => {
+  it("should focus the Commit graph region when Create branch here… is cancelled", async () => {
+    const { user } = await renderPanel();
+    rightClick(optionAt(0));
+    await user.click(menuItem("Create branch here…"));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.getByRole("region", { name: "Commit graph" })).toHaveFocus();
   });
 });

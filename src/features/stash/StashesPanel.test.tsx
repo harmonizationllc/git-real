@@ -300,6 +300,13 @@ describe("StashesPanel context menu", () => {
     await user.click(menuItem("Pop"));
     expect(stashPop).toHaveBeenCalledExactlyOnceWith(1, 0, entries()[0]!.oid);
   });
+
+  it("Escape returns focus to the Stashes heading when nothing held focus", async () => {
+    const { user } = await renderPanel();
+    rightClick(row(0));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus();
+  });
 });
 
 // Contract: Drop… confirms before dropping.

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOperationState,
@@ -337,6 +337,17 @@ describe("StashSummary actions", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The stash list changed; it has been refreshed.",
     );
+  });
+
+  it("returns focus to the stash heading when Drop is cancelled and its opener never had focus", async () => {
+    const { user } = await renderSummary();
+    fireEvent.click(inDetails().getByRole("button", { name: "Drop…" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Drop stash@{1}?" })).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "stash@{1}" })).toHaveFocus();
   });
 });
 

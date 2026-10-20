@@ -392,6 +392,71 @@ describe("ContextMenu lifecycle", () => {
   });
 });
 
+// Contract: on close focus returns to the opener, else to the fallback's element.
+describe("ContextMenu focus fallback", () => {
+  const nodes: HTMLElement[] = [];
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const n of nodes.splice(0)) n.remove();
+  });
+
+  function setup() {
+    const opener = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(opener, fallback);
+    nodes.push(opener, fallback);
+    const ref = { current: fallback };
+    const ui = (open: boolean) => (
+      <ContextMenu
+        open={open}
+        x={10}
+        y={20}
+        items={makeItems()}
+        onClose={vi.fn()}
+        fallbackFocus={ref}
+      />
+    );
+    return { opener, fallback, ui };
+  }
+
+  it("should focus the fallback on close when nothing held focus at open", () => {
+    const { fallback, ui } = setup();
+    (document.activeElement as HTMLElement).blur();
+    const view = render(ui(true));
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+  });
+
+  it("should restore focus to the opener rather than the fallback when the opener had focus", () => {
+    const { opener, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    view.rerender(ui(false));
+    expect(opener).toHaveFocus();
+  });
+
+  it("should focus the fallback when the opener is disabled at close", () => {
+    const { opener, fallback, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    opener.disabled = true;
+    const spy = vi.spyOn(opener, "focus");
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("should focus the fallback when the opener was removed while open", () => {
+    const { opener, fallback, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    opener.remove();
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+  });
+});
+
 // Contract: the menu is clamped to stay inside the viewport (no flipping).
 describe("ContextMenu viewport clamp", () => {
   function mockRect() {

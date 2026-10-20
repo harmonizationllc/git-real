@@ -22,6 +22,7 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K): HTMLElementTagName
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const el of created.splice(0)) el.remove();
 });
 
@@ -41,6 +42,7 @@ describe("useRestoreFocus", () => {
     const fallback = make("div");
     opener.focus();
     const view = render(<Probe fallback={{ current: fallback }} />);
+    inside().focus();
     view.unmount();
     expect(opener).toHaveFocus();
   });
@@ -90,18 +92,55 @@ describe("useRestoreFocus", () => {
     expect(b).toHaveFocus();
   });
 
-  it("leaves focus alone when the opener cannot take it and there is no fallback", () => {
-    const x = make("button");
+  it("does not call focus on unmount when the opener cannot take it and there is no fallback", () => {
     (document.activeElement as HTMLElement).blur();
     const view = render(<Probe />);
-    x.focus();
+    inside().focus();
+    const spy = vi.spyOn(HTMLElement.prototype, "focus");
     view.unmount();
-    expect(x).toHaveFocus();
+    expect(spy).not.toHaveBeenCalled();
+    expect(document.body).toHaveFocus();
   });
 
   it("does not throw when the fallback ref is empty", () => {
     (document.activeElement as HTMLElement).blur();
     const view = render(<Probe fallback={{ current: null }} />);
     expect(() => view.unmount()).not.toThrow();
+  });
+
+  // React re-focuses the pre-commit element after an effect cleanup, which masks a premature
+  // restore in jsdom; the focus spies catch the restore itself.
+  it("does not restore focus to the opener when re-rendered with a new fallback ref object", () => {
+    const opener = make("button");
+    const a = make("div");
+    const b = make("div");
+    opener.focus();
+    const view = render(<Probe fallback={{ current: a }} />);
+    inside().focus();
+    const spy = vi.spyOn(opener, "focus");
+    view.rerender(<Probe fallback={{ current: b }} />);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("does not focus the previous fallback element when re-rendered with a new fallback ref object", () => {
+    const a = make("div");
+    const b = make("div");
+    (document.activeElement as HTMLElement).blur();
+    const view = render(<Probe fallback={{ current: a }} />);
+    inside().focus();
+    const spy = vi.spyOn(a, "focus");
+    view.rerender(<Probe fallback={{ current: b }} />);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("focuses the latest fallback ref object's element at unmount", () => {
+    const a = make("div");
+    const b = make("div");
+    (document.activeElement as HTMLElement).blur();
+    const view = render(<Probe fallback={{ current: a }} />);
+    view.rerender(<Probe fallback={{ current: b }} />);
+    inside().focus();
+    view.unmount();
+    expect(b).toHaveFocus();
   });
 });

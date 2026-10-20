@@ -612,6 +612,13 @@ describe("ChangesPanel context menu", () => {
       await screen.findByRole("dialog", { name: "Discard changes to 2 files?" }),
     ).toBeInTheDocument();
   });
+
+  it("should focus the Changes region when the menu closes and nothing held focus", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    rightClick(btn("modified a.txt"));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus();
+  });
 });
 
 // Contract: discard goes through a confirm dialog with copy that depends on the targets.

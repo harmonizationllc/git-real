@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -261,6 +261,14 @@ describe("OperationBanner abort", () => {
     await user.click(screen.getByRole("button", { name: "Abort…" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Abort" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should focus the banner when the abort dialog is cancelled and Abort… never had focus", async () => {
+    provide({ state: mergeState });
+    const { user } = renderWithProviders(<OperationBanner repoId={1} />);
+    fireEvent.click(screen.getByRole("button", { name: "Abort…" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Operation in progress" })).toHaveFocus();
   });
 });
 

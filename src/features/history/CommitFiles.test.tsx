@@ -208,6 +208,13 @@ describe("CommitFiles context menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "File history" }));
     expect(useWorkspace.getState().centreView[1]).toBeUndefined();
   });
+
+  it("should focus the Files heading when the menu closes and nothing held focus", async () => {
+    const { user } = await renderFiles();
+    rightClick(fileButton(/src\/a\.ts/));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("heading", { name: "Files (3)" })).toHaveFocus();
+  });
 });
 
 // Contract: loading shows a status; a failure shows an alert with Retry.
