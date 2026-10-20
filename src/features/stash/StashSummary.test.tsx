@@ -349,6 +349,13 @@ describe("StashSummary actions", () => {
     );
     expect(screen.getByRole("heading", { name: "stash@{1}" })).toHaveFocus();
   });
+
+  it("should mark the stash heading as a programmatic focus target", async () => {
+    await renderSummary();
+    const target = await screen.findByRole("heading", { name: "stash@{1}" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract (Review Focus 5): a stash that leaves the list clears the selection and files opened from it.

@@ -270,6 +270,14 @@ describe("OperationBanner abort", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("region", { name: "Operation in progress" })).toHaveFocus();
   });
+
+  it("should mark the banner as a programmatic focus target", async () => {
+    provide({ state: mergeState });
+    renderWithProviders(<OperationBanner repoId={1} />);
+    const target = screen.getByRole("region", { name: "Operation in progress" });
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract: a rebase resumes with Continue once no conflicts remain.

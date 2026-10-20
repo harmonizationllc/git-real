@@ -208,6 +208,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
     <section
       ref={rootRef}
       tabIndex={-1}
+      data-focus-target
       aria-label="Commit graph"
       aria-busy={pending || undefined}
       className={styles.root}

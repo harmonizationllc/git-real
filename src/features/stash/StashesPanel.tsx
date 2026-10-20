@@ -108,7 +108,13 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
       className={styles.root}
     >
       <div className={styles.header}>
-        <h2 id={headingId} ref={headingRef} tabIndex={-1} className={styles.heading}>
+        <h2
+          id={headingId}
+          ref={headingRef}
+          tabIndex={-1}
+          data-focus-target
+          className={styles.heading}
+        >
           {`Stashes (${stashes?.length ?? 0})`}
         </h2>
         <StashButton

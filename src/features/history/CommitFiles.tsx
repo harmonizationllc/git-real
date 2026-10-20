@@ -60,7 +60,12 @@ export function CommitFiles({ repoId, oid }: CommitFilesProps) {
 
   return (
     <section aria-label="Changed files" className={styles.root}>
-      <h3 ref={headingRef} tabIndex={-1} className={styles.heading}>{`Files (${files.length})`}</h3>
+      <h3
+        ref={headingRef}
+        tabIndex={-1}
+        data-focus-target
+        className={styles.heading}
+      >{`Files (${files.length})`}</h3>
       <ul className={styles.list}>
         {files.map((file) => (
           <li key={file.path}>

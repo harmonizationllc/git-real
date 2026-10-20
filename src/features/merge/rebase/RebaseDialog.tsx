@@ -62,6 +62,11 @@ export function RebaseDialog({
   useLayoutEffect(() => {
     (dialogRef.current as HTMLDivElement).focus();
   }, []);
+  // Start disables the focused button, which drops focus to the body: hold it on the dialog while
+  // pending. Alerts never take focus, so a failed run leaves it here too.
+  useLayoutEffect(() => {
+    if (pending) (dialogRef.current as HTMLDivElement).focus();
+  }, [pending]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape" && !pending) onClose();

@@ -318,6 +318,63 @@ describe("RebaseDialog focus", () => {
     expect(props.onClose).toHaveBeenCalledOnce();
   });
 
+  it("should move focus to the dialog when pending starts", async () => {
+    const { props, rerender } = renderDialog();
+    await list();
+    start().focus();
+    expect(start()).toHaveFocus();
+    rerender(<RebaseDialog {...props} pending />);
+    expect(dialog()).toHaveFocus();
+  });
+
+  it("should keep focus on the dialog, not the alert, when a run fails", async () => {
+    let resolve!: (e: AppError | null) => void;
+    const run = vi.fn<RebaseDialogProps["run"]>(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    const { props, user, rerender } = renderDialog({ run });
+    await list();
+    await user.click(start());
+    rerender(<RebaseDialog {...props} pending />);
+    resolve({ kind: "operationFailed", message: "git said no" });
+    rerender(<RebaseDialog {...props} pending={false} />);
+    expect(await screen.findByRole("alert")).not.toHaveFocus();
+    expect(dialog()).toHaveFocus();
+  });
+
+  it("should close on Escape once a failed run's pending ends", async () => {
+    let resolve!: (e: AppError | null) => void;
+    const run = vi.fn<RebaseDialogProps["run"]>(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    const { props, user, rerender } = renderDialog({ run });
+    await list();
+    await user.click(start());
+    rerender(<RebaseDialog {...props} pending />);
+    resolve({ kind: "operationFailed", message: "git said no" });
+    rerender(<RebaseDialog {...props} pending={false} />);
+    await screen.findByRole("alert");
+    await user.keyboard("{Escape}");
+    expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should pull focus back to the dialog when a retry after a failed run goes pending", async () => {
+    const { props, rerender } = renderDialog();
+    await list();
+    rerender(<RebaseDialog {...props} pending />);
+    rerender(<RebaseDialog {...props} pending={false} />);
+    start().focus();
+    expect(start()).toHaveFocus();
+    rerender(<RebaseDialog {...props} pending />);
+    expect(dialog()).toHaveFocus();
+  });
+
   it("should restore focus to the opener when it unmounts", () => {
     const opener = document.createElement("button");
     document.body.appendChild(opener);

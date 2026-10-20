@@ -378,6 +378,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     <section
       ref={rootRef}
       tabIndex={-1}
+      data-focus-target
       aria-label="Branches"
       aria-busy={pending || undefined}
       className={styles.root}

@@ -538,6 +538,13 @@ describe("DetailPane discard", () => {
     // The fallback is FileDetail's root, the Diff region's parent.
     expect(region.parentElement).toHaveFocus();
   });
+
+  it("should mark the file detail root as a programmatic focus target", async () => {
+    setup();
+    const target = (await diffRegion()).parentElement;
+    expect(target).toHaveAttribute("data-focus-target");
+    expect(target).toHaveAttribute("tabindex", "-1");
+  });
 });
 
 // Contract: a discard confirmation never applies to a diff other than the one it was opened on.

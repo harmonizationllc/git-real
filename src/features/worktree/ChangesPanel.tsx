@@ -294,7 +294,13 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   }
 
   return (
-    <section ref={rootRef} tabIndex={-1} aria-label="Changes" className={styles.root}>
+    <section
+      ref={rootRef}
+      tabIndex={-1}
+      data-focus-target
+      aria-label="Changes"
+      className={styles.root}
+    >
       {/* Outside the body branches: a failed background refetch keeps the data, the button and its open dialog. */}
       {status !== undefined && (
         <div className={styles.toolbar}>
