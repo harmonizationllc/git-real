@@ -1,0 +1,40 @@
+.root {
+  composes: root from "../history/CommitSummary.module.css";
+}
+
+.header {
+  composes: header from "../history/CommitSummary.module.css";
+}
+
+.title {
+  composes: title from "../history/CommitSummary.module.css";
+}
+
+.subject {
+  composes: subject from "../history/CommitSummary.module.css";
+}
+
+.label {
+  composes: label from "../history/CommitSummary.module.css";
+}
+
+.meta {
+  margin: 0;
+}
+
+.base {
+  font-family: ui-monospace, monospace;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.error {
+  composes: error from "../history/CommitFiles.module.css";
+}
+
+.message {
+  composes: message from "../history/CommitFiles.module.css";
+}

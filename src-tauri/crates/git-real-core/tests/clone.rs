@@ -1,8 +1,9 @@
 mod common;
 
+use common::git_available;
+
 use std::path::Path;
 
-use git_real_core::git_cli;
 use git_real_core::remote::clone;
 use git_real_core::{GitError, Progress, ProgressPhase, ProgressSink, RepoSession};
 
@@ -13,14 +14,6 @@ impl ProgressSink for RecordingSink {
     fn report(&mut self, progress: Progress) {
         self.0.push(progress);
     }
-}
-
-fn git_available() -> bool {
-    if git_cli::locate().is_err() {
-        eprintln!("skipping: git not on PATH");
-        return false;
-    }
-    true
 }
 
 fn bare_url() -> (tempfile::TempDir, tempfile::TempDir, String) {

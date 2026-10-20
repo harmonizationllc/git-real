@@ -9,20 +9,17 @@
 //! Interactive rebase needs `cp` on the PATH git's shell sees (bundled with
 //! Git for Windows).
 
-mod git_ops;
 mod interactive;
 mod resolve;
 mod state;
 mod write_resolution;
 
-use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use git2::{BranchType, Oid, RepositoryState};
 
-use crate::commit::is_unborn;
 use crate::error::GitError;
-use crate::git_cli;
+use crate::git_ops::{self, operation_failed};
 use crate::model::{FastForwardCheck, MergeMode, OperationOutcome, OperationState};
 use crate::repo::RepoSession;
 use crate::revision;
@@ -120,9 +117,7 @@ impl RepoSession {
             | RepositoryState::ApplyMailbox
             | RepositoryState::ApplyMailboxOrRebase => return Err(GitError::NoOperation),
         }
-        if self.fresh_index()?.has_conflicts() {
-            return Err(GitError::UnresolvedConflicts);
-        }
+        self.ensure_no_conflicts()?;
         let (git, workdir) = self.git()?;
         let output = git_ops::run(&git, workdir, "rebase", &["--continue"], &NO_EDITOR)?;
         self.outcome("rebase", &output)
@@ -156,24 +151,6 @@ impl RepoSession {
             .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))
     }
 
-    /// `OperationInProgress` unless the repository is in its clean state.
-    fn ensure_clean(&self) -> Result<(), GitError> {
-        if self.repo().state() == RepositoryState::Clean {
-            Ok(())
-        } else {
-            Err(GitError::OperationInProgress)
-        }
-    }
-
-    /// `UnbornHead` when HEAD has no commit yet.
-    fn ensure_born(&self) -> Result<(), GitError> {
-        match self.repo().head() {
-            Ok(_) => Ok(()),
-            Err(e) if is_unborn(&e) => Err(GitError::UnbornHead),
-            Err(e) => Err(e.into()),
-        }
-    }
-
     /// The preconditions shared by cherry-pick and revert; returns the full
     /// hex of the commit, which is what git is given.
     fn single_parent_commit(&self, oid: &str) -> Result<String, GitError> {
@@ -185,11 +162,6 @@ impl RepoSession {
             return Err(GitError::MergeCommit(hex));
         }
         Ok(hex)
-    }
-
-    /// The located git executable and the working directory, for a CLI run.
-    fn git(&self) -> Result<(PathBuf, &Path), GitError> {
-        Ok((git_cli::locate()?, self.workdir()?))
     }
 
     /// Exit 0 is `Completed`, or `Stopped` when a rebase is still in progress
@@ -215,14 +187,5 @@ impl RepoSession {
             return Ok(OperationOutcome::Conflicts);
         }
         Err(operation_failed(verb, output))
-    }
-}
-
-fn operation_failed(verb: &str, output: &Output) -> GitError {
-    GitError::OperationFailed {
-        verb: verb.to_owned(),
-        code: output.status.code(),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     }
 }

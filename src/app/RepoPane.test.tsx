@@ -12,7 +12,9 @@ import {
   getLogSummary,
   getOperationState,
   getStatus,
+  getStashFiles,
   listBranches,
+  listStashes,
   listTrackedFiles,
   onRepoChanged,
 } from "../lib/ipc";
@@ -24,6 +26,7 @@ import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
+import { stashEntry, stashFiles } from "../test/stashFixtures";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
 import { RepoPane } from "./RepoPane";
 
@@ -62,7 +65,9 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getLogSummary: vi.fn(),
   getOperationState: vi.fn(),
   getStatus: vi.fn(),
+  getStashFiles: vi.fn(),
   listBranches: vi.fn(),
+  listStashes: vi.fn(),
   listTrackedFiles: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
@@ -100,7 +105,15 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
   vi.mocked(listBranches).mockResolvedValue(branchList());
-  useWorkspace.setState({ selected: {}, selectedCommit: {}, historyPath: {}, centreView: {} });
+  useWorkspace.setState({
+    selected: {},
+    selectedCommit: {},
+    selectedStash: {},
+    historyPath: {},
+    centreView: {},
+  });
+  vi.mocked(listStashes).mockResolvedValue([]);
+  vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
   vi.mocked(getCommit).mockResolvedValue(commitDetail({ oid: oidOf(0) }));
@@ -1052,5 +1065,102 @@ describe("RepoPane operation banner", () => {
     await screen.findByRole("region", { name: "Changes" });
     view.rerender(<RepoPane tab={tab(2)} />);
     expect(banner()).toHaveAttribute("data-repo-id", "2");
+  });
+});
+
+// Contract (GR-11a): the Stashes panel sits below the branches; a selected stash owns the right column.
+describe("RepoPane stashes", () => {
+  const precedes = (a: HTMLElement, b: HTMLElement) =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const W = stashEntry(0);
+
+  it("renders the Stashes panel below the branches in the refs column", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const branches = await screen.findByRole("region", { name: "Branches" });
+    const stashes = await screen.findByRole("region", { name: "Stashes (0)" });
+    expect(precedes(branches, stashes)).toBe(true);
+  });
+
+  it("requests the stash list for the tab's repo id", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await screen.findByRole("region", { name: "Stashes (0)" });
+    expect(listStashes).toHaveBeenCalledWith(7);
+  });
+
+  it("replaces both with file history while history is open", async () => {
+    useWorkspace.getState().showHistory(1, "src/a.ts");
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "File history" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /^Stashes/ })).toBeNull();
+  });
+
+  it("shows the stash summary in the right column when a stash is selected", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    useWorkspace.getState().selectStash(1, W.oid);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("heading", { name: "stash@{0}" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Changes" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Commit" })).toBeNull();
+  });
+
+  it("shows Changes and the commit box when no stash is selected", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Commit" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Stash details" })).toBeNull();
+  });
+
+  it("selecting a commit replaces the stash summary with the commit summary", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    useWorkspace.getState().selectStash(1, W.oid);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("heading", { name: "stash@{0}" });
+    act(() => useWorkspace.getState().selectCommit(1, oidOf(0)));
+    expect(await screen.findByRole("region", { name: "Commit details" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "stash@{0}" })).toBeNull();
+  });
+
+  it("closing the stash summary returns the column to Changes", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    useWorkspace.getState().selectStash(1, W.oid);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close stash details" }));
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Commit" })).toBeInTheDocument();
+  });
+
+  it("does not show another repo's stash selection", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    useWorkspace.getState().selectStash(1, W.oid);
+    renderWithProviders(<RepoPane tab={tab(2)} />);
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "stash@{0}" })).toBeNull();
+  });
+
+  it("selecting a stash row in the panel swaps the right column to its summary", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.click(await screen.findByTitle(W.message));
+    expect(await screen.findByRole("heading", { name: "stash@{0}", level: 2 })).toBeInTheDocument();
+  });
+
+  it("returns the column to Changes and clears the selection when the stash leaves the list", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    useWorkspace.getState().selectStash(1, W.oid);
+    const { queryClient } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("heading", { name: "stash@{0}", level: 2 });
+    vi.mocked(listStashes).mockResolvedValue([]);
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.repo(1) }));
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "stash@{0}", level: 2 })).toBeNull(),
+    );
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
   });
 });

@@ -5,9 +5,10 @@
 
 mod common;
 
+use common::git_available;
+
 use std::path::{Path, PathBuf};
 
-use git_real_core::git_cli;
 use git_real_core::{
     ChangeKind, CommitMessage, ConflictSide, FastForwardCheck, GitError, MergeMode,
     OperationOutcome, OperationState, RebaseAction, RebaseCommit, RebaseStep, RepoSession,
@@ -18,14 +19,6 @@ use serde_json::json;
 use tempfile::TempDir;
 
 const ABSENT_OID: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-
-fn git_available() -> bool {
-    if git_cli::locate().is_err() {
-        eprintln!("skipping: git not on PATH");
-        return false;
-    }
-    true
-}
 
 fn open(path: &Path) -> RepoSession {
     common::configure_identity(path);

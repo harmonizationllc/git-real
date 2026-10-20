@@ -4,19 +4,12 @@
 
 mod common;
 
+use common::git_available;
+
 use std::path::{Path, PathBuf};
 
-use git_real_core::git_cli;
 use git_real_core::{GitError, RepoSession};
 use git2::{BranchType, Repository};
-
-fn git_available() -> bool {
-    if git_cli::locate().is_err() {
-        eprintln!("skipping: git not on PATH");
-        return false;
-    }
-    true
-}
 
 /// Repo with one commit, local identity, signing off.
 fn fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {

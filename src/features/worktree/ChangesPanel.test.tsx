@@ -25,11 +25,15 @@ import { useBranches } from "../branches/useBranches";
 import { useIntegrationActions } from "../merge/useIntegrationActions";
 import type { UseIntegrationActions } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
+import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
+import { useStashActions } from "../stash/useStashActions";
+import type { UseStashActions } from "../stash/useStashActions";
 import { ChangesPanel } from "./ChangesPanel";
 
 vi.mock("../branches/useBranches", () => ({ useBranches: vi.fn() }));
 vi.mock("../merge/useOperationState", () => ({ useOperationState: vi.fn() }));
 vi.mock("../merge/useIntegrationActions", () => ({ useIntegrationActions: vi.fn() }));
+vi.mock("../stash/useStashActions", () => ({ useStashActions: vi.fn() }));
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -41,6 +45,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   unstageAll: vi.fn(),
   discardPaths: vi.fn(),
   addToGitignore: vi.fn(),
+  stashPush: vi.fn(),
 }));
 
 const entry = (over: Partial<StatusEntry> & { path: string }): StatusEntry => ({
@@ -54,6 +59,19 @@ const unstaged = (path: string, worktree: ChangeKind = "modified") => entry({ pa
 const staged = (path: string, index: ChangeKind = "modified") => entry({ path, index });
 const conflict = (path: string) => entry({ path, worktree: "conflicted", conflicted: true });
 const status = (...entries: StatusEntry[]): WorkingTreeStatus => ({ entries, headUnborn: false });
+
+/** Stands in for the stash dialog's own hook instance. */
+const stashActionsStub = (): UseStashActions => ({
+  push: vi.fn().mockResolvedValue(null),
+  apply: vi.fn().mockResolvedValue(null),
+  pop: vi.fn().mockResolvedValue(null),
+  drop: vi.fn().mockResolvedValue(null),
+  pending: false,
+  error: null,
+  notice: null,
+  clearError: vi.fn(),
+  clearNotice: vi.fn(),
+});
 
 const integrationRun = vi.fn<UseIntegrationActions["run"]>();
 const integrationClear = vi.fn();
@@ -97,6 +115,7 @@ beforeEach(() => {
   vi.mocked(discardPaths).mockResolvedValue(undefined);
   vi.mocked(addToGitignore).mockResolvedValue("a.log");
   useWorkspace.setState(useWorkspace.getInitialState(), true);
+  vi.mocked(useStashActions).mockReturnValue(stashActionsStub());
 });
 
 async function renderPanel(...entries: StatusEntry[]) {
@@ -1600,5 +1619,145 @@ describe("ChangesPanel Resolve all", () => {
     await user.keyboard("{Escape}");
     await openMenu(user);
     expect(itemLabels()).toEqual(["Keep ours for all files", "Take theirs for all files"]);
+  });
+});
+
+// Contract (GR-11a): a Stash… button in a toolbar row opens the stash dialog, gated by pushGate.
+describe("ChangesPanel Stash button", () => {
+  const stashBtn = () => screen.getByRole("button", { name: "Stash…" });
+  const mergeNow: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "feature",
+    message: { subject: "s", body: "" },
+  };
+
+  it("shows a Stash… button that opens the stash dialog", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    expect(stashBtn()).toBeEnabled();
+    await user.click(stashBtn());
+    expect(await screen.findByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+  });
+
+  it("does not show the stash dialog before the button is pressed", async () => {
+    await renderPanel(unstaged("a.txt"));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).toBeNull();
+  });
+
+  it("closes the stash dialog on Cancel", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(stashBtn());
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).toBeNull();
+  });
+
+  it("disables Stash… with No changes to stash when there are no changes", async () => {
+    await renderPanel();
+    expect(screen.getByText("No changes")).toBeInTheDocument();
+    expect(stashBtn()).toBeDisabled();
+    expect(stashBtn()).toHaveAttribute("title", "No changes to stash");
+  });
+
+  it("disables Stash… with the in-progress reason during an operation", async () => {
+    provideMerge({ state: mergeNow });
+    await renderPanel(unstaged("a.txt"));
+    expect(stashBtn()).toBeDisabled();
+    expect(stashBtn()).toHaveAttribute("title", IN_PROGRESS_TITLE);
+  });
+
+  it("disables Stash… with Resolve all conflicts first when the index has conflicts", async () => {
+    await renderPanel(conflict("a.txt"));
+    expect(stashBtn()).toBeDisabled();
+    expect(stashBtn()).toHaveAttribute("title", "Resolve all conflicts first");
+  });
+
+  it("disables Stash… with Make a commit first on an unborn HEAD", async () => {
+    vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: true });
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    await screen.findByRole("region", { name: "Changes" });
+    await waitFor(() => expect(stashBtn()).toHaveAttribute("title", "Make a commit first"));
+    expect(stashBtn()).toBeDisabled();
+  });
+
+  it("disables Stash… without a title while the operation state is loading", async () => {
+    provideMerge({ state: undefined });
+    await renderPanel(unstaged("a.txt"));
+    expect(stashBtn()).toBeDisabled();
+    expect(stashBtn()).not.toHaveAttribute("title");
+  });
+
+  it("renders no Stash… button while the status loads", async () => {
+    vi.mocked(getStatus).mockReturnValue(new Promise(() => {}));
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    await screen.findByRole("status");
+    expect(screen.queryByRole("button", { name: "Stash…" })).toBeNull();
+  });
+
+  it("renders no Stash… button when the status fails to load", async () => {
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("status exploded");
+    expect(screen.queryByRole("button", { name: "Stash…" })).toBeNull();
+  });
+
+  it("keeps the open stash dialog and its message when a background status refetch fails", async () => {
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    await user.click(stashBtn());
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "wip");
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("status exploded");
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("wip");
+  });
+
+  it("disables Stash… while a background status refetch is in error", async () => {
+    const { queryClient } = await renderPanel(unstaged("a.txt"));
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByRole("alert");
+    expect(stashBtn()).toBeDisabled();
+  });
+
+  it("returns focus to the Changes region when the stash dialog is cancelled during a status error", async () => {
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    await user.click(stashBtn());
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "wip");
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus();
+  });
+
+  it("after a push that empties the tree, focus lands on the Changes region", async () => {
+    let pushed = false;
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    vi.mocked(getStatus).mockImplementation(() =>
+      Promise.resolve(pushed ? status() : status(unstaged("a.txt"))),
+    );
+    // The dialog's own hook is stubbed in this file: its push empties the tree and refreshes the repo.
+    vi.mocked(useStashActions).mockReturnValue({
+      ...stashActionsStub(),
+      push: async () => {
+        pushed = true;
+        await queryClient.invalidateQueries({ queryKey: ["repo", 1] });
+        return null;
+      },
+    });
+    await user.click(stashBtn());
+    await user.click(await screen.findByRole("button", { name: "Stash" }));
+    await waitFor(() => expect(stashBtn()).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus());
+  });
+
+  it("disables Stash… while an action is pending", async () => {
+    const gate = deferred();
+    vi.mocked(stagePaths).mockReturnValue(gate.promise);
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    await waitFor(() => expect(btn("Stage a.txt")).toBeDisabled());
+    expect(stashBtn()).toBeDisabled();
   });
 });

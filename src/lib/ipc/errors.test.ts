@@ -21,6 +21,13 @@ const kinds: AppErrorKind[] = [
   "binaryFile",
 ];
 
+// Contract: the GR-11a stash kinds are recognised.
+describe("isAppError stash kinds", () => {
+  it.each(["nothingToStash", "staleStash"] as const)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+});
+
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.
 describe("isAppError", () => {
   it.each(kinds)("isAppError accepts kind %s", (kind) => {

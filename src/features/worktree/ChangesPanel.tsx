@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { ChangeKind, RepoId, StatusEntry } from "../../lib/ipc";
@@ -8,6 +8,7 @@ import { headName, sideLabels } from "../merge/operationCopy";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
+import { StashButton } from "../stash/StashButton";
 import styles from "./ChangesPanel.module.css";
 import { FileRow, type Section } from "./FileRow";
 import { useFileSelection } from "./useFileSelection";
@@ -114,6 +115,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   );
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const rootRef = useRef<HTMLElement>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const clearErrors = () => {
@@ -292,7 +294,19 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   }
 
   return (
-    <section aria-label="Changes" className={styles.root}>
+    <section ref={rootRef} tabIndex={-1} aria-label="Changes" className={styles.root}>
+      {/* Outside the body branches: a failed background refetch keeps the data, the button and its open dialog. */}
+      {status !== undefined && (
+        <div className={styles.toolbar}>
+          <StashButton
+            repoId={repoId}
+            variant="text"
+            className={styles.headerAction}
+            disabled={pending || statusError !== null}
+            fallbackFocus={rootRef}
+          />
+        </div>
+      )}
       {body}
       <ContextMenu
         open={menu !== null}

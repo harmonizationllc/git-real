@@ -68,7 +68,9 @@ export type AppErrorKind =
   | "operationInProgress"
   | "noOperation"
   | "unresolvedConflicts"
-  | "mergeCommit";
+  | "mergeCommit"
+  | "nothingToStash"
+  | "staleStash";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -334,6 +336,33 @@ export interface RebaseStep {
   action: RebaseAction;
   oid: string;
 }
+
+/** One `refs/stash` reflog entry; `index` is n in `stash@{n}`, oids are full hex. */
+export interface StashEntry {
+  index: number;
+  oid: string;
+  message: string;
+  /** Parsed from the message; null for "(no branch)" or an unparseable message. */
+  branch: string | null;
+  /** Unix seconds. */
+  time: number;
+  /** The commit the stash was made on. */
+  base: string;
+  hasUntracked: boolean;
+}
+
+/** A stash's tracked changes and untracked files. */
+export interface StashFiles {
+  tracked: CommitFile[];
+  untracked: CommitFile[];
+  untrackedOid: string | null;
+}
+
+/**
+ * How an apply or pop ended; conflicts are an outcome, not an error.
+ * `appliedNotDropped`: only from pop, which applied cleanly but could not drop the stash.
+ */
+export type StashOutcome = "applied" | "conflicts" | "appliedNotDropped";
 
 export type ConflictSide = "ours" | "theirs";
 

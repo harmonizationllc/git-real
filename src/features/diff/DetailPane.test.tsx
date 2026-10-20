@@ -1435,6 +1435,55 @@ describe("DetailPane blame view", () => {
   });
 });
 
+// Contract (F17): a file opened from a stash has no blame; the stored view is kept.
+describe("DetailPane stash files", () => {
+  const STASH_BLAME_REASON = "Blame is not available for stashed files";
+  const selectStashFile = (path = "a.ts") =>
+    act(() => useWorkspace.getState().select(REPO, { path, scope: COMMIT, source: "stash" }));
+
+  it("a stash file shows its diff even when the centre view is blame", async () => {
+    useWorkspace.getState().setCentreView(REPO, "blame");
+    selectStashFile();
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(BlameView).not.toHaveBeenCalled();
+    expect(getFileDiff).toHaveBeenCalledWith(REPO, "a.ts", COMMIT, false, undefined);
+    expect(screen.getByRole("radio", { name: "Blame" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Blame" }).closest("label")).toHaveAttribute(
+      "title",
+      STASH_BLAME_REASON,
+    );
+  });
+
+  it("a stash file leaves the stored centre view untouched", async () => {
+    useWorkspace.getState().setCentreView(REPO, "blame");
+    selectStashFile();
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    expect(useWorkspace.getState().centreView[REPO]).toBe("blame");
+  });
+
+  it("the stored blame view is kept for the next non-stash file", async () => {
+    useWorkspace.getState().setCentreView(REPO, "blame");
+    selectStashFile();
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    act(() => selectScope(COMMIT, "b.ts"));
+    expect(await screen.findByRole("table", { name: "Blame" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Blame" })).toBeEnabled();
+  });
+
+  it("a commit file without a source keeps Blame enabled with no title", async () => {
+    selectScope(COMMIT);
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    expect(screen.getByRole("radio", { name: "Blame" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "Blame" }).closest("label")).not.toHaveAttribute(
+      "title",
+    );
+  });
+});
+
 const noHunkButtons = () =>
   screen.queryByRole("button", { name: /^(Stage|Unstage|Discard|Select )/ });
 

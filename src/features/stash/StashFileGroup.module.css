@@ -1,0 +1,19 @@
+.group {
+  composes: root from "../history/CommitFiles.module.css";
+}
+
+.heading {
+  composes: heading from "../history/CommitFiles.module.css";
+}
+
+.list {
+  composes: list from "../history/CommitFiles.module.css";
+}
+
+.row {
+  composes: row from "../history/CommitFiles.module.css";
+}
+
+.path {
+  composes: path from "../history/CommitFiles.module.css";
+}

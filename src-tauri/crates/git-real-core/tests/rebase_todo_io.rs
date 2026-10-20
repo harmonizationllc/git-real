@@ -11,7 +11,7 @@ use git_real_core::{GitError, OperationState, RebaseAction, RebaseStep, RepoSess
 
 #[test]
 fn rebase_interactive_with_an_unusable_temp_dir_is_io_and_starts_nothing() {
-    if git_real_core::git_cli::locate().is_err() {
+    if !common::git_available() {
         return;
     }
     let (_d, path) = common::temp_repo_with_commit();

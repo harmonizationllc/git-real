@@ -69,13 +69,28 @@ impl ProgressSink for RecordingSink {
     }
 }
 
-/// True when the system git CLI can be located; otherwise prints a skip notice.
+/// Opt-out for machines without git: `GIT_REAL_SKIP_GIT_TESTS=1` skips the git CLI tests.
+pub const SKIP_GIT_TESTS_ENV: &str = "GIT_REAL_SKIP_GIT_TESTS";
+
+/// True when git is on PATH. Without git, panics unless the opt-out is set, so CI can never
+/// pass with the CLI paths silently skipped.
 pub fn git_available() -> bool {
-    if git_cli::locate().is_err() {
-        eprintln!("skipping: git not on PATH");
+    git_available_with(
+        git_cli::locate().is_ok(),
+        std::env::var(SKIP_GIT_TESTS_ENV).ok().as_deref(),
+    )
+}
+
+/// The policy behind `git_available`, with its inputs explicit so it can be tested.
+pub fn git_available_with(found: bool, opt_out: Option<&str>) -> bool {
+    if found {
+        return true;
+    }
+    if opt_out == Some("1") {
+        eprintln!("skipping: git not on PATH ({SKIP_GIT_TESTS_ENV}=1)");
         return false;
     }
-    true
+    panic!("git not on PATH: install git, or set {SKIP_GIT_TESTS_ENV}=1 to skip the git CLI tests");
 }
 
 /// A fresh registry plus a recent store backed by `<tmp>/recent-repos.json`.

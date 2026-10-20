@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createQueryClient } from "./client";
-import { queryKeys } from "./keys";
+import { mutationKeys, queryKeys } from "./keys";
 
 // Contract: the git CLI availability check has its own cache key, distinct from other queries.
 describe("queryKeys", () => {
@@ -348,5 +348,41 @@ describe("queryKeys rebasePlan", () => {
 
   it("should differ between two repos", () => {
     expect(queryKeys.rebasePlan(1, "a")).not.toEqual(queryKeys.rebasePlan(2, "a"));
+  });
+});
+
+// Contract: stash keys (GR-11a). The list refreshes with the repo; a stash commit never changes.
+describe("queryKeys stashes", () => {
+  it("should define stashes(id) under the repo prefix", () => {
+    expect(queryKeys.stashes(3)).toEqual(["repo", 3, "stashes"]);
+  });
+
+  it("should define stashFiles(id, oid) under the repoImmutable prefix", () => {
+    expect(queryKeys.stashFiles(3, "w")).toEqual(["repoImmutable", 3, "stashFiles", "w"]);
+  });
+
+  it("should refresh stashes but not stash files on repo invalidation", () => {
+    const prefix = queryKeys.repo(3);
+    expect(queryKeys.stashes(3).slice(0, prefix.length)).toEqual(prefix);
+    expect(queryKeys.stashFiles(3, "w").slice(0, prefix.length)).not.toEqual(prefix);
+  });
+
+  it("should differ between two stash oids", () => {
+    expect(queryKeys.stashFiles(3, "a")).not.toEqual(queryKeys.stashFiles(3, "b"));
+  });
+});
+
+// Contract: mutation keys are separate from query keys, so repo invalidation never touches them.
+describe("mutationKeys", () => {
+  it("should define stash(id) as ['stash', id]", () => {
+    expect(mutationKeys.stash(3)).toEqual(["stash", 3]);
+  });
+
+  it("should give different repos different stash keys", () => {
+    expect(mutationKeys.stash(3)).not.toEqual(mutationKeys.stash(4));
+  });
+
+  it("should not sit under the repo query prefix", () => {
+    expect(mutationKeys.stash(3)[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });

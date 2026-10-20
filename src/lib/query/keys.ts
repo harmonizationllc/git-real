@@ -28,6 +28,8 @@ export const queryKeys = {
     ["repoImmutable", id, "logSearch", generation, query] as const,
   commit: (id: RepoId, oid: string) => ["repoImmutable", id, "commit", oid] as const,
   commitFiles: (id: RepoId, oid: string) => ["repoImmutable", id, "commitFiles", oid] as const,
+  /** A stash commit never changes, so its files are immutable. */
+  stashFiles: (id: RepoId, oid: string) => ["repoImmutable", id, "stashFiles", oid] as const,
   fileHistory: (id: RepoId, generation: number, path: string) =>
     ["repoImmutable", id, "fileHistory", generation, path] as const,
   /** Blame at a fixed commit never changes. */
@@ -37,6 +39,14 @@ export const queryKeys = {
   blameHead: (id: RepoId, path: string) => ["repo", id, "blame", path] as const,
   trackedFiles: (id: RepoId) => ["repo", id, "trackedFiles"] as const,
   operation: (id: RepoId) => ["repo", id, "operation"] as const,
+  /** The stash list; under the repo prefix so a repo change refreshes it. */
+  stashes: (id: RepoId) => ["repo", id, "stashes"] as const,
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
   rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
+};
+
+/** Mutation keys; separate from query keys, so repo invalidation never touches them. */
+export const mutationKeys = {
+  /** Every stash action of a repo: one key, so any trigger can see a push or drop running elsewhere. */
+  stash: (id: RepoId) => ["stash", id] as const,
 };

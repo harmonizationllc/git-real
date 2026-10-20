@@ -49,8 +49,13 @@ export function DetailPane({ repoId }: { repoId: RepoId }) {
   return <FileDetail key={`${scopeId(file.scope)}:${file.path}`} repoId={repoId} file={file} />;
 }
 
+const STASH_BLAME_REASON = "Blame is not available for stashed files";
+
 function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
-  const view = useWorkspace((s) => s.centreView[repoId] ?? "diff");
+  const storedView = useWorkspace((s) => s.centreView[repoId] ?? "diff");
+  // A stash file always shows its diff; the stored view is kept for the next file.
+  const blameable = file.source !== "stash";
+  const view = blameable ? storedView : "diff";
   const setView = useWorkspace((s) => s.setCentreView);
   const showHistory = useWorkspace((s) => s.showHistory);
   const { mode, ignoreWhitespace, setMode, setIgnoreWhitespace } = useDiffPrefs();
@@ -77,6 +82,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
       onViewChange={(v) => setView(repoId, v)}
       onHistory={() => showHistory(repoId, file.path)}
       onClose={close}
+      blameDisabledReason={blameable ? undefined : STASH_BLAME_REASON}
     />
   );
 

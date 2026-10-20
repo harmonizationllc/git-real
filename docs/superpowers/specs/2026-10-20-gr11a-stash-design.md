@@ -35,14 +35,14 @@ them. This closes the first three GR-11 acceptance criteria.
 ## 2. Decisions
 
 - **Writes use the git CLI, reads use git2** (chat approach A). `git stash
-  push`, `apply`, `pop` and `drop` run through `git_cli`; a stash push
+push`, `apply`, `pop` and `drop` run through `git_cli`; a stash push
   creates commits (ADR 0001), and apply/pop are merges whose conflict
   output (markers, conflicted index entries, pop keeping the stash) must
   match the command line so the existing conflict UI handles it. Rejected:
   git2's stash API (different conflict behaviour, no hooks) and parsing
   `git stash list` / `show -p` (moves local reads off git2).
 - **Stash list comes from the `refs/stash` reflog** via git2, newest first;
-  entry *n* is `stash@{n}`.
+  entry _n_ is `stash@{n}`.
 - **No new `DiffScope` variant.** A stash commit `W` has parents
   `[base, index, untracked?]`. Its tracked diff is `W` against its first
   parent, which `DiffScope::Commit(W)` already is. The untracked commit `U`
@@ -58,9 +58,11 @@ them. This closes the first three GR-11 acceptance criteria.
   header and a **Stash…** button in the Changes panel header, sharing one
   dialog and one actions hook.
 - **Sidebar only** (user choice): no graph nodes in this slice.
-- **Push detection by ref, not text.** "Nothing to stash" is detected by
-  comparing the `refs/stash` target before and after `git stash push`
-  (git exits 0 with "No local changes to save"), never by parsing stdout.
+- **Push detection by ref and message.** Nothing to stash = unchanged tip
+  and git's "No local changes to save": the `refs/stash` target is unchanged
+  after `git stash push` **and** stdout (under `LC_ALL=C`) says "No local
+  changes to save". git exits 0 both then and when the new stash equals the
+  tip, so the tip alone cannot tell them apart.
 
 ## 3. Core (`git-real-core`)
 
@@ -71,7 +73,7 @@ pub struct StashEntry {
     pub index: u32,              // n in stash@{n}
     pub oid: String,             // full hex of the stash commit W
     pub message: String,         // reflog message, e.g. "On main: wip" / "WIP on main: abc1234 subject"
-    pub branch: Option<String>,  // parsed from "On <b>:" / "WIP on <b>:"; None if unparseable or "(no branch)"
+    pub branch: Option<String>,  // <b> of "On <b>: " / "WIP on <b>: " where <b> has no space or ':'; None for "(no branch)" or other text
     pub time: i64,               // reflog committer time, seconds since epoch
     pub base: String,            // full hex of W^1
     pub has_untracked: bool,     // W has a third parent
@@ -83,22 +85,31 @@ pub struct StashFiles {
     pub untracked_oid: Option<String>, // U, when present
 }
 
-pub enum StashOutcome { Applied, Conflicts }
+pub enum StashOutcome { Applied, Conflicts, AppliedNotDropped }
 ```
 
 Serialized camelCase like the other models; `StashOutcome` as
-`"applied" | "conflicts"`.
+`"applied" | "conflicts" | "appliedNotDropped"` (`appliedNotDropped` only
+from pop).
+
+Branch parse rule: a message carries git's prefix iff it starts with
+`WIP on ` or `On `, then a branch, then `": "`. The branch is `(no branch)`
+or a non-empty run with no space and no `:` (git forbids both in ref
+names), so a hand-stored "On the fence: thinking" has no branch. Core
+`branch_of` and TS `stashSubject` share this rule. `list_stashes` skips a
+reflog entry whose commit is unreadable or parentless; `index` stays the
+reflog position.
 
 ### 3.2 `src/stash/mod.rs` — `impl RepoSession`
 
-| Method | Backend | Behaviour |
-|---|---|---|
-| `list_stashes() -> Vec<StashEntry>` | git2 | Reads the `refs/stash` reflog; missing ref → empty vec. |
-| `stash_files(oid) -> StashFiles` | git2 | `oid` must be a commit with ≥ 2 parents reachable as a stash; otherwise `RevisionNotFound`. Tracked via the `commit_files` logic; untracked via the third parent's tree. |
-| `stash_push(message: Option<&str>, include_untracked: bool) -> ()` | CLI | Refuses on unborn HEAD (`UnbornHead`), an operation in progress (`OperationInProgress`) or index conflicts (`UnresolvedConflicts`). Runs `git stash push [--include-untracked] [-m <message>]`; a blank/whitespace message is treated as none. Unchanged `refs/stash` target afterwards → `NothingToStash`. Non-zero exit → `OperationFailed` with stderr. |
-| `stash_apply(index, oid) -> StashOutcome` | CLI | Guard (§2), refuse during an operation in progress, then `git stash apply stash@{n}`. Exit 0 → `Applied`. Non-zero and index has conflicts → `Conflicts`. Other non-zero → `OperationFailed` with stderr (e.g. "local changes would be overwritten"). |
-| `stash_pop(index, oid) -> StashOutcome` | CLI | As apply, with `git stash pop`. On `Conflicts` git keeps the stash. |
-| `stash_drop(index, oid) -> ()` | CLI | Guard, then `git stash drop stash@{n}`; non-zero → `OperationFailed`. |
+| Method                                                             | Backend | Behaviour                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_stashes() -> Vec<StashEntry>`                                | git2    | Reads the `refs/stash` reflog; missing ref → empty vec.                                                                                                                                                                                                                                                                                                    |
+| `stash_files(oid) -> StashFiles`                                   | git2    | `oid` must be a commit with ≥ 2 parents reachable as a stash; otherwise `RevisionNotFound`. Tracked via the `commit_files` logic; untracked via the third parent's tree.                                                                                                                                                                                   |
+| `stash_push(message: Option<&str>, include_untracked: bool) -> ()` | CLI     | Refuses on unborn HEAD (`UnbornHead`), an operation in progress (`OperationInProgress`) or index conflicts (`UnresolvedConflicts`). Runs `git stash push [--include-untracked] [-m <message>]`; a blank/whitespace message is treated as none. Unchanged `refs/stash` target afterwards → `NothingToStash`. Non-zero exit → `OperationFailed` with stderr. |
+| `stash_apply(index, oid) -> StashOutcome`                          | CLI     | Guard (§2), refuse during an operation in progress, then `git stash apply stash@{n}`. Exit 0 → `Applied`. Non-zero and index has conflicts → `Conflicts`. Other non-zero → `OperationFailed` with stderr (e.g. "local changes would be overwritten").                                                                                                      |
+| `stash_pop(index, oid) -> StashOutcome`                            | CLI     | Apply then drop; a failed drop after a clean apply is `AppliedNotDropped`. On `Conflicts` the stash is kept.                                                                                                                                                                                                                                               |
+| `stash_drop(index, oid) -> ()`                                     | CLI     | Guard, then `git stash drop stash@{n}`; non-zero → `OperationFailed`.                                                                                                                                                                                                                                                                                      |
 
 CLI calls reuse the `git_cli::command` environment (`LC_ALL=C`,
 `GIT_TERMINAL_PROMPT=0`, cleared repo env) and run with `-C <workdir>`.
@@ -118,14 +129,14 @@ mapped in `src-tauri/src/error.rs`.
 `src/commands/stash.rs`, registered in `lib.rs`, each an `*_inner` function
 plus an async command using `with_session` + `run_blocking`:
 
-| Command | Args | Returns |
-|---|---|---|
-| `list_stashes` | `id` | `StashEntry[]` |
-| `get_stash_files` | `id, oid` | `StashFiles` |
-| `stash_push` | `id, message: string \| null, includeUntracked` | `void` |
-| `stash_apply` | `id, index, oid` | `StashOutcome` |
-| `stash_pop` | `id, index, oid` | `StashOutcome` |
-| `stash_drop` | `id, index, oid` | `void` |
+| Command           | Args                                            | Returns        |
+| ----------------- | ----------------------------------------------- | -------------- |
+| `list_stashes`    | `id`                                            | `StashEntry[]` |
+| `get_stash_files` | `id, oid`                                       | `StashFiles`   |
+| `stash_push`      | `id, message: string \| null, includeUntracked` | `void`         |
+| `stash_apply`     | `id, index, oid`                                | `StashOutcome` |
+| `stash_pop`       | `id, index, oid`                                | `StashOutcome` |
+| `stash_drop`      | `id, index, oid`                                | `void`         |
 
 The repo watcher already emits repo-changed for `.git` ref/reflog and
 worktree changes; the front end invalidates the stash queries on it.
@@ -146,7 +157,7 @@ outside `src/lib/ipc` calls `invoke`.
 - `useStashActions(repoId)`: `push`, `apply`, `pop`, `drop` mutations; on
   success they invalidate stashes, status and log queries. Exposes `pending`,
   the last `error`, and the last conflict `notice`
-  (`{ kind: "apply" | "pop", index }`). Shared by the panel, the dialog, the
+  (`{ kind: "apply" | "pop" | "popKept", index }`). Shared by the panel, the dialog, the
   Changes panel button and the summary.
 
 ### 5.3 Workspace store
@@ -176,6 +187,8 @@ null`. `clear(repo)` forgets it.
   - conflict notice after an apply: "Applied with conflicts. Resolve them in
     Changes."; after a pop, plus " The stash was kept; drop it once
     resolved." Dismissable; cleared by the next action.
+  - `popKept` notice after a pop that applied but could not drop: "Applied,
+    but the stash could not be dropped. Drop it once you no longer need it."
   - errors: `staleStash` → "The stash list changed; it has been refreshed."
     (and the list refetches); `operationFailed` → git's message; others →
     the shared error-message mapping.
@@ -199,23 +212,25 @@ header next to Stage all / Unstage all, with the same disabled rules).
 - File list in two groups, **Changes** (tracked) and **Untracked** (only
   when present), each row with the status badge used by CommitSummary.
   Clicking a file selects it with scope `{ commit: stashOid }` (tracked) or
-  `{ commit: untrackedOid }` (untracked), so the existing `DetailPane` shows
-  the diff.
+  `{ commit: untrackedOid }` (untracked) and `source: "stash"`, so the
+  existing `DetailPane` shows the diff. Blame is disabled for stashed files
+  ("Blame is not available for stashed files").
 - When the selected oid is no longer in `useStashes` (popped, dropped, or
   changed outside the app) or `get_stash_files` returns `revisionNotFound`,
   the selection clears and the column returns to Changes.
 
 ## 6. Error handling summary
 
-| Situation | Kind | UI |
-|---|---|---|
-| Push with no local changes | `nothingToStash` | Inline in StashDialog; dialog stays open |
-| `stash@{n}` no longer matches the oid | `staleStash` | Panel message, list refetch |
-| Write during merge/rebase/cherry-pick/revert | `operationInProgress` | Controls disabled with reason; error as fallback |
-| Push with index conflicts | `unresolvedConflicts` | Controls disabled with reason; error as fallback |
-| Push on unborn HEAD | `unbornHead` | Controls disabled "Make a commit first" |
-| Apply/pop refused without conflicts | `operationFailed` (stderr) | Panel message with git's text; nothing changed |
-| Selected stash unknown | `revisionNotFound` | Summary closes, selection clears |
+| Situation                                    | Kind                        | UI                                               |
+| -------------------------------------------- | --------------------------- | ------------------------------------------------ |
+| Push with no local changes                   | `nothingToStash`            | Inline in StashDialog; dialog stays open         |
+| `stash@{n}` no longer matches the oid        | `staleStash`                | Panel message, list refetch                      |
+| Write during merge/rebase/cherry-pick/revert | `operationInProgress`       | Controls disabled with reason; error as fallback |
+| Push with index conflicts                    | `unresolvedConflicts`       | Controls disabled with reason; error as fallback |
+| Push on unborn HEAD                          | `unbornHead`                | Controls disabled "Make a commit first"          |
+| Apply/pop refused without conflicts          | `operationFailed` (stderr)  | Panel message with git's text; nothing changed   |
+| Selected stash unknown                       | `revisionNotFound`          | Summary closes, selection clears                 |
+| Pop applied, drop failed                     | `appliedNotDropped` outcome | Status notice, stash kept                        |
 
 `conflicts` is an outcome, not an error (§5.4 notice).
 
@@ -246,7 +261,7 @@ Tests are written first by the tester role; the developer never edits them.
   scopes, buttons, selection cleared when the stash vanishes); Changes
   panel **Stash…** button; `RepoPane` right-column switching.
 - **Gate:** `cargo test --workspace`, `cargo clippy --workspace
-  --all-targets -- -D warnings`, `cargo fmt --check`, `npm test` with 100 %
+--all-targets -- -D warnings`, `cargo fmt --check`, `npm test` with 100 %
   statements/branches/functions/lines, `npm run lint`, `npm run typecheck`,
   final architect approval.
 - **Acceptance walk** (running app, WebKit inspector tooling):

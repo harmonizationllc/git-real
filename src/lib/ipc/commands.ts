@@ -28,6 +28,9 @@ import type {
   RecentEntry,
   RepoId,
   ResetMode,
+  StashEntry,
+  StashFiles,
+  StashOutcome,
   WorkingTreeStatus,
 } from "./types";
 
@@ -292,4 +295,34 @@ export function rebaseInteractive(
   steps: RebaseStep[],
 ): Promise<OperationOutcome> {
   return invoke<OperationOutcome>("rebase_interactive", { id, base, steps });
+}
+
+/** The stashes, newest first; entry n is stash@{n}. */
+export function listStashes(id: RepoId): Promise<StashEntry[]> {
+  return invoke<StashEntry[]>("list_stashes", { id });
+}
+
+/** A stash's tracked changes and untracked files. */
+export function getStashFiles(id: RepoId, oid: string): Promise<StashFiles> {
+  return invoke<StashFiles>("get_stash_files", { id, oid });
+}
+
+export function stashPush(
+  id: RepoId,
+  message: string | null,
+  includeUntracked: boolean,
+): Promise<void> {
+  return invoke<void>("stash_push", { id, message, includeUntracked });
+}
+
+export function stashApply(id: RepoId, index: number, oid: string): Promise<StashOutcome> {
+  return invoke<StashOutcome>("stash_apply", { id, index, oid });
+}
+
+export function stashPop(id: RepoId, index: number, oid: string): Promise<StashOutcome> {
+  return invoke<StashOutcome>("stash_pop", { id, index, oid });
+}
+
+export function stashDrop(id: RepoId, index: number, oid: string): Promise<void> {
+  return invoke<void>("stash_drop", { id, index, oid });
 }
