@@ -1,4 +1,4 @@
-import { LanguageDescription } from "@codemirror/language";
+import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import type { Parser } from "@lezer/common";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
@@ -18,22 +18,24 @@ export function languageFor(path: string): LanguageDescription | null {
   return LanguageDescription.matchFilename(languages, name);
 }
 
-const parsers = new Map<string, Promise<Parser>>();
+const supports = new Map<string, Promise<LanguageSupport>>();
 
-/** Loads a language's parser once; later calls share the promise. A failed load is not cached. */
-export function loadParser(desc: LanguageDescription): Promise<Parser> {
-  let p = parsers.get(desc.name);
+/** Loads a language once; later calls share the promise. A failed load is not cached. */
+export function loadLanguage(desc: LanguageDescription): Promise<LanguageSupport> {
+  let p = supports.get(desc.name);
   if (!p) {
-    p = desc.load().then(
-      (support) => support.language.parser,
-      (e: unknown) => {
-        parsers.delete(desc.name);
-        throw e;
-      },
-    );
-    parsers.set(desc.name, p);
+    p = desc.load().catch((e: unknown) => {
+      supports.delete(desc.name);
+      throw e;
+    });
+    supports.set(desc.name, p);
   }
   return p;
+}
+
+/** A language's parser, sharing `loadLanguage`'s cache. */
+export function loadParser(desc: LanguageDescription): Promise<Parser> {
+  return loadLanguage(desc).then((support) => support.language.parser);
 }
 
 /** Parses `text` once and splits the highlighted spans into per-line tokens. */
