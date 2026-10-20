@@ -8,6 +8,7 @@ import {
   highlightHunk,
   highlightText,
   languageFor,
+  loadLanguage,
   loadParser,
   sideText,
   tokenize,
@@ -59,6 +60,34 @@ describe("loadParser", () => {
       .mockResolvedValueOnce(support);
     await expect(loadParser(desc)).rejects.toThrow("chunk failed");
     await expect(loadParser(desc)).resolves.toBe(parser);
+  });
+});
+
+// Contract: loadLanguage resolves the whole LanguageSupport, shares one load with loadParser, and never caches a failure.
+describe("loadLanguage", () => {
+  const support = { language: { parser } } as never;
+  const describeLang = (name: string): LanguageDescription =>
+    LanguageDescription.of({
+      name,
+      extensions: [`x${name}`],
+      load: () => Promise.resolve(support),
+    });
+
+  it("should return the LanguageSupport and share the cache with loadParser", async () => {
+    const desc = describeLang("SharedLang");
+    const load = vi.spyOn(desc, "load").mockResolvedValue(support);
+    const loaded = await loadLanguage(desc);
+    await loadParser(desc);
+    expect(load).toHaveBeenCalledOnce();
+    expect(loaded).toBe(support);
+  });
+  it("should not cache a failed loadLanguage", async () => {
+    const desc = describeLang("RetrySupportLang");
+    vi.spyOn(desc, "load")
+      .mockRejectedValueOnce(new Error("chunk failed"))
+      .mockResolvedValueOnce(support);
+    await expect(loadLanguage(desc)).rejects.toThrow("chunk failed");
+    await expect(loadLanguage(desc)).resolves.toBe(support);
   });
 });
 
