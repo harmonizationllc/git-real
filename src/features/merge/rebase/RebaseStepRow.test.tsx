@@ -94,6 +94,15 @@ describe("RebaseStepRow content", () => {
     expect(within(select()).getAllByRole("option")[0]).toHaveTextContent("Pick — keep the commit");
   });
 
+  it("should offer squash and fixup as folding into the commit below", () => {
+    renderRow();
+    const labels = within(select())
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(labels[1]).toBe("Squash — fold into the commit below, keep both messages");
+    expect(labels[2]).toBe("Fixup — fold into the commit below, discard its message");
+  });
+
   it("should select the step's current action", () => {
     renderRow({ step: step({ action: "fixup" }) });
     expect(select()).toHaveValue("fixup");

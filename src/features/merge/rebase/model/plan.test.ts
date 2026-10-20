@@ -30,8 +30,8 @@ describe("ACTIONS", () => {
   it("should carry the spec label for each action", () => {
     expect(ACTIONS.map((a) => a.label)).toEqual([
       "Pick — keep the commit",
-      "Squash — fold into the commit above, keep both messages",
-      "Fixup — fold into the commit above, discard its message",
+      "Squash — fold into the commit below, keep both messages",
+      "Fixup — fold into the commit below, discard its message",
       "Edit — stop after applying it to amend",
       "Drop — leave the commit out",
     ]);
