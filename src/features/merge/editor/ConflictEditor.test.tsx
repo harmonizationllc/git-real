@@ -652,7 +652,7 @@ describe("ConflictEditor reload", () => {
     const { queryClient } = setup();
     const view = await editor();
     act(() => view.dispatch({ selection: { anchor: 5 } }));
-    writeToDisk(TWO.replaceAll("\n", "\r\n"));
+    writeToDisk(TWO.replace(/\n/g, "\r\n"));
     await refetch(queryClient);
     await tick(0);
     expect(doc(view)).toBe(TWO);
@@ -664,7 +664,7 @@ describe("ConflictEditor reload", () => {
     expect(writeResolution).toHaveBeenCalledExactlyOnceWith(
       REPO,
       PATH,
-      "x" + TWO.replaceAll("\n", "\r\n"),
+      "x" + TWO.replace(/\n/g, "\r\n"),
       false,
     );
     act(() => void undo(view));
