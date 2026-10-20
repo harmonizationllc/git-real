@@ -1117,6 +1117,7 @@ describe("ChangesPanel conflict sides", () => {
     branch: "topic",
     step: 1,
     total: 3,
+    stoppedForEdit: false,
   };
   const dirty: AppError = { kind: "unresolvedConflicts", message: "still conflicted" };
 

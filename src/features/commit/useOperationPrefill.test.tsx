@@ -27,6 +27,7 @@ const rebase: OperationState = {
   branch: "feature",
   step: 1,
   total: 2,
+  stoppedForEdit: false,
 };
 const none: OperationState = { kind: "none" };
 

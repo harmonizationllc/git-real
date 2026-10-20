@@ -694,3 +694,148 @@ fn the_cherry_pick_target_is_passed_as_the_canonical_lowercase_oid() {
 
     assert_eq!(after_workdir(&path), ["cherry-pick", oid.as_str()]);
 }
+
+// --- GR-10c: interactive rebase ---
+
+/// Behaviour that records `GIT_SEQUENCE_EDITOR` and then runs it the way git
+/// would, handing it `<.git>/todo.txt` to overwrite.
+const CAPTURE_EDITOR: &str = r#"printf '%s' "$GIT_SEQUENCE_EDITOR" > "$2/.git/seq-editor.txt"
+eval "$GIT_SEQUENCE_EDITOR \"$2/.git/todo.txt\"""#;
+
+/// `operation_fixture` plus one commit on top of `other`: returns the new oid.
+fn interactive_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
+    let (dir, path, _session, _oid) = operation_fixture();
+    let oid = common::commit_file(&path, "x.txt", "x\n", "add x").to_string();
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session, oid)
+}
+
+fn pick(oid: &str) -> git_real_core::RebaseStep {
+    git_real_core::RebaseStep {
+        action: git_real_core::RebaseAction::Pick,
+        oid: oid.to_owned(),
+    }
+}
+
+/// The todo file path embedded in the recorded `GIT_SEQUENCE_EDITOR` (`cp '<path>'`).
+fn todo_path(path: &Path) -> PathBuf {
+    let editor = std::fs::read_to_string(path.join(".git").join("seq-editor.txt"))
+        .expect("the stand-in git did not record the sequence editor");
+    let quoted = editor
+        .strip_prefix("cp '")
+        .and_then(|rest| rest.strip_suffix('\''))
+        .unwrap_or_else(|| panic!("unexpected sequence editor {editor:?}"));
+    PathBuf::from(quoted)
+}
+
+#[test]
+fn rebase_interactive_runs_git_rebase_i_with_the_resolved_base_oid() {
+    let (_d, path, session, oid) = interactive_fixture();
+    let base = branch_oid(&path, "other");
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert_eq!(after_workdir(&path), ["rebase", "-i", base.as_str()]);
+}
+
+#[test]
+fn rebase_interactive_runs_git_with_the_commit_editor_disabled() {
+    let (_d, path, session, oid) = interactive_fixture();
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert_eq!(editor(&path), "true");
+}
+
+#[test]
+fn rebase_interactive_hands_git_a_todo_with_one_line_per_step() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, CAPTURE_EDITOR);
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    let todo = std::fs::read_to_string(path.join(".git").join("todo.txt")).unwrap();
+    assert_eq!(todo, format!("pick {oid} add x\n"));
+}
+
+#[test]
+fn rebase_interactive_reports_completed_when_git_exits_zero_and_nothing_is_in_progress() {
+    let (_d, _p, session, oid) = interactive_fixture();
+
+    let outcome = session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+}
+
+#[test]
+fn rebase_interactive_deletes_the_todo_file_after_git_succeeds() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, CAPTURE_EDITOR);
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert!(!todo_path(&path).exists());
+}
+
+#[test]
+fn rebase_interactive_deletes_the_todo_file_when_git_fails() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, &format!("{CAPTURE_EDITOR}\nexit 1"));
+
+    let err = session
+        .rebase_interactive("other", &[pick(&oid)])
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::OperationFailed { .. }), "{err:?}");
+    assert!(!todo_path(&path).exists());
+}
+
+#[test]
+fn rebase_interactive_failure_is_operation_failed_with_the_rebase_verb() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, "echo 'boom' >&2\nexit 128");
+
+    let err = session
+        .rebase_interactive("other", &[pick(&oid)])
+        .unwrap_err();
+
+    match err {
+        GitError::OperationFailed { verb, .. } => assert_eq!(verb, "rebase"),
+        other => panic!("expected OperationFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn rebase_interactive_does_not_run_git_for_an_invalid_plan() {
+    let (_d, path, session, oid) = interactive_fixture();
+    let squash = git_real_core::RebaseStep {
+        action: git_real_core::RebaseAction::Squash,
+        oid,
+    };
+
+    let err = session.rebase_interactive("other", &[squash]).unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert!(!path.join(".git").join("argv.txt").exists());
+}
+
+#[test]
+fn rebase_interactive_stopped_for_edit_is_reported_when_git_exits_zero_mid_rebase() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, "mkdir -p \"$2/.git/rebase-merge\"\nexit 0");
+
+    let outcome = session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+}
+
+fn branch_oid(path: &Path, name: &str) -> String {
+    Repository::open(path)
+        .unwrap()
+        .find_branch(name, BranchType::Local)
+        .unwrap()
+        .get()
+        .target()
+        .unwrap()
+        .to_string()
+}

@@ -1974,6 +1974,7 @@ describe("GraphPanel cherry-pick and revert gaps", () => {
       branch: "topic",
       step: 1,
       total: 2,
+      stoppedForEdit: false,
     },
     { kind: "cherryPick", oid: oidOf(5), message },
     { kind: "revert", oid: oidOf(5), message },

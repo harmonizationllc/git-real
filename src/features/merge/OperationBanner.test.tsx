@@ -37,6 +37,7 @@ const rebaseState: OperationState = {
   branch: "feature",
   step: 2,
   total: 5,
+  stoppedForEdit: false,
 };
 const pickState: OperationState = { kind: "cherryPick", oid: oid("c"), message };
 const revertState: OperationState = { kind: "revert", oid: oid("d"), message };

@@ -5,12 +5,13 @@ mod common;
 use std::path::PathBuf;
 
 use git_real_core::{
-    ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState, RepoSession,
+    ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState, RebaseAction,
+    RebaseCommit, RebaseStep, RepoSession, Signature,
 };
 use git_real_lib::commands::merge::{
     abort_operation_inner, can_fast_forward_inner, cherry_pick_inner, continue_rebase_inner,
-    get_operation_state_inner, merge_branch_inner, rebase_onto_inner, resolve_conflicts_inner,
-    revert_commit_inner, write_resolution_inner,
+    get_operation_state_inner, merge_branch_inner, rebase_interactive_inner, rebase_onto_inner,
+    rebase_plan_inner, resolve_conflicts_inner, revert_commit_inner, write_resolution_inner,
 };
 use git_real_lib::commands::worktree::get_status_inner;
 use git_real_lib::error::AppErrorKind;
@@ -535,4 +536,332 @@ fn write_resolution_inner_maps_path_not_found() {
     let err = write_resolution_inner(&reg, id, "README.md", "x\n", true).unwrap_err();
 
     assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+// --- GR-10c: interactive rebase ---
+
+fn git(path: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .expect("spawn git");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// `main` with README, then `feature` with commits a, b, c; HEAD on `feature`.
+fn feature() -> (TempDir, PathBuf, RepoRegistry, RepoId, [Oid; 3]) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    git(&path, &["branch", "-M", "main"]);
+    git(&path, &["switch", "-c", "feature"]);
+    let a = common::commit_file(&path, "a.txt", "a\n", "add a");
+    let b = common::commit_file(&path, "b.txt", "b\n", "add b");
+    let c = common::commit_file(&path, "c.txt", "c\n", "add c");
+    let (reg, id) = register(&path);
+    (dir, path, reg, id, [a, b, c])
+}
+
+fn step(action: RebaseAction, oid: Oid) -> RebaseStep {
+    RebaseStep {
+        action,
+        oid: oid.to_string(),
+    }
+}
+
+#[test]
+fn rebase_plan_inner_lists_commits_oldest_first() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, [a, b, c]) = feature();
+
+    let plan = rebase_plan_inner(&reg, id, "main").unwrap();
+
+    let oids: Vec<_> = plan.iter().map(|c| c.oid.clone()).collect();
+    assert_eq!(oids, [a.to_string(), b.to_string(), c.to_string()]);
+}
+
+#[test]
+fn rebase_plan_inner_returns_subject_and_author() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, _) = feature();
+
+    let plan = rebase_plan_inner(&reg, id, "main").unwrap();
+
+    assert_eq!(plan[0].subject, "add a");
+    assert_eq!(plan[0].author.email, "test@example.com");
+}
+
+#[test]
+fn rebase_plan_inner_maps_a_base_equal_to_head_to_bad_selection() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, _) = feature();
+
+    let err = rebase_plan_inner(&reg, id, &head_oid(&path).to_string()).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::BadSelection);
+}
+
+#[test]
+fn rebase_plan_inner_maps_an_unknown_branch_to_branch_not_found() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, _) = feature();
+
+    let err = rebase_plan_inner(&reg, id, "nope").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::BranchNotFound);
+}
+
+#[test]
+fn rebase_plan_inner_maps_an_unknown_oid_to_commit_not_found() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, _) = feature();
+
+    let err = rebase_plan_inner(&reg, id, &"f".repeat(40)).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::CommitNotFound);
+}
+
+#[test]
+fn rebase_plan_inner_maps_a_running_operation_to_operation_in_progress() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id) = diverged();
+    rebase_onto_inner(&reg, id, "other").unwrap();
+
+    let err = rebase_plan_inner(&reg, id, "other").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::OperationInProgress);
+}
+
+#[test]
+fn rebase_plan_inner_maps_a_merge_commit_in_range_to_merge_commit() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, _) = feature();
+    git(&path, &["switch", "-q", "-c", "side", "main"]);
+    common::commit_file(&path, "side.txt", "s\n", "side work");
+    git(&path, &["switch", "-q", "feature"]);
+    git(&path, &["merge", "--no-ff", "-m", "merge side", "side"]);
+
+    let err = rebase_plan_inner(&reg, id, "main").unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::MergeCommit);
+}
+
+#[test]
+fn rebase_interactive_inner_completes_a_drop() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, [a, b, c]) = feature();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Drop, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = rebase_interactive_inner(&reg, id, "main", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(
+        get_operation_state_inner(&reg, id).unwrap(),
+        OperationState::None
+    );
+    assert!(!path.join("b.txt").exists());
+}
+
+#[test]
+fn rebase_interactive_inner_reports_stopped_with_the_edit_flag() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, [a, b, c]) = feature();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = rebase_interactive_inner(&reg, id, "main", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+    let state = get_operation_state_inner(&reg, id).unwrap();
+    assert!(
+        matches!(
+            state,
+            OperationState::Rebase {
+                stopped_for_edit: true,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+#[test]
+fn rebase_interactive_inner_maps_a_leading_squash_to_bad_selection() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, [a, b, c]) = feature();
+    let steps = [
+        step(RebaseAction::Squash, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let err = rebase_interactive_inner(&reg, id, "main", &steps).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::BadSelection);
+}
+
+#[test]
+fn rebase_interactive_inner_maps_an_unknown_branch_to_branch_not_found() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id, [a, ..]) = feature();
+
+    let err =
+        rebase_interactive_inner(&reg, id, "nope", &[step(RebaseAction::Pick, a)]).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::BranchNotFound);
+}
+
+#[test]
+fn rebase_interactive_inner_maps_a_running_operation_to_operation_in_progress() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, reg, id) = diverged();
+    rebase_onto_inner(&reg, id, "other").unwrap();
+
+    let err = rebase_interactive_inner(&reg, id, "other", &[]).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::OperationInProgress);
+}
+
+#[test]
+fn rebase_commands_map_an_unknown_repo_id_to_unknown_repo() {
+    let reg = RepoRegistry::default();
+
+    let plan = rebase_plan_inner(&reg, MISSING_ID, "main")
+        .unwrap_err()
+        .kind;
+    let run = rebase_interactive_inner(&reg, MISSING_ID, "main", &[])
+        .unwrap_err()
+        .kind;
+
+    assert_eq!(
+        (plan, run),
+        (AppErrorKind::UnknownRepo, AppErrorKind::UnknownRepo)
+    );
+}
+
+#[test]
+fn rebase_commit_serialises_camel_case() {
+    let json = serde_json::to_value(RebaseCommit {
+        oid: "a".into(),
+        subject: "s".into(),
+        author: Signature {
+            name: "n".into(),
+            email: "e".into(),
+            time: 1,
+        },
+    })
+    .unwrap();
+
+    assert_eq!(
+        json,
+        json!({ "oid": "a", "subject": "s", "author": { "name": "n", "email": "e", "time": 1 } })
+    );
+}
+
+#[test]
+fn rebase_step_deserialises_a_camel_case_action() {
+    let step: RebaseStep =
+        serde_json::from_value(json!({ "action": "fixup", "oid": "a" })).unwrap();
+
+    assert_eq!((step.action, step.oid.as_str()), (RebaseAction::Fixup, "a"));
+}
+
+#[test]
+fn rebase_step_rejects_an_unknown_action() {
+    let result = serde_json::from_value::<RebaseStep>(json!({ "action": "reword", "oid": "a" }));
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rebase_step_rejects_a_missing_oid() {
+    let result = serde_json::from_value::<RebaseStep>(json!({ "action": "pick" }));
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn every_rebase_action_serialises_to_its_lowercase_keyword() {
+    let all = [
+        RebaseAction::Pick,
+        RebaseAction::Squash,
+        RebaseAction::Fixup,
+        RebaseAction::Edit,
+        RebaseAction::Drop,
+    ];
+
+    let names: Vec<_> = all
+        .iter()
+        .map(|a| serde_json::to_value(a).unwrap())
+        .collect();
+
+    assert_eq!(
+        names,
+        [
+            json!("pick"),
+            json!("squash"),
+            json!("fixup"),
+            json!("edit"),
+            json!("drop")
+        ]
+    );
+}
+
+#[test]
+fn operation_outcome_stopped_serialises_as_stopped() {
+    assert_eq!(
+        serde_json::to_value(OperationOutcome::Stopped).unwrap(),
+        json!("stopped")
+    );
+}
+
+#[test]
+fn rebase_state_serialises_stopped_for_edit() {
+    let value = serde_json::to_value(OperationState::Rebase {
+        onto: "abc".into(),
+        onto_name: None,
+        branch: Some("feature".into()),
+        step: 2,
+        total: 3,
+        stopped_for_edit: true,
+    })
+    .unwrap();
+
+    assert_eq!(value["stoppedForEdit"], json!(true));
 }

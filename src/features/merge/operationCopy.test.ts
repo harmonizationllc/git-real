@@ -29,6 +29,7 @@ const rebase = (over: Partial<Extract<Active, { kind: "rebase" }>> = {}): Active
   branch: "feature",
   step: 2,
   total: 5,
+  stoppedForEdit: false,
   ...over,
 });
 const pick: Active = { kind: "cherryPick", oid: oidA, message };

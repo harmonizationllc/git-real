@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use git_real_core::git_cli;
 use git_real_core::{
     ChangeKind, CommitMessage, ConflictSide, FastForwardCheck, GitError, MergeMode,
-    OperationOutcome, OperationState, RepoSession,
+    OperationOutcome, OperationState, RebaseAction, RebaseCommit, RebaseStep, RepoSession,
+    Signature,
 };
 use git2::{BranchType, Oid, Repository};
 use serde_json::json;
@@ -210,6 +211,7 @@ fn state_after_conflicting_rebase_has_step_and_total() {
             branch: Some(head),
             step: 1,
             total: 1,
+            stopped_for_edit: false,
         }
     );
 }
@@ -316,6 +318,7 @@ fn state_degrades_when_rebase_files_are_unreadable() {
             branch: Some("topic".to_string()),
             step: 0,
             total: 0,
+            stopped_for_edit: false,
         }
     );
 }
@@ -1079,6 +1082,7 @@ fn operation_state_serializes_tagged() {
         branch: Some("main".into()),
         step: 1,
         total: 1,
+        stopped_for_edit: false,
     })
     .unwrap();
     let pick = serde_json::to_value(OperationState::CherryPick {
@@ -1093,7 +1097,7 @@ fn operation_state_serializes_tagged() {
     assert_eq!(none, json!({"kind": "none"}));
     assert_eq!(
         rebase,
-        json!({"kind": "rebase", "onto": "abc", "ontoName": null, "branch": "main", "step": 1, "total": 1})
+        json!({"kind": "rebase", "onto": "abc", "ontoName": null, "branch": "main", "step": 1, "total": 1, "stoppedForEdit": false})
     );
     assert_eq!(
         pick,
@@ -1629,6 +1633,7 @@ fn state_reads_the_rebase_apply_layout() {
             branch: Some("topic".to_string()),
             step: 2,
             total: 5,
+            stopped_for_edit: false,
         }
     );
 }
@@ -2549,4 +2554,1032 @@ fn write_resolution_index_is_untouched_when_the_write_fails() {
 
     assert!(has_conflicts(&path));
     assert_eq!(session.status().unwrap(), before);
+}
+
+// ---------- GR-10c: interactive rebase ----------
+
+/// `main` with README, then `feature` with three commits a, b, c (files a.txt,
+/// b.txt, c.txt), HEAD on `feature`. Returns the three feature oids oldest
+/// first and the main tip. The base branch is renamed `main` so the tests do
+/// not depend on git's default branch name.
+fn feature_fixture() -> (TempDir, PathBuf, [Oid; 3], Oid) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    common::run_git_ok(&path, &["branch", "-M", "main"]);
+    let main_tip = head_oid(&path);
+    common::run_git_ok(&path, &["switch", "-c", "feature"]);
+    let a = common::commit_file(&path, "a.txt", "a\n", "add a");
+    let b = common::commit_file(&path, "b.txt", "b\n", "add b\n\nbody of b");
+    let c = common::commit_file(&path, "c.txt", "c\n", "add c");
+    (dir, path, [a, b, c], main_tip)
+}
+
+fn step(action: RebaseAction, oid: Oid) -> RebaseStep {
+    RebaseStep {
+        action,
+        oid: oid.to_string(),
+    }
+}
+
+/// Subjects of `main..HEAD`, newest first.
+fn subjects(path: &Path) -> Vec<String> {
+    let out = common::run_git_ok(path, &["log", "--format=%s", "main..HEAD"]);
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+fn head_message(path: &Path) -> String {
+    let out = common::run_git_ok(path, &["log", "-1", "--format=%B"]);
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+fn plan_oids(plan: &[RebaseCommit]) -> Vec<String> {
+    plan.iter().map(|c| c.oid.clone()).collect()
+}
+
+fn feature_session(path: &Path) -> RepoSession {
+    RepoSession::open(path).expect("open")
+}
+
+/// `feature_fixture` plus x1 and x2, which both rewrite x.txt line 1.
+fn conflicting_fixture() -> (TempDir, PathBuf, [Oid; 5]) {
+    let (dir, path, [a, b, c], _) = feature_fixture();
+    let x1 = common::commit_file(&path, "x.txt", "one\n", "x one");
+    let x2 = common::commit_file(&path, "x.txt", "two\n", "x two");
+    (dir, path, [a, b, c, x1, x2])
+}
+
+// --- rebase_plan: listing ---
+
+// The plan lists main..HEAD oldest first with oid, subject and author.
+#[test]
+fn rebase_plan_lists_the_range_oldest_first_with_fields() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(
+        plan_oids(&plan),
+        [a.to_string(), b.to_string(), c.to_string()]
+    );
+}
+
+#[test]
+fn rebase_plan_uses_the_first_line_as_the_subject() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(plan[1].subject, "add b");
+}
+
+#[test]
+fn rebase_plan_carries_the_author_name_email_and_time() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [_, b, _], _) = feature_fixture();
+    let expected_time = Repository::open(&path)
+        .unwrap()
+        .find_commit(b)
+        .unwrap()
+        .author()
+        .when()
+        .seconds();
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(
+        plan[1].author,
+        Signature {
+            name: "Test User".into(),
+            email: "test@example.com".into(),
+            time: expected_time,
+        }
+    );
+}
+
+// A full hex oid names the base as well as a branch does; the base itself is excluded.
+#[test]
+fn rebase_plan_accepts_a_full_oid_base() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+
+    let plan = feature_session(&path).rebase_plan(&a.to_string()).unwrap();
+
+    assert_eq!(plan_oids(&plan), [b.to_string(), c.to_string()]);
+}
+
+#[test]
+fn rebase_plan_accepts_a_remote_tracking_base() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    let (_bare_dir, bare) = common::temp_bare_clone(&path);
+    common::add_remote_and_fetch(&path, &bare, "feature");
+    let repo = Repository::open(&path).unwrap();
+    assert!(repo.find_reference("refs/remotes/origin/main").is_ok());
+    drop(repo);
+
+    let plan = feature_session(&path).rebase_plan("origin/main").unwrap();
+
+    assert_eq!(plan.len(), 3);
+}
+
+// --- rebase_plan: rejections ---
+
+#[test]
+fn rebase_plan_unknown_oid_is_commit_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let err = feature_session(&path)
+        .rebase_plan(&"f".repeat(40))
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::CommitNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_unknown_branch_is_branch_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let err = feature_session(&path).rebase_plan("nope").unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::BranchNotFound(n) if n == "nope"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rebase_plan_dash_prefixed_base_is_branch_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let err = feature_session(&path).rebase_plan("--exec").unwrap_err();
+
+    assert!(matches!(err, GitError::BranchNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_empty_base_is_branch_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let err = feature_session(&path).rebase_plan("").unwrap_err();
+
+    assert!(matches!(err, GitError::BranchNotFound(_)), "{err:?}");
+}
+
+// A base equal to HEAD leaves nothing to replay.
+#[test]
+fn rebase_plan_head_itself_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [_, _, c], _) = feature_fixture();
+
+    let err = feature_session(&path)
+        .rebase_plan(&c.to_string())
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_non_ancestor_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    common::branch_with_commit(&path, "other", "o.txt", "o\n");
+
+    let err = feature_session(&path).rebase_plan("other").unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_descendant_of_head_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [_, _, c], _) = feature_fixture();
+    common::run_git_ok(&path, &["switch", "-q", "main"]);
+
+    let err = feature_session(&path)
+        .rebase_plan(&c.to_string())
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_while_in_progress_is_operation_in_progress() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = diverged();
+    assert_eq!(
+        session.rebase_onto("other").unwrap(),
+        OperationOutcome::Conflicts
+    );
+
+    let err = session.rebase_plan("other").unwrap_err();
+
+    assert!(matches!(err, GitError::OperationInProgress), "{err:?}");
+}
+
+#[test]
+fn rebase_plan_on_unborn_is_unborn_head() {
+    let (_d, path) = common::temp_repo_unborn();
+    let session = open(&path);
+
+    let err = session.rebase_plan("main").unwrap_err();
+
+    assert!(matches!(err, GitError::UnbornHead), "{err:?}");
+}
+
+// A merge commit in the range cannot be replayed without --rebase-merges.
+#[test]
+fn rebase_plan_with_a_merge_commit_in_range_is_merge_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    common::run_git_ok(&path, &["switch", "-q", "-c", "side", "main"]);
+    common::commit_file(&path, "side.txt", "s\n", "side work");
+    common::run_git_ok(&path, &["switch", "-q", "feature"]);
+    common::run_git_ok(&path, &["merge", "--no-ff", "-m", "merge side", "side"]);
+    let merge_oid = head_oid(&path).to_string();
+
+    let err = feature_session(&path).rebase_plan("main").unwrap_err();
+
+    assert!(
+        matches!(&err, GitError::MergeCommit(o) if *o == merge_oid),
+        "{err:?}"
+    );
+}
+
+// --- rebase_interactive: running the plan ---
+
+// Reorder c before a, squash b into a: the result is c then a(+b).
+#[test]
+fn rebase_interactive_reorders_and_squashes() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Squash, b),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(subjects(&path), ["add a", "add c"]);
+}
+
+#[test]
+fn rebase_interactive_squash_joins_the_messages() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Squash, b),
+    ];
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    let body = head_message(&path);
+
+    assert!(
+        body.contains("add a") && body.contains("add b") && body.contains("body of b"),
+        "{body}"
+    );
+}
+
+#[test]
+fn rebase_interactive_squash_keeps_both_changes_in_the_tree() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Squash, b),
+        step(RebaseAction::Drop, c),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert!(head_tree_has(&path, "a.txt") && head_tree_has(&path, "b.txt"));
+    assert_eq!(subjects(&path), ["add a"]);
+}
+
+#[test]
+fn rebase_interactive_leaves_no_operation_in_progress() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+    ];
+    let session = feature_session(&path);
+
+    session.rebase_interactive("main", &steps).unwrap();
+
+    assert_eq!(session.operation_state(), OperationState::None);
+}
+
+#[test]
+fn rebase_interactive_keeps_the_branch_checked_out() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, c),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(common::head_branch_name(&path), "feature");
+}
+
+#[test]
+fn rebase_interactive_reorder_changes_the_commit_order() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, a),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(subjects(&path), ["add a", "add b", "add c"]);
+}
+
+#[test]
+fn rebase_interactive_drop_removes_the_commit_from_the_history() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Drop, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(subjects(&path), ["add c", "add a"]);
+}
+
+#[test]
+fn rebase_interactive_drop_removes_the_commits_file_from_the_tree() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Drop, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert!(!head_tree_has(&path, "b.txt"));
+}
+
+#[test]
+fn rebase_interactive_fixup_keeps_the_first_message_only() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Fixup, b),
+        step(RebaseAction::Pick, c),
+    ];
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    let msg = common::run_git_ok(&path, &["log", "-1", "--format=%B", "HEAD~1"]);
+
+    assert_eq!(String::from_utf8_lossy(&msg.stdout).trim_end(), "add a");
+}
+
+#[test]
+fn rebase_interactive_with_every_commit_picked_in_order_keeps_the_oids() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(head_oid(&path), c);
+}
+
+// An `edit` step stops git with exit 0: the outcome is Stopped and the state says why.
+#[test]
+fn rebase_interactive_edit_reports_stopped() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Stopped);
+}
+
+#[test]
+fn rebase_interactive_edit_stop_sets_the_flag_step_total_and_branch() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+
+    match session.operation_state() {
+        OperationState::Rebase {
+            stopped_for_edit,
+            step,
+            total,
+            branch,
+            ..
+        } => {
+            assert!(stopped_for_edit);
+            assert_eq!((step, total), (2, 3));
+            assert_eq!(branch.as_deref(), Some("feature"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn rebase_interactive_edit_stop_has_the_edited_commit_checked_out() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+    feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert!(head_tree_has(&path, "b.txt") && !head_tree_has(&path, "c.txt"));
+}
+
+// Continuing after an edit stop amends the staged changes into the stopped commit.
+#[test]
+fn continue_after_an_edit_stop_amends_staged_changes() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+    common::write_file(&path, "b.txt", "b2\n");
+    common::stage(&path, "b.txt");
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    let shown = common::run_git_ok(&path, &["show", "HEAD~1:b.txt"]);
+    assert_eq!(String::from_utf8_lossy(&shown.stdout), "b2\n");
+}
+
+#[test]
+fn continue_after_an_edit_stop_keeps_the_commit_order_and_clears_the_state() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+    common::write_file(&path, "b.txt", "b2\n");
+    common::stage(&path, "b.txt");
+    session.continue_rebase().unwrap();
+
+    assert_eq!(subjects(&path), ["add c", "add b", "add a"]);
+    assert_eq!(session.operation_state(), OperationState::None);
+}
+
+#[test]
+fn continue_after_an_edit_stop_with_nothing_staged_completes_unchanged() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Edit, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+
+    let outcome = session.continue_rebase().unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(subjects(&path), ["add c", "add b", "add a"]);
+}
+
+// A conflict stop is not an edit stop.
+#[test]
+fn state_without_an_amend_marker_is_not_stopped_for_edit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = diverged();
+    session.rebase_onto("other").unwrap();
+
+    let state = session.operation_state();
+
+    assert!(
+        matches!(
+            state,
+            OperationState::Rebase {
+                stopped_for_edit: false,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+#[test]
+fn state_with_an_amend_marker_in_rebase_merge_is_stopped_for_edit() {
+    let (_d, path, _s, _tip) = ahead();
+    let session = with_marker_dir(
+        &path,
+        "rebase-merge",
+        &[("msgnum", "1\n"), ("end", "2\n"), ("amend", "")],
+    );
+
+    let state = session.operation_state();
+
+    assert!(
+        matches!(
+            state,
+            OperationState::Rebase {
+                stopped_for_edit: true,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+// The older rebase-apply layout has no amend marker, even if the file exists there.
+#[test]
+fn state_with_an_amend_file_in_rebase_apply_is_not_stopped_for_edit() {
+    let (_d, path, _s, _tip) = ahead();
+    let session = with_marker_dir(
+        &path,
+        "rebase-apply",
+        &[
+            ("rebasing", ""),
+            ("next", "1\n"),
+            ("last", "2\n"),
+            ("amend", ""),
+        ],
+    );
+
+    let state = session.operation_state();
+
+    assert!(
+        matches!(
+            state,
+            OperationState::Rebase {
+                stopped_for_edit: false,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+// Swapping two commits that rewrite the same line conflicts.
+#[test]
+fn rebase_interactive_conflict_is_conflicts() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c, x1, x2]) = conflicting_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, x2),
+        step(RebaseAction::Pick, x1),
+    ];
+    let session = feature_session(&path);
+
+    let outcome = session.rebase_interactive("main", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Conflicts);
+    assert!(has_conflicts(&path));
+}
+
+#[test]
+fn rebase_interactive_conflict_is_not_flagged_as_an_edit_stop() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c, x1, x2]) = conflicting_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, x2),
+        step(RebaseAction::Pick, x1),
+    ];
+    let session = feature_session(&path);
+    session.rebase_interactive("main", &steps).unwrap();
+
+    let state = session.operation_state();
+
+    assert!(
+        matches!(
+            state,
+            OperationState::Rebase {
+                stopped_for_edit: false,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+// --- rebase_interactive: validation ---
+
+fn assert_rejected_untouched(path: &Path, session: &RepoSession, before: Oid, err: GitError) {
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert_eq!(session.operation_state(), OperationState::None);
+    assert_eq!(head_oid(path), before);
+    assert!(status_is_clean(session));
+}
+
+#[test]
+fn rebase_interactive_rejects_an_oid_outside_the_range() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], main_tip) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, main_tip),
+    ];
+    let session = feature_session(&path);
+
+    let err = session.rebase_interactive("main", &steps).unwrap_err();
+
+    assert_rejected_untouched(&path, &session, c, err);
+}
+
+#[test]
+fn rebase_interactive_rejects_an_unknown_oid() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, _, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        RebaseStep {
+            action: RebaseAction::Pick,
+            oid: "f".repeat(40),
+        },
+        step(RebaseAction::Pick, c),
+    ];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_an_abbreviated_oid() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        RebaseStep {
+            action: RebaseAction::Pick,
+            oid: b.to_string()[..7].to_string(),
+        },
+        step(RebaseAction::Pick, c),
+    ];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_a_duplicate_oid() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, ..], _) = feature_fixture();
+    let steps = [step(RebaseAction::Pick, a), step(RebaseAction::Pick, a)];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_all_dropped() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Drop, a),
+        step(RebaseAction::Drop, b),
+        step(RebaseAction::Drop, c),
+    ];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_an_empty_step_list() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &[])
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_a_leading_squash() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Squash, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_rejects_a_leading_fixup_after_drops() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Drop, a),
+        step(RebaseAction::Fixup, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let err = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+}
+
+// A fold after a drop that follows a kept commit is fine: the first kept step is a pick.
+#[test]
+fn rebase_interactive_accepts_a_fold_after_a_kept_commit_and_a_drop() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Drop, b),
+        step(RebaseAction::Fixup, c),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+}
+
+#[test]
+fn rebase_interactive_unknown_base_is_branch_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, ..], _) = feature_fixture();
+    let steps = [step(RebaseAction::Pick, a)];
+
+    let err = feature_session(&path)
+        .rebase_interactive("nope", &steps)
+        .unwrap_err();
+
+    assert!(matches!(err, GitError::BranchNotFound(_)), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_while_in_progress_is_operation_in_progress() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = diverged();
+    session.rebase_onto("other").unwrap();
+    let steps = [RebaseStep {
+        action: RebaseAction::Pick,
+        oid: ABSENT_OID.into(),
+    }];
+
+    let err = session.rebase_interactive("other", &steps).unwrap_err();
+
+    assert!(matches!(err, GitError::OperationInProgress), "{err:?}");
+}
+
+#[test]
+fn rebase_interactive_on_unborn_is_unborn_head() {
+    let (_d, path) = common::temp_repo_unborn();
+    let session = open(&path);
+
+    let err = session.rebase_interactive("main", &[]).unwrap_err();
+
+    assert!(matches!(err, GitError::UnbornHead), "{err:?}");
+}
+
+// A rejected plan must not touch the repository.
+#[test]
+fn rebase_interactive_validation_errors_leave_the_repository_clean() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let session = feature_session(&path);
+    let rejects: [Vec<RebaseStep>; 3] = [
+        vec![step(RebaseAction::Pick, a), step(RebaseAction::Pick, a)],
+        vec![
+            step(RebaseAction::Drop, a),
+            step(RebaseAction::Drop, b),
+            step(RebaseAction::Drop, c),
+        ],
+        vec![step(RebaseAction::Squash, a), step(RebaseAction::Pick, b)],
+    ];
+
+    for steps in &rejects {
+        let err = session.rebase_interactive("main", steps).unwrap_err();
+        assert_rejected_untouched(&path, &session, c, err);
+    }
+}
+
+// Control characters in a subject must not split or corrupt the todo.
+#[test]
+fn rebase_interactive_sanitises_subjects_in_the_todo() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let weird = common::commit_file(&path, "w.txt", "w\n", "weird\tsubject #1 \\ 'q'");
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, weird),
+    ];
+
+    let outcome = feature_session(&path)
+        .rebase_interactive("main", &steps)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(subjects(&path)[0], "weird\tsubject #1 \\ 'q'");
+}
+
+// A subject spanning no extra lines is all the rebase plan reports, whatever the body holds.
+#[test]
+fn rebase_plan_subject_excludes_the_body() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    common::commit_file(&path, "w.txt", "w\n", "weird subject #1\n\nbody\nline");
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(plan[3].subject, "weird subject #1");
 }
