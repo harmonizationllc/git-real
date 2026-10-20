@@ -1416,3 +1416,114 @@ describe("ChangesPanel conflict sides gaps", () => {
     expect(staging.length).toBeGreaterThan(0);
   });
 });
+
+// Contract (spec 4.11): the Conflicts header offers Resolve all… with Keep/Take for every conflicted path.
+describe("ChangesPanel Resolve all", () => {
+  const message = { subject: "s", body: "" };
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "feature",
+    message,
+  };
+  const conflictsSection = () => screen.getByRole("region", { name: /^Conflicts/ });
+  const resolveAll = () => within(conflictsSection()).getByRole("button", { name: "Resolve all…" });
+  const openMenu = async (user: UserEvent) => {
+    await user.click(resolveAll());
+  };
+
+  it("Conflicts header shows Resolve all… and no Stage all", async () => {
+    await renderPanel(conflict("a.txt"));
+    expect(resolveAll()).toBeInTheDocument();
+    expect(within(conflictsSection()).queryByRole("button", { name: "Stage all" })).toBeNull();
+  });
+
+  it("does not show Resolve all… in the Staged or Unstaged sections", async () => {
+    await renderPanel(conflict("a.txt"), staged("s.txt"), unstaged("u.txt"));
+    expect(screen.getAllByRole("button", { name: "Resolve all…" })).toHaveLength(1);
+  });
+
+  it("does not show Resolve all… without conflicts", async () => {
+    await renderPanel(unstaged("u.txt"));
+    expect(screen.queryByRole("button", { name: "Resolve all…" })).toBeNull();
+  });
+
+  it("does not open the menu before the button is clicked", async () => {
+    await renderPanel(conflict("a.txt"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Resolve all… opens a menu with Keep {ours} for all files and Take {theirs} for all files", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"));
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep main for all files", "Take feature for all files"]);
+  });
+
+  it("falls back to ours and theirs in the Resolve all… menu without an operation", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    expect(itemLabels()).toEqual(["Keep ours for all files", "Take theirs for all files"]);
+  });
+
+  it("Keep … for all files resolves every conflicted path with ours", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"), unstaged("u.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Keep main for all files" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "ours",
+    });
+  });
+
+  it("Take … for all files resolves every conflicted path with theirs", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel(conflict("a.txt"), conflict("b.txt"), staged("s.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Take feature for all files" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "resolve",
+      paths: ["a.txt", "b.txt"],
+      side: "theirs",
+    });
+  });
+
+  it("closes the menu after an item is chosen", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Keep ours for all files" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Resolve all… is disabled while an action is pending", async () => {
+    provideMerge({ state: mergeState, pending: true });
+    await renderPanel(conflict("a.txt"));
+    expect(resolveAll()).toBeDisabled();
+  });
+
+  it("a failure shows in the panel error slot", async () => {
+    provideMerge({
+      state: mergeState,
+      error: { kind: "operationFailed", message: "could not resolve" },
+    });
+    await renderPanel(conflict("a.txt"));
+    expect(screen.getByRole("alert")).toHaveTextContent("could not resolve");
+  });
+
+  it("Escape closes the menu", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("does not run an integration action when the menu is dismissed", async () => {
+    const { user } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    await user.keyboard("{Escape}");
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHunk, getFileContent, getFileDiff } from "../../lib/ipc";
-import type { AppError, FileDiff } from "../../lib/ipc";
+import { applyHunk, getFileContent, getFileDiff, getStatus } from "../../lib/ipc";
+import type { AppError, FileDiff, StatusEntry } from "../../lib/ipc";
 import { useDiffPrefs } from "../../lib/store/diffPrefs";
 import { useWorkspace } from "../../lib/store/workspace";
 import type { DiffScope } from "../../lib/ipc";
@@ -16,6 +16,10 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   getFileDiff: vi.fn(),
   getFileContent: vi.fn(),
   applyHunk: vi.fn(),
+  getStatus: vi.fn(),
+}));
+vi.mock("../merge/editor/ConflictEditor", () => ({
+  ConflictEditor: ({ path }: { path: string }) => <div data-testid="conflict-editor">{path}</div>,
 }));
 vi.mock("../history/BlameView", () => ({
   BlameView: vi.fn(() => <div role="table" aria-label="Blame" />),
@@ -66,6 +70,7 @@ beforeEach(() => {
   vi.mocked(getFileDiff).mockImplementation((_id, path) => Promise.resolve(textDiff({ path })));
   vi.mocked(getFileContent).mockResolvedValue(new ArrayBuffer(2));
   vi.mocked(applyHunk).mockResolvedValue(undefined);
+  vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
 });
 
 // Contract: nothing selected, nothing rendered or fetched; RepoPane decides what shows instead.
@@ -1604,5 +1609,71 @@ describe("DetailPane diff caching across the Blame toggle", () => {
     await toggleBlameAndBack();
     await new Promise((r) => setTimeout(r, 30));
     expect(getFileDiff).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Contract (spec 4.10): an unstaged selection whose status entry is conflicted opens the ConflictEditor.
+describe("DetailPane conflict routing", () => {
+  const statusEntry = (over: Partial<StatusEntry> & { path: string }): StatusEntry => ({
+    oldPath: null,
+    index: null,
+    worktree: "conflicted",
+    conflicted: true,
+    ...over,
+  });
+  const provideStatus = (...entries: StatusEntry[]) =>
+    vi.mocked(getStatus).mockResolvedValue({ entries, headUnborn: false });
+
+  it("routes a conflicted unstaged selection to the ConflictEditor", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    setup("a.ts", "unstaged");
+    expect(await screen.findByTestId("conflict-editor")).toHaveTextContent("a.ts");
+  });
+
+  it("does not render the diff for a conflicted unstaged selection", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    expect(screen.queryByRole("region", { name: "Diff" })).toBeNull();
+  });
+
+  it("keeps the diff for a staged selection of the same path", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    setup("a.ts", "staged");
+    expect(await diffRegion()).toBeInTheDocument();
+    await waitFor(() => expect(getStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("keeps the diff when the entry is not conflicted", async () => {
+    provideStatus(statusEntry({ path: "a.ts", worktree: "modified", conflicted: false }));
+    setup("a.ts", "unstaged");
+    expect(await diffRegion()).toBeInTheDocument();
+    await waitFor(() => expect(getStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("keeps the diff when another path is the conflicted one", async () => {
+    provideStatus(statusEntry({ path: "other.ts" }));
+    setup("a.ts", "unstaged");
+    expect(await diffRegion()).toBeInTheDocument();
+    await waitFor(() => expect(getStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("keeps the diff when the file has no status entry", async () => {
+    provideStatus();
+    setup("a.ts", "unstaged");
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+  });
+
+  it("falls back to the diff once the file is no longer conflicted", async () => {
+    provideStatus(statusEntry({ path: "a.ts" }));
+    const { queryClient } = setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    provideStatus(statusEntry({ path: "a.ts", worktree: "modified", conflicted: false }));
+    await act(() => queryClient.invalidateQueries());
+    expect(await diffRegion()).toBeInTheDocument();
   });
 });
