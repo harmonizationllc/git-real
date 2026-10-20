@@ -148,7 +148,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
       className={styles.root}
     >
       <header className={styles.header}>
-        <h2 ref={headingRef} tabIndex={-1} className={styles.title}>
+        <h2 ref={headingRef} tabIndex={-1} data-focus-target className={styles.title}>
           {stashRef(entry.index)}
         </h2>
         <button type="button" aria-label="Close stash details" onClick={onClose}>

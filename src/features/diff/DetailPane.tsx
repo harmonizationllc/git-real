@@ -162,7 +162,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const confirmOpen = pending !== null && pending.diff === diff;
   const n = pending?.selection.lines?.length ?? 0;
   return (
-    <div ref={rootRef} tabIndex={-1} className={styles.root}>
+    <div ref={rootRef} tabIndex={-1} data-focus-target className={styles.root}>
       {header(diff.oldPath)}
       <DiffToolbar
         diff={diff}

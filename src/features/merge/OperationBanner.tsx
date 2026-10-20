@@ -55,6 +55,7 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
     <section
       ref={rootRef}
       tabIndex={-1}
+      data-focus-target
       aria-label="Operation in progress"
       aria-busy={pending || undefined}
       className={styles.root}
