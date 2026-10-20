@@ -364,6 +364,17 @@ describe("RebaseDialog focus", () => {
     expect(props.onClose).toHaveBeenCalledOnce();
   });
 
+  it("should pull focus back to the dialog when a retry after a failed run goes pending", async () => {
+    const { props, rerender } = renderDialog();
+    await list();
+    rerender(<RebaseDialog {...props} pending />);
+    rerender(<RebaseDialog {...props} pending={false} />);
+    start().focus();
+    expect(start()).toHaveFocus();
+    rerender(<RebaseDialog {...props} pending />);
+    expect(dialog()).toHaveFocus();
+  });
+
   it("should restore focus to the opener when it unmounts", () => {
     const opener = document.createElement("button");
     document.body.appendChild(opener);
