@@ -6,6 +6,11 @@
   composes: dialog from "../../components/ConfirmDialog.module.css";
 }
 
+/* Focus rests on the dialog only while a push runs; it is a container, not a control. */
+.dialog:focus {
+  outline: none;
+}
+
 .title {
   composes: title from "../../components/ConfirmDialog.module.css";
 }

@@ -13,6 +13,10 @@ export interface StashDialogProps {
   fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
+/** An element focus can go back to: still in the document, enabled, and not the body. */
+const restorable = (el: Element | null): el is HTMLElement =>
+  el instanceof HTMLElement && el !== document.body && el.isConnected && !el.matches(":disabled");
+
 export function StashDialog(props: StashDialogProps) {
   // Mounting the body per open starts every open with an empty form and no error.
   return props.open ? (
@@ -35,19 +39,30 @@ function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogPro
   const [includeUntracked, setIncludeUntracked] = useState(false);
   const [error, setError] = useState<AppError | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Focus the input on open and restore focus on close, as PromptDialog does; an opener that
-  // is gone or disabled cannot take focus, so the host's fallback does.
+  // Focus the input on open and restore focus on close, as PromptDialog does; an opener that is
+  // gone, disabled or never had focus (WebKit does not focus clicked buttons) cannot take it
+  // back, so the host's fallback does.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    // The host's fallback is rendered before the dialog opens.
-    const fallback = fallbackFocus?.current;
+    const previous = document.activeElement;
+    // Captured now; re-read at close if the host re-rendered it while the dialog was open.
+    const captured = fallbackFocus?.current;
     (inputRef.current as HTMLInputElement).focus();
     return () => {
-      if (previous.isConnected && !previous.matches(":disabled")) previous.focus();
-      else fallback?.focus();
+      if (restorable(previous)) previous.focus();
+      // Reading the ref's latest value at close is the point: the host may have re-rendered it.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      else (captured?.isConnected ? captured : fallbackFocus?.current)?.focus();
     };
   }, [fallbackFocus]);
+
+  // Disabling the focused control drops focus to the body: hold it on the dialog while pending,
+  // then hand it to the message field when the push failed.
+  useLayoutEffect(() => {
+    if (pending) (dialogRef.current as HTMLDivElement).focus();
+    else if (error !== null) (inputRef.current as HTMLInputElement).focus();
+  }, [pending, error]);
 
   const onSubmit = async (e: FormEvent) => {
     // No pending guard: the input and submit button are disabled, so the form cannot submit.
@@ -70,10 +85,12 @@ function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogPro
   return (
     <div className={styles.backdrop} onClick={onBackdropClick}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         className={styles.dialog}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className={styles.title}>

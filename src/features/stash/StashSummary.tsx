@@ -11,7 +11,7 @@ import { useStatus } from "../worktree/useStatus";
 import { StashFeedback } from "./StashFeedback";
 import { StashFileGroup } from "./StashFileGroup";
 import styles from "./StashSummary.module.css";
-import { stashRef, stashSubject } from "./stashCopy";
+import { POP_KEPT_TITLE, stashRef, stashSubject } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashFiles } from "./useStashFiles";
@@ -89,6 +89,8 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
   const { state } = useOperationState(repoId);
   const [confirming, setConfirming] = useState(false);
   const apply = applyGate(status, state);
+  // After a pop that applied but kept the stash, another Pop would apply it again.
+  const popKept = actions.notice?.kind === "popKept";
 
   // A newer result must not hide behind an older, undismissed error.
   const run = (action: () => Promise<AppError | null>) => {
@@ -175,8 +177,8 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         </button>
         <button
           type="button"
-          disabled={actions.pending || apply.disabled}
-          title={apply.title}
+          disabled={actions.pending || apply.disabled || popKept}
+          title={popKept ? POP_KEPT_TITLE : apply.title}
           onClick={() => run(() => actions.pop(entry))}
         >
           Pop

@@ -256,15 +256,6 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
       <>
-        <div className={styles.toolbar}>
-          <StashButton
-            repoId={repoId}
-            variant="text"
-            className={styles.headerAction}
-            disabled={pending}
-            fallbackFocus={rootRef}
-          />
-        </div>
         {panelError !== null && (
           <RepoError error={panelError} path={null} onDismiss={clearErrors} />
         )}
@@ -304,6 +295,18 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
 
   return (
     <section ref={rootRef} tabIndex={-1} aria-label="Changes" className={styles.root}>
+      {/* Outside the body branches: a failed background refetch keeps the data, the button and its open dialog. */}
+      {status !== undefined && (
+        <div className={styles.toolbar}>
+          <StashButton
+            repoId={repoId}
+            variant="text"
+            className={styles.headerAction}
+            disabled={pending || statusError !== null}
+            fallbackFocus={rootRef}
+          />
+        </div>
+      )}
       {body}
       <ContextMenu
         open={menu !== null}
