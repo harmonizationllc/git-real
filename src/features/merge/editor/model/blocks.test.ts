@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   blockLabels,
   blocksOf,
@@ -12,6 +12,7 @@ import {
   remainingConflicts,
   resetBlocks,
 } from "./blocks";
+import { parseConflicts, replacementFor } from "./markers";
 
 const B1 = "<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> feature\n";
 const B2 = "<<<<<<< HEAD\nm\n=======\nn\n>>>>>>> feature\n";
@@ -131,6 +132,46 @@ describe("editing around blocks", () => {
     const state = stateOf(ONE).update({ changes: { from: at, insert: "below\n" } }).state;
     expect(blocksOf(state)[0].state).toBe("unresolved");
   });
+  it("should keep text typed exactly at the block start outside the block", () => {
+    const at = ONE.indexOf("<<<<<<<");
+    const state = stateOf(ONE).update({ changes: { from: at, insert: "above\n" } }).state;
+    const block = blocksOf(state)[0];
+    expect(state.doc.sliceString(block.from, block.to)).toBe(B1);
+  });
+  it("should keep text typed exactly at the block end outside the block", () => {
+    const at = ONE.indexOf("post");
+    const state = stateOf(ONE).update({ changes: { from: at, insert: "below\n" } }).state;
+    const block = blocksOf(state)[0];
+    expect(state.doc.sliceString(block.from, block.to)).toBe(B1);
+  });
+  it("should keep text typed at the block start after a later pick", () => {
+    const at = ONE.indexOf("<<<<<<<");
+    const typed = stateOf(ONE).update({ changes: { from: at, insert: "above\n" } }).state;
+    expect(applyPick(typed, 0, "ours").doc.toString()).toBe("pre\nabove\nx\npost\n");
+  });
+  it("should keep text typed at the block end after a later pick", () => {
+    const at = ONE.indexOf("post");
+    const typed = stateOf(ONE).update({ changes: { from: at, insert: "below\n" } }).state;
+    expect(applyPick(typed, 0, "ours").doc.toString()).toBe("pre\nx\nbelow\npost\n");
+  });
+  it("should cover exactly the inserted text for a picked block", () => {
+    const state = applyPick(stateOf(ONE), 0, "ours");
+    const block = blocksOf(state)[0];
+    const expected = replacementFor(parseConflicts(ONE)[0], "ours");
+    expect(state.doc.sliceString(block.from, block.to)).toBe(expected);
+  });
+  it("should cover exactly the original text after a restore", () => {
+    const state = applyPick(applyPick(stateOf(ONE), 0, "ours"), 0, "restore");
+    const block = blocksOf(state)[0];
+    expect(state.doc.sliceString(block.from, block.to)).toBe(block.original);
+  });
+  it("should not invert an empty resolved block when text is typed at its point", () => {
+    const empty = "<<<<<<< a\n=======\ny\n>>>>>>> b\n";
+    const picked = applyPick(stateOf(empty), 0, "ours");
+    const state = picked.update({ changes: { from: 0, insert: "t" } }).state;
+    const block = blocksOf(state)[0];
+    expect(block.to).toBeGreaterThanOrEqual(block.from);
+  });
   it("should replace tracking from new text on resetBlocks", () => {
     const state = stateOf(ONE).update({
       changes: { from: 0, to: ONE.length, insert: TWO },
@@ -170,6 +211,32 @@ describe("pick and pickAll", () => {
     const view = viewOf(ONE);
     pick(view, 0, "theirs");
     expect(view.state.doc.toString()).toBe("pre\ny\npost\n");
+  });
+  it.each([
+    ["ours", "x\n"],
+    ["theirs", "y\n"],
+    ["both", "x\ny\n"],
+  ] as const)("should dispatch the %s replacement with its effect", (choice, insert) => {
+    const view = viewOf(ONE);
+    const spy = vi.spyOn(view, "dispatch");
+    pick(view, 0, choice);
+    const spec = spy.mock.calls[0][0] as {
+      changes: unknown;
+      effects: ReturnType<typeof pickBlock.of>;
+    };
+    expect([spec.changes, spec.effects.is(pickBlock), spec.effects.value]).toEqual([
+      { from: ONE.indexOf("<<<<<<<"), to: ONE.indexOf("post"), insert },
+      true,
+      { id: 0, choice },
+    ]);
+  });
+  it("should dispatch the original text for a restore", () => {
+    const view = viewOf(ONE);
+    pick(view, 0, "ours");
+    const spy = vi.spyOn(view, "dispatch");
+    pick(view, 0, "restore");
+    const spec = spy.mock.calls[0][0] as { changes: { insert: string } };
+    expect(spec.changes.insert).toBe(B1);
   });
   it("should do nothing for an unknown block id", () => {
     const view = viewOf(ONE);

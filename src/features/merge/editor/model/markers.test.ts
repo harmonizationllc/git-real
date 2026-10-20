@@ -66,6 +66,20 @@ describe("parseConflicts malformed input", () => {
   it("should ignore a marker glued to text without a space", () => {
     expect(parseConflicts("<<<<<<<HEAD\nx\n=======\ny\n>>>>>>> feature\n")).toEqual([]);
   });
+  it("should ignore a >>>>>>> before ======= and keep scanning", () => {
+    const text = "<<<<<<< HEAD\nx\n>>>>>>> early\ny\n=======\nz\n>>>>>>> late\n";
+    const [block] = parseConflicts(text);
+    expect([block.ours, block.theirs, block.theirsLabel]).toEqual([
+      "x\n>>>>>>> early\ny\n",
+      "z\n",
+      "late",
+    ]);
+  });
+  it("should let a second ||||||| override the first", () => {
+    const text = "<<<<<<< HEAD\nx\n||||||| one\nb1\n||||||| two\nb2\n=======\ny\n>>>>>>> f\n";
+    const [block] = parseConflicts(text);
+    expect([block.ours, block.base]).toEqual(["x\n||||||| one\nb1\n", "b2\n"]);
+  });
   it("should restart the block at a second start marker before the separator", () => {
     const text = "<<<<<<< one\nnoise\n<<<<<<< two\nx\n=======\ny\n>>>>>>> feature\n";
     const blocks = parseConflicts(text);
