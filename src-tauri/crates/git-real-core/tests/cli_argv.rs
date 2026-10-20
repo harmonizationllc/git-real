@@ -982,3 +982,64 @@ fn continue_rebase_reports_completed_when_git_exits_zero_and_the_rebase_is_over(
 
     assert_eq!(outcome, OperationOutcome::Completed);
 }
+
+// ---------- GR-11a: stash argv ----------
+
+fn stash_repo() -> (tempfile::TempDir, PathBuf, RepoSession) {
+    use_fake_git();
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "dirty\n");
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session)
+}
+
+#[test]
+fn stash_push_passes_the_message_as_one_argv_element() {
+    let (_d, path, session) = stash_repo();
+    let err = session.stash_push(Some("-x; rm -rf /"), true).unwrap_err();
+    assert!(matches!(err, GitError::NothingToStash));
+    assert_eq!(
+        after_workdir(&path),
+        ["stash", "push", "--include-untracked", "-m", "-x; rm -rf /"]
+    );
+}
+
+#[test]
+fn stash_push_without_a_message_has_no_m_flag() {
+    let (_d, path, session) = stash_repo();
+    let _ = session.stash_push(Some(" \t"), false);
+    assert_eq!(after_workdir(&path), ["stash", "push"]);
+}
+
+#[test]
+fn stash_apply_pop_and_drop_name_the_stash_by_index() {
+    let (_d, path, session) = stash_repo();
+    let oid = {
+        let mut repo = Repository::open(&path).unwrap();
+        let sig = git2::Signature::now("T", "t@e").unwrap();
+        repo.stash_save(&sig, "via git2", None).unwrap().to_string()
+    };
+    assert_eq!(
+        session.stash_apply(0, &oid).unwrap(),
+        git_real_core::StashOutcome::Applied
+    );
+    assert_eq!(after_workdir(&path), ["stash", "apply", "stash@{0}"]);
+    session.stash_pop(0, &oid).unwrap();
+    assert_eq!(after_workdir(&path), ["stash", "pop", "stash@{0}"]);
+    session.stash_drop(0, &oid).unwrap();
+    assert_eq!(after_workdir(&path), ["stash", "drop", "stash@{0}"]);
+}
+
+#[test]
+fn stash_drop_non_zero_exit_is_operation_failed() {
+    let (_d, path, session) = stash_repo();
+    let oid = {
+        let mut repo = Repository::open(&path).unwrap();
+        let sig = git2::Signature::now("T", "t@e").unwrap();
+        repo.stash_save(&sig, "via git2", None).unwrap().to_string()
+    };
+    script_behaviour(&path, "echo 'boom' >&2; exit 1");
+    assert!(
+        matches!(session.stash_drop(0, &oid), Err(GitError::OperationFailed { verb, .. }) if verb == "stash")
+    );
+}

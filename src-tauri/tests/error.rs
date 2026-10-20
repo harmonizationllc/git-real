@@ -84,6 +84,8 @@ fn app_error_kind_for_each_git_error_variant() {
             None,
         ),
         (GitError::UnbornHead, AppErrorKind::UnbornHead, None),
+        (GitError::NothingToStash, AppErrorKind::NothingToStash, None),
+        (GitError::StaleStash, AppErrorKind::StaleStash, None),
         (
             GitError::RevisionNotFound("nope".into()),
             AppErrorKind::RevisionNotFound,
@@ -738,5 +740,18 @@ fn operation_errors_keep_the_core_display_message() {
         merge_commit.message.contains("abc"),
         "{}",
         merge_commit.message
+    );
+}
+
+// GR-11a: the stash kinds are camelCase on the wire.
+#[test]
+fn stash_kinds_serialize_camel_case() {
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::NothingToStash).unwrap(),
+        json!("nothingToStash")
+    );
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::StaleStash).unwrap(),
+        json!("staleStash")
     );
 }

@@ -508,3 +508,12 @@ pub fn commit_crlf(path: &Path, name: &str, text: &str, message: &str) -> git2::
         .expect("disable autocrlf");
     commit_binary(path, name, text.replace('\n', "\r\n").as_bytes(), message)
 }
+
+/// True when a usable system git is on `PATH`; prints a skip note otherwise.
+pub fn git_available() -> bool {
+    if git_real_core::git_cli::locate().is_err() {
+        eprintln!("skipping: git not on PATH");
+        return false;
+    }
+    true
+}

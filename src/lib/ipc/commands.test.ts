@@ -30,10 +30,12 @@ import {
   getHeadMessage,
   getLogPage,
   getLogSummary,
+  getStashFiles,
   getStatus,
   initRepo,
   listBranches,
   listRecent,
+  listStashes,
   mergeBranch,
   openRepo,
   rebaseInteractive,
@@ -46,6 +48,10 @@ import {
   revertCommit,
   searchLog,
   stageAll,
+  stashApply,
+  stashDrop,
+  stashPop,
+  stashPush,
   stagePaths,
   unstageAll,
   unstagePaths,
@@ -66,6 +72,8 @@ import type {
   LogSummary,
   OpenedRepo,
   RecentEntry,
+  StashEntry,
+  StashFiles,
   WorkingTreeStatus,
 } from "./types";
 
@@ -801,5 +809,84 @@ describe("merge operation wrappers", () => {
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing({ kind: "operationInProgress", message: "busy" });
     await expect(call()).rejects.toEqual({ kind: "operationInProgress", message: "busy" });
+  });
+});
+
+// Contract: stash wrappers invoke the pinned Rust command names with camelCase args (GR-11a).
+describe("stash command wrappers", () => {
+  const entry: StashEntry = {
+    index: 0,
+    oid: "w".repeat(40),
+    message: "On main: wip",
+    branch: "main",
+    time: 1700000000,
+    base: "b".repeat(40),
+    hasUntracked: false,
+  };
+  const files: StashFiles = { tracked: [], untracked: [], untrackedOid: null };
+
+  it("listStashes sends list_stashes with id", async () => {
+    const calls = mockWith([entry]);
+    const result = await listStashes(2);
+    expect(calls).toEqual([{ cmd: "list_stashes", args: { id: 2 } }]);
+    expect(result).toEqual([entry]);
+  });
+
+  it("getStashFiles sends get_stash_files with id and oid", async () => {
+    const calls = mockWith(files);
+    const result = await getStashFiles(2, "w");
+    expect(calls).toEqual([{ cmd: "get_stash_files", args: { id: 2, oid: "w" } }]);
+    expect(result).toEqual(files);
+  });
+
+  it("stashPush sends stash_push with id, message and includeUntracked", async () => {
+    const calls = mockWith(null);
+    await stashPush(2, "wip", true);
+    expect(calls).toEqual([
+      { cmd: "stash_push", args: { id: 2, message: "wip", includeUntracked: true } },
+    ]);
+  });
+
+  it("stashPush sends a null message through", async () => {
+    const calls = mockWith(null);
+    await stashPush(2, null, false);
+    expect(calls).toEqual([
+      { cmd: "stash_push", args: { id: 2, message: null, includeUntracked: false } },
+    ]);
+  });
+
+  it("stashApply sends stash_apply with id, index and oid", async () => {
+    const calls = mockWith("conflicts");
+    const result = await stashApply(2, 1, "w");
+    expect(calls).toEqual([{ cmd: "stash_apply", args: { id: 2, index: 1, oid: "w" } }]);
+    expect(result).toBe("conflicts");
+  });
+
+  it("stashPop sends stash_pop with id, index and oid", async () => {
+    const calls = mockWith("applied");
+    const result = await stashPop(2, 1, "w");
+    expect(calls).toEqual([{ cmd: "stash_pop", args: { id: 2, index: 1, oid: "w" } }]);
+    expect(result).toBe("applied");
+  });
+
+  it("stashDrop sends stash_drop with id, index and oid", async () => {
+    const calls = mockWith(null);
+    await stashDrop(2, 1, "w");
+    expect(calls).toEqual([{ cmd: "stash_drop", args: { id: 2, index: 1, oid: "w" } }]);
+  });
+
+  it.each([
+    ["listStashes", () => listStashes(1)],
+    ["getStashFiles", () => getStashFiles(1, "w")],
+    ["stashPush", () => stashPush(1, null, false)],
+    ["stashApply", () => stashApply(1, 0, "w")],
+    ["stashPop", () => stashPop(1, 0, "w")],
+    ["stashDrop", () => stashDrop(1, 0, "w")],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing({ kind: "staleStash", message: "the stash list changed; reload it" });
+    await expect(call()).rejects.toEqual({
+      kind: "staleStash",
+      message: "the stash list changed; reload it",
+    });
   });
 });

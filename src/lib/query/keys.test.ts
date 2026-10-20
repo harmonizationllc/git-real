@@ -350,3 +350,24 @@ describe("queryKeys rebasePlan", () => {
     expect(queryKeys.rebasePlan(1, "a")).not.toEqual(queryKeys.rebasePlan(2, "a"));
   });
 });
+
+// Contract: stash keys (GR-11a). The list refreshes with the repo; a stash commit never changes.
+describe("queryKeys stashes", () => {
+  it("should define stashes(id) under the repo prefix", () => {
+    expect(queryKeys.stashes(3)).toEqual(["repo", 3, "stashes"]);
+  });
+
+  it("should define stashFiles(id, oid) under the repoImmutable prefix", () => {
+    expect(queryKeys.stashFiles(3, "w")).toEqual(["repoImmutable", 3, "stashFiles", "w"]);
+  });
+
+  it("should refresh stashes but not stash files on repo invalidation", () => {
+    const prefix = queryKeys.repo(3);
+    expect(queryKeys.stashes(3).slice(0, prefix.length)).toEqual(prefix);
+    expect(queryKeys.stashFiles(3, "w").slice(0, prefix.length)).not.toEqual(prefix);
+  });
+
+  it("should differ between two stash oids", () => {
+    expect(queryKeys.stashFiles(3, "a")).not.toEqual(queryKeys.stashFiles(3, "b"));
+  });
+});
