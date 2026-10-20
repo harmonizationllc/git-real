@@ -7,6 +7,7 @@ import {
   deleteBranch,
   deleteRemoteBranch,
   listBranches,
+  rebasePlan,
   renameBranch,
 } from "../../lib/ipc";
 import type {
@@ -16,6 +17,7 @@ import type {
   HeadState,
   LocalBranch,
   OperationState,
+  RebaseCommit,
 } from "../../lib/ipc";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
@@ -38,6 +40,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
   deleteRemoteBranch: vi.fn(),
+  rebasePlan: vi.fn(),
 }));
 
 const oid = (c: string) => c.repeat(40);
@@ -112,6 +115,7 @@ beforeEach(() => {
   vi.mocked(checkoutBranch).mockResolvedValue(undefined);
   vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
   vi.mocked(deleteRemoteBranch).mockResolvedValue(undefined);
+  vi.mocked(rebasePlan).mockResolvedValue([]);
 });
 
 async function renderPanel(data: BranchList = list()) {
@@ -309,6 +313,7 @@ describe("BranchesPanel context menu", () => {
       "Merge feature into main",
       "Fast-forward main to feature",
       "Rebase main onto feature",
+      "Rebase main onto feature interactively…",
       "Create branch here…",
       "Rename…",
       "Delete…",
@@ -354,6 +359,7 @@ describe("BranchesPanel context menu", () => {
       "Merge origin/other into main",
       "Fast-forward main to origin/other",
       "Rebase main onto origin/other",
+      "Rebase main onto origin/other interactively…",
       "Delete on origin…",
     ]);
   });
@@ -1234,6 +1240,7 @@ describe("BranchesPanel busy state after failure", () => {
       "Merge origin/other into main",
       "Fast-forward main to origin/other",
       "Rebase main onto origin/other",
+      "Rebase main onto origin/other interactively…",
       "Delete on origin…",
     ]);
     for (const item of items) expect(item).toBeDisabled();
@@ -1628,6 +1635,7 @@ describe("BranchesPanel integration gaps", () => {
       "Merge feature into HEAD",
       "Fast-forward HEAD to feature",
       "Rebase HEAD onto feature",
+      "Rebase HEAD onto feature interactively…",
     ]);
   });
 
@@ -1638,7 +1646,7 @@ describe("BranchesPanel integration gaps", () => {
       expect(item).toBeDisabled();
       expect(item).toHaveAttribute("title", "Check out a branch first");
     }
-    expect(integrationItems()).toHaveLength(3);
+    expect(integrationItems()).toHaveLength(4);
   });
 
   it("should disable the items of a remote row on an unborn HEAD with the checkout-first title", async () => {
@@ -1648,6 +1656,7 @@ describe("BranchesPanel integration gaps", () => {
       "Merge origin/other into HEAD",
       "Fast-forward HEAD to origin/other",
       "Rebase HEAD onto origin/other",
+      "Rebase HEAD onto origin/other interactively…",
     ]);
     for (const item of integrationItems()) {
       expect(item).toBeDisabled();
@@ -1718,7 +1727,7 @@ describe("BranchesPanel integration gaps", () => {
     await renderPanel();
     rightClick(remoteRow("origin", "other"));
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(6);
     for (const item of items) expect(item).toBeDisabled();
   });
 
@@ -1795,5 +1804,406 @@ describe("BranchesPanel integration gaps", () => {
     rightClick(localRow("feature"));
     await user.click(menuItem("Merge feature into main"));
     expect(integrationRun).not.toHaveBeenCalled();
+  });
+});
+
+const rowItem = (el: HTMLElement) => el.closest("li") as HTMLElement;
+const dataTransfer = () => ({ setData: vi.fn(), effectAllowed: "", dropEffect: "" });
+const draggableRows = () => document.querySelectorAll('li[draggable="true"]');
+const pickUp = (el: HTMLElement) =>
+  fireEvent.dragStart(rowItem(el), { dataTransfer: dataTransfer() });
+const hover = (el: HTMLElement) => fireEvent.dragEnter(rowItem(el));
+const dropOn = (el: HTMLElement, x = 5, y = 6) =>
+  fireEvent.drop(rowItem(el), { clientX: x, clientY: y, dataTransfer: dataTransfer() });
+const rebaseCommit = (c: string): RebaseCommit => ({
+  oid: c.repeat(40),
+  subject: `commit ${c}`,
+  author: { name: "Ann", email: "ann@example.com", time: 1 },
+});
+
+// Contract (spec 4.6): an interactive rebase item follows the Rebase item and opens the plan dialog.
+describe("BranchesPanel interactive rebase item", () => {
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: oid("a"),
+    branch: "feature",
+    message: { subject: "Merge branch 'feature'", body: "" },
+  };
+  const detachedList = () =>
+    list({ head: { kind: "detached", oid: oid("a") }, local: [localBranch("feature")] });
+  const ITEM = "Rebase main onto feature interactively…";
+
+  it("should enable the item with no title when the repository is idle", async () => {
+    await renderPanel();
+    rightClick(localRow("feature"));
+    expect(menuItem(ITEM)).toBeEnabled();
+    expect(menuItem(ITEM)).not.toHaveAttribute("title");
+  });
+
+  it("should offer no interactive item on the current branch row", async () => {
+    await renderPanel();
+    rightClick(localRow("main"));
+    expect(itemLabels().filter((l) => /interactively/.test(l ?? ""))).toEqual([]);
+  });
+
+  it("should stay enabled when fast-forward is not possible", async () => {
+    provideMerge({ check: "diverged" });
+    await renderPanel();
+    rightClick(localRow("feature"));
+    expect(menuItem(ITEM)).toBeEnabled();
+  });
+
+  it("should disable the item with the in-progress title during an operation", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel();
+    rightClick(localRow("feature"));
+    expect(menuItem(ITEM)).toBeDisabled();
+    expect(menuItem(ITEM)).toHaveAttribute("title", IN_PROGRESS_TITLE);
+  });
+
+  it("should disable the item with the checkout-first title on a detached HEAD", async () => {
+    await renderPanel(detachedList());
+    rightClick(localRow("feature"));
+    expect(menuItem("Rebase HEAD onto feature interactively…")).toBeDisabled();
+    expect(menuItem("Rebase HEAD onto feature interactively…")).toHaveAttribute(
+      "title",
+      "Check out a branch first",
+    );
+  });
+
+  it("should disable the item while an integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(localRow("feature"));
+    expect(menuItem(ITEM)).toBeDisabled();
+  });
+
+  it("should not open a dialog when the disabled item is clicked", async () => {
+    provideMerge({ state: mergeState });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(rebasePlan).not.toHaveBeenCalled();
+  });
+
+  it("should open the rebase dialog for the branch when selected", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    expect(await dialogNamed("Rebase main onto feature interactively")).toBeInTheDocument();
+    expect(rebasePlan).toHaveBeenCalledExactlyOnceWith(1, "feature");
+  });
+
+  it("should close the menu when the item is selected", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should not run an integration action when the item is selected", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    await dialogNamed("Rebase main onto feature interactively");
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+
+  it("should open the dialog for a remote branch by its qualified name", async () => {
+    const { user } = await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    await user.click(menuItem("Rebase main onto origin/other interactively…"));
+    expect(await dialogNamed("Rebase main onto origin/other interactively")).toBeInTheDocument();
+    expect(rebasePlan).toHaveBeenCalledExactlyOnceWith(1, "origin/other");
+  });
+
+  it("should close the dialog when Cancel is clicked", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    await dialogNamed("Rebase main onto feature interactively");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should start the rebase through the panel's integration run with the plan", async () => {
+    vi.mocked(rebasePlan).mockResolvedValue([rebaseCommit("a"), rebaseCommit("b")]);
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    await user.click(await screen.findByRole("button", { name: "Start rebase" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "rebaseInteractive",
+      base: "feature",
+      steps: [
+        { action: "pick", oid: oid("a") },
+        { action: "pick", oid: oid("b") },
+      ],
+    });
+  });
+
+  it("should close the dialog once the run succeeds", async () => {
+    vi.mocked(rebasePlan).mockResolvedValue([rebaseCommit("a")]);
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    await user.click(await screen.findByRole("button", { name: "Start rebase" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("should open the dialog clean by clearing an earlier integration error", async () => {
+    provideMerge({ error: { kind: "operationFailed", message: "earlier failure" } });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem(ITEM));
+    await dialogNamed("Rebase main onto feature interactively");
+    expect(integrationClear).toHaveBeenCalled();
+  });
+});
+
+// Contract (spec 4.7): drag a branch onto the current branch to open the integration menu.
+describe("BranchesPanel drag-to-merge", () => {
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: oid("a"),
+    branch: "feature",
+    message: { subject: "Merge branch 'feature'", body: "" },
+  };
+  const DROP_ITEMS = [
+    "Merge feature into main",
+    "Fast-forward main to feature",
+    "Rebase main onto feature",
+  ];
+
+  // Draggable flags.
+  it("should make every non-current branch draggable and the current one not", async () => {
+    await renderPanel();
+    expect(rowItem(localRow("feature"))).toHaveAttribute("draggable", "true");
+    expect(rowItem(remoteRow("origin", "other"))).toHaveAttribute("draggable", "true");
+    expect(rowItem(remoteRow("origin", "main"))).toHaveAttribute("draggable", "true");
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("draggable", "true");
+    expect(draggableRows()).toHaveLength(3);
+  });
+
+  // Highlight.
+  it("should highlight the current branch while a branch is dragged over it", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    expect(rowItem(localRow("main"))).toHaveAttribute("data-drop-over", "true");
+  });
+
+  it("should not highlight the current branch before any drag", async () => {
+    await renderPanel();
+    hover(localRow("main"));
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("data-drop-over");
+  });
+
+  it("should keep the highlight while the pointer moves between the row's children", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    hover(localRow("main"));
+    fireEvent.dragLeave(rowItem(localRow("main")));
+    expect(rowItem(localRow("main"))).toHaveAttribute("data-drop-over", "true");
+  });
+
+  it("should remove the highlight once the pointer has left the row", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    fireEvent.dragLeave(rowItem(localRow("main")));
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("data-drop-over");
+  });
+
+  it("should not highlight any row other than the current branch", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(remoteRow("origin", "other"));
+    hover(localRow("feature"));
+    expect(document.querySelectorAll("[data-drop-over]")).toHaveLength(0);
+  });
+
+  // Drop opens the menu.
+  it("should open a menu with exactly Merge, Fast-forward and Rebase on drop", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(itemLabels()).toEqual(DROP_ITEMS);
+  });
+
+  it("should offer no checkout, rename, delete or interactive item in the drop menu", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+  });
+
+  it("should merge the dragged branch when Merge is chosen", async () => {
+    const { user } = await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    await user.click(menuItem("Merge feature into main"));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({ action: "merge", branch: "feature" });
+  });
+
+  it("should rebase onto the dragged branch when Rebase is chosen", async () => {
+    const { user } = await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    await user.click(menuItem("Rebase main onto feature"));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({ action: "rebase", onto: "feature" });
+  });
+
+  it("should drive the Fast-forward gate from the dragged branch", async () => {
+    provideMerge({ check: "diverged" });
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(menuItem("Fast-forward main to feature")).toBeDisabled();
+    expect(menuItem("Fast-forward main to feature")).toHaveAttribute(
+      "title",
+      "main and feature have diverged",
+    );
+  });
+
+  it("should clear the highlight after the drop", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("data-drop-over");
+  });
+
+  it("should open no menu on a drop that follows no drag start", async () => {
+    await renderPanel();
+    dropOn(localRow("main"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  // Remote branches.
+  it("should make a remote branch draggable and name it with its remote in the drop menu", async () => {
+    await renderPanel();
+    pickUp(remoteRow("origin", "other"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(itemLabels()).toEqual([
+      "Merge origin/other into main",
+      "Fast-forward main to origin/other",
+      "Rebase main onto origin/other",
+    ]);
+  });
+
+  it("should merge the dragged remote branch by its qualified name", async () => {
+    const { user } = await renderPanel();
+    pickUp(remoteRow("origin", "other"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    await user.click(menuItem("Merge origin/other into main"));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "merge",
+      branch: "origin/other",
+    });
+  });
+
+  // Cancelling.
+  it("should clear the highlight and open no menu when the drag ends without a drop", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    fireEvent.dragEnd(rowItem(localRow("feature")));
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("data-drop-over");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should accept no drop on the current branch after the drag ended", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    fireEvent.dragEnd(rowItem(localRow("feature")));
+    expect(fireEvent.dragOver(rowItem(localRow("main")), { dataTransfer: dataTransfer() })).toBe(
+      true,
+    );
+    dropOn(localRow("main"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  // Review Focus: only the current branch is a drop target.
+  it("ignores a drop on a non-current row", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(remoteRow("origin", "other"));
+    const notPrevented = fireEvent.dragOver(rowItem(remoteRow("origin", "other")), {
+      dataTransfer: dataTransfer(),
+    });
+    dropOn(remoteRow("origin", "other"));
+    expect(notPrevented).toBe(true);
+    expect(rowItem(remoteRow("origin", "other"))).not.toHaveAttribute("data-drop-over");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(integrationRun).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a drop of a branch onto itself", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    dropOn(localRow("feature"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should accept a dragover on the current branch only while dragging", async () => {
+    await renderPanel();
+    expect(fireEvent.dragOver(rowItem(localRow("main")), { dataTransfer: dataTransfer() })).toBe(
+      true,
+    );
+    pickUp(localRow("feature"));
+    expect(fireEvent.dragOver(rowItem(localRow("main")), { dataTransfer: dataTransfer() })).toBe(
+      false,
+    );
+  });
+
+  // Review Focus: no dragging while an operation is in progress, HEAD is not a branch, or pending.
+  it("disables dragging during an operation", async () => {
+    provideMerge({ state: mergeState });
+    await renderPanel();
+    expect(draggableRows()).toHaveLength(0);
+  });
+
+  it("should disable dragging on a detached HEAD", async () => {
+    await renderPanel(
+      list({ head: { kind: "detached", oid: oid("a") }, local: [localBranch("feature")] }),
+    );
+    expect(draggableRows()).toHaveLength(0);
+  });
+
+  it("should disable dragging on an unborn HEAD", async () => {
+    await renderPanel(list({ head: { kind: "unborn", name: "main" }, local: [] }));
+    expect(draggableRows()).toHaveLength(0);
+  });
+
+  it("should disable dragging while an integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    expect(draggableRows()).toHaveLength(0);
+  });
+
+  it("should disable dragging while a branch action is pending", async () => {
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+    );
+    expect(draggableRows()).toHaveLength(0);
+  });
+
+  it("should disable dragging while the operation state is still unknown", async () => {
+    provideMerge({ state: undefined });
+    await renderPanel();
+    expect(draggableRows()).toHaveLength(0);
   });
 });

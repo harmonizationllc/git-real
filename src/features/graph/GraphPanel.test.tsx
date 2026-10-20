@@ -8,6 +8,7 @@ import {
   getLogPage,
   getLogSummary,
   listBranches,
+  rebasePlan,
   resetToCommit,
   searchLog,
 } from "../../lib/ipc";
@@ -38,6 +39,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   createBranch: vi.fn(),
   listBranches: vi.fn(),
   copyText: vi.fn(),
+  rebasePlan: vi.fn(),
 }));
 
 const REPO = 1;
@@ -130,6 +132,7 @@ beforeEach(() => {
     tracking: null,
   });
   vi.mocked(copyText).mockResolvedValue(undefined);
+  vi.mocked(rebasePlan).mockResolvedValue([]);
 });
 
 // Models a scrolled window: only the first 10 of 600 rows are rendered, so the rest are
@@ -917,7 +920,7 @@ describe("GraphPanel search lifecycle", () => {
 
 // Contract: the row context menu, its labels, titles and enabled states.
 describe("GraphPanel context menu", () => {
-  it("should list the six items in order on right-click", async () => {
+  it("should list the seven items in order on right-click", async () => {
     await renderPanel();
     rightClick(optionAt(1));
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
@@ -926,6 +929,7 @@ describe("GraphPanel context menu", () => {
       "Reset to this commit…",
       "Cherry-pick commit",
       "Revert commit",
+      "Rebase interactively from here…",
       "Copy hash",
     ]);
   });
@@ -2091,5 +2095,173 @@ describe("GraphPanel cherry-pick and revert gaps", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(integrationClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Contract (spec 4.6): Rebase interactively from here… follows Revert commit and opens the plan dialog.
+describe("GraphPanel rebase interactively", () => {
+  const ITEM = "Rebase interactively from here…";
+  const mergeState: OperationState = {
+    kind: "merge",
+    head: oidOf(5),
+    branch: "feature",
+    message: { subject: "Merge branch 'feature'", body: "" },
+  };
+  const detachedHead = (): BranchList => ({
+    head: { kind: "detached", oid: oidOf(0) },
+    local: [],
+    remotes: [],
+  });
+  /** Waits until the branch list has landed so HEAD-dependent items are final. */
+  async function renderWithHead() {
+    const view = await renderPanel();
+    await waitFor(() => expect(listBranches).toHaveBeenCalled());
+    await act(async () => {});
+    return view;
+  }
+
+  it("should enable the item with no title on an ancestor of a checked-out branch", async () => {
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeEnabled();
+    expect(menuItem(ITEM)).not.toHaveAttribute("title");
+  });
+
+  it("should place the item after Revert commit", async () => {
+    await renderWithHead();
+    rightClick(optionAt(1));
+    const labels = screen.getAllByRole("menuitem").map((i) => i.textContent);
+    expect(labels.indexOf(ITEM)).toBe(labels.indexOf("Revert commit") + 1);
+  });
+
+  it("should disable the item on the commit HEAD points at with the Already at HEAD title", async () => {
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem(ITEM)).toBeDisabled();
+    expect(menuItem(ITEM)).toHaveAttribute("title", "Already at HEAD");
+  });
+
+  it("should disable the item with the Check out a branch first title on a detached HEAD", async () => {
+    vi.mocked(listBranches).mockResolvedValue(detachedHead());
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeDisabled();
+    expect(menuItem(ITEM)).toHaveAttribute("title", "Check out a branch first");
+  });
+
+  it("should prefer Check out a branch first over Already at HEAD on a detached HEAD", async () => {
+    refsByIndex = { 0: [ref("head", "HEAD", true)] };
+    vi.mocked(listBranches).mockResolvedValue(detachedHead());
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem(ITEM)).toHaveAttribute("title", "Check out a branch first");
+  });
+
+  it("should disable the item with the in-progress title during an operation", async () => {
+    provideMerge({ state: mergeState });
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeDisabled();
+    expect(menuItem(ITEM)).toHaveAttribute("title", IN_PROGRESS_TITLE);
+  });
+
+  it("should prefer the in-progress title over Already at HEAD", async () => {
+    provideMerge({ state: mergeState });
+    await renderWithHead();
+    rightClick(optionAt(0));
+    expect(menuItem(ITEM)).toHaveAttribute("title", IN_PROGRESS_TITLE);
+  });
+
+  it("should prefer the in-progress title over the detached HEAD title", async () => {
+    provideMerge({ state: mergeState });
+    vi.mocked(listBranches).mockResolvedValue(detachedHead());
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toHaveAttribute("title", IN_PROGRESS_TITLE);
+  });
+
+  it("should disable the item while an integration is pending", async () => {
+    provideMerge({ pending: true });
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeDisabled();
+  });
+
+  it("should open no dialog when the disabled item is clicked", async () => {
+    const { user } = await renderWithHead();
+    rightClick(optionAt(0));
+    await user.click(menuItem(ITEM));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(rebasePlan).not.toHaveBeenCalled();
+  });
+
+  it("should open the dialog titled with the short oid when selected", async () => {
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    expect(
+      await screen.findByRole("dialog", {
+        name: `Rebase main onto ${shortOf(oidOf(1))} interactively`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("should request the plan with the full oid of the chosen commit", async () => {
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    await screen.findByRole("dialog");
+    expect(rebasePlan).toHaveBeenCalledExactlyOnceWith(REPO, oidOf(1));
+  });
+
+  it("should close the menu when the item is selected", async () => {
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("should close the dialog when Cancel is clicked", async () => {
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should start the rebase through the panel's integration run", async () => {
+    vi.mocked(rebasePlan).mockResolvedValue([
+      {
+        oid: oidOf(2),
+        subject: "Subject 2",
+        author: { name: "Alice", email: "alice@x.io", time: 1 },
+      },
+    ]);
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    await user.click(await screen.findByRole("button", { name: "Start rebase" }));
+    expect(integrationRun).toHaveBeenCalledExactlyOnceWith({
+      action: "rebaseInteractive",
+      base: oidOf(1),
+      steps: [{ action: "pick", oid: oidOf(2) }],
+    });
+  });
+
+  it("should open the dialog clean by clearing an earlier integration error", async () => {
+    provideMerge({ error: { kind: "operationFailed", message: "earlier failure" } });
+    const { user } = await renderWithHead();
+    rightClick(optionAt(1));
+    await user.click(menuItem(ITEM));
+    await screen.findByRole("dialog");
+    expect(integrationClear).toHaveBeenCalled();
+  });
+
+  it("should offer the item on a merge commit row, leaving ancestry to the dialog", async () => {
+    parentsByIndex = { 1: [oidOf(2), oidOf(3)] };
+    await renderWithHead();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeEnabled();
   });
 });
