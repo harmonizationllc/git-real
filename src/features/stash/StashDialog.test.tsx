@@ -136,6 +136,23 @@ describe("StashDialog errors", () => {
     expect(messageField()).toHaveFocus();
   });
 
+  it("holds focus on the dialog while an Enter-submitted push runs, then returns it to the field on error", async () => {
+    // jsdom keeps focus on a disabled input, so the pending dialog focus is the observable fix.
+    let reject: (e: unknown) => void = () => undefined;
+    vi.mocked(stashPush).mockReturnValue(
+      new Promise((_, r) => {
+        reject = r;
+      }),
+    );
+    const { user } = renderDialog();
+    await user.type(messageField(), "x{Enter}");
+    await screen.findByRole("button", { name: "Working…" });
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toHaveFocus();
+    reject({ kind: "operationFailed", message: "x" });
+    await screen.findByRole("alert");
+    expect(messageField()).toHaveFocus();
+  });
+
   it("does not focus the message field after a successful push", async () => {
     const { user } = renderDialog();
     await user.click(stashButton());

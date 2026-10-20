@@ -269,6 +269,14 @@ describe("StashSummary actions", () => {
     expect(pop).not.toHaveAttribute("title");
   });
 
+  it("re-enables Pop when a new action clears the kept notice", async () => {
+    const { user, pop } = await popKept();
+    await waitFor(() => expect(pop).toBeDisabled());
+    await user.click(inDetails().getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    await waitFor(() => expect(pop).toBeEnabled());
+  });
+
   it("keeps Pop enabled after a pop with conflicts", async () => {
     vi.mocked(stashPop).mockResolvedValue("conflicts");
     const { user } = await renderSummary();
