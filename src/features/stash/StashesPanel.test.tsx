@@ -7,6 +7,7 @@ import {
   stashApply,
   stashDrop,
   stashPop,
+  stashPush,
 } from "../../lib/ipc";
 import type { OperationState, StashEntry, WorkingTreeStatus } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -377,5 +378,115 @@ describe("StashesPanel feedback", () => {
   it("refreshes the status after an action", async () => {
     await applyWith();
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Coverage: dialog lifecycle from the + button, key handling, and drop/error edge cases.
+describe("StashesPanel dialog lifecycle", () => {
+  it("Cancel closes the dialog opened from the + button", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    await user.click(plus());
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).toBeNull();
+    expect(stashPush).not.toHaveBeenCalled();
+  });
+
+  it("the dialog can be reopened after closing", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    await user.click(plus());
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    await user.click(plus());
+    expect(await screen.findByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+  });
+
+  it("a successful push from the dialog closes it", async () => {
+    vi.mocked(stashPush).mockResolvedValue(undefined);
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    await user.click(plus());
+    await user.click(await screen.findByRole("button", { name: "Stash" }));
+    expect(stashPush).toHaveBeenCalledExactlyOnceWith(1, null, false);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("StashesPanel row keys", () => {
+  it("F10 without Shift does not open the menu", async () => {
+    await renderPanel();
+    fireEvent.keyDown(row(0), { key: "F10" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("an unrelated key does not open the menu", async () => {
+    await renderPanel();
+    fireEvent.keyDown(row(0), { key: "a" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Shift+F10 and ContextMenu prevent the native contextmenu", async () => {
+    await renderPanel();
+    expect(fireEvent.keyDown(row(0), { key: "F10", shiftKey: true })).toBe(false);
+    expect(fireEvent.keyDown(row(0), { key: "ContextMenu" })).toBe(false);
+  });
+
+  it("right-click suppresses the native menu", async () => {
+    await renderPanel();
+    expect(rightClick(row(0))).toBe(false);
+  });
+
+  it("the menu opened by key acts on the focused row's stash", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    fireEvent.keyDown(row(1), { key: "F10", shiftKey: true });
+    await user.click(menuItem("Pop"));
+    expect(stashPop).toHaveBeenCalledExactlyOnceWith(1, 1, entries()[1]!.oid);
+  });
+});
+
+describe("StashesPanel feedback edge cases", () => {
+  it("a later action clears an older undismissed error", async () => {
+    vi.mocked(stashApply).mockRejectedValueOnce({
+      kind: "operationFailed",
+      message: "git said no",
+    });
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    rightClick(row(0));
+    await user.click(menuItem("Apply"));
+    await screen.findByRole("alert");
+    rightClick(row(0));
+    await user.click(menuItem("Pop"));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("a failed drop closes the confirm and shows the error", async () => {
+    vi.mocked(stashDrop).mockRejectedValue({ kind: "staleStash", message: "raw" });
+    const { user } = await renderPanel();
+    rightClick(row(1));
+    await user.click(menuItem("Drop…"));
+    await user.click(await screen.findByRole("button", { name: "Drop" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The stash list changed; it has been refreshed.",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("is busy while an action runs and not afterwards", async () => {
+    let finish: (o: "applied") => void = () => undefined;
+    vi.mocked(stashApply).mockReturnValue(new Promise((r) => (finish = r)));
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    rightClick(row(0));
+    await user.click(menuItem("Apply"));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /^Stashes/ })).toHaveAttribute("aria-busy", "true"),
+    );
+    expect(plus()).toBeDisabled();
+    finish("applied");
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /^Stashes/ })).not.toHaveAttribute("aria-busy"),
+    );
   });
 });

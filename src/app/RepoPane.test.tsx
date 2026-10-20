@@ -1148,4 +1148,19 @@ describe("RepoPane stashes", () => {
     fireEvent.click(await screen.findByTitle(W.message));
     expect(await screen.findByRole("heading", { name: "stash@{0}", level: 2 })).toBeInTheDocument();
   });
+
+  it("returns the column to Changes and clears the selection when the stash leaves the list", async () => {
+    vi.mocked(listStashes).mockResolvedValue([W]);
+    vi.mocked(getStashFiles).mockResolvedValue(stashFiles());
+    useWorkspace.getState().selectStash(1, W.oid);
+    const { queryClient } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("heading", { name: "stash@{0}", level: 2 });
+    vi.mocked(listStashes).mockResolvedValue([]);
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.repo(1) }));
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "stash@{0}", level: 2 })).toBeNull(),
+    );
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+    expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+  });
 });
