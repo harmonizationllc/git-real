@@ -312,6 +312,7 @@ describe("CommitBox during an operation", () => {
     branch: "feature",
     step: 1,
     total: 2,
+    stoppedForEdit: false,
   };
   const amendBox = () => screen.getByRole("checkbox", { name: "Amend last commit" });
 

@@ -106,6 +106,7 @@ describe("commitDisabledReason during an operation", () => {
     branch: "feature",
     step: 1,
     total: 2,
+    stoppedForEdit: false,
   };
   const ready = { amend: false, subject: "s", status: staged, config } as const;
 
@@ -243,6 +244,7 @@ describe("commitDisabledReason operation gaps", () => {
       branch: null,
       step: 1,
       total: 1,
+      stoppedForEdit: false,
     };
     expect(gateReason({ ...ready, amend: true, operation: rebase })).toBe(
       "Use Continue in the banner to resume the rebase",

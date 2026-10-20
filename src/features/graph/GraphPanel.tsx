@@ -16,7 +16,8 @@ import type {
 import { useWorkspace } from "../../lib/store/workspace";
 import { useBranchActions } from "../branches/useBranchActions";
 import { useBranches } from "../branches/useBranches";
-import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
+import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
+import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
@@ -43,7 +44,8 @@ interface MenuState {
 
 type Dialog =
   | { kind: "create"; oid: string; checkout: boolean }
-  | { kind: "reset"; oid: string; mode: ResetMode };
+  | { kind: "reset"; oid: string; mode: ResetMode }
+  | { kind: "rebase"; oid: string };
 
 type CreateDialog = Extract<Dialog, { kind: "create" }>;
 type ResetDialog = Extract<Dialog, { kind: "reset" }>;
@@ -108,6 +110,8 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
     setDialog(null);
   };
 
+  const head = branches?.head;
+
   const menuItems = (row: GraphRowData): MenuItem[] => {
     const short = shortOid(row.oid);
     // The log marks the current branch's label and a detached HEAD label with `isHead`.
@@ -119,6 +123,15 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
           ? "Merge commits are not supported yet"
           : undefined;
     const pickTitle = blockTitle ?? (atHead ? "Already on this commit" : undefined);
+    // A merge commit is a fine base; the dialog reports a range that contains one.
+    const rebaseTitle =
+      state?.kind !== "none"
+        ? IN_PROGRESS_TITLE
+        : head?.kind !== "branch"
+          ? "Check out a branch first"
+          : atHead
+            ? "Already at HEAD"
+            : undefined;
     return [
       {
         id: "checkout",
@@ -155,6 +168,13 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
         onSelect: () => runIntegration({ action: "revert", oid: row.oid }),
       },
       {
+        id: "rebaseInteractive",
+        label: "Rebase interactively from here…",
+        disabled: pending || rebaseTitle !== undefined,
+        title: rebaseTitle,
+        onSelect: () => openDialog({ kind: "rebase", oid: row.oid }),
+      },
+      {
         id: "copy",
         label: "Copy hash",
         disabled: pending,
@@ -163,7 +183,6 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
     ];
   };
 
-  const head = branches?.head;
   const movedRef = head === undefined || head.kind === "detached" ? "HEAD" : head.name;
   const panelError = commitActions.error ?? integration.error ?? copyError;
 
@@ -197,6 +216,17 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
         items={menu === null ? [] : menuItems(menu.row)}
         onClose={closeMenu}
       />
+      {dialog?.kind === "rebase" && (
+        <RebaseDialog
+          repoId={repoId}
+          base={dialog.oid}
+          label={shortOid(dialog.oid)}
+          head={headName(head)}
+          run={integration.run}
+          pending={integration.pending}
+          onClose={closeDialog}
+        />
+      )}
       {dialog?.kind === "create" && (
         <PromptDialog
           open

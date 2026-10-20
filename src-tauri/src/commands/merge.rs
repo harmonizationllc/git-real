@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
-use git_real_core::{ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState};
+use git_real_core::{
+    ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState, RebaseCommit,
+    RebaseStep,
+};
 use tauri::State;
 
 use super::{run_blocking, with_session};
@@ -86,6 +89,23 @@ pub fn can_fast_forward_inner(
     branch: &str,
 ) -> Result<FastForwardCheck, AppError> {
     with_session(reg, id, |s| s.can_fast_forward(branch))
+}
+
+pub fn rebase_plan_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    base: &str,
+) -> Result<Vec<RebaseCommit>, AppError> {
+    with_session(reg, id, |s| s.rebase_plan(base))
+}
+
+pub fn rebase_interactive_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    base: &str,
+    steps: &[RebaseStep],
+) -> Result<OperationOutcome, AppError> {
+    with_session(reg, id, |s| s.rebase_interactive(base, steps))
 }
 
 #[tauri::command]
@@ -187,4 +207,25 @@ pub async fn can_fast_forward(
 ) -> Result<FastForwardCheck, AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || can_fast_forward_inner(&reg, id, &branch)).await
+}
+
+#[tauri::command]
+pub async fn rebase_plan(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    base: String,
+) -> Result<Vec<RebaseCommit>, AppError> {
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || rebase_plan_inner(&reg, id, &base)).await
+}
+
+#[tauri::command]
+pub async fn rebase_interactive(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    base: String,
+    steps: Vec<RebaseStep>,
+) -> Result<OperationOutcome, AppError> {
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || rebase_interactive_inner(&reg, id, &base, &steps)).await
 }

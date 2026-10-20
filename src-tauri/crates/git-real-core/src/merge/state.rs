@@ -66,7 +66,8 @@ pub(crate) fn name_for_oid(repo: &Repository, oid: Oid) -> Option<String> {
 /// the older `rebase-apply/` layout.
 fn read_rebase(repo: &Repository, git_dir: &Path) -> OperationState {
     let merge_dir = git_dir.join("rebase-merge");
-    let (dir, step_file, total_file) = if merge_dir.is_dir() {
+    let interactive = merge_dir.is_dir();
+    let (dir, step_file, total_file) = if interactive {
         (merge_dir, "msgnum", "end")
     } else {
         (git_dir.join("rebase-apply"), "next", "last")
@@ -79,6 +80,7 @@ fn read_rebase(repo: &Repository, git_dir: &Path) -> OperationState {
             .and_then(|name| name.strip_prefix("refs/heads/").map(str::to_owned)),
         step: count_file(&dir, step_file),
         total: count_file(&dir, total_file),
+        stopped_for_edit: interactive && dir.join("amend").exists(),
     }
 }
 

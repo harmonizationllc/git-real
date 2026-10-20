@@ -6,6 +6,9 @@ import type {
   MergeMode,
   OperationOutcome,
   OperationState,
+  RebaseAction,
+  RebaseCommit,
+  RebaseStep,
   Blame,
   BlameHunk,
   CommitFile,
@@ -364,10 +367,10 @@ describe("GR-10a operation types", () => {
 
   it("should cover every MergeMode, OperationOutcome, ConflictSide and FastForwardCheck", () => {
     const mode: MergeMode[] = ["merge", "fastForward"];
-    const outcome: OperationOutcome[] = ["completed", "conflicts"];
+    const outcome: OperationOutcome[] = ["completed", "conflicts", "stopped"];
     const side: ConflictSide[] = ["ours", "theirs"];
     const check: FastForwardCheck[] = ["possible", "upToDate", "diverged"];
-    expect([mode, outcome, side, check].map((a) => a.length)).toEqual([2, 2, 2, 3]);
+    expect([mode, outcome, side, check].map((a) => a.length)).toEqual([2, 3, 2, 3]);
   });
 
   it("should shape every OperationState variant with its fields", () => {
@@ -383,6 +386,7 @@ describe("GR-10a operation types", () => {
         branch: "feature",
         step: 1,
         total: 3,
+        stoppedForEdit: false,
       },
       { kind: "cherryPick", oid: "c".repeat(40), message },
       { kind: "revert", oid: "d".repeat(40), message },
@@ -395,5 +399,30 @@ describe("GR-10a operation types", () => {
       "cherryPick",
       "revert",
     ]);
+  });
+
+  // GR-10c: the rebase plan shapes and the edit-stop flag.
+  it("should shape a RebaseCommit, a RebaseStep and every RebaseAction", () => {
+    const commit: RebaseCommit = {
+      oid: "a".repeat(40),
+      subject: "add a",
+      author: { name: "n", email: "e", time: 1 },
+    };
+    const actions: RebaseAction[] = ["pick", "squash", "fixup", "edit", "drop"];
+    const steps: RebaseStep[] = actions.map((action) => ({ action, oid: commit.oid }));
+    expect(steps.map((s) => s.action)).toEqual(["pick", "squash", "fixup", "edit", "drop"]);
+  });
+
+  it("should carry stoppedForEdit on the rebase state", () => {
+    const state: OperationState = {
+      kind: "rebase",
+      onto: "b".repeat(40),
+      ontoName: null,
+      branch: "feature",
+      step: 2,
+      total: 3,
+      stoppedForEdit: true,
+    };
+    expect(state.kind === "rebase" && state.stoppedForEdit).toBe(true);
   });
 });

@@ -41,7 +41,7 @@ function operationTitle(state: ActiveOperation, head: string): string {
       return `Merging ${state.branch ?? shortOid(state.head)} into ${head}`;
     case "rebase":
       // HEAD is detached mid-rebase, so the rebased branch comes from the state.
-      return `Rebasing ${state.branch ?? head} onto ${state.ontoName ?? shortOid(state.onto)}, step ${state.step} of ${state.total}`;
+      return `Rebasing ${state.branch ?? head} onto ${state.ontoName ?? shortOid(state.onto)}, step ${state.step} of ${state.total}${state.stoppedForEdit ? ", stopped to edit" : ""}`;
     case "cherryPick":
       return `Cherry-picking ${shortOid(state.oid)}`;
     case "revert":

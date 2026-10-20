@@ -5,11 +5,12 @@ import {
   cherryPick,
   continueRebase,
   mergeBranch,
+  rebaseInteractive,
   rebaseOnto,
   resolveConflicts,
   revertCommit,
 } from "../../lib/ipc";
-import type { AppError } from "../../lib/ipc";
+import type { AppError, RebaseStep } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useIntegrationActions } from "./useIntegrationActions";
@@ -19,6 +20,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   mergeBranch: vi.fn(),
   rebaseOnto: vi.fn(),
+  rebaseInteractive: vi.fn(),
   cherryPick: vi.fn(),
   revertCommit: vi.fn(),
   abortOperation: vi.fn(),
@@ -42,6 +44,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(mergeBranch).mockResolvedValue("completed");
   vi.mocked(rebaseOnto).mockResolvedValue("completed");
+  vi.mocked(rebaseInteractive).mockResolvedValue("completed");
   vi.mocked(cherryPick).mockResolvedValue("completed");
   vi.mocked(revertCommit).mockResolvedValue("completed");
   vi.mocked(abortOperation).mockResolvedValue(undefined);
@@ -67,6 +70,22 @@ describe("useIntegrationActions wrapper calls", () => {
     const { result } = renderHookWithProviders(() => useIntegrationActions(4));
     await run(() => result.current, { action: "rebase", onto: "main" });
     expect(rebaseOnto).toHaveBeenCalledExactlyOnceWith(4, "main");
+  });
+
+  it("should call rebaseInteractive with the base and steps when rebaseInteractive runs", async () => {
+    const steps: RebaseStep[] = [
+      { action: "pick", oid: "a".repeat(40) },
+      { action: "squash", oid: "b".repeat(40) },
+    ];
+    const { result } = renderHookWithProviders(() => useIntegrationActions(4));
+    await run(() => result.current, { action: "rebaseInteractive", base: "main", steps });
+    expect(rebaseInteractive).toHaveBeenCalledExactlyOnceWith(4, "main", steps);
+  });
+
+  it("should not call rebaseOnto when rebaseInteractive runs", async () => {
+    const { result } = renderHookWithProviders(() => useIntegrationActions(4));
+    await run(() => result.current, { action: "rebaseInteractive", base: "main", steps: [] });
+    expect(rebaseOnto).not.toHaveBeenCalled();
   });
 
   it("should call cherryPick when cherryPick runs", async () => {
@@ -141,6 +160,28 @@ describe("useIntegrationActions results", () => {
     expect(out).toEqual({ kind: "io", message: "boom" });
   });
 
+  it("should resolve null when an interactive rebase stops with conflicts", async () => {
+    vi.mocked(rebaseInteractive).mockResolvedValue("conflicts");
+    const { result } = renderHookWithProviders(() => useIntegrationActions(4));
+    const out = await run(() => result.current, {
+      action: "rebaseInteractive",
+      base: "main",
+      steps: [],
+    });
+    expect(out).toBeNull();
+  });
+
+  it("should resolve the AppError when an interactive rebase rejects", async () => {
+    vi.mocked(rebaseInteractive).mockRejectedValue(failure);
+    const { result } = renderHookWithProviders(() => useIntegrationActions(4));
+    const out = await run(() => result.current, {
+      action: "rebaseInteractive",
+      base: "main",
+      steps: [],
+    });
+    expect(out).toEqual(failure);
+  });
+
   it("should clear the error when clearError is called", async () => {
     vi.mocked(revertCommit).mockRejectedValue(failure);
     const { result } = renderHookWithProviders(() => useIntegrationActions(4));
@@ -186,6 +227,17 @@ describe("useIntegrationActions results", () => {
   });
 });
 
+// Contract: an interactive rebase reports like the other operations (stopped counts as success).
+describe("useIntegrationActions interactive rebase", () => {
+  const req: Request = { action: "rebaseInteractive", base: "main", steps: [] };
+
+  it("should resolve null when the outcome is stopped", async () => {
+    vi.mocked(rebaseInteractive).mockResolvedValue("stopped");
+    const { result } = renderHookWithProviders(() => useIntegrationActions(4));
+    expect(await run(() => result.current, req)).toBeNull();
+  });
+});
+
 // Contract: the repo prefix is invalidated after success and after failure, since a failed
 // operation may have partly applied.
 describe("useIntegrationActions invalidation", () => {
@@ -201,6 +253,21 @@ describe("useIntegrationActions invalidation", () => {
     const { result, queryClient } = renderHookWithProviders(() => useIntegrationActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => result.current, { action: "merge", branch: "f" });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.repo(4) });
+  });
+
+  it("should invalidate the repo prefix after an interactive rebase", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useIntegrationActions(4));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await run(() => result.current, { action: "rebaseInteractive", base: "main", steps: [] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.repo(4) });
+  });
+
+  it("should invalidate the repo prefix after a failed interactive rebase", async () => {
+    vi.mocked(rebaseInteractive).mockRejectedValue(failure);
+    const { result, queryClient } = renderHookWithProviders(() => useIntegrationActions(4));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await run(() => result.current, { action: "rebaseInteractive", base: "main", steps: [] });
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.repo(4) });
   });
 

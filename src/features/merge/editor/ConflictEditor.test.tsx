@@ -67,6 +67,7 @@ const rebaseState: OperationState = {
   branch: "topic",
   step: 1,
   total: 2,
+  stoppedForEdit: false,
 };
 const mainHead: BranchList = { head: { kind: "branch", name: "main" }, local: [], remotes: [] };
 

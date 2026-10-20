@@ -36,7 +36,9 @@ import {
   listRecent,
   mergeBranch,
   openRepo,
+  rebaseInteractive,
   rebaseOnto,
+  rebasePlan,
   removeRecent,
   renameBranch,
   resetToCommit,
@@ -55,6 +57,7 @@ import type {
   FastForwardCheck,
   OperationOutcome,
   OperationState,
+  RebaseStep,
   CommitDetail,
   FileDiff,
   GitCliInfo,
@@ -696,6 +699,41 @@ describe("merge operation wrappers", () => {
     expect(result).toBe("completed");
   });
 
+  // GR-10c: interactive rebase.
+  it("rebasePlan sends rebase_plan with id and base", async () => {
+    const commits = [
+      { oid: "a".repeat(40), subject: "add a", author: { name: "n", email: "e", time: 1 } },
+    ];
+    const calls = mockWith(commits);
+    const result = await rebasePlan(2, "main");
+    expect(calls).toEqual([{ cmd: "rebase_plan", args: { id: 2, base: "main" } }]);
+    expect(result).toEqual(commits);
+  });
+
+  it("rebaseInteractive sends rebase_interactive with id, base and steps", async () => {
+    const steps: RebaseStep[] = [
+      { action: "pick", oid: "a".repeat(40) },
+      { action: "squash", oid: "b".repeat(40) },
+    ];
+    const calls = mockWith("stopped");
+    const result = await rebaseInteractive(2, "main", steps);
+    expect(calls).toEqual([{ cmd: "rebase_interactive", args: { id: 2, base: "main", steps } }]);
+    expect(result).toBe("stopped");
+  });
+
+  it("rebaseInteractive passes an empty step list through unchanged", async () => {
+    const calls = mockWith("completed");
+    await rebaseInteractive(2, "main", []);
+    expect(calls).toEqual([
+      { cmd: "rebase_interactive", args: { id: 2, base: "main", steps: [] } },
+    ]);
+  });
+
+  it("rebasePlan resolves with an empty list when the backend returns none", async () => {
+    mockWith([]);
+    expect(await rebasePlan(2, "main")).toEqual([]);
+  });
+
   it("cherryPick sends cherry_pick with id and oid", async () => {
     const calls = mockWith("completed");
     const result = await cherryPick(2, "abc");
@@ -758,6 +796,8 @@ describe("merge operation wrappers", () => {
     ["resolveConflicts", () => resolveConflicts(1, ["a"], "ours")],
     ["writeResolution", () => writeResolution(1, "a", "x", false)],
     ["canFastForward", () => canFastForward(1, "b")],
+    ["rebasePlan", () => rebasePlan(1, "b")],
+    ["rebaseInteractive", () => rebaseInteractive(1, "b", [])],
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing({ kind: "operationInProgress", message: "busy" });
     await expect(call()).rejects.toEqual({ kind: "operationInProgress", message: "busy" });

@@ -310,11 +310,30 @@ export type OperationState =
       branch: string | null;
       step: number;
       total: number;
+      /** git stopped at an `edit` step; staged changes are amended on continue. */
+      stoppedForEdit: boolean;
     }
   | { kind: "cherryPick"; oid: string; message: CommitMessage }
   | { kind: "revert"; oid: string; message: CommitMessage };
 
-export type OperationOutcome = "completed" | "conflicts";
+/** `stopped`: git exited 0 with the rebase still in progress (an `edit` step). */
+export type OperationOutcome = "completed" | "conflicts" | "stopped";
+
+/** One line of an interactive rebase todo. */
+export type RebaseAction = "pick" | "squash" | "fixup" | "edit" | "drop";
+
+/** A commit an interactive rebase would replay; `oid` is full hex. */
+export interface RebaseCommit {
+  oid: string;
+  subject: string;
+  author: Signature;
+}
+
+/** One entry of the plan, in the order git applies them (oldest first). */
+export interface RebaseStep {
+  action: RebaseAction;
+  oid: string;
+}
 
 export type ConflictSide = "ours" | "theirs";
 

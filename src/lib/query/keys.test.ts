@@ -331,3 +331,22 @@ describe("queryKeys merge operation keys", () => {
     expect(queryKeys.operation(1)).not.toEqual(queryKeys.operation(2));
   });
 });
+
+// Contract: the rebase plan key lives under the repo prefix and varies with the base.
+describe("queryKeys rebasePlan", () => {
+  it("should define rebasePlan(id, base) under the repo prefix", () => {
+    expect(queryKeys.rebasePlan(1, "main")).toEqual(["repo", 1, "rebasePlan", "main"]);
+  });
+
+  it("should start with the repo key", () => {
+    expect(queryKeys.rebasePlan(1, "main").slice(0, 2)).toEqual(queryKeys.repo(1));
+  });
+
+  it("should differ between two bases", () => {
+    expect(queryKeys.rebasePlan(1, "a")).not.toEqual(queryKeys.rebasePlan(1, "b"));
+  });
+
+  it("should differ between two repos", () => {
+    expect(queryKeys.rebasePlan(1, "a")).not.toEqual(queryKeys.rebasePlan(2, "a"));
+  });
+});
