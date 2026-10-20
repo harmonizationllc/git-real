@@ -1,5 +1,5 @@
 import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, type WidgetType } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   blockLabels,
@@ -254,6 +254,58 @@ describe("pick and pickAll", () => {
     pickAll(view, "both");
     expect(view.state.doc.toString()).toBe("pre\nx\ny\nmid\nm\nn\npost\n");
   });
+  it("should give each block exactly its inserted text and state after pickAll", () => {
+    const view = viewOf(TWO);
+    pickAll(view, "both");
+    const doc = view.state.doc;
+    const [a, b] = blocksOf(view.state);
+    expect([a.state, b.state]).toEqual(["both", "both"]);
+    expect(doc.sliceString(a.from, a.to)).toBe("x\ny\n");
+    expect(doc.sliceString(b.from, b.to)).toBe("m\nn\n");
+  });
+  it("should map every block of a pickAll over adjacent blocks", () => {
+    const adjacent = `pre\n${B1}${B2}post\n`;
+    const view = viewOf(adjacent);
+    pickAll(view, "theirs");
+    const doc = view.state.doc;
+    const [a, b] = blocksOf(view.state);
+    expect([a.state, b.state]).toEqual(["theirs", "theirs"]);
+    expect([doc.sliceString(a.from, a.to), doc.sliceString(b.from, b.to)]).toEqual(["y\n", "n\n"]);
+    expect(doc.toString()).toBe("pre\ny\nn\npost\n");
+  });
+  it("should restore every adjacent block after pickAll", () => {
+    const adjacent = `pre\n${B1}${B2}post\n`;
+    const view = viewOf(adjacent);
+    pickAll(view, "ours");
+    pick(view, 0, "restore");
+    pick(view, 1, "restore");
+    expect(view.state.doc.toString()).toBe(adjacent);
+    expect(blocksOf(view.state).map((b) => b.state)).toEqual(["unresolved", "unresolved"]);
+    expect(parseConflicts(view.state.doc.toString())).toHaveLength(2);
+  });
+  it("should restore each block of a spaced pickAll in turn", () => {
+    const view = viewOf(TWO);
+    pickAll(view, "both");
+    pick(view, 1, "restore");
+    pick(view, 0, "restore");
+    expect(view.state.doc.toString()).toBe(TWO);
+  });
+  it("should keep a custom block's range and state across pickAll of the others", () => {
+    const view = viewOf(TWO);
+    const at = TWO.indexOf("m\n");
+    view.dispatch({ changes: { from: at, insert: "typed " } });
+    pickAll(view, "ours");
+    const [a, b] = blocksOf(view.state);
+    expect([a.state, b.state]).toEqual(["ours", "custom"]);
+    expect(view.state.doc.sliceString(b.from, b.to)).toBe(
+      "<<<<<<< HEAD\ntyped m\n=======\nn\n>>>>>>> feature\n",
+    );
+  });
+  it("should not add a newline when a pick resolves a block that ends the file", () => {
+    const view = viewOf("<<<<<<< a\nx\n=======\ny\n>>>>>>> b");
+    pick(view, 0, "ours");
+    expect(view.state.doc.toString()).toBe("x");
+  });
   it("should not dispatch from pickAll when every block is already resolved", () => {
     const view = viewOf(TWO);
     pickAll(view, "ours");
@@ -358,6 +410,81 @@ describe("decorations", () => {
     const at = ONE.indexOf("x\n");
     const state = stateOf(ONE).update({ changes: { from: at, insert: "typed " } }).state;
     expect([...lineClasses(state).values()].flat()).toEqual([]);
+  });
+});
+
+/** Every widget decoration in document order, with its position and spec. */
+function widgets(state: EditorState) {
+  const out: { pos: number; spec: { block?: boolean; side?: number; widget: WidgetType } }[] = [];
+  for (const source of state.facet(EditorView.decorations)) {
+    if (typeof source === "function") continue;
+    source.between(0, state.doc.length, (from, _to, value) => {
+      const spec = value.spec as { block?: boolean; side?: number; widget?: WidgetType };
+      if (spec.widget) out.push({ pos: from, spec: spec as never });
+    });
+  }
+  return out;
+}
+const barOf = (w: { spec: { widget: WidgetType } }, view: EditorView) =>
+  w.spec.widget.toDOM(view) as HTMLElement;
+
+// Contract: every block, whatever its state, has one block-level bar widget before its first line.
+describe("action bar widgets", () => {
+  it("should emit one bar per block at the block start", () => {
+    const state = stateOf(TWO);
+    expect(widgets(state).map((w) => w.pos)).toEqual(blocksOf(state).map((b) => b.from));
+  });
+  it("should make each bar a block widget placed before the position", () => {
+    for (const w of widgets(stateOf(TWO))) {
+      expect([w.spec.block, w.spec.side]).toEqual([true, -1]);
+    }
+  });
+  it("should number the bars from 1 in document order", () => {
+    const view = viewOf(TWO);
+    const names = widgets(view.state).map((w) => barOf(w, view).getAttribute("aria-label"));
+    expect(names).toEqual(["Conflict 1", "Conflict 2"]);
+  });
+  it("should pass the facet labels to every bar", () => {
+    const state = EditorState.create({
+      doc: TWO,
+      extensions: [conflictBlocks(), blockLabels.of({ ours: "mine", theirs: "yours" })],
+    });
+    const view = viewOf("");
+    for (const w of widgets(state)) {
+      const text = [...barOf(w, view).querySelectorAll("button")].map((b) => b.textContent);
+      expect(text).toEqual(["Keep mine", "Take yours", "Keep both"]);
+    }
+  });
+  it("should keep a bar for a resolved block, showing its state", () => {
+    const state = applyPick(stateOf(TWO), 0, "ours");
+    const view = viewOf("");
+    const [first] = widgets(state);
+    expect(first.pos).toBe(blocksOf(state)[0].from);
+    expect(barOf(first, view).textContent).toContain("Kept ours");
+    expect(widgets(state)).toHaveLength(2);
+  });
+  it("should keep a bar for a custom block, showing Edited", () => {
+    const at = ONE.indexOf("x\n");
+    const state = stateOf(ONE).update({ changes: { from: at, insert: "typed " } }).state;
+    const view = viewOf("");
+    const all = widgets(state);
+    expect(all).toHaveLength(1);
+    expect(barOf(all[0], view).textContent).toContain("Edited");
+  });
+  it("should emit no bar for a document without conflicts", () => {
+    expect(widgets(stateOf("plain\n"))).toEqual([]);
+  });
+  it("should sort a bar before the line decoration at the same position", () => {
+    const state = stateOf(ONE);
+    const at = blocksOf(state)[0].from;
+    const order: string[] = [];
+    for (const source of state.facet(EditorView.decorations)) {
+      if (typeof source === "function") continue;
+      source.between(at, at, (from, _to, value) => {
+        if (from === at) order.push((value.spec as { widget?: unknown }).widget ? "bar" : "line");
+      });
+    }
+    expect(order).toEqual(["bar", "line"]);
   });
 });
 

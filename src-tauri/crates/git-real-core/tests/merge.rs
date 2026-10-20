@@ -2469,15 +2469,15 @@ fn write_resolution_rejects_a_path_outside_the_work_tree() {
 fn write_resolution_refuses_a_symlink_at_the_path() {
     let (_d, path, session) = conflicted_merge();
     std::fs::remove_file(path.join("README.md")).unwrap();
-    std::os::unix::fs::symlink("/etc/hostname", path.join("README.md")).unwrap();
+    let target = path.join("link-target.txt");
+    std::fs::write(&target, "untouched\n").unwrap();
+    std::os::unix::fs::symlink(&target, path.join("README.md")).unwrap();
 
     let result = session.write_resolution("README.md", "x\n", true);
 
     assert!(matches!(result, Err(GitError::BadSelection)));
-    assert_eq!(
-        std::fs::read_link(path.join("README.md")).unwrap(),
-        PathBuf::from("/etc/hostname")
-    );
+    assert_eq!(std::fs::read_link(path.join("README.md")).unwrap(), target);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched\n");
     assert!(has_conflicts(&path));
 }
 

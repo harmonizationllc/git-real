@@ -60,8 +60,25 @@ describe("parseConflicts malformed input", () => {
   it("should ignore markers that are not at line start", () => {
     expect(parseConflicts(" <<<<<<< HEAD\nx\n =======\ny\n >>>>>>> feature\n")).toEqual([]);
   });
-  it("should ignore markers of the wrong length", () => {
-    expect(parseConflicts("<<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> feature\n")).toEqual([]);
+  const ok = { start: "<<<<<<<", sep: "=======", end: ">>>>>>>" };
+  const doc = (m: typeof ok) => `${m.start} a\nx\n${m.sep}\ny\n${m.end} b\n`;
+  it("should accept the baseline well-formed block", () => {
+    expect(parseConflicts(doc(ok))).toHaveLength(1);
+  });
+  it.each([
+    ["start", "<", 6],
+    ["start", "<", 8],
+    ["sep", "=", 6],
+    ["sep", "=", 8],
+    ["end", ">", 6],
+    ["end", ">", 8],
+  ] as const)("should ignore a %s marker with %s repeated %i times", (key, ch, n) => {
+    expect(parseConflicts(doc({ ...ok, [key]: ch.repeat(n) }))).toEqual([]);
+  });
+  it.each([6, 8])("should not treat a %i-long ||||||| as a base marker", (n) => {
+    const text = `<<<<<<< a\nx\n${"|".repeat(n)} base\nb\n=======\ny\n>>>>>>> c\n`;
+    const [block] = parseConflicts(text);
+    expect(block.base).toBeNull();
   });
   it("should ignore a marker glued to text without a space", () => {
     expect(parseConflicts("<<<<<<<HEAD\nx\n=======\ny\n>>>>>>> feature\n")).toEqual([]);
