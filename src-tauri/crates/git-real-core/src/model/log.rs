@@ -76,7 +76,7 @@ pub struct LogPage {
 }
 
 /// An author or committer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Signature {
     pub name: String,

@@ -6,8 +6,11 @@
 //! outcome, anything else is `OperationFailed` carrying git's output. State
 //! reads use git2 and the `.git` marker files. Resolving conflicts writes the
 //! working tree and index through git2 (ADR 0001: index writes are git2).
+//! Interactive rebase needs `cp` on the PATH git's shell sees (bundled with
+//! Git for Windows).
 
 mod git_ops;
+mod interactive;
 mod resolve;
 mod state;
 mod write_resolution;
@@ -189,13 +192,24 @@ impl RepoSession {
         Ok((git_cli::locate()?, self.workdir()?))
     }
 
-    /// Exit 0 is `Completed`; a non-zero exit that left an operation in
+    /// Exit 0 is `Completed`, or `Stopped` when a rebase is still in progress
+    /// (an `edit` step); a non-zero exit that left an operation in
     /// progress with conflicts in the index is `Conflicts`; anything else
     /// (including a hook refusal or an empty pick, which stay in progress)
     /// is `OperationFailed`.
     fn outcome(&self, verb: &str, output: &Output) -> Result<OperationOutcome, GitError> {
         if output.status.success() {
-            return Ok(OperationOutcome::Completed);
+            let in_rebase = matches!(
+                self.repo().state(),
+                RepositoryState::Rebase
+                    | RepositoryState::RebaseInteractive
+                    | RepositoryState::RebaseMerge
+            );
+            return Ok(if in_rebase {
+                OperationOutcome::Stopped
+            } else {
+                OperationOutcome::Completed
+            });
         }
         if self.repo().state() != RepositoryState::Clean && self.fresh_index()?.has_conflicts() {
             return Ok(OperationOutcome::Conflicts);

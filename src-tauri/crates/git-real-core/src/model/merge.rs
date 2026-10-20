@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::CommitMessage;
+use super::{CommitMessage, Signature};
 
 /// How `merge_branch` integrates a branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +39,9 @@ pub enum OperationState {
         branch: Option<String>,
         step: u32,
         total: u32,
+        /// `rebase-merge/amend` exists: git stopped at an `edit` step; staged
+        /// changes are amended on continue.
+        stopped_for_edit: bool,
     },
     CherryPick {
         oid: String,
@@ -56,6 +59,40 @@ pub enum OperationState {
 pub enum OperationOutcome {
     Completed,
     Conflicts,
+    /// Exit 0 with the rebase still in progress: an `edit` step stopped it.
+    Stopped,
+}
+
+/// One line of an interactive rebase todo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RebaseAction {
+    Pick,
+    Squash,
+    Fixup,
+    Edit,
+    Drop,
+}
+
+/// A commit an interactive rebase would replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseCommit {
+    /// Full hex object id.
+    pub oid: String,
+    /// The first line of the message.
+    pub subject: String,
+    pub author: Signature,
+}
+
+/// One entry of the user's plan, in the order git applies them (oldest first).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseStep {
+    /// What git does with the commit.
+    pub action: RebaseAction,
+    /// Full hex object id of a commit in the plan.
+    pub oid: String,
 }
 
 /// Which side of a conflict to keep.

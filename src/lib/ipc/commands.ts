@@ -23,6 +23,8 @@ import type {
   OpenedRepo,
   OperationOutcome,
   OperationState,
+  RebaseCommit,
+  RebaseStep,
   RecentEntry,
   RepoId,
   ResetMode,
@@ -278,4 +280,16 @@ export function writeResolution(
 
 export function canFastForward(id: RepoId, branch: string): Promise<FastForwardCheck> {
   return invoke<FastForwardCheck>("can_fast_forward", { id, branch });
+}
+
+export function rebasePlan(id: RepoId, base: string): Promise<RebaseCommit[]> {
+  return invoke<RebaseCommit[]>("rebase_plan", { id, base });
+}
+
+export function rebaseInteractive(
+  id: RepoId,
+  base: string,
+  steps: RebaseStep[],
+): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("rebase_interactive", { id, base, steps });
 }

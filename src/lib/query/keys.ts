@@ -38,4 +38,5 @@ export const queryKeys = {
   trackedFiles: (id: RepoId) => ["repo", id, "trackedFiles"] as const,
   operation: (id: RepoId) => ["repo", id, "operation"] as const,
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
+  rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
 };
