@@ -4,12 +4,13 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
 import type { BranchList, HeadState, RepoId } from "../../lib/ipc";
 import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
+import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import { BranchGroup } from "./BranchGroup";
-import { BranchRow, type BranchTarget } from "./BranchRow";
+import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
 import styles from "./BranchesPanel.module.css";
 import { filterBranches } from "./branchFilter";
 import { useBranchActions } from "./useBranchActions";
@@ -23,6 +24,8 @@ interface MenuState {
   x: number;
   y: number;
   target: BranchTarget;
+  /** Opened by a drop on the current branch: the integration items alone. */
+  dropMenu?: boolean;
 }
 
 type Dialog =
@@ -30,7 +33,8 @@ type Dialog =
   | { kind: "rename"; name: string }
   | { kind: "deleteLocal"; name: string }
   | { kind: "forceDelete"; name: string }
-  | { kind: "deleteRemote"; remote: string; name: string };
+  | { kind: "deleteRemote"; remote: string; name: string }
+  | { kind: "rebase"; base: string };
 
 type CreateDialog = Extract<Dialog, { kind: "create" }>;
 
@@ -40,10 +44,6 @@ const createDialog = (title: string, startPoint: string | null): CreateDialog =>
   startPoint,
   checkout: true,
 });
-
-/** The name git resolves for a row: `name` for local, `remote/name` for remote-tracking. */
-const branchId = (t: BranchTarget): string =>
-  t.kind === "local" ? t.branch.name : `${t.branch.remote}/${t.branch.name}`;
 
 /** The non-interactive first Local row for a HEAD that is not on a born branch. */
 function headRow(head: HeadState) {
@@ -69,6 +69,10 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  // Drag-to-merge: the branch being dragged, and how deep the pointer is inside the current
+  // branch's row (dragenter and dragleave also fire for its children).
+  const [dragging, setDragging] = useState<BranchTarget | null>(null);
+  const [overDepth, setOverDepth] = useState(0);
   const closeMenu = useCallback(() => setMenu(null), []);
   const menuBranch =
     menu === null || (menu.target.kind === "local" && menu.target.branch.isHead)
@@ -144,16 +148,19 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     setDialog(null);
   };
 
+  /** Why the current branch cannot integrate another one right now, if it cannot. */
+  const integrationGate = (head: HeadState): string | undefined =>
+    state?.kind !== "none"
+      ? IN_PROGRESS_TITLE
+      : head.kind !== "branch"
+        ? "Check out a branch first"
+        : undefined;
+
   /** Merge, fast-forward and rebase of the current branch with the row's branch. */
   const integrationItems = (target: BranchTarget, head: HeadState): MenuItem[] => {
     const b = branchId(target);
     const cur = headName(head);
-    const gateTitle =
-      state?.kind !== "none"
-        ? IN_PROGRESS_TITLE
-        : head.kind !== "branch"
-          ? "Check out a branch first"
-          : undefined;
+    const gateTitle = integrationGate(head);
     const ffTitle = ff.isLoading
       ? "Checking…"
       : ff.check === "upToDate"
@@ -187,8 +194,25 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     ];
   };
 
+  /** The integration items plus the interactive rebase onto the row's branch. */
+  const rebaseItems = (target: BranchTarget, head: HeadState): MenuItem[] => {
+    const b = branchId(target);
+    const gateTitle = integrationGate(head);
+    return [
+      ...integrationItems(target, head),
+      {
+        id: "rebaseInteractive",
+        label: `Rebase ${headName(head)} onto ${b} interactively…`,
+        disabled: pending || gateTitle !== undefined,
+        title: gateTitle,
+        onSelect: () => openDialog({ kind: "rebase", base: b }),
+      },
+    ];
+  };
+
   /** `list` is unfiltered, so a filtered-out twin still counts as existing. */
-  const menuItems = ({ target }: MenuState, list: BranchList): MenuItem[] => {
+  const menuItems = ({ target, dropMenu }: MenuState, list: BranchList): MenuItem[] => {
+    if (dropMenu) return integrationItems(target, list.head);
     const checkout: MenuItem = {
       id: "checkout",
       label: "Checkout",
@@ -203,7 +227,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           ...checkout,
           title: hasLocal ? undefined : `Creates a local branch tracking ${remote}/${name}`,
         },
-        ...integrationItems(target, list.head),
+        ...rebaseItems(target, list.head),
         {
           id: "deleteRemote",
           label: `Delete on ${remote}…`,
@@ -216,7 +240,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     const { name, isHead } = target.branch;
     return [
       { ...checkout, disabled: pending || isHead },
-      ...(isHead ? [] : integrationItems(target, list.head)),
+      ...(isHead ? [] : rebaseItems(target, list.head)),
       {
         id: "create",
         label: "Create branch here…",
@@ -239,17 +263,39 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     ];
   };
 
-  const row = (target: BranchTarget, key: string, current: boolean) => (
-    <BranchRow
-      key={key}
-      target={target}
-      current={current}
-      onActivate={() => activate(target)}
-      onContextMenu={(x, y) => setMenu({ x, y, target })}
-    />
-  );
+  const endDrag = () => {
+    setDragging(null);
+    setOverDepth(0);
+  };
+
+  /** Any other branch can be dragged onto the current one while the repository is idle. */
+  const branchDrag = (target: BranchTarget, current: boolean, canDrag: boolean): BranchDrag => ({
+    draggable: canDrag && !current,
+    target: current && dragging !== null,
+    over: current && overDepth > 0,
+    onDragStart: () => setDragging(target),
+    onDragEnd: endDrag,
+    onDragEnter: () => setOverDepth((d) => d + 1),
+    onDragLeave: () => setOverDepth((d) => Math.max(0, d - 1)),
+    onDrop: (x, y) => {
+      // The row reports a drop only while it is a target, which requires a dragged branch.
+      setMenu({ x, y, target: dragging as BranchTarget, dropMenu: true });
+      endDrag();
+    },
+  });
 
   const renderList = (list: BranchList) => {
+    const canDrag = state?.kind === "none" && list.head.kind === "branch" && !pending;
+    const row = (target: BranchTarget, key: string, current: boolean) => (
+      <BranchRow
+        key={key}
+        target={target}
+        current={current}
+        drag={branchDrag(target, current, canDrag)}
+        onActivate={() => activate(target)}
+        onContextMenu={(x, y) => setMenu({ x, y, target })}
+      />
+    );
     const shown = filterBranches(list, query);
     const filtered = shown !== list;
     const unborn = list.head.kind === "unborn";
@@ -329,6 +375,17 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   return (
     <section aria-label="Branches" aria-busy={pending || undefined} className={styles.root}>
       {body}
+      {dialog?.kind === "rebase" && (
+        <RebaseDialog
+          repoId={repoId}
+          base={dialog.base}
+          label={dialog.base}
+          head={headName(branches?.head)}
+          run={integration.run}
+          pending={integration.pending}
+          onClose={closeDialog}
+        />
+      )}
       {dialog?.kind === "create" && (
         <PromptDialog
           open
