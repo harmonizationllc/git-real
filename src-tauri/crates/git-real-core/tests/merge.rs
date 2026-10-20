@@ -3547,29 +3547,6 @@ fn rebase_interactive_validation_errors_leave_the_repository_clean() {
     }
 }
 
-// Control characters in a subject must not split or corrupt the todo.
-#[test]
-fn rebase_interactive_sanitises_subjects_in_the_todo() {
-    if !git_available() {
-        return;
-    }
-    let (_d, path, [a, b, c], _) = feature_fixture();
-    let weird = common::commit_file(&path, "w.txt", "w\n", "weird\tsubject #1 \\ 'q'");
-    let steps = [
-        step(RebaseAction::Pick, a),
-        step(RebaseAction::Pick, b),
-        step(RebaseAction::Pick, c),
-        step(RebaseAction::Pick, weird),
-    ];
-
-    let outcome = feature_session(&path)
-        .rebase_interactive("main", &steps)
-        .unwrap();
-
-    assert_eq!(outcome, OperationOutcome::Completed);
-    assert_eq!(subjects(&path)[0], "weird\tsubject #1 \\ 'q'");
-}
-
 // A subject spanning no extra lines is all the rebase plan reports, whatever the body holds.
 #[test]
 fn rebase_plan_subject_excludes_the_body() {

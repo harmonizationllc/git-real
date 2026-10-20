@@ -698,9 +698,10 @@ fn the_cherry_pick_target_is_passed_as_the_canonical_lowercase_oid() {
 // --- GR-10c: interactive rebase ---
 
 /// Behaviour that records `GIT_SEQUENCE_EDITOR` and then runs it the way git
-/// would, handing it `<.git>/todo.txt` to overwrite.
+/// would (through `sh -c`, so the quoting is exercised), handing it
+/// `<.git>/todo.txt` to overwrite.
 const CAPTURE_EDITOR: &str = r#"printf '%s' "$GIT_SEQUENCE_EDITOR" > "$2/.git/seq-editor.txt"
-eval "$GIT_SEQUENCE_EDITOR \"$2/.git/todo.txt\"""#;
+sh -c "$GIT_SEQUENCE_EDITOR \"\$@\"" editor "$2/.git/todo.txt""#;
 
 /// `operation_fixture` plus one commit on top of `other`: returns the new oid.
 fn interactive_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
@@ -756,6 +757,31 @@ fn rebase_interactive_hands_git_a_todo_with_one_line_per_step() {
 
     let todo = std::fs::read_to_string(path.join(".git").join("todo.txt")).unwrap();
     assert_eq!(todo, format!("pick {oid} add x\n"));
+}
+
+// Control characters in a subject must not corrupt the todo handed to git.
+#[test]
+fn rebase_interactive_replaces_tabs_and_escapes_in_subjects_with_spaces() {
+    let (_d, path, _session, _oid) = operation_fixture();
+    let a = common::commit_file(&path, "a.txt", "a\n", "tab\there").to_string();
+    let b = common::commit_file(&path, "b.txt", "b\n", "esc\x1b[0m done").to_string();
+    let session = RepoSession::open(&path).unwrap();
+    script_behaviour(&path, CAPTURE_EDITOR);
+    let steps = [
+        git_real_core::RebaseStep {
+            action: git_real_core::RebaseAction::Pick,
+            oid: a.clone(),
+        },
+        git_real_core::RebaseStep {
+            action: git_real_core::RebaseAction::Pick,
+            oid: b.clone(),
+        },
+    ];
+
+    session.rebase_interactive("other", &steps).unwrap();
+
+    let todo = std::fs::read_to_string(path.join(".git").join("todo.txt")).unwrap();
+    assert_eq!(todo, format!("pick {a} tab here\npick {b} esc [0m done\n"));
 }
 
 #[test]
