@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use git_real_core::git_cli;
 use git_real_core::{
-    CommitMessage, ConflictSide, FastForwardCheck, GitError, MergeMode, OperationOutcome,
-    OperationState, RepoSession,
+    ChangeKind, CommitMessage, ConflictSide, FastForwardCheck, GitError, MergeMode,
+    OperationOutcome, OperationState, RepoSession,
 };
 use git2::{BranchType, Oid, Repository};
 use serde_json::json;
@@ -2371,4 +2371,178 @@ fn resolve_keeping_an_executable_side_sets_execute_where_read_is_set() {
         .mode();
     assert_eq!(mode & 0o777, 0o750, "mode {mode:o}");
     assert_eq!(read(&path, "README.md"), "# other\n");
+}
+
+// --- write_resolution (GR-10b) ---
+
+fn readme_entry(session: &RepoSession) -> git_real_core::StatusEntry {
+    session
+        .status()
+        .unwrap()
+        .entries
+        .into_iter()
+        .find(|e| e.path == "README.md")
+        .expect("README.md listed")
+}
+
+// Contract: with stage set, the text lands verbatim and the path's conflict clears.
+#[test]
+fn write_resolution_with_stage_writes_bytes_and_clears_the_conflict() {
+    let (_d, path, session) = conflicted_merge();
+
+    session
+        .write_resolution("README.md", "merged\r\nline\r\n", true)
+        .unwrap();
+
+    assert_eq!(
+        std::fs::read(path.join("README.md")).unwrap(),
+        b"merged\r\nline\r\n"
+    );
+    assert!(!has_conflicts(&path));
+    let entry = readme_entry(&session);
+    assert_eq!(entry.index, Some(ChangeKind::Modified));
+    assert!(!entry.conflicted);
+}
+
+// Contract: without stage, the text is written and the conflict stays.
+#[test]
+fn write_resolution_without_stage_leaves_the_conflict() {
+    let (_d, path, session) = conflicted_merge();
+
+    session
+        .write_resolution("README.md", "draft\n", false)
+        .unwrap();
+
+    assert_eq!(read(&path, "README.md"), "draft\n");
+    assert!(has_conflicts(&path));
+    assert!(readme_entry(&session).conflicted);
+}
+
+// Contract: only conflicted paths are writable; nothing is written otherwise.
+#[test]
+fn write_resolution_on_an_unconflicted_path_is_path_not_found() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session) = cli_conflict(
+        |p| std::fs::write(p.join("README.md"), "# other\n").unwrap(),
+        |p| std::fs::write(p.join("README.md"), "# main\n").unwrap(),
+        |p| {
+            common::write_file(p, "clean.txt", "clean\n");
+            common::commit_all(p, "add clean");
+        },
+    );
+
+    let result = session.write_resolution("clean.txt", "changed\n", true);
+
+    assert!(matches!(result, Err(GitError::PathNotFound(_))));
+    assert_eq!(read(&path, "clean.txt"), "clean\n");
+}
+
+#[test]
+fn write_resolution_on_a_missing_path_is_path_not_found() {
+    let (_d, path, session) = conflicted_merge();
+
+    let result = session.write_resolution("nope.txt", "x\n", true);
+
+    assert!(matches!(result, Err(GitError::PathNotFound(_))));
+    assert!(!path.join("nope.txt").exists());
+}
+
+#[test]
+fn write_resolution_rejects_a_path_outside_the_work_tree() {
+    let (_d, path, session) = conflicted_merge();
+
+    let result = session.write_resolution("../x", "x\n", true);
+
+    assert!(result.is_err());
+    assert!(!path.parent().unwrap().join("x").exists());
+}
+
+// Contract: a symlink at the path is refused and left alone.
+#[cfg(unix)]
+#[test]
+fn write_resolution_refuses_a_symlink_at_the_path() {
+    let (_d, path, session) = conflicted_merge();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::os::unix::fs::symlink("/etc/hostname", path.join("README.md")).unwrap();
+
+    let result = session.write_resolution("README.md", "x\n", true);
+
+    assert!(matches!(result, Err(GitError::BadSelection)));
+    assert_eq!(
+        std::fs::read_link(path.join("README.md")).unwrap(),
+        PathBuf::from("/etc/hostname")
+    );
+    assert!(has_conflicts(&path));
+}
+
+// Contract: a directory at the path is refused.
+#[test]
+fn write_resolution_refuses_a_directory_at_the_path() {
+    let (_d, path, session) = conflicted_merge();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::fs::create_dir(path.join("README.md")).unwrap();
+
+    let result = session.write_resolution("README.md", "x\n", true);
+
+    assert!(matches!(result, Err(GitError::BadSelection)));
+}
+
+// Contract: rewriting a file keeps its permission bits.
+#[cfg(unix)]
+#[test]
+fn write_resolution_keeps_the_executable_bit() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_d, path, session) = conflicted_merge();
+    std::fs::set_permissions(
+        path.join("README.md"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+
+    session.write_resolution("README.md", "x\n", true).unwrap();
+
+    let mode = std::fs::metadata(path.join("README.md"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_ne!(mode & 0o111, 0, "mode {mode:o}");
+}
+
+// Contract: a deleted file and its parent directories are recreated.
+#[test]
+fn write_resolution_recreates_a_deleted_file_with_parents() {
+    if !git_available() {
+        return;
+    }
+    let nested = "dir/sub/file.txt";
+    let (_d, path, session) = cli_conflict(
+        |p| std::fs::write(p.join(nested), "other\n").unwrap(),
+        |p| std::fs::write(p.join(nested), "main\n").unwrap(),
+        |p| {
+            common::write_file(p, nested, "base\n");
+            common::commit_all(p, "add nested");
+        },
+    );
+    std::fs::remove_dir_all(path.join("dir")).unwrap();
+
+    session.write_resolution(nested, "fixed\n", true).unwrap();
+
+    assert_eq!(read(&path, nested), "fixed\n");
+    assert!(!has_conflicts(&path));
+}
+
+// Contract: a refused write leaves the index and status exactly as they were.
+#[test]
+fn write_resolution_index_is_untouched_when_the_write_fails() {
+    let (_d, path, session) = conflicted_merge();
+    std::fs::remove_file(path.join("README.md")).unwrap();
+    std::fs::create_dir(path.join("README.md")).unwrap();
+    let before = session.status().unwrap();
+
+    let _ = session.write_resolution("README.md", "x\n", true);
+
+    assert!(has_conflicts(&path));
+    assert_eq!(session.status().unwrap(), before);
 }

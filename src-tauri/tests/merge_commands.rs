@@ -10,8 +10,9 @@ use git_real_core::{
 use git_real_lib::commands::merge::{
     abort_operation_inner, can_fast_forward_inner, cherry_pick_inner, continue_rebase_inner,
     get_operation_state_inner, merge_branch_inner, rebase_onto_inner, resolve_conflicts_inner,
-    revert_commit_inner,
+    revert_commit_inner, write_resolution_inner,
 };
+use git_real_lib::commands::worktree::get_status_inner;
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::state::{RepoId, RepoRegistry};
 use git2::{Oid, Repository};
@@ -493,4 +494,45 @@ fn every_merge_command_maps_an_unknown_repo_id_to_unknown_repo() {
         kinds.iter().all(|k| *k == AppErrorKind::UnknownRepo),
         "{kinds:?}"
     );
+}
+
+// --- write_resolution_inner (GR-10b) ---
+
+#[test]
+fn write_resolution_inner_stages_the_text() {
+    let (_d, path, reg, id) = diverged();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let other = repo.find_branch("other", git2::BranchType::Local).unwrap();
+        let annotated = repo.reference_to_annotated_commit(other.get()).unwrap();
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.allow_conflicts(true);
+        repo.merge(&[&annotated], None, Some(&mut checkout))
+            .unwrap();
+    }
+
+    write_resolution_inner(&reg, id, "README.md", "both\n", true).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(path.join("README.md")).unwrap(),
+        "both\n"
+    );
+    assert!(
+        !Repository::open(&path)
+            .unwrap()
+            .index()
+            .unwrap()
+            .has_conflicts()
+    );
+    let status = get_status_inner(&reg, id).unwrap();
+    assert!(status.entries.iter().all(|e| !e.conflicted));
+}
+
+#[test]
+fn write_resolution_inner_maps_path_not_found() {
+    let (_d, _p, reg, id) = diverged();
+
+    let err = write_resolution_inner(&reg, id, "README.md", "x\n", true).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::PathNotFound);
 }
