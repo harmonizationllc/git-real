@@ -285,7 +285,9 @@ with the five actions (option titles carry the hints), `<code>` short oid,
 subject (ellipsised, title = full subject), author name, `Move up` /
 `Move down` icon buttons (`aria-label`, disabled at the ends or while
 pending). A dropped row is dimmed and struck through; a squash/fixup row is
-indented to show it folds into the row above; a blocked row shows
+indented to show it folds into the row below it (git folds into the
+previous todo line, the older commit, which the newest-first list shows
+below); a blocked row shows
 `Cannot squash the oldest commit` under the select (`role="alert"`). The
 `<li>` is `draggable` and handles `dragstart`/`dragover`
 (`preventDefault`)/`drop`; the dialog keeps the dragged index in state and
@@ -359,8 +361,8 @@ Loading commits…
 Nothing to rebase: {head} has no commits after {label}.
 Commits to rebase
 Action for {short}
-Pick — keep the commit | Squash — fold into the commit above, keep both messages |
-Fixup — fold into the commit above, discard its message |
+Pick — keep the commit | Squash — fold into the commit below, keep both messages |
+Fixup — fold into the commit below, discard its message |
 Edit — stop after applying it to amend | Drop — leave the commit out
 Cannot squash the oldest commit
 Move up | Move down
