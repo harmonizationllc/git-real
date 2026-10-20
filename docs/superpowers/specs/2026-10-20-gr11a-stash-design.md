@@ -255,8 +255,10 @@ Tests are written first by the tester role; the developer never edits them.
   2. Select it → summary shows Changes and Untracked groups; open a diff in
      each.
   3. Apply → changes return, stash remains.
-  4. Pop onto a conflicting change → notice, conflicted file in Changes,
-     resolve in the GR-10b editor, stash still listed.
+  4. Commit a change to the same lines the stash touches (clean tree), then
+     Pop → notice, conflicted file in Changes, resolve in the GR-10b editor,
+     stash still listed. (An uncommitted overlapping change makes git refuse
+     instead — `operationFailed`, covered by core tests.)
   5. Drop… → confirm → row gone.
   6. Note a row's index and oid, create a stash in a terminal (the watcher
      refreshes the list), then call `stash_drop` with the old index and oid
