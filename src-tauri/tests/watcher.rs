@@ -212,6 +212,8 @@ fn is_relevant_rules() {
         ("/w/.git/index", true),
         ("/w/.git/HEAD", true),
         ("/w/.git/refs/heads/main", true),
+        ("/w/.git/refs/stash", true),
+        ("/w/.git/logs/refs/stash", true),
         ("/w/.git/objects/aa/bbcc", false),
         ("/w/.git/objects", false),
         ("/w/.git/index.lock", false),

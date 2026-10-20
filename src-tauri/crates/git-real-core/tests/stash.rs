@@ -624,3 +624,34 @@ fn stash_drop_stale_after_a_pop_elsewhere() {
         Err(GitError::StaleStash)
     ));
 }
+
+// The guard reads reflog entry `index` and compares ids; a non-hex oid is stale, hex case is ignored.
+#[test]
+fn stash_drop_with_a_non_hex_oid_is_stale_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    stash_readme(&path, &session, "x\n", "wip");
+    assert!(matches!(
+        session.stash_drop(0, "not-a-hex-oid"),
+        Err(GitError::StaleStash)
+    ));
+    assert_eq!(session.list_stashes().unwrap().len(), 1);
+}
+
+#[test]
+fn stash_guard_accepts_an_uppercase_oid() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let entry = stash_readme(&path, &session, "x\n", "wip");
+    let upper = entry.oid.to_uppercase();
+    assert_eq!(
+        session.stash_apply(0, &upper).unwrap(),
+        StashOutcome::Applied
+    );
+    session.stash_drop(0, &upper).unwrap();
+    assert!(session.list_stashes().unwrap().is_empty());
+}
