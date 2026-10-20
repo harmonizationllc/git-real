@@ -29,6 +29,7 @@ pub mod refs;
 pub mod remote;
 pub mod repo;
 mod revision;
+pub mod stash;
 pub mod status;
 
 pub use error::GitError;

@@ -1,4 +1,4 @@
-//! The git CLI runner behind merge, rebase, cherry-pick and revert.
+//! The git CLI runner behind merge, rebase, cherry-pick, revert and stash.
 
 use std::path::Path;
 use std::process::Output;

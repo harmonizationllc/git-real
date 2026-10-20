@@ -84,6 +84,10 @@ pub enum GitError {
     UnresolvedConflicts,
     #[error("{0} is a merge commit; choosing a parent is not supported yet")]
     MergeCommit(String),
+    #[error("there are no local changes to stash")]
+    NothingToStash,
+    #[error("the stash list changed; reload it")]
+    StaleStash,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

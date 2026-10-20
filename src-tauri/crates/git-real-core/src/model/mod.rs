@@ -9,6 +9,7 @@ mod merge;
 mod progress;
 mod recent;
 mod repo;
+mod stash;
 mod status;
 
 pub use branch::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
@@ -28,4 +29,5 @@ pub use merge::{
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;
 pub use repo::RepoSummary;
+pub use stash::{StashEntry, StashFiles, StashOutcome};
 pub use status::{ChangeKind, StatusEntry, WorkingTreeStatus};

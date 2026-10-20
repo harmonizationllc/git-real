@@ -7,9 +7,9 @@
 //! reads use git2 and the `.git` marker files. Resolving conflicts writes the
 //! working tree and index through git2 (ADR 0001: index writes are git2).
 //! Interactive rebase needs `cp` on the PATH git's shell sees (bundled with
-//! Git for Windows).
+//! Git for Windows). `git_ops` is also the stash runner.
 
-mod git_ops;
+pub(crate) mod git_ops;
 mod interactive;
 mod resolve;
 mod state;
@@ -120,9 +120,7 @@ impl RepoSession {
             | RepositoryState::ApplyMailbox
             | RepositoryState::ApplyMailboxOrRebase => return Err(GitError::NoOperation),
         }
-        if self.fresh_index()?.has_conflicts() {
-            return Err(GitError::UnresolvedConflicts);
-        }
+        self.ensure_no_conflicts()?;
         let (git, workdir) = self.git()?;
         let output = git_ops::run(&git, workdir, "rebase", &["--continue"], &NO_EDITOR)?;
         self.outcome("rebase", &output)
@@ -157,7 +155,7 @@ impl RepoSession {
     }
 
     /// `OperationInProgress` unless the repository is in its clean state.
-    fn ensure_clean(&self) -> Result<(), GitError> {
+    pub(crate) fn ensure_clean(&self) -> Result<(), GitError> {
         if self.repo().state() == RepositoryState::Clean {
             Ok(())
         } else {
@@ -166,11 +164,20 @@ impl RepoSession {
     }
 
     /// `UnbornHead` when HEAD has no commit yet.
-    fn ensure_born(&self) -> Result<(), GitError> {
+    pub(crate) fn ensure_born(&self) -> Result<(), GitError> {
         match self.repo().head() {
             Ok(_) => Ok(()),
             Err(e) if is_unborn(&e) => Err(GitError::UnbornHead),
             Err(e) => Err(e.into()),
+        }
+    }
+
+    /// `UnresolvedConflicts` when the index has conflict entries.
+    pub(crate) fn ensure_no_conflicts(&self) -> Result<(), GitError> {
+        if self.fresh_index()?.has_conflicts() {
+            Err(GitError::UnresolvedConflicts)
+        } else {
+            Ok(())
         }
     }
 
@@ -188,7 +195,7 @@ impl RepoSession {
     }
 
     /// The located git executable and the working directory, for a CLI run.
-    fn git(&self) -> Result<(PathBuf, &Path), GitError> {
+    pub(crate) fn git(&self) -> Result<(PathBuf, &Path), GitError> {
         Ok((git_cli::locate()?, self.workdir()?))
     }
 
@@ -218,7 +225,7 @@ impl RepoSession {
     }
 }
 
-fn operation_failed(verb: &str, output: &Output) -> GitError {
+pub(crate) fn operation_failed(verb: &str, output: &Output) -> GitError {
     GitError::OperationFailed {
         verb: verb.to_owned(),
         code: output.status.code(),

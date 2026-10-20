@@ -42,6 +42,8 @@ pub enum AppErrorKind {
     NoOperation,
     UnresolvedConflicts,
     MergeCommit,
+    NothingToStash,
+    StaleStash,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -96,6 +98,8 @@ impl From<GitError> for AppError {
             GitError::NoOperation => AppErrorKind::NoOperation,
             GitError::UnresolvedConflicts => AppErrorKind::UnresolvedConflicts,
             GitError::MergeCommit(_) => AppErrorKind::MergeCommit,
+            GitError::NothingToStash => AppErrorKind::NothingToStash,
+            GitError::StaleStash => AppErrorKind::StaleStash,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
