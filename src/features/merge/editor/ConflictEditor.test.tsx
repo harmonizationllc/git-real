@@ -238,6 +238,30 @@ describe("ConflictEditor placeholder", () => {
     expect(resolveConflicts).toHaveBeenLastCalledWith(REPO, [PATH], "theirs");
   });
 
+  it("placeholder Keep and Take reselect the file as staged", async () => {
+    vi.mocked(getFileContent).mockRejectedValue({ kind: "binaryFile", message: "bin" });
+    setup();
+    await placeholder();
+    for (const name of ["Keep main", "Take feature"]) {
+      useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
+      click(await screen.findByRole("button", { name }));
+      await waitFor(() =>
+        expect(useWorkspace.getState().selected[REPO]).toEqual({ path: PATH, scope: "staged" }),
+      );
+    }
+  });
+
+  it("a failed placeholder Keep leaves the selection unchanged", async () => {
+    vi.mocked(getFileContent).mockRejectedValue({ kind: "binaryFile", message: "bin" });
+    vi.mocked(resolveConflicts).mockRejectedValue({ kind: "git", message: "cannot resolve" });
+    setup();
+    await placeholder();
+    useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
+    click(await screen.findByRole("button", { name: "Keep main" }));
+    await screen.findByText("cannot resolve");
+    expect(useWorkspace.getState().selected[REPO]).toEqual({ path: PATH, scope: "unstaged" });
+  });
+
   it("disables the placeholder buttons while a resolve is pending", async () => {
     vi.mocked(getFileContent).mockRejectedValue({ kind: "binaryFile", message: "bin" });
     vi.mocked(resolveConflicts).mockReturnValue(new Promise(() => undefined));
@@ -624,13 +648,27 @@ describe("ConflictEditor reload", () => {
     expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, TWO + "x", false);
   });
 
-  it("keeps the cursor when a refetch delivers identical bytes", async () => {
+  it("keeps the cursor and history when a refetch only flips the line endings", async () => {
     const { queryClient } = setup();
     const view = await editor();
     act(() => view.dispatch({ selection: { anchor: 5 } }));
+    writeToDisk(TWO.replaceAll("\n", "\r\n"));
     await refetch(queryClient);
     await tick(0);
+    expect(doc(view)).toBe(TWO);
     expect(view.state.selection.main.head).toBe(5);
+    expect(writeResolution).not.toHaveBeenCalled();
+    // The new line ending applies to the next save.
+    type(view, "x", 0);
+    await tick(SAVE_DELAY_MS);
+    expect(writeResolution).toHaveBeenCalledExactlyOnceWith(
+      REPO,
+      PATH,
+      "x" + TWO.replaceAll("\n", "\r\n"),
+      false,
+    );
+    act(() => void undo(view));
+    expect(doc(view)).toBe(TWO);
   });
 });
 

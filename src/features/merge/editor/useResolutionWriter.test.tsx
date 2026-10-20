@@ -477,4 +477,21 @@ describe("useResolutionWriter edge cases", () => {
     await act(() => result.current.markResolved("final"));
     expect(result.current.pending).toBe(false);
   });
+
+  it("pending is true from the markResolved call while the flushed autosave is still in flight", async () => {
+    const draft = deferred();
+    vi.mocked(writeResolution).mockReturnValueOnce(draft.promise);
+    const { result } = setup();
+    act(() => result.current.scheduleSave("draft"));
+    let marking!: Promise<AppError | null>;
+    act(() => {
+      marking = result.current.markResolved("final");
+    });
+    await advance(0);
+    expect(result.current.pending).toBe(true);
+    expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, "draft", false);
+    draft.resolve();
+    await act(() => marking);
+    expect(result.current.pending).toBe(false);
+  });
 });

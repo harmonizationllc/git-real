@@ -1503,6 +1503,17 @@ describe("ChangesPanel Resolve all", () => {
     expect(resolveAll()).toBeDisabled();
   });
 
+  it("disables both bulk items when an action becomes pending while the menu is open", async () => {
+    provideMerge({ state: mergeState });
+    const { user, rerender } = await renderPanel(conflict("a.txt"));
+    await openMenu(user);
+    for (const item of screen.getAllByRole("menuitem")) expect(item).toBeEnabled();
+    provideMerge({ state: mergeState, pending: true });
+    rerender(<ChangesPanel repoId={1} />);
+    expect(screen.getByRole("menuitem", { name: "Keep main for all files" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Take feature for all files" })).toBeDisabled();
+  });
+
   it("a failure shows in the panel error slot", async () => {
     provideMerge({
       state: mergeState,

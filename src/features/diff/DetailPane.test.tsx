@@ -18,9 +18,18 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   applyHunk: vi.fn(),
   getStatus: vi.fn(),
 }));
-vi.mock("../merge/editor/ConflictEditor", () => ({
-  ConflictEditor: ({ path }: { path: string }) => <div data-testid="conflict-editor">{path}</div>,
-}));
+const conflictEditorMounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../merge/editor/ConflictEditor", async () => {
+  const { useEffect } = await import("react");
+  return {
+    ConflictEditor: ({ path }: { path: string }) => {
+      useEffect(() => {
+        conflictEditorMounts.count += 1;
+      }, []);
+      return <div data-testid="conflict-editor">{path}</div>;
+    },
+  };
+});
 vi.mock("../history/BlameView", () => ({
   BlameView: vi.fn(() => <div role="table" aria-label="Blame" />),
 }));
@@ -53,6 +62,7 @@ const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:1");
 const revokeObjectURL = vi.fn<(url: string) => void>();
 
 beforeEach(() => {
+  conflictEditorMounts.count = 0;
   vi.resetAllMocks();
   createObjectURL.mockImplementation(() => "blob:1");
   Object.defineProperty(URL, "createObjectURL", {
@@ -1721,8 +1731,10 @@ describe("DetailPane conflict routing", () => {
     provideStatus(statusEntry({ path: "a.ts" }), statusEntry({ path: "b.ts" }));
     setup("a.ts", "unstaged");
     await screen.findByTestId("conflict-editor");
+    expect(conflictEditorMounts.count).toBe(1);
     select("b.ts", "unstaged");
     await waitFor(() => expect(screen.getByTestId("conflict-editor")).toHaveTextContent("b.ts"));
+    expect(conflictEditorMounts.count).toBe(2);
   });
 
   it("renders nothing once the selection is cleared", async () => {
