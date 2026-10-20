@@ -244,6 +244,41 @@ describe("StashSummary actions", () => {
     expect(details()).toBeInTheDocument();
   });
 
+  async function popKept() {
+    vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
+    const view = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    await view.user.click(pop);
+    await screen.findByRole("status");
+    return { ...view, pop };
+  }
+
+  it("disables Pop with the Drop hint after a pop that kept the stash", async () => {
+    const { pop } = await popKept();
+    await waitFor(() => expect(pop).toBeDisabled());
+    expect(pop).toHaveAttribute("title", "Already applied. Use Drop… to remove the stash.");
+    expect(inDetails().getByRole("button", { name: "Apply" })).toBeEnabled();
+    expect(inDetails().getByRole("button", { name: "Drop…" })).toBeEnabled();
+  });
+
+  it("re-enables Pop when the kept notice is dismissed", async () => {
+    const { user, pop } = await popKept();
+    await user.click(inDetails().getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(pop).toBeEnabled());
+    expect(pop).not.toHaveAttribute("title");
+  });
+
+  it("keeps Pop enabled after a pop with conflicts", async () => {
+    vi.mocked(stashPop).mockResolvedValue("conflicts");
+    const { user } = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    await user.click(pop);
+    await screen.findByRole("status");
+    await waitFor(() => expect(pop).toBeEnabled());
+  });
+
   it("Cancel on the drop dialog drops nothing", async () => {
     const { user } = await renderSummary();
     await user.click(inDetails().getByRole("button", { name: "Drop…" }));

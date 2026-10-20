@@ -1700,6 +1700,37 @@ describe("ChangesPanel Stash button", () => {
     expect(screen.queryByRole("button", { name: "Stash…" })).toBeNull();
   });
 
+  it("keeps the open stash dialog and its message when a background status refetch fails", async () => {
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    await user.click(stashBtn());
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "wip");
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("status exploded");
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("wip");
+  });
+
+  it("disables Stash… while a background status refetch is in error", async () => {
+    const { queryClient } = await renderPanel(unstaged("a.txt"));
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByRole("alert");
+    expect(stashBtn()).toBeDisabled();
+  });
+
+  it("returns focus to the Changes region when the stash dialog is cancelled during a status error", async () => {
+    const { user, queryClient } = await renderPanel(unstaged("a.txt"));
+    await user.click(stashBtn());
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "wip");
+    vi.mocked(getStatus).mockRejectedValue({ kind: "io", message: "status exploded" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus();
+  });
+
   it("after a push that empties the tree, focus lands on the Changes region", async () => {
     let pushed = false;
     const { user, queryClient } = await renderPanel(unstaged("a.txt"));

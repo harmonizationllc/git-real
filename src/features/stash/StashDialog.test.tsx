@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stashPush } from "../../lib/ipc";
@@ -118,6 +118,31 @@ describe("StashDialog errors", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("returns focus to the message field after an inline error", async () => {
+    vi.mocked(stashPush).mockRejectedValue({ kind: "nothingToStash", message: "raw" });
+    const { user } = renderDialog();
+    await user.type(messageField(), "wip");
+    await user.click(stashButton());
+    await screen.findByRole("alert");
+    expect(messageField()).toHaveFocus();
+    expect(messageField()).toHaveValue("wip");
+  });
+
+  it("returns focus to the message field after an error submitted with Enter", async () => {
+    vi.mocked(stashPush).mockRejectedValue({ kind: "operationFailed", message: "x" });
+    const { user } = renderDialog();
+    await user.type(messageField(), "x{Enter}");
+    await screen.findByRole("alert");
+    expect(messageField()).toHaveFocus();
+  });
+
+  it("does not focus the message field after a successful push", async () => {
+    const { user } = renderDialog();
+    await user.click(stashButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(messageField()).not.toHaveFocus();
+  });
+
   it("allows submitting again after an error", async () => {
     vi.mocked(stashPush).mockRejectedValueOnce({ kind: "operationFailed", message: "x" });
     const { user } = renderDialog();
@@ -145,6 +170,14 @@ describe("StashDialog pending", () => {
     expect(messageField()).toBeDisabled();
     expect(untrackedBox()).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("moves focus to the dialog while the push is pending", async () => {
+    pending();
+    const { user } = renderDialog();
+    await user.click(stashButton());
+    await screen.findByRole("button", { name: "Working…" });
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toHaveFocus();
   });
 
   it("does not close on Escape while pending", async () => {
@@ -228,12 +261,18 @@ describe("StashDialog reopening", () => {
 
 // Contract (F9): on close, focus returns to the opener unless it is gone or disabled; then the fallback.
 describe("StashDialog focus on close", () => {
-  function Harness({ openerDisabled = false }: { openerDisabled?: boolean }) {
+  function Harness({
+    openerDisabled = false,
+    fallbackKey = "a",
+  }: {
+    openerDisabled?: boolean;
+    fallbackKey?: string;
+  }) {
     const [open, setOpen] = useState(false);
     const fallback = useRef<HTMLDivElement>(null);
     return (
       <>
-        <div ref={fallback} tabIndex={-1} data-testid="fallback" />
+        <div key={fallbackKey} ref={fallback} tabIndex={-1} data-testid="fallback" />
         <button type="button" disabled={openerDisabled} onClick={() => setOpen(true)}>
           Opener
         </button>
@@ -287,9 +326,38 @@ describe("StashDialog focus on close", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("does not throw or move focus to the fallback when no fallback is given", async () => {
-    const { user } = renderWithProviders(<StashDialog repoId={1} open onClose={onClose} />);
+  it("restores focus to the fallback the host re-rendered while the dialog was open", async () => {
+    const { user, rerender } = renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    rerender(<Harness openerDisabled fallbackKey="b" />);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("restores focus to the fallback when nothing held focus at open", async () => {
+    const { user } = renderWithProviders(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("closes without throwing when the opener is disabled and no fallback is given", async () => {
+    function NoFallback({ disabled }: { disabled: boolean }) {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" disabled={disabled} onClick={() => setOpen(true)}>
+            Opener
+          </button>
+          <StashDialog repoId={1} open={open} onClose={() => setOpen(false)} />
+        </>
+      );
+    }
+    const { user, rerender } = renderWithProviders(<NoFallback disabled={false} />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    rerender(<NoFallback disabled />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body).toHaveFocus();
   });
 });

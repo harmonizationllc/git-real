@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import type { RefObject } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -150,7 +150,7 @@ describe("StashButton shared busy state", () => {
 
 // Contract (F9): a button that is disabled while it holds focus hands focus to the fallback.
 describe("StashButton focus", () => {
-  it("moves focus to the fallback when the button is disabled while focused", async () => {
+  it("after a push from its dialog empties the tree, focus lands on the fallback", async () => {
     let pushed = false;
     vi.mocked(getStatus).mockImplementation(() =>
       Promise.resolve(pushed ? workingStatus([]) : workingStatus([statusEntry("a.txt")])),
@@ -165,6 +165,17 @@ describe("StashButton focus", () => {
     await user.click(await screen.findByRole("button", { name: "Stash" }));
     await waitFor(() => expect(textButton()).toBeDisabled());
     await waitFor(() => expect(screen.getByTestId("fallback")).toHaveFocus());
+  });
+
+  it("moves focus to the fallback when another component's stash action disables the focused button", async () => {
+    vi.mocked(stashPush).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<Host variant="text" sibling={1} />);
+    await waitFor(() => expect(textButton()).toBeEnabled());
+    textButton().focus();
+    fireEvent.click(screen.getByRole("button", { name: "sibling push" }));
+    await waitFor(() => expect(textButton()).toBeDisabled());
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("keeps focus on the button while it stays enabled", async () => {
