@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
@@ -60,6 +60,7 @@ function headRow(head: HeadState) {
 }
 
 export function BranchesPanel({ repoId }: BranchesPanelProps) {
+  const rootRef = useRef<HTMLElement>(null);
   const { branches, error: listError, refetch } = useBranches(repoId);
   const actions = useBranchActions(repoId);
   const { state } = useOperationState(repoId);
@@ -358,6 +359,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           y={menu?.y ?? 0}
           items={menu === null ? [] : menuItems(menu, list)}
           onClose={closeMenu}
+          fallbackFocus={rootRef}
         />
       </>
     );
@@ -373,7 +375,13 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   }
 
   return (
-    <section aria-label="Branches" aria-busy={pending || undefined} className={styles.root}>
+    <section
+      ref={rootRef}
+      tabIndex={-1}
+      aria-label="Branches"
+      aria-busy={pending || undefined}
+      className={styles.root}
+    >
       {body}
       {dialog?.kind === "rebase" && (
         <RebaseDialog
@@ -384,6 +392,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           run={integration.run}
           pending={integration.pending}
           onClose={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "create" && (
@@ -401,6 +410,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           pending={actions.pending}
           onConfirm={(name) => void confirmCreate(dialog, name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "rename" && (
@@ -414,6 +424,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           pending={actions.pending}
           onConfirm={(newName) => void confirmRename(dialog.name, newName)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {/* One element per confirm kind, so the delete to force-delete hand-off remounts the body
@@ -429,6 +440,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           pending={actions.pending}
           onConfirm={() => void confirmDeleteLocal(dialog.name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "forceDelete" && (
@@ -442,6 +454,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           pending={actions.pending}
           onConfirm={() => void confirmForceDelete(dialog.name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "deleteRemote" && (
@@ -455,6 +468,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           pending={actions.pending}
           onConfirm={() => void confirmDeleteRemote(dialog.remote, dialog.name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
     </section>

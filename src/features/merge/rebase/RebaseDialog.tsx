@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode, RefObject } from "react";
+import { useRestoreFocus } from "../../../components/useRestoreFocus";
 import type { AppError, RebaseCommit, RepoId } from "../../../lib/ipc";
 import { RepoError } from "../../repo/RepoError";
 import type { UseIntegrationActions } from "../useIntegrationActions";
@@ -28,6 +29,8 @@ export interface RebaseDialogProps {
   run: UseIntegrationActions["run"];
   pending: boolean;
   onClose(): void;
+  /** Takes focus on close when the opener is gone, disabled or never had focus. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
 function planMessage(error: AppError, head: string, label: string): string {
@@ -47,17 +50,17 @@ export function RebaseDialog({
   run,
   pending,
   onClose,
+  fallbackFocus,
 }: RebaseDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const { commits, error, loading } = useRebasePlan(repoId, base);
 
+  useRestoreFocus(fallbackFocus);
   // Focus the dialog box itself, which outlives every body state, so Escape keeps working when
-  // the plan replaces the loading status; restore focus on close, as ConfirmDialog does.
+  // the plan replaces the loading status; useRestoreFocus returns focus on close.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement;
     (dialogRef.current as HTMLDivElement).focus();
-    return () => previous.focus();
   }, []);
 
   const onKeyDown = (e: KeyboardEvent) => {

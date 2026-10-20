@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { RepoId } from "../../lib/ipc";
 import { useBranches } from "../branches/useBranches";
@@ -35,6 +35,7 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
   const { status } = useStatus(repoId);
   const { run, pending, error, clearError } = useIntegrationActions(repoId);
   const [confirming, setConfirming] = useState(false);
+  const rootRef = useRef<HTMLElement>(null);
 
   const head = headName(branches?.head);
   const conflicts = status?.entries.filter((e) => e.conflicted).length ?? 0;
@@ -52,6 +53,8 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
 
   return (
     <section
+      ref={rootRef}
+      tabIndex={-1}
       aria-label="Operation in progress"
       aria-busy={pending || undefined}
       className={styles.root}
@@ -92,6 +95,7 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
         pending={pending}
         onConfirm={() => void confirmAbort()}
         onCancel={() => setConfirming(false)}
+        fallbackFocus={rootRef}
       />
     </section>
   );

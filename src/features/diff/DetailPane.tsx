@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
 import { useDiffPrefs } from "../../lib/store/diffPrefs";
@@ -60,6 +60,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const showHistory = useWorkspace((s) => s.showHistory);
   const { mode, ignoreWhitespace, setMode, setIgnoreWhitespace } = useDiffPrefs();
   const [maxLines, setMaxLines] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   // Blame needs no diff; a null file disables the query.
   const { diff, error, loading, noChanges, refetch } = useFileDiff(
     repoId,
@@ -161,7 +162,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const confirmOpen = pending !== null && pending.diff === diff;
   const n = pending?.selection.lines?.length ?? 0;
   return (
-    <div className={styles.root}>
+    <div ref={rootRef} tabIndex={-1} className={styles.root}>
       {header(diff.oldPath)}
       <DiffToolbar
         diff={diff}
@@ -198,6 +199,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
               : `Discard this hunk in ${diff.path}? This cannot be undone.`
           }
           onCancel={() => setPending(null)}
+          fallbackFocus={rootRef}
           onConfirm={() => {
             actions.applyHunk(diff.path, "discard", (pending as PendingDiscard).selection);
             setPending(null);

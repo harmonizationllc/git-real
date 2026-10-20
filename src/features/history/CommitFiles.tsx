@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { CommitFile, RepoId } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -27,6 +27,7 @@ export function CommitFiles({ repoId, oid }: CommitFilesProps) {
   const setCentreView = useWorkspace((s) => s.setCentreView);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   if (error !== null) {
     // Retry only: dismissing would leave the summary without its files and no way back.
@@ -59,7 +60,7 @@ export function CommitFiles({ repoId, oid }: CommitFilesProps) {
 
   return (
     <section aria-label="Changed files" className={styles.root}>
-      <h3 className={styles.heading}>{`Files (${files.length})`}</h3>
+      <h3 ref={headingRef} tabIndex={-1} className={styles.heading}>{`Files (${files.length})`}</h3>
       <ul className={styles.list}>
         {files.map((file) => (
           <li key={file.path}>
@@ -88,6 +89,7 @@ export function CommitFiles({ repoId, oid }: CommitFilesProps) {
         y={menu?.y ?? 0}
         items={menu === null ? [] : menuItems(menu.file)}
         onClose={closeMenu}
+        fallbackFocus={headingRef}
       />
     </section>
   );

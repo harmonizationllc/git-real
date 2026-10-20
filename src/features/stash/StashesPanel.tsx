@@ -127,6 +127,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
         y={menu?.y ?? 0}
         items={menu === null ? [] : menuItems(menu.entry)}
         onClose={closeMenu}
+        fallbackFocus={headingRef}
       />
       {confirm !== null && (
         <ConfirmDialog

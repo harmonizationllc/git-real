@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { AppError, RepoId, StashEntry, StashFiles } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -88,6 +88,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
   const { status } = useStatus(repoId);
   const { state } = useOperationState(repoId);
   const [confirming, setConfirming] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const apply = applyGate(status, state);
   // After a pop that applied but kept the stash, another Pop would apply it again.
   const popKept = actions.notice?.kind === "popKept";
@@ -147,7 +148,9 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
       className={styles.root}
     >
       <header className={styles.header}>
-        <h2 className={styles.title}>{stashRef(entry.index)}</h2>
+        <h2 ref={headingRef} tabIndex={-1} className={styles.title}>
+          {stashRef(entry.index)}
+        </h2>
         <button type="button" aria-label="Close stash details" onClick={onClose}>
           Close
         </button>
@@ -196,6 +199,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         danger
         onConfirm={confirmDrop}
         onCancel={() => setConfirming(false)}
+        fallbackFocus={headingRef}
       />
     </section>
   );
