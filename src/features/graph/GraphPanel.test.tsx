@@ -2127,6 +2127,14 @@ describe("GraphPanel rebase interactively", () => {
     expect(menuItem(ITEM)).not.toHaveAttribute("title");
   });
 
+  it("should disable the item with Check out a branch first before the branch list loads", async () => {
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeDisabled();
+    expect(menuItem(ITEM)).toHaveAttribute("title", "Check out a branch first");
+  });
+
   it("should place the item after Revert commit", async () => {
     await renderWithHead();
     rightClick(optionAt(1));

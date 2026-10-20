@@ -2009,6 +2009,25 @@ describe("BranchesPanel drag-to-merge", () => {
     expect(rowItem(localRow("main"))).toHaveAttribute("data-drop-over", "true");
   });
 
+  it("should keep the highlight while the pointer moves from the row onto its button", async () => {
+    await renderPanel();
+    pickUp(localRow("feature"));
+    hover(rowItem(localRow("main")));
+    fireEvent.dragEnter(localRow("main"));
+    fireEvent.dragLeave(rowItem(localRow("main")));
+    expect(rowItem(localRow("main"))).toHaveAttribute("data-drop-over", "true");
+    fireEvent.dragLeave(localRow("main"));
+    expect(rowItem(localRow("main"))).not.toHaveAttribute("data-drop-over");
+  });
+
+  it("should not start a drag from the current branch row", async () => {
+    await renderPanel();
+    pickUp(localRow("main"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("should remove the highlight once the pointer has left the row", async () => {
     await renderPanel();
     pickUp(localRow("feature"));

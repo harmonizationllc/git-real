@@ -346,6 +346,16 @@ describe("BranchRow drag source", () => {
     expect(dataTransfer.setData).toHaveBeenCalledExactlyOnceWith("text/plain", "origin/other");
   });
 
+  it("should ignore dragstart when the row is not draggable", () => {
+    const drag = dragProps({ draggable: false });
+    const dataTransfer = fakeTransfer();
+    renderRow({ drag });
+    fireEvent.dragStart(item(), { dataTransfer });
+    expect(drag.onDragStart).not.toHaveBeenCalled();
+    expect(dataTransfer.setData).not.toHaveBeenCalled();
+    expect(dataTransfer.effectAllowed).toBe("");
+  });
+
   it("should call onDragEnd on dragend", () => {
     const drag = dragProps();
     renderRow({ drag });
