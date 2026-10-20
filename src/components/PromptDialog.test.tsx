@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AppError } from "../lib/ipc";
 import { PromptDialog } from "./PromptDialog";
@@ -533,5 +534,100 @@ describe("PromptDialog error description", () => {
   it("should omit aria-describedby when there is no error", () => {
     renderDialog({ error: null });
     expect(screen.getByRole("textbox", { name: "Name" })).not.toHaveAttribute("aria-describedby");
+  });
+});
+
+function FallbackHarness({ openerDisabled = false }: { openerDisabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const fallback = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      <div ref={fallback} tabIndex={-1} data-testid="fallback" />
+      <button type="button" disabled={openerDisabled} onClick={() => setOpen(true)}>
+        Opener
+      </button>
+      <PromptDialog
+        open={open}
+        title="T"
+        label="Name"
+        error={null}
+        pending={false}
+        onConfirm={vi.fn()}
+        onCancel={() => setOpen(false)}
+        fallbackFocus={fallback}
+      />
+    </>
+  );
+}
+
+describe("PromptDialog focus fallback", () => {
+  it("should focus the fallback on close when nothing held focus at open", async () => {
+    const user = userEvent.setup();
+    render(<FallbackHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("should restore focus to the opener rather than the fallback when the opener had focus", async () => {
+    const user = userEvent.setup();
+    render(<FallbackHarness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+
+  it("should focus the fallback when the opener is disabled at close", async () => {
+    const user = userEvent.setup();
+    const view = render(<FallbackHarness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    view.rerender(<FallbackHarness openerDisabled />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+});
+
+describe("PromptDialog pending focus", () => {
+  const exists: AppError = { kind: "branchExists", message: "exists" };
+  const ui = (pending: boolean, error: AppError | null = null) => (
+    <PromptDialog
+      open
+      title="New branch"
+      label="Name"
+      error={error}
+      pending={pending}
+      onConfirm={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  );
+
+  it("should move focus to the dialog while pending", () => {
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    expect(screen.getByRole("dialog")).toHaveFocus();
+  });
+
+  it("should move focus to the input when an error arrives as pending ends", () => {
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    view.rerender(ui(false, exists));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveFocus();
+  });
+
+  it("should not focus the input when pending ends without an error", () => {
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    view.rerender(ui(false));
+    expect(screen.getByRole("textbox", { name: "Name" })).not.toHaveFocus();
+    expect(screen.getByRole("dialog")).toHaveFocus();
+  });
+
+  it("should keep the typed value when an error refocuses the input", async () => {
+    const user = userEvent.setup();
+    const view = render(ui(false));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "ab");
+    view.rerender(ui(true));
+    view.rerender(ui(false, exists));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("ab");
   });
 });

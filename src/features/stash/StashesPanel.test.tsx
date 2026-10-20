@@ -317,6 +317,12 @@ describe("StashesPanel drop", () => {
     expect(dialog).toHaveTextContent("This can't be undone.");
   });
 
+  it("Cancel returns focus to the Stashes heading when the menu item that opened it is gone", async () => {
+    const { user } = await askDrop();
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus();
+  });
+
   it("confirming Drop calls stashDrop and closes", async () => {
     const { user } = await askDrop();
     await user.click(await screen.findByRole("button", { name: "Drop" }));

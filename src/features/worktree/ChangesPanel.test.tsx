@@ -651,6 +651,20 @@ describe("ChangesPanel discard confirmation", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("should return focus to the Changes region when the discard dialog is cancelled and its opener never had focus", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    fireEvent.click(btn("Discard a.txt"));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Changes" })).toHaveFocus();
+  });
+
+  it("should return focus to the Discard button when it had focus at open", async () => {
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Discard a.txt"));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(btn("Discard a.txt")).toHaveFocus();
+  });
+
   it("should close the dialog without discarding when cancelled", async () => {
     const { user } = await renderPanel(unstaged("a.txt"));
     await user.click(btn("Discard a.txt"));

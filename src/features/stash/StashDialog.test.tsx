@@ -158,6 +158,29 @@ describe("StashDialog errors", () => {
     await user.click(stashButton());
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(messageField()).not.toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toHaveFocus();
+  });
+
+  it("clears the inline error when the form is submitted again", async () => {
+    vi.mocked(stashPush)
+      .mockRejectedValueOnce({ kind: "operationFailed", message: "x" })
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const { user } = renderDialog();
+    await user.click(stashButton());
+    await screen.findByRole("alert");
+    await user.click(stashButton());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not focus the message field when a retry succeeds", async () => {
+    vi.mocked(stashPush).mockRejectedValueOnce({ kind: "operationFailed", message: "x" });
+    const { user } = renderDialog();
+    await user.click(stashButton());
+    await screen.findByRole("alert");
+    await user.click(stashButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(messageField()).not.toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Stash changes" })).toHaveFocus();
   });
 
   it("allows submitting again after an error", async () => {
@@ -347,8 +370,12 @@ describe("StashDialog focus on close", () => {
     const { user, rerender } = renderWithProviders(<Harness />);
     await user.click(screen.getByRole("button", { name: "Opener" }));
     rerender(<Harness openerDisabled fallbackKey="b" />);
+    const opener = screen.getByRole("button", { name: "Opener" });
+    const focusSpy = vi.spyOn(opener, "focus");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("fallback")).toHaveFocus();
+    expect(focusSpy).not.toHaveBeenCalled();
+    expect(opener).not.toHaveFocus();
   });
 
   it("restores focus to the fallback when nothing held focus at open", async () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StrictMode } from "react";
+import { StrictMode, useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -481,5 +481,76 @@ describe("ConfirmDialog null body node", () => {
     renderDialog({ body: null });
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelectorAll("div")).toHaveLength(1); // only the actions row
+  });
+});
+
+function FallbackHarness({ openerDisabled = false }: { openerDisabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const fallback = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      <div ref={fallback} tabIndex={-1} data-testid="fallback" />
+      <button type="button" disabled={openerDisabled} onClick={() => setOpen(true)}>
+        Opener
+      </button>
+      <ConfirmDialog
+        open={open}
+        title="T"
+        onConfirm={vi.fn()}
+        onCancel={() => setOpen(false)}
+        fallbackFocus={fallback}
+      />
+    </>
+  );
+}
+
+describe("ConfirmDialog focus fallback", () => {
+  it("should focus the fallback on close when nothing held focus at open", async () => {
+    const user = userEvent.setup();
+    render(<FallbackHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("should restore focus to the opener rather than the fallback when the opener had focus", async () => {
+    const user = userEvent.setup();
+    render(<FallbackHarness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+
+  it("should focus the fallback when the opener is disabled at close", async () => {
+    const user = userEvent.setup();
+    const view = render(<FallbackHarness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    view.rerender(<FallbackHarness openerDisabled />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+});
+
+describe("ConfirmDialog pending focus", () => {
+  const ui = (pending: boolean) => (
+    <ConfirmDialog open title="T" pending={pending} onConfirm={vi.fn()} onCancel={vi.fn()} />
+  );
+
+  it("should focus the dialog when opened pending", () => {
+    renderDialog({ pending: true });
+    expect(screen.getByRole("dialog")).toHaveFocus();
+  });
+
+  it("should move focus to the dialog when pending starts", () => {
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    expect(screen.getByRole("dialog")).toHaveFocus();
+  });
+
+  it("should return focus to Cancel when pending ends with the dialog open", () => {
+    const view = render(ui(false));
+    view.rerender(ui(true));
+    view.rerender(ui(false));
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });
 });
