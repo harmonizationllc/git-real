@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalBranch, RemoteBranch, Tracking } from "../../lib/ipc";
@@ -286,6 +286,18 @@ const dragProps = (over: Partial<BranchDrag> = {}): BranchDrag => ({
   ...over,
 });
 const fakeTransfer = () => ({ setData: vi.fn(), effectAllowed: "", dropEffect: "" });
+/** Dispatches a drag event and returns it, so effects can be read from its own dataTransfer. */
+const dispatchDrag = (kind: "dragStart" | "dragOver", el: HTMLElement) => {
+  const event = createEvent[kind](el, { dataTransfer: fakeTransfer() }) as DragEvent;
+  fireEvent(el, event);
+  return event;
+};
+/** happy-dom builds drop as a plain Event, so the pointer position is set on the event itself. */
+const dropAt = (el: HTMLElement, x: number, y: number) => {
+  const event = createEvent.drop(el, { dataTransfer: fakeTransfer() });
+  Object.defineProperties(event, { clientX: { value: x }, clientY: { value: y } });
+  return fireEvent(el, event);
+};
 const item = () => screen.getByRole("listitem");
 
 // Contract: without the drag prop the row is inert to drag and drop.
@@ -326,10 +338,9 @@ describe("BranchRow drag source", () => {
   });
 
   it("should set effectAllowed to move on dragstart", () => {
-    const dataTransfer = fakeTransfer();
     renderRow({ drag: dragProps() });
-    fireEvent.dragStart(item(), { dataTransfer });
-    expect(dataTransfer.effectAllowed).toBe("move");
+    const event = dispatchDrag("dragStart", item());
+    expect(event.dataTransfer?.effectAllowed).toBe("move");
   });
 
   it("should set the local branch name as text/plain data on dragstart", () => {
@@ -348,12 +359,11 @@ describe("BranchRow drag source", () => {
 
   it("should ignore dragstart when the row is not draggable", () => {
     const drag = dragProps({ draggable: false });
-    const dataTransfer = fakeTransfer();
     renderRow({ drag });
-    fireEvent.dragStart(item(), { dataTransfer });
+    const event = dispatchDrag("dragStart", item());
     expect(drag.onDragStart).not.toHaveBeenCalled();
-    expect(dataTransfer.setData).not.toHaveBeenCalled();
-    expect(dataTransfer.effectAllowed).toBe("");
+    expect(event.dataTransfer?.setData).not.toHaveBeenCalled();
+    expect(event.dataTransfer?.effectAllowed).toBe("");
   });
 
   it("should call onDragEnd on dragend", () => {
@@ -392,16 +402,15 @@ describe("BranchRow drop target", () => {
   });
 
   it("should set dropEffect to move on dragover", () => {
-    const dataTransfer = fakeTransfer();
     renderRow({ drag: dragProps({ target: true }) });
-    fireEvent.dragOver(item(), { dataTransfer });
-    expect(dataTransfer.dropEffect).toBe("move");
+    const event = dispatchDrag("dragOver", item());
+    expect(event.dataTransfer?.dropEffect).toBe("move");
   });
 
   it("should call onDrop with the pointer position on drop", () => {
     const drag = dragProps({ target: true });
     renderRow({ drag });
-    fireEvent.drop(item(), { clientX: 10, clientY: 20 });
+    dropAt(item(), 10, 20);
     expect(drag.onDrop).toHaveBeenCalledExactlyOnceWith(10, 20);
   });
 
@@ -429,10 +438,9 @@ describe("BranchRow non-target", () => {
   });
 
   it("should not set dropEffect on dragover", () => {
-    const dataTransfer = fakeTransfer();
     renderRow({ drag: dragProps({ target: false }) });
-    fireEvent.dragOver(item(), { dataTransfer });
-    expect(dataTransfer.dropEffect).toBe("");
+    const event = dispatchDrag("dragOver", item());
+    expect(event.dataTransfer?.dropEffect).toBe("");
   });
 
   it("should not call onDrop on drop", () => {

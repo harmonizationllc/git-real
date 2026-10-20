@@ -1433,6 +1433,7 @@ describe("BranchesPanel integration menu items", () => {
       "Check out a branch first",
       "Check out a branch first",
       "Check out a branch first",
+      "Check out a branch first",
     ]);
   });
 
@@ -1442,7 +1443,7 @@ describe("BranchesPanel integration menu items", () => {
     const items = screen
       .getAllByRole("menuitem")
       .filter((i) => /Merge|Fast-forward|Rebase/.test(i.textContent ?? ""));
-    expect(items.map((i) => (i as HTMLButtonElement).disabled)).toEqual([true, true, true]);
+    expect(items.map((i) => (i as HTMLButtonElement).disabled)).toEqual([true, true, true, true]);
   });
 
   // Contract: a pending action (branch or integration) disables the items.

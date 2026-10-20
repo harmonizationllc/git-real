@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { RebaseStepRow } from "./RebaseStepRow";
@@ -43,6 +43,12 @@ const select = () => screen.getByRole("combobox", { name: "Action for abcdef0" }
 const up = () => screen.getByRole("button", { name: "Move up" });
 const down = () => screen.getByRole("button", { name: "Move down" });
 const fakeTransfer = () => ({ setData: vi.fn(), effectAllowed: "", dropEffect: "" });
+/** Dispatches a drag event and returns it, so effects can be read from its own dataTransfer. */
+const dispatchDrag = (kind: "dragStart" | "dragOver", el: HTMLElement) => {
+  const event = createEvent[kind](el, { dataTransfer: fakeTransfer() }) as DragEvent;
+  fireEvent(el, event);
+  return event;
+};
 
 // Contract: the row shows the commit and offers the five actions.
 describe("RebaseStepRow content", () => {
@@ -236,9 +242,8 @@ describe("RebaseStepRow drag", () => {
 
   it("should set effectAllowed to move on dragstart", () => {
     renderRow();
-    const dataTransfer = fakeTransfer();
-    fireEvent.dragStart(row(), { dataTransfer });
-    expect(dataTransfer.effectAllowed).toBe("move");
+    const event = dispatchDrag("dragStart", row());
+    expect(event.dataTransfer?.effectAllowed).toBe("move");
   });
 
   it("should put the step oid on the transfer as text/plain on dragstart", () => {
@@ -261,9 +266,8 @@ describe("RebaseStepRow drag", () => {
 
   it("should set dropEffect to move on dragover", () => {
     renderRow();
-    const dataTransfer = fakeTransfer();
-    fireEvent.dragOver(row(), { dataTransfer });
-    expect(dataTransfer.dropEffect).toBe("move");
+    const event = dispatchDrag("dragOver", row());
+    expect(event.dataTransfer?.dropEffect).toBe("move");
   });
 
   it("should call onDrop on drop", () => {
@@ -303,9 +307,9 @@ describe("RebaseStepRow disabled", () => {
 
   it("should not touch the transfer on dragstart", () => {
     renderRow({ disabled: true });
-    const dataTransfer = fakeTransfer();
-    fireEvent.dragStart(row(), { dataTransfer });
-    expect([dataTransfer.setData.mock.calls.length, dataTransfer.effectAllowed]).toEqual([0, ""]);
+    const event = dispatchDrag("dragStart", row());
+    expect(event.dataTransfer?.setData).not.toHaveBeenCalled();
+    expect(event.dataTransfer?.effectAllowed).toBe("");
   });
 
   it("should not call onDragOver on dragover", () => {
@@ -316,9 +320,8 @@ describe("RebaseStepRow disabled", () => {
 
   it("should not set dropEffect on dragover", () => {
     renderRow({ disabled: true });
-    const dataTransfer = fakeTransfer();
-    fireEvent.dragOver(row(), { dataTransfer });
-    expect(dataTransfer.dropEffect).toBe("");
+    const event = dispatchDrag("dragOver", row());
+    expect(event.dataTransfer?.dropEffect).toBe("");
   });
 
   it("should not call onDrop on drop", () => {
