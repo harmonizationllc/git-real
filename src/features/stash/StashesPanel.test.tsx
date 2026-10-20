@@ -300,6 +300,13 @@ describe("StashesPanel context menu", () => {
     await user.click(menuItem("Pop"));
     expect(stashPop).toHaveBeenCalledExactlyOnceWith(1, 0, entries()[0]!.oid);
   });
+
+  it("Escape returns focus to the Stashes heading when nothing held focus", async () => {
+    const { user } = await renderPanel();
+    rightClick(row(0));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus();
+  });
 });
 
 // Contract: Drop… confirms before dropping.
@@ -315,6 +322,18 @@ describe("StashesPanel drop", () => {
     await askDrop();
     const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
     expect(dialog).toHaveTextContent("This can't be undone.");
+  });
+
+  it("keeps focus inside the Drop dialog when the menu item that opened it is activated", async () => {
+    await askDrop();
+    const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("Cancel returns focus to the Stashes heading when the menu item that opened it is gone", async () => {
+    const { user } = await askDrop();
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("heading", { name: /^Stashes/ })).toHaveFocus();
   });
 
   it("confirming Drop calls stashDrop and closes", async () => {

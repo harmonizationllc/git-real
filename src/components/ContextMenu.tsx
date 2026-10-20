@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 import styles from "./ContextMenu.module.css";
+import { useRestoreFocus } from "./useRestoreFocus";
 
 export interface MenuItem {
   id: string;
@@ -18,13 +19,17 @@ export interface ContextMenuProps {
   y: number;
   items: MenuItem[];
   onClose(): void;
+  /** Takes focus on close when the opener is gone, disabled or never had focus. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
-export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
-  return open ? <ContextMenuBody x={x} y={y} items={items} onClose={onClose} /> : null;
+export function ContextMenu({ open, x, y, items, onClose, fallbackFocus }: ContextMenuProps) {
+  return open ? (
+    <ContextMenuBody x={x} y={y} items={items} onClose={onClose} fallbackFocus={fallbackFocus} />
+  ) : null;
 }
 
-function ContextMenuBody({ x, y, items, onClose }: Omit<ContextMenuProps, "open">) {
+function ContextMenuBody({ x, y, items, onClose, fallbackFocus }: Omit<ContextMenuProps, "open">) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: x, top: y });
 
@@ -35,13 +40,11 @@ function ContextMenuBody({ x, y, items, onClose }: Omit<ContextMenuProps, "open"
       ),
     );
 
-  // Focus the first enabled item (or the menu itself) and restore focus on close. This is a
-  // layout effect so the restore runs before a dialog's autoFocus when one replaces the menu.
+  useRestoreFocus(fallbackFocus);
+  // Focus the first enabled item, or the menu itself. Both are layout effects, so the restore runs
+  // before a dialog's focus-on-open when one replaces the menu.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const menu = menuRef.current as HTMLDivElement;
-    (enabledItems()[0] ?? menu).focus();
-    return () => previous.focus();
+    (enabledItems()[0] ?? (menuRef.current as HTMLDivElement)).focus();
   }, []);
 
   // Keep the menu inside the viewport once its size is known.

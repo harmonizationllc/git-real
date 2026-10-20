@@ -314,6 +314,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
         y={menu?.y ?? 0}
         items={menu === null ? [] : menuItems(menu)}
         onClose={closeMenu}
+        fallbackFocus={rootRef}
       />
       <ConfirmDialog
         open={confirm !== null}
@@ -326,6 +327,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
           setConfirm(null);
         }}
         onCancel={() => setConfirm(null)}
+        fallbackFocus={rootRef}
       />
     </section>
   );

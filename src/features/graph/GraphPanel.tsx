@@ -57,6 +57,7 @@ const RESET_MODES: { mode: ResetMode; label: string }[] = [
 ];
 
 export function GraphPanel({ repoId }: GraphPanelProps) {
+  const rootRef = useRef<HTMLElement>(null);
   const { summary, error: summaryError, refetch } = useLogSummary(repoId);
   const { branches } = useBranches(repoId);
   const commitActions = useCommitActions(repoId);
@@ -204,7 +205,13 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
   }
 
   return (
-    <section aria-label="Commit graph" aria-busy={pending || undefined} className={styles.root}>
+    <section
+      ref={rootRef}
+      tabIndex={-1}
+      aria-label="Commit graph"
+      aria-busy={pending || undefined}
+      className={styles.root}
+    >
       {dialog === null && panelError !== null && (
         <RepoError error={panelError} path={null} onDismiss={clearErrors} />
       )}
@@ -215,6 +222,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
         y={menu?.y ?? 0}
         items={menu === null ? [] : menuItems(menu.row)}
         onClose={closeMenu}
+        fallbackFocus={rootRef}
       />
       {dialog?.kind === "rebase" && (
         <RebaseDialog
@@ -225,6 +233,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
           run={integration.run}
           pending={integration.pending}
           onClose={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "create" && (
@@ -242,6 +251,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
           pending={pending}
           onConfirm={(name) => void confirmCreate(dialog, name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
       {dialog?.kind === "reset" && (
@@ -272,6 +282,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
           pending={pending}
           onConfirm={() => void confirmReset(dialog)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
         />
       )}
     </section>

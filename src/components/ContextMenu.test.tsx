@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StrictMode, useState } from "react";
+import { StrictMode, useLayoutEffect, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
@@ -389,6 +389,107 @@ describe("ContextMenu lifecycle", () => {
   it("should render nothing but the opener when closed", () => {
     renderWithOpener(false);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+// Contract: on close focus returns to the opener, else to the fallback's element.
+describe("ContextMenu focus fallback", () => {
+  const nodes: HTMLElement[] = [];
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const n of nodes.splice(0)) n.remove();
+  });
+
+  function setup() {
+    const opener = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(opener, fallback);
+    nodes.push(opener, fallback);
+    const ref = { current: fallback };
+    const ui = (open: boolean) => (
+      <ContextMenu
+        open={open}
+        x={10}
+        y={20}
+        items={makeItems()}
+        onClose={vi.fn()}
+        fallbackFocus={ref}
+      />
+    );
+    return { opener, fallback, ui };
+  }
+
+  it("should focus the fallback on close when nothing held focus at open", () => {
+    const { fallback, ui } = setup();
+    (document.activeElement as HTMLElement).blur();
+    const view = render(ui(true));
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+  });
+
+  it("should restore focus to the opener rather than the fallback when the opener had focus", () => {
+    const { opener, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    view.rerender(ui(false));
+    expect(opener).toHaveFocus();
+  });
+
+  it("should focus the fallback when the opener is disabled at close", () => {
+    const { opener, fallback, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    opener.disabled = true;
+    const spy = vi.spyOn(opener, "focus");
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("should focus the fallback when the opener was removed while open", () => {
+    const { opener, fallback, ui } = setup();
+    opener.focus();
+    const view = render(ui(true));
+    opener.remove();
+    view.rerender(ui(false));
+    expect(fallback).toHaveFocus();
+  });
+
+  // A menu item that opens a dialog swaps the menu for the dialog in one commit; the menu's
+  // restore must not leave focus outside the dialog.
+  it("should leave focus in a dialog that an activated item opens", async () => {
+    const user = userEvent.setup();
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+    nodes.push(fallback);
+    const ref = { current: fallback };
+    function Host() {
+      const [dialog, setDialog] = useState(false);
+      return (
+        <>
+          <ContextMenu
+            open={!dialog}
+            x={0}
+            y={0}
+            items={makeItems([{ onSelect: () => setDialog(true) }])}
+            onClose={vi.fn()}
+            fallbackFocus={ref}
+          />
+          {dialog && <DialogProbe />}
+        </>
+      );
+    }
+    function DialogProbe() {
+      const input = useRef<HTMLInputElement>(null);
+      useLayoutEffect(() => input.current?.focus(), []);
+      return <input aria-label="dialog input" ref={input} />;
+    }
+    (document.activeElement as HTMLElement).blur();
+    render(<Host />);
+    await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
+    expect(screen.getByLabelText("dialog input")).toHaveFocus();
   });
 });
 

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOperationState,
@@ -262,6 +262,29 @@ describe("StashSummary actions", () => {
     expect(inDetails().getByRole("button", { name: "Drop…" })).toBeEnabled();
   });
 
+  it("shows the gate reason on Pop when the gate and the kept notice both disable it", async () => {
+    vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
+    const { user } = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    vi.mocked(getOperationState).mockResolvedValue(merging);
+    await user.click(pop);
+    await screen.findByRole("status");
+    await waitFor(() => expect(pop).toHaveAttribute("title", IN_PROGRESS_TITLE));
+    expect(pop).toBeDisabled();
+  });
+
+  it("clears the kept notice and its Pop hint when Drop is confirmed", async () => {
+    vi.mocked(stashDrop).mockReturnValue(new Promise(() => undefined));
+    const { user, pop } = await popKept();
+    await waitFor(() => expect(pop).toBeDisabled());
+    await user.click(inDetails().getByRole("button", { name: "Drop…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
+    await user.click(within(dialog).getByRole("button", { name: "Drop" }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(pop).not.toHaveAttribute("title");
+  });
+
   it("re-enables Pop when the kept notice is dismissed", async () => {
     const { user, pop } = await popKept();
     await user.click(inDetails().getByRole("button", { name: "Dismiss" }));
@@ -314,6 +337,17 @@ describe("StashSummary actions", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The stash list changed; it has been refreshed.",
     );
+  });
+
+  it("returns focus to the stash heading when Drop is cancelled and its opener never had focus", async () => {
+    const { user } = await renderSummary();
+    fireEvent.click(inDetails().getByRole("button", { name: "Drop…" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Drop stash@{1}?" })).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "stash@{1}" })).toHaveFocus();
   });
 });
 

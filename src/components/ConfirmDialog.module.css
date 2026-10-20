@@ -24,6 +24,11 @@
   border-radius: 8px;
 }
 
+/* Focus rests on the dialog only while an action runs; it is a container, not a control. */
+.dialog:focus {
+  outline: none;
+}
+
 .title {
   margin: 0;
   font-size: 1.25rem;

@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode, RefObject } from "react";
 import styles from "./ConfirmDialog.module.css";
+import { useRestoreFocus } from "./useRestoreFocus";
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -14,6 +15,8 @@ export interface ConfirmDialogProps {
   pending?: boolean;
   onConfirm(): void;
   onCancel(): void;
+  /** Takes focus on close when the opener is gone, disabled or never had focus. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
@@ -29,6 +32,7 @@ function ConfirmDialogBody({
   pending = false,
   onConfirm,
   onCancel,
+  fallbackFocus,
 }: ConfirmDialogProps) {
   const titleId = useId();
   const bodyId = useId();
@@ -36,14 +40,14 @@ function ConfirmDialogBody({
   const hasBody = body != null && body !== false;
 
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Focus Cancel on open and restore focus on close, in one layout effect so it is StrictMode-safe
-  // and the restore runs before another dialog's autoFocus.
+  useRestoreFocus(fallbackFocus);
+  // Cancel takes focus on open and again when a pending action ends with the dialog still open;
+  // while pending every button is disabled, so the dialog itself holds focus.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    (cancelRef.current as HTMLButtonElement).focus();
-    return () => previous.focus();
-  }, []);
+    ((pending ? dialogRef.current : cancelRef.current) as HTMLElement).focus();
+  }, [pending]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape" && !pending) onCancel();
@@ -57,11 +61,13 @@ function ConfirmDialogBody({
   return (
     <div className={styles.backdrop} onClick={onBackdropClick}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={hasBody ? bodyId : undefined}
         className={styles.dialog}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className={styles.title}>
