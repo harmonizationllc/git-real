@@ -174,4 +174,45 @@ describe("StashButton focus", () => {
     await user.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(textButton()).toHaveFocus();
   });
+
+  it("does not throw when disabled while focused and the fallback ref is empty", async () => {
+    const emptyRef: RefObject<HTMLElement | null> = { current: null };
+    const ui = (disabled: boolean) => (
+      <StashButton repoId={1} variant="text" fallbackFocus={emptyRef} disabled={disabled} />
+    );
+    const { rerender } = renderWithProviders(ui(false));
+    await waitFor(() => expect(textButton()).toBeEnabled());
+    textButton().focus();
+    expect(textButton()).toHaveFocus();
+    rerender(ui(true));
+    expect(textButton()).toBeDisabled();
+    expect(emptyRef.current).toBeNull();
+  });
+
+  it("moves focus to the fallback when the host disables the focused button", async () => {
+    const ui = (disabled: boolean) => <Host variant="text" disabled={disabled} />;
+    const { rerender } = renderWithProviders(ui(false));
+    await waitFor(() => expect(textButton()).toBeEnabled());
+    textButton().focus();
+    rerender(ui(true));
+    expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("leaves focus alone when the button is disabled while not focused", async () => {
+    const ui = (disabled: boolean) => <Host variant="text" disabled={disabled} />;
+    const { rerender } = renderWithProviders(ui(false));
+    await waitFor(() => expect(textButton()).toBeEnabled());
+    rerender(ui(true));
+    expect(screen.getByTestId("fallback")).not.toHaveFocus();
+  });
+});
+
+// Contract (cycle 3): mounting the button adds no status fetch, its host has loaded it.
+describe("StashButton status fetch", () => {
+  it("does not refetch a status the host already cached", async () => {
+    const { queryClient } = renderWithProviders(<Host variant="text" />);
+    await waitFor(() => expect(textButton()).toBeEnabled());
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(queryClient.isFetching()).toBe(0);
+  });
 });

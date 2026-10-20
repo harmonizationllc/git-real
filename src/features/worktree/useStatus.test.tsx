@@ -1,8 +1,10 @@
-import { waitFor } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStatus, onRepoChanged } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import type { AppError, WorkingTreeStatus } from "../../lib/ipc";
+import { QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useStatus } from "./useStatus";
 
@@ -84,5 +86,36 @@ describe("useStatus", () => {
     await waitFor(() => expect(result.current.status).toBeDefined());
     await queryClient.invalidateQueries({ queryKey: queryKeys.repo(1) });
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Contract (cycle 3): refetchOnMount defaults to true; false adds no fetch for a second reader.
+describe("useStatus refetchOnMount option", () => {
+  async function mountSecondReader(options?: { refetchOnMount?: boolean }) {
+    const first = renderHookWithProviders(() => useStatus(1));
+    await waitFor(() => expect(first.result.current.status).toBeDefined());
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={first.queryClient}>{children}</QueryClientProvider>
+    );
+    const second = renderHook(() => useStatus(1, options), { wrapper });
+    return second;
+  }
+
+  it("should refetch stale cached data when a second reader mounts by default", async () => {
+    await mountSecondReader();
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it("should refetch when refetchOnMount is explicitly true", async () => {
+    await mountSecondReader({ refetchOnMount: true });
+    await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it("should serve cached data without a fetch when refetchOnMount is false", async () => {
+    const second = await mountSecondReader({ refetchOnMount: false });
+    expect(second.result.current.status).toEqual(status);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(getStatus).toHaveBeenCalledTimes(1);
   });
 });

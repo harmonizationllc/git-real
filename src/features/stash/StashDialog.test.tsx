@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { screen } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -259,6 +260,31 @@ describe("StashDialog focus on close", () => {
     rerender(<Harness openerDisabled />);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+
+  it("does not throw when the opener is disabled at close and the fallback ref is empty", async () => {
+    const emptyRef: RefObject<HTMLElement | null> = { current: null };
+    function Empty({ disabled }: { disabled: boolean }) {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" disabled={disabled} onClick={() => setOpen(true)}>
+            Opener
+          </button>
+          <StashDialog
+            repoId={1}
+            open={open}
+            onClose={() => setOpen(false)}
+            fallbackFocus={emptyRef}
+          />
+        </>
+      );
+    }
+    const { user, rerender } = renderWithProviders(<Empty disabled={false} />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    rerender(<Empty disabled />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("does not throw or move focus to the fallback when no fallback is given", async () => {
