@@ -882,6 +882,63 @@ fn rebase_interactive_stopped_for_edit_is_reported_when_git_exits_zero_mid_rebas
     assert_eq!(outcome, OperationOutcome::Stopped);
 }
 
+// git is given the base tip, never the merge base, so it replays onto the branch.
+#[test]
+fn rebase_interactive_passes_the_base_tip_for_a_diverged_branch() {
+    let (_d, path, _session, _oid) = operation_fixture();
+    let oid = common::commit_file(&path, "x.txt", "x\n", "add x").to_string();
+    let other_tip = {
+        let repo = Repository::open(&path).unwrap();
+        let other = repo.find_branch("other", BranchType::Local).unwrap();
+        let parent = other.get().peel_to_commit().unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+        let tree = parent.tree().unwrap();
+        repo.commit(
+            Some("refs/heads/other"),
+            &sig,
+            &sig,
+            "other work",
+            &tree,
+            &[&parent],
+        )
+        .unwrap()
+        .to_string()
+    };
+    let session = RepoSession::open(&path).unwrap();
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    assert_eq!(after_workdir(&path), ["rebase", "-i", other_tip.as_str()]);
+}
+
+// With nothing to replay git is never run.
+#[test]
+fn rebase_interactive_with_an_empty_plan_is_bad_selection_and_runs_no_git() {
+    let (_d, path, session, _oid) = operation_fixture();
+
+    let err = session.rebase_interactive("other", &[]).unwrap_err();
+
+    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert!(!path.join(".git").join("argv.txt").exists());
+}
+
+// The todo file holds the user's plan, so only the owner may read it.
+const RECORD_TODO_MODE: &str = r#"printf '%s' "$GIT_SEQUENCE_EDITOR" > "$2/.git/seq-editor.txt"
+workdir="$2"
+eval "set -- ${GIT_SEQUENCE_EDITOR#cp }"
+stat -c %a "$1" > "$workdir/.git/mode.txt""#;
+
+#[test]
+fn rebase_interactive_creates_the_todo_file_with_mode_0600() {
+    let (_d, path, session, oid) = interactive_fixture();
+    script_behaviour(&path, RECORD_TODO_MODE);
+
+    session.rebase_interactive("other", &[pick(&oid)]).unwrap();
+
+    let mode = std::fs::read_to_string(path.join(".git").join("mode.txt")).unwrap();
+    assert_eq!(mode.trim(), "600");
+}
+
 fn branch_oid(path: &Path, name: &str) -> String {
     Repository::open(path)
         .unwrap()

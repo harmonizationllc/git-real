@@ -601,15 +601,15 @@ fn rebase_plan_inner_returns_subject_and_author() {
 }
 
 #[test]
-fn rebase_plan_inner_maps_a_base_equal_to_head_to_bad_selection() {
+fn rebase_plan_inner_returns_an_empty_plan_for_a_base_equal_to_head() {
     if !common::git_available() {
         return;
     }
     let (_d, path, reg, id, _) = feature();
 
-    let err = rebase_plan_inner(&reg, id, &head_oid(&path).to_string()).unwrap_err();
+    let plan = rebase_plan_inner(&reg, id, &head_oid(&path).to_string()).unwrap();
 
-    assert_eq!(err.kind, AppErrorKind::BadSelection);
+    assert!(plan.is_empty(), "{plan:?}");
 }
 
 #[test]
@@ -685,6 +685,29 @@ fn rebase_interactive_inner_completes_a_drop() {
         OperationState::None
     );
     assert!(!path.join("b.txt").exists());
+}
+
+#[test]
+fn rebase_interactive_inner_replays_onto_a_diverged_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, [a, b, c]) = feature();
+    git(&path, &["switch", "-q", "-c", "side", "main"]);
+    let side_tip = common::commit_file(&path, "side.txt", "s\n", "side work");
+    git(&path, &["switch", "-q", "feature"]);
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    let outcome = rebase_interactive_inner(&reg, id, "side", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    let repo = Repository::open(&path).unwrap();
+    let head = repo.head().unwrap().target().unwrap();
+    assert!(repo.graph_descendant_of(head, side_tip).unwrap());
 }
 
 #[test]

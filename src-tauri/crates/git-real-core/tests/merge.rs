@@ -2603,6 +2603,51 @@ fn feature_session(path: &Path) -> RepoSession {
     RepoSession::open(path).expect("open")
 }
 
+/// Creates branch `side` at `main` with one commit of its own (so it diverges
+/// from `feature`), and returns to `feature`. Returns the side tip.
+fn side_off_main(path: &Path) -> Oid {
+    let switch = |branch: &str| {
+        let repo = Repository::open(path).unwrap();
+        repo.set_head(&format!("refs/heads/{branch}")).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+    };
+    {
+        let repo = Repository::open(path).unwrap();
+        let main = repo
+            .find_branch("main", BranchType::Local)
+            .unwrap()
+            .get()
+            .peel_to_commit()
+            .unwrap();
+        repo.branch("side", &main, false).unwrap();
+    }
+    switch("side");
+    let tip = common::commit_file(path, "side.txt", "s\n", "side work");
+    switch("feature");
+    tip
+}
+
+/// A root commit with no parents, on a new branch `orphan`. HEAD stays put.
+fn orphan_branch(path: &Path) {
+    let repo = Repository::open(path).unwrap();
+    let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+    let tree = repo
+        .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+        .unwrap();
+    let oid = repo
+        .commit(None, &sig, &sig, "orphan root", &tree, &[])
+        .unwrap();
+    repo.branch("orphan", &repo.find_commit(oid).unwrap(), false)
+        .unwrap();
+}
+
+fn is_descendant(path: &Path, ancestor: Oid) -> bool {
+    let repo = Repository::open(path).unwrap();
+    let head = repo.head().unwrap().target().unwrap();
+    repo.graph_descendant_of(head, ancestor).unwrap()
+}
+
 /// `feature_fixture` plus x1 and x2, which both rewrite x.txt line 1.
 fn conflicting_fixture() -> (TempDir, PathBuf, [Oid; 5]) {
     let (dir, path, [a, b, c], _) = feature_fixture();
@@ -2751,47 +2796,96 @@ fn rebase_plan_empty_base_is_branch_not_found() {
     assert!(matches!(err, GitError::BranchNotFound(_)), "{err:?}");
 }
 
-// A base equal to HEAD leaves nothing to replay.
+// The range is merge_base(HEAD, base)..HEAD, exactly what `git rebase -i base` replays.
+
+// A base equal to HEAD leaves nothing to replay, which is an empty plan and not an error.
 #[test]
-fn rebase_plan_head_itself_is_bad_selection() {
+fn rebase_plan_head_itself_is_an_empty_plan() {
     if !git_available() {
         return;
     }
     let (_d, path, [_, _, c], _) = feature_fixture();
 
-    let err = feature_session(&path)
-        .rebase_plan(&c.to_string())
-        .unwrap_err();
+    let plan = feature_session(&path).rebase_plan(&c.to_string()).unwrap();
 
-    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert!(plan.is_empty(), "{plan:?}");
+}
+
+// A diverged branch base: only the HEAD-side commits since the merge base are listed.
+#[test]
+fn rebase_plan_diverged_branch_lists_only_the_head_side_commits() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    side_off_main(&path);
+
+    let plan = feature_session(&path).rebase_plan("side").unwrap();
+
+    assert_eq!(
+        plan_oids(&plan),
+        [a.to_string(), b.to_string(), c.to_string()]
+    );
 }
 
 #[test]
-fn rebase_plan_non_ancestor_is_bad_selection() {
+fn rebase_plan_on_a_diverged_fixture_branch_lists_the_head_side_commit() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = diverged();
+
+    let plan = session.rebase_plan("other").unwrap();
+
+    assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].subject, "change on base");
+}
+
+#[test]
+fn rebase_plan_descendant_of_head_is_an_empty_plan() {
     if !git_available() {
         return;
     }
     let (_d, path, ..) = feature_fixture();
-    common::branch_with_commit(&path, "other", "o.txt", "o\n");
+    common::run_git_ok(&path, &["switch", "-q", "main"]);
 
-    let err = feature_session(&path).rebase_plan("other").unwrap_err();
+    let plan = feature_session(&path).rebase_plan("feature").unwrap();
+
+    assert!(plan.is_empty(), "{plan:?}");
+}
+
+// Histories with no common ancestor cannot be rebased.
+#[test]
+fn rebase_plan_unrelated_history_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, ..) = feature_fixture();
+    orphan_branch(&path);
+
+    let err = feature_session(&path).rebase_plan("orphan").unwrap_err();
 
     assert!(matches!(err, GitError::BadSelection), "{err:?}");
 }
 
+// A merge commit behind the merge base is not replayed, so it is fine.
 #[test]
-fn rebase_plan_descendant_of_head_is_bad_selection() {
+fn rebase_plan_with_a_merge_commit_on_the_base_side_is_ok() {
     if !git_available() {
         return;
     }
-    let (_d, path, [_, _, c], _) = feature_fixture();
+    let (_d, path, ..) = feature_fixture();
     common::run_git_ok(&path, &["switch", "-q", "main"]);
+    common::run_git_ok(&path, &["switch", "-q", "-c", "side", "main"]);
+    common::commit_file(&path, "side.txt", "s\n", "side work");
+    common::run_git_ok(&path, &["switch", "-q", "main"]);
+    common::commit_file(&path, "m.txt", "m\n", "main work");
+    common::run_git_ok(&path, &["merge", "--no-ff", "-m", "merge side", "side"]);
+    common::run_git_ok(&path, &["switch", "-q", "feature"]);
 
-    let err = feature_session(&path)
-        .rebase_plan(&c.to_string())
-        .unwrap_err();
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
 
-    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert_eq!(plan.len(), 3);
 }
 
 #[test]
@@ -3544,6 +3638,113 @@ fn rebase_interactive_validation_errors_leave_the_repository_clean() {
         let err = session.rebase_interactive("main", steps).unwrap_err();
         assert_rejected_untouched(&path, &session, c, err);
     }
+}
+
+// --- rebase_interactive: merge-base range ---
+
+// A diverged branch base: the HEAD-side commits are replayed onto its tip.
+#[test]
+fn rebase_interactive_onto_a_diverged_branch_replays_onto_its_tip() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    let side_tip = side_off_main(&path);
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+
+    let outcome = session.rebase_interactive("side", &steps).unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert!(is_descendant(&path, side_tip));
+    assert_eq!(session.operation_state(), OperationState::None);
+}
+
+#[test]
+fn rebase_interactive_onto_a_diverged_branch_puts_the_replayed_subjects_on_top() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    side_off_main(&path);
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("side", &steps)
+        .unwrap();
+
+    let out = common::run_git_ok(&path, &["log", "--format=%s", "-4"]);
+    let subjects: Vec<_> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(subjects, ["add c", "add b", "add a", "side work"]);
+}
+
+#[test]
+fn rebase_interactive_onto_a_diverged_branch_reorders_and_squashes() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    side_off_main(&path);
+    let steps = [
+        step(RebaseAction::Pick, c),
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Squash, b),
+    ];
+
+    feature_session(&path)
+        .rebase_interactive("side", &steps)
+        .unwrap();
+
+    let out = common::run_git_ok(&path, &["log", "--format=%s", "-3"]);
+    let subjects: Vec<_> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(subjects, ["add a", "add c", "side work"]);
+}
+
+#[test]
+fn rebase_interactive_unrelated_history_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [a, b, c], _) = feature_fixture();
+    orphan_branch(&path);
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
+    let session = feature_session(&path);
+
+    let err = session.rebase_interactive("orphan", &steps).unwrap_err();
+
+    assert_rejected_untouched(&path, &session, c, err);
+}
+
+// An empty plan keeps nothing, so empty steps are rejected too.
+#[test]
+fn rebase_interactive_with_an_empty_plan_and_empty_steps_is_bad_selection() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [_, _, c], _) = feature_fixture();
+    let session = feature_session(&path);
+
+    let err = session.rebase_interactive(&c.to_string(), &[]).unwrap_err();
+
+    assert_rejected_untouched(&path, &session, c, err);
 }
 
 // A subject spanning no extra lines is all the rebase plan reports, whatever the body holds.
