@@ -1,7 +1,8 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent, MouseEvent } from "react";
+import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 import type { AppError } from "../lib/ipc";
 import styles from "./PromptDialog.module.css";
+import { useRestoreFocus } from "./useRestoreFocus";
 
 export interface PromptDialogProps {
   open: boolean;
@@ -15,6 +16,8 @@ export interface PromptDialogProps {
   /** Receives the trimmed, non-blank value. */
   onConfirm(value: string): void;
   onCancel(): void;
+  /** Takes focus on close when the opener is gone, disabled or never had focus. */
+  fallbackFocus?: RefObject<HTMLElement | null>;
 }
 
 export function PromptDialog(props: PromptDialogProps) {
@@ -32,22 +35,29 @@ function PromptDialogBody({
   pending,
   onConfirm,
   onCancel,
+  fallbackFocus,
 }: PromptDialogProps) {
   const titleId = useId();
   const inputId = useId();
   const errorId = useId();
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Focus and select the input on open and restore focus on close, in one layout effect so it is
-  // StrictMode-safe and the restore runs before another dialog's autoFocus.
+  useRestoreFocus(fallbackFocus);
+  // Focus and select the input on open; useRestoreFocus returns focus on close.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement;
     const input = inputRef.current as HTMLInputElement;
     input.focus();
     input.select();
-    return () => previous.focus();
   }, []);
+
+  // Disabling the focused control drops focus to the body: hold it on the dialog while pending,
+  // then hand it to the input when the action failed.
+  useLayoutEffect(() => {
+    if (pending) (dialogRef.current as HTMLDivElement).focus();
+    else if (error !== null) (inputRef.current as HTMLInputElement).focus();
+  }, [pending, error]);
 
   const blank = value.trim() === "";
 
@@ -69,10 +79,12 @@ function PromptDialogBody({
   return (
     <div className={styles.backdrop} onClick={onBackdropClick}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         className={styles.dialog}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className={styles.title}>

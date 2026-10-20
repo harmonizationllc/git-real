@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 import type { AppError, RepoId } from "../../lib/ipc";
+import { useRestoreFocus } from "../../components/useRestoreFocus";
 import styles from "./StashDialog.module.css";
 import { displayError } from "./stashCopy";
 import { useStashActions } from "./useStashActions";
@@ -9,13 +10,9 @@ export interface StashDialogProps {
   repoId: RepoId;
   open: boolean;
   onClose(): void;
-  /** Takes focus on close when the opener is gone or disabled. */
+  /** Takes focus on close when the opener is gone, disabled or never had focus. */
   fallbackFocus?: RefObject<HTMLElement | null>;
 }
-
-/** An element focus can go back to: still in the document, enabled, and not the body. */
-const restorable = (el: Element | null): el is HTMLElement =>
-  el instanceof HTMLElement && el !== document.body && el.isConnected && !el.matches(":disabled");
 
 export function StashDialog(props: StashDialogProps) {
   // Mounting the body per open starts every open with an empty form and no error.
@@ -41,21 +38,11 @@ function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogPro
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Focus the input on open and restore focus on close, as PromptDialog does; an opener that is
-  // gone, disabled or never had focus (WebKit does not focus clicked buttons) cannot take it
-  // back, so the host's fallback does.
+  useRestoreFocus(fallbackFocus);
+  // Focus the input on open; useRestoreFocus returns focus on close.
   useLayoutEffect(() => {
-    const previous = document.activeElement;
-    // Captured now; re-read at close if the host re-rendered it while the dialog was open.
-    const captured = fallbackFocus?.current;
     (inputRef.current as HTMLInputElement).focus();
-    return () => {
-      if (restorable(previous)) previous.focus();
-      // Reading the ref's latest value at close is the point: the host may have re-rendered it.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      else (captured?.isConnected ? captured : fallbackFocus?.current)?.focus();
-    };
-  }, [fallbackFocus]);
+  }, []);
 
   // Disabling the focused control drops focus to the body: hold it on the dialog while pending,
   // then hand it to the message field when the push failed.
@@ -67,6 +54,8 @@ function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogPro
   const onSubmit = async (e: FormEvent) => {
     // No pending guard: the input and submit button are disabled, so the form cannot submit.
     e.preventDefault();
+    // A retry starts clean, so a success never refocuses the field for a stale error.
+    setError(null);
     const trimmed = message.trim();
     const result = await actions.push(trimmed === "" ? null : trimmed, includeUntracked);
     if (result === null) onClose();

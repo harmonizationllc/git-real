@@ -178,7 +178,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         <button
           type="button"
           disabled={actions.pending || apply.disabled || popKept}
-          title={popKept ? POP_KEPT_TITLE : apply.title}
+          title={apply.title ?? (popKept ? POP_KEPT_TITLE : undefined)}
           onClick={() => run(() => actions.pop(entry))}
         >
           Pop

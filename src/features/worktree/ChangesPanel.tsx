@@ -326,6 +326,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
           setConfirm(null);
         }}
         onCancel={() => setConfirm(null)}
+        fallbackFocus={rootRef}
       />
     </section>
   );

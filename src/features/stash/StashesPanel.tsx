@@ -137,6 +137,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           danger
           onConfirm={() => confirmDrop(confirm)}
           onCancel={() => setConfirm(null)}
+          fallbackFocus={headingRef}
         />
       )}
     </section>
