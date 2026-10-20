@@ -360,6 +360,7 @@ describe("RebaseDialog focus", () => {
     resolve({ kind: "operationFailed", message: "git said no" });
     rerender(<RebaseDialog {...props} pending={false} />);
     await screen.findByRole("alert");
+    expect(dialog()).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(props.onClose).toHaveBeenCalledOnce();
   });
