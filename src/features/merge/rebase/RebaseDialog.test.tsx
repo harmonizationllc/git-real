@@ -690,3 +690,119 @@ describe("RebaseDialog refetch", () => {
     expect(order()).toBe("bca");
   });
 });
+
+// Contract: Start sends exactly what the plan shows, oldest first, whatever way it was edited.
+describe("RebaseDialog start payload", () => {
+  const failure: AppError = { kind: "operationFailed", message: "git said no" };
+
+  it("should send every action kind in git's order for a mixed plan", async () => {
+    vi.mocked(rebasePlan).mockResolvedValue([commit("a"), commit("b"), commit("c"), commit("d")]);
+    const { props, user } = renderDialog();
+    await list();
+    await user.selectOptions(selectOf("b"), "squash");
+    await user.selectOptions(selectOf("c"), "drop");
+    await user.selectOptions(selectOf("d"), "edit");
+    await user.click(start());
+    expect(props.run).toHaveBeenCalledExactlyOnceWith({
+      action: "rebaseInteractive",
+      base: "main",
+      steps: [
+        { action: "pick", oid: full("a") },
+        { action: "squash", oid: full("b") },
+        { action: "drop", oid: full("c") },
+        { action: "edit", oid: full("d") },
+      ],
+    });
+  });
+
+  it("should send a fixup step", async () => {
+    const { props, user } = renderDialog();
+    await list();
+    await user.selectOptions(selectOf("b"), "fixup");
+    await user.click(start());
+    expect(vi.mocked(props.run).mock.calls[0]?.[0]).toMatchObject({
+      steps: [
+        { action: "pick", oid: full("a") },
+        { action: "fixup", oid: full("b") },
+        { action: "pick", oid: full("c") },
+      ],
+    });
+  });
+
+  it("should send the order produced by a drag, not only by the move buttons", async () => {
+    const { props, user } = renderDialog();
+    await list();
+    fireEvent.dragStart(rowOf("c"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(rowOf("a"), { dataTransfer: fakeTransfer() });
+    fireEvent.drop(rowOf("a"));
+    await user.click(start());
+    expect(vi.mocked(props.run).mock.calls[0]?.[0]).toMatchObject({
+      steps: [
+        { action: "pick", oid: full("c") },
+        { action: "pick", oid: full("a") },
+        { action: "pick", oid: full("b") },
+      ],
+    });
+  });
+
+  it("should send an action chosen before a move with the moved commit", async () => {
+    const { props, user } = renderDialog();
+    await list();
+    await user.selectOptions(selectOf("c"), "squash");
+    await user.click(within(rowOf("c")).getByRole("button", { name: "Move down" }));
+    await user.click(start());
+    expect(vi.mocked(props.run).mock.calls[0]?.[0]).toMatchObject({
+      steps: [
+        { action: "pick", oid: full("a") },
+        { action: "squash", oid: full("c") },
+        { action: "pick", oid: full("b") },
+      ],
+    });
+  });
+
+  it("should start again after a failed run was dismissed and close on success", async () => {
+    const run = vi
+      .fn<RebaseDialogProps["run"]>()
+      .mockResolvedValueOnce(failure)
+      .mockResolvedValueOnce(null);
+    const { props, user } = renderDialog({ run });
+    await list();
+    await user.selectOptions(selectOf("b"), "drop");
+    await user.click(start());
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    await user.click(start());
+    await waitFor(() => expect(props.onClose).toHaveBeenCalledOnce());
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toEqual(run.mock.calls[0]?.[0]);
+  });
+
+  it("should show the newest error when a second run also fails", async () => {
+    const run = vi
+      .fn<RebaseDialogProps["run"]>()
+      .mockResolvedValueOnce(failure)
+      .mockResolvedValueOnce({ kind: "operationFailed", message: "still no" });
+    const { user } = renderDialog({ run });
+    await list();
+    await user.click(start());
+    await screen.findByText(/git said no/);
+    await user.click(start());
+    expect(await screen.findByText(/still no/)).toBeInTheDocument();
+    expect(screen.queryByText(/git said no/)).not.toBeInTheDocument();
+  });
+
+  it("should let a squash be sent after the blocking commit is moved out of the way", async () => {
+    const { props, user } = renderDialog();
+    await list();
+    await user.selectOptions(selectOf("a"), "squash");
+    expect(start()).toBeDisabled();
+    await user.click(within(rowOf("a")).getByRole("button", { name: "Move up" }));
+    await user.click(start());
+    expect(vi.mocked(props.run).mock.calls[0]?.[0]).toMatchObject({
+      steps: [
+        { action: "pick", oid: full("b") },
+        { action: "squash", oid: full("a") },
+        { action: "pick", oid: full("c") },
+      ],
+    });
+  });
+});

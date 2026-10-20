@@ -2686,6 +2686,35 @@ fn rebase_plan_uses_the_first_line_as_the_subject() {
     assert_eq!(plan[1].subject, "add b");
 }
 
+// A commit whose subject is not UTF-8 still lists; the bad byte becomes U+FFFD.
+#[test]
+fn rebase_plan_decodes_a_non_utf8_subject_lossily() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, [_, _, c], _) = feature_fixture();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let tree = repo.find_commit(c).unwrap().tree().unwrap();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(format!("tree {}\nparent {c}\n", tree.id()).as_bytes());
+        raw.extend_from_slice(b"author Test User <test@example.com> 1700000000 +0000\n");
+        raw.extend_from_slice(b"committer Test User <test@example.com> 1700000000 +0000\n");
+        raw.extend_from_slice(b"\nbad \xff byte\n");
+        let id = repo
+            .odb()
+            .unwrap()
+            .write(git2::ObjectType::Commit, &raw)
+            .unwrap();
+        repo.reference("refs/heads/feature", id, true, "t").unwrap();
+    }
+
+    let plan = feature_session(&path).rebase_plan("main").unwrap();
+
+    assert_eq!(plan.len(), 4);
+    assert_eq!(plan[3].subject, "bad \u{fffd} byte");
+}
+
 #[test]
 fn rebase_plan_carries_the_author_name_email_and_time() {
     if !git_available() {
