@@ -262,7 +262,7 @@ Tests are written first by the tester role; the developer never edits them.
      refreshes the list), then call `stash_drop` with the old index and oid
      through the inspector → `staleStash`, nothing dropped. (The UI refetch
      makes the race hard to hit by hand.)
-  8. Stash with only an untracked file and the checkbox off → inline
-     "No local changes to stash."; dialog stays open.
   7. "Stash…" from the Changes panel with nothing to stash → disabled with
      reason.
+  8. Stash with only an untracked file and the checkbox off → inline
+     "No local changes to stash."; dialog stays open.
