@@ -1,12 +1,15 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { RefObject } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRestoreFocus } from "./useRestoreFocus";
 
 function Probe({ fallback }: { fallback?: RefObject<HTMLElement | null> }) {
   useRestoreFocus(fallback);
-  return null;
+  return <button type="button" data-testid="inside" />;
 }
+
+// Real dialogs hold focus inside themselves when they close, so tests focus the probe before unmount.
+const inside = () => screen.getByTestId("inside");
 
 const created: HTMLElement[] = [];
 
@@ -26,10 +29,9 @@ afterEach(() => {
 describe("useRestoreFocus", () => {
   it("returns focus to the element that had it at mount", () => {
     const opener = make("button");
-    const other = make("button");
     opener.focus();
     const view = render(<Probe />);
-    other.focus();
+    inside().focus();
     view.unmount();
     expect(opener).toHaveFocus();
   });
@@ -47,6 +49,7 @@ describe("useRestoreFocus", () => {
     const fallback = make("div");
     (document.activeElement as HTMLElement).blur();
     const view = render(<Probe fallback={{ current: fallback }} />);
+    inside().focus();
     view.unmount();
     expect(fallback).toHaveFocus();
   });
@@ -57,6 +60,7 @@ describe("useRestoreFocus", () => {
     opener.focus();
     const view = render(<Probe fallback={{ current: fallback }} />);
     opener.disabled = true;
+    inside().focus();
     const spy = vi.spyOn(opener, "focus");
     view.unmount();
     expect(fallback).toHaveFocus();
@@ -69,6 +73,7 @@ describe("useRestoreFocus", () => {
     opener.focus();
     const view = render(<Probe fallback={{ current: fallback }} />);
     opener.remove();
+    inside().focus();
     view.unmount();
     expect(fallback).toHaveFocus();
   });
@@ -80,6 +85,7 @@ describe("useRestoreFocus", () => {
     (document.activeElement as HTMLElement).blur();
     const view = render(<Probe fallback={ref} />);
     ref.current = b;
+    inside().focus();
     view.unmount();
     expect(b).toHaveFocus();
   });
