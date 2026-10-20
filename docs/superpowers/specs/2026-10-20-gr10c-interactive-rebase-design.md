@@ -89,11 +89,15 @@ impl RepoSession {
 through `revision::resolve_commit` (`CommitNotFound`), anything else through
 `resolve_branch` (local, else `remote/name`; `BranchNotFound`, which already
 refuses a leading `-` so no user text reaches git's argv as an option) —
-base is a strict ancestor of HEAD via `graph_descendant_of(head, base)` and
-`base != head` (`BadSelection`), then a revwalk of `base..HEAD` in
-topological + reverse order. Any commit in the range with more than one
-parent is `MergeCommit(hex)`. The oid git is given is the resolved full hex,
-never the user's text.
+then the range is `merge_base(HEAD, base)..HEAD`, exactly what
+`git rebase -i base` replays (a branch base that has diverged from HEAD is
+the common case; a graph commit on the current branch is its own merge
+base). No merge base (unrelated histories) is `BadSelection`. The range may
+be empty (base is HEAD or ahead of it): the plan is `[]` and the dialog says
+there is nothing to rebase. The walk is topological + reverse; any commit in
+the range with more than one parent is `MergeCommit(hex)`. The oid git is
+given is the resolved full hex of `base` itself (the tip, so git rebases
+onto it), never the user's text.
 
 `rebase_interactive` re-runs `rebase_plan(base)` and validates `steps`
 against it: every step oid is in the plan and no oid appears twice
@@ -228,12 +232,17 @@ export interface RebaseDialogProps {
 
 Rendered by the panel that opened it only while open (`dialog !== null`),
 so state resets per opening, like `PromptDialog`. A `role="dialog"`
-`aria-modal` box with the same backdrop, Escape and focus-restore behaviour
-as `ConfirmDialog` (copy the layout-effect pattern; do not share internals).
+`aria-modal` box (`tabIndex={-1}`, focused on open so Escape works in every
+state) with the same backdrop, Escape and focus-restore behaviour as
+`ConfirmDialog`; its stylesheet composes `backdrop`, `dialog`, `title` and
+`actions` from `ConfirmDialog.module.css` as `PromptDialog` does. Plan rows
+are keyed by oid so a moved row keeps focus. Also takes `head: string` (the
+current branch name) from the opener.
 Title: `Rebase {head} onto {label} interactively`. Body states:
 
 - loading: `Loading commits…` (`role="status"`).
-- plan error: `RepoError` with Close only.
+- plan error: `<p role="alert">` with the mapped message (§5) and Cancel as
+  the only button.
 - empty plan (`[]`, happens when the base is HEAD's parent chain with no
   commits): `Nothing to rebase: {head} has no commits after {label}.`
 - plan: `<ol aria-label="Commits to rebase">` of `RebaseStepRow`, a footer
@@ -358,7 +367,7 @@ Move up | Move down
 {n} commits, {m} squashed, {k} dropped   (1 commit | 1 squashed | 1 dropped)
 Cancel | Start rebase | Working…
 , stopped to edit
-badSelection in the dialog: That commit is not on {head}.
+badSelection in the dialog: {head} and {label} share no history.
 mergeCommit in the dialog: The range contains a merge commit, which cannot be rebased interactively yet.
 ```
 
@@ -400,3 +409,6 @@ Other errors show their own message through `RepoError`.
 - Drop targets on graph ref labels and on non-current branches (checkout
   first).
 - Amend in the commit box during an `edit` stop, for message changes.
+- A shared `Modal` primitive for the three dialogs, with the GR-3 focus trap.
+- `rebase.updateRefs` is ignored by this flow because the generated todo is
+  replaced wholesale.
