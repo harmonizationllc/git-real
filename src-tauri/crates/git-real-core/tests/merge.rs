@@ -3954,24 +3954,28 @@ fn rebase_interactive_with_a_merge_commit_in_range_is_merge_commit() {
     assert_eq!(head_oid(&path), before);
 }
 
-// A base that is not an ancestor of HEAD is refused by the run, with nothing started.
+// A base that is not an ancestor of HEAD is valid: the plan replays onto its tip.
 #[test]
-fn rebase_interactive_with_a_non_ancestor_base_is_bad_selection() {
+fn rebase_interactive_with_a_non_ancestor_base_replays_onto_its_tip() {
     if !git_available() {
         return;
     }
-    let (_d, path, [a, ..], _) = feature_fixture();
+    let (_d, path, [a, b, c], _) = feature_fixture();
     common::run_git_ok(&path, &["branch", "elsewhere", "main"]);
     common::run_git_ok(&path, &["switch", "elsewhere"]);
-    common::commit_file(&path, "z.txt", "z\n", "elsewhere work");
+    let elsewhere_tip = common::commit_file(&path, "z.txt", "z\n", "elsewhere work");
     common::run_git_ok(&path, &["switch", "feature"]);
     let session = feature_session(&path);
+    let steps = [
+        step(RebaseAction::Pick, a),
+        step(RebaseAction::Pick, b),
+        step(RebaseAction::Pick, c),
+    ];
 
-    let err = session
-        .rebase_interactive("elsewhere", &[step(RebaseAction::Pick, a)])
-        .unwrap_err();
+    let outcome = session.rebase_interactive("elsewhere", &steps).unwrap();
 
-    assert!(matches!(err, GitError::BadSelection), "{err:?}");
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert!(is_descendant(&path, elsewhere_tip));
     assert_eq!(session.operation_state(), OperationState::None);
 }
 
