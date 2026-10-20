@@ -59,9 +59,6 @@ const summarize = (state: EditorState): Summary => ({
   canPickAll: blocksOf(state).some((b) => b.state === "unresolved"),
 });
 
-/** The toolbar handlers the loading and placeholder states never show. */
-const inactive = () => undefined;
-
 /** Edits a conflicted working-tree file in place: loading, a placeholder, or the editor. */
 export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string }) {
   const { bytes, error } = useFileContent(repoId, path, "unstaged", "new", true);
@@ -95,11 +92,6 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
       canPickAll={false}
       labels={labels}
       pending={false}
-      onPrevious={inactive}
-      onNext={inactive}
-      onKeepAll={inactive}
-      onTakeAll={inactive}
-      onMarkResolved={inactive}
       onClose={close}
     />
   );
@@ -116,8 +108,11 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
       </div>
     );
   }
-  const resolve = (side: ConflictSide) =>
-    void integration.run({ action: "resolve", paths: [path], side });
+  const resolve = async (side: ConflictSide) => {
+    const e = await integration.run({ action: "resolve", paths: [path], side });
+    // Like Mark resolved: the resolved path is now staged, so follow it there.
+    if (e === null) useWorkspace.getState().select(repoId, { path, scope: "staged" });
+  };
   return (
     <div className={styles.root}>
       {shell}
@@ -128,10 +123,14 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
         <h2 className={styles.heading}>Can’t edit {name} here</h2>
         <p className={styles.message}>{reason}</p>
         <div className={styles.actions}>
-          <button type="button" disabled={integration.pending} onClick={() => resolve("ours")}>
+          <button type="button" disabled={integration.pending} onClick={() => void resolve("ours")}>
             Keep {labels.ours}
           </button>
-          <button type="button" disabled={integration.pending} onClick={() => resolve("theirs")}>
+          <button
+            type="button"
+            disabled={integration.pending}
+            onClick={() => void resolve("theirs")}
+          >
             Take {labels.theirs}
           </button>
         </div>
@@ -167,6 +166,7 @@ function EditableConflict({ repoId, path, source, crlf, labels, onClose }: Edita
   });
   // Set only around the synchronous reload dispatch, so the reload is not saved back to disk.
   const reloading = useRef(false);
+  // Safe: EditorPane's child effect creates the view before any effect or handler here runs.
   const view = () => viewRef.current as EditorView;
 
   const { ours, theirs } = labels;

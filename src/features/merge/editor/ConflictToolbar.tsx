@@ -9,11 +9,12 @@ export interface ConflictToolbarProps {
   canPickAll: boolean;
   labels: BlockLabels;
   pending: boolean;
-  onPrevious(): void;
-  onNext(): void;
-  onKeepAll(): void;
-  onTakeAll(): void;
-  onMarkResolved(): void;
+  // Optional: the count-less toolbar (loading, placeholder) renders only the path and Close.
+  onPrevious?(): void;
+  onNext?(): void;
+  onKeepAll?(): void;
+  onTakeAll?(): void;
+  onMarkResolved?(): void;
   onClose(): void;
 }
 
