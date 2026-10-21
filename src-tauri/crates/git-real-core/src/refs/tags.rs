@@ -128,9 +128,10 @@ fn tag_ref(name: &str) -> String {
     format!("refs/tags/{name}")
 }
 
-/// `None` for a tag that does not peel to a commit (a tree or blob), as the graph skips it.
+/// `None` for a tag that does not peel to a commit (a tree or blob), as the graph skips it,
+/// and for one whose name is not UTF-8, as non-UTF-8 remotes are skipped.
 fn tag_entry(repo: &Repository, reference: &Reference<'_>) -> Option<TagEntry> {
-    let name = reference.name_bytes().strip_prefix(b"refs/tags/")?;
+    let name = std::str::from_utf8(reference.name_bytes().strip_prefix(b"refs/tags/")?).ok()?;
     let commit = reference.peel_to_commit().ok()?;
     let tag = reference.target().and_then(|oid| repo.find_tag(oid).ok());
     let commit_time = commit.time().seconds();
@@ -143,7 +144,7 @@ fn tag_entry(repo: &Repository, reference: &Reference<'_>) -> Option<TagEntry> {
         None => (false, None, commit_time),
     };
     Some(TagEntry {
-        name: String::from_utf8_lossy(name).into_owned(),
+        name: name.to_owned(),
         target: commit.id().to_string(),
         annotated,
         subject,
@@ -151,6 +152,7 @@ fn tag_entry(repo: &Repository, reference: &Reference<'_>) -> Option<TagEntry> {
     })
 }
 
+/// Only the first line counts: a message that opens with a blank line has no subject.
 fn subject_of(message: Option<&[u8]>) -> Option<String> {
     let text = String::from_utf8_lossy(message?);
     let first = text.lines().next()?.trim();

@@ -36,10 +36,12 @@
 
 /* The caret's alt text is empty, so it stays out of the accessible name. */
 .toggle::before {
+  content: "▸ ";
   content: "▸ " / "";
 }
 
 .toggle[aria-expanded="true"]::before {
+  content: "▾ ";
   content: "▾ " / "";
 }
 
