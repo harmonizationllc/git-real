@@ -81,6 +81,11 @@ pub fn run() {
             commands::stash::stash_apply,
             commands::stash::stash_pop,
             commands::stash::stash_drop,
+            commands::tags::list_tags,
+            commands::tags::create_tag,
+            commands::tags::delete_tag,
+            commands::tags::push_tag,
+            commands::tags::delete_remote_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

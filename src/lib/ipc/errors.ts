@@ -37,6 +37,9 @@ const KINDS: Record<AppErrorKind, true> = {
   mergeCommit: true,
   nothingToStash: true,
   staleStash: true,
+  invalidTagName: true,
+  tagExists: true,
+  tagNotFound: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

@@ -2,8 +2,10 @@
 
 use std::env;
 use std::ffi::OsStr;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::thread;
 
 use crate::error::GitError;
 
@@ -59,4 +61,33 @@ pub(crate) fn capture(cmd: &mut Command) -> std::io::Result<Output> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
+}
+
+/// Runs `cmd` with `input` on stdin and stdout and stderr captured.
+///
+/// stdin is written on its own thread while the output drains, so neither
+/// pipe can fill up and block both processes (a hook can print a lot before
+/// git reads its input). git may exit before reading at all (a failing hook);
+/// the resulting EPIPE is not the error worth reporting.
+pub(crate) fn capture_with_input(cmd: &mut Command, input: &[u8]) -> io::Result<Output> {
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("child stdin was not captured"))?;
+    let (written, output) = thread::scope(|s| {
+        let writer = s.spawn(move || match stdin.write_all(input) {
+            Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+            result => result, // dropping `stdin` closes it, so git sees EOF
+        });
+        let output = child.wait_with_output();
+        (writer.join(), output)
+    });
+    let output = output?;
+    written.map_err(|_| io::Error::other("the stdin writer thread panicked"))??;
+    Ok(output)
 }

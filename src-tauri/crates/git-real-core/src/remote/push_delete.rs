@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use super::run_push;
 use crate::error::GitError;
-use crate::git_cli;
 
 /// A validated remote branch deletion, ready to run once the session lock is
 /// released. Only `RepoSession::prepare_remote_delete` builds one, so only
@@ -48,21 +48,11 @@ impl PushDelete {
     /// fails with "remote ref does not exist". A non-zero exit is
     /// `PushFailed` carrying git's output.
     pub fn run(&self) -> Result<(), GitError> {
-        let mut cmd = git_cli::command(&self.git);
-        cmd.arg("-C")
-            .arg(&self.workdir)
-            .arg("push")
-            .arg(&self.remote)
-            .arg("--delete")
-            .arg(format!("heads/{}", self.name));
-        let output = git_cli::capture(&mut cmd)?;
-        if !output.status.success() {
-            return Err(GitError::PushFailed {
-                code: output.status.code(),
-                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            });
-        }
-        Ok(())
+        run_push(
+            &self.git,
+            &self.workdir,
+            &self.remote,
+            &["--delete", &format!("heads/{}", self.name)],
+        )
     }
 }

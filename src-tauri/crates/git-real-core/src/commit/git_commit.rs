@@ -1,9 +1,6 @@
 //! Recording a commit through the system `git` CLI.
 
-use std::io::{self, Write};
 use std::path::Path;
-use std::process::{ChildStdin, Stdio};
-use std::thread;
 
 use crate::error::GitError;
 use crate::git_cli;
@@ -18,27 +15,9 @@ pub fn run(git: &Path, workdir: &Path, message: &str, amend: bool) -> Result<(),
     if amend {
         cmd.arg("--amend");
     }
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| io::Error::other("child stdin was not captured"))?;
-
     // Git runs the pre-commit hook before it reads the message, and the hook's
-    // output fills git's stderr. Writing stdin while the output drains keeps
-    // either pipe from filling up and blocking both processes.
-    let (written, output) = thread::scope(|s| {
-        let writer = s.spawn(move || write_message(stdin, message));
-        let output = child.wait_with_output();
-        (writer.join(), output)
-    });
-    let output = output?;
-    written.map_err(|_| io::Error::other("the stdin writer thread panicked"))??;
+    // output fills git's stderr; the runner drains it while writing stdin.
+    let output = git_cli::capture_with_input(&mut cmd, message.as_bytes())?;
 
     if !output.status.success() {
         return Err(GitError::CommitFailed {
@@ -48,15 +27,4 @@ pub fn run(git: &Path, workdir: &Path, message: &str, amend: bool) -> Result<(),
         });
     }
     Ok(())
-}
-
-/// Writes the message and closes stdin so git sees EOF.
-///
-/// Git exits before reading the message when a pre-commit hook fails; the
-/// resulting EPIPE is not the error worth reporting.
-fn write_message(mut stdin: ChildStdin, message: &str) -> io::Result<()> {
-    match stdin.write_all(message.as_bytes()) {
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        result => result,
-    }
 }

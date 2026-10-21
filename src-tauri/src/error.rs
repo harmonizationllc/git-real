@@ -44,6 +44,9 @@ pub enum AppErrorKind {
     MergeCommit,
     NothingToStash,
     StaleStash,
+    InvalidTagName,
+    TagExists,
+    TagNotFound,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -100,6 +103,9 @@ impl From<GitError> for AppError {
             GitError::MergeCommit(_) => AppErrorKind::MergeCommit,
             GitError::NothingToStash => AppErrorKind::NothingToStash,
             GitError::StaleStash => AppErrorKind::StaleStash,
+            GitError::InvalidTagName(_) => AppErrorKind::InvalidTagName,
+            GitError::TagExists(_) => AppErrorKind::TagExists,
+            GitError::TagNotFound(_) => AppErrorKind::TagNotFound,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
