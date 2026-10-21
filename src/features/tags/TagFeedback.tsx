@@ -23,6 +23,7 @@ export function TagFeedback({ actions }: TagFeedbackProps) {
         <RepoError
           error={displayError(actions.error, actions.lastName)}
           path={null}
+          variant="panel"
           onDismiss={actions.clearError}
         />
       )}

@@ -20,7 +20,12 @@ export function StashFeedback({ actions }: StashFeedbackProps) {
         </div>
       )}
       {actions.error && (
-        <RepoError error={displayError(actions.error)} path={null} onDismiss={actions.clearError} />
+        <RepoError
+          error={displayError(actions.error)}
+          path={null}
+          variant="panel"
+          onDismiss={actions.clearError}
+        />
       )}
     </>
   );

@@ -329,7 +329,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           </button>
         </div>
         {dialog === null && panelError !== null && (
-          <RepoError error={panelError} path={null} onDismiss={clearErrors} />
+          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         )}
         <BranchGroup
           heading="Local"
