@@ -131,17 +131,25 @@ fn list_tags_skips_a_remote_whose_name_is_not_utf8() {
 }
 
 #[test]
-fn list_tags_lossily_names_a_tag_whose_ref_is_not_utf8() {
+fn list_tags_skips_a_tag_whose_ref_is_not_utf8() {
     let (_d, path, session) = repo();
     let commit = head_oid(&path);
     let file = path
         .join(".git/refs/tags")
         .join(OsStr::from_bytes(b"bad\xff"));
     std::fs::write(file, format!("{commit}\n")).unwrap();
-    let list = session.list_tags().unwrap();
-    assert_eq!(list.tags.len(), 1);
-    assert_eq!(list.tags[0].name, "bad\u{fffd}");
-    assert!(!list.tags[0].annotated);
+    Repository::open(&path)
+        .unwrap()
+        .reference("refs/tags/good", commit, false, "test")
+        .unwrap();
+    let names: Vec<_> = session
+        .list_tags()
+        .unwrap()
+        .tags
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names, ["good"]);
 }
 
 #[test]

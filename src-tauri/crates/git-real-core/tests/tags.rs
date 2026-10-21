@@ -404,6 +404,28 @@ fn delete_tag_removes_lightweight_and_annotated_tags() {
 }
 
 #[test]
+fn delete_tag_removes_a_slashed_packed_tag_from_packed_refs() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    common::tag_lightweight(&path, "release/v1", oid);
+    common::run_git_ok(&path, &["pack-refs", "--all"]);
+    session.delete_tag("release/v1").unwrap();
+    let packed = std::fs::read_to_string(path.join(".git/packed-refs")).unwrap_or_default();
+    assert!(
+        session.list_tags().unwrap().tags.is_empty() && !packed.contains("refs/tags/release/v1"),
+        "{packed}"
+    );
+}
+
+#[test]
 fn delete_tag_missing_or_invalid_is_tag_not_found() {
     let (_d, _p, session) = repo();
     for name in ["ghost", "-x", "bad..name", "a\0b"] {
