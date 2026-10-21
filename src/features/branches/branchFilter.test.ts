@@ -168,6 +168,11 @@ describe("filterTags", () => {
     expect(filterTags(tags, "v1x0")).toEqual([]);
   });
 
+  it("should match across a slash in a tag name, folding case", () => {
+    expect(filterTags(tags, "release/v").map((t) => t.name)).toEqual(["Release/V2"]);
+    expect(filterTags(tags, " /V2 ").map((t) => t.name)).toEqual(["Release/V2"]);
+  });
+
   it("should match the name only, not the subject or target", () => {
     const annotated = [tagEntry("a", { annotated: true, subject: "release notes" })];
     expect(filterTags(annotated, "release")).toEqual([]);

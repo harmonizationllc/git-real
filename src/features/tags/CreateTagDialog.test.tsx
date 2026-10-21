@@ -194,6 +194,29 @@ describe("CreateTagDialog errors", () => {
     expect(nameField()).toHaveFocus();
   });
 
+  it.each(["invalidTagName", "commitNotFound", "operationFailed"])(
+    "focuses the name field after %s",
+    async (kind) => {
+      await fail(kind);
+      await screen.findByRole("alert");
+      expect(nameField()).toHaveFocus();
+    },
+  );
+
+  it("describes the name field by a name error and the message field by emptyMessage", async () => {
+    await fail("tagExists");
+    const alert = await screen.findByRole("alert");
+    expect(nameField()).toHaveAccessibleDescription(alert.textContent as string);
+    expect(messageField()).not.toHaveAccessibleDescription(alert.textContent as string);
+  });
+
+  it("describes the message field, not the name field, by emptyMessage", async () => {
+    await fail("emptyMessage");
+    const alert = await screen.findByRole("alert");
+    expect(messageField()).toHaveAccessibleDescription(alert.textContent as string);
+    expect(nameField()).not.toHaveAccessibleDescription(alert.textContent as string);
+  });
+
   it("focuses the message field after emptyMessage", async () => {
     await fail("emptyMessage");
     await screen.findByRole("alert");
@@ -351,6 +374,14 @@ describe("CreateTagDialog focus on close", () => {
     const { user } = renderWithProviders(<Harness />);
     await user.click(screen.getByRole("button", { name: "Opener" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+
+  it("restores focus to the opener when closed with Escape", async () => {
+    const { user } = renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Opener" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
   });
 
