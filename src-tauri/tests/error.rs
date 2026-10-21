@@ -87,6 +87,21 @@ fn app_error_kind_for_each_git_error_variant() {
         (GitError::NothingToStash, AppErrorKind::NothingToStash, None),
         (GitError::StaleStash, AppErrorKind::StaleStash, None),
         (
+            GitError::InvalidTagName("a b".into()),
+            AppErrorKind::InvalidTagName,
+            None,
+        ),
+        (
+            GitError::TagExists("v1".into()),
+            AppErrorKind::TagExists,
+            None,
+        ),
+        (
+            GitError::TagNotFound("v1".into()),
+            AppErrorKind::TagNotFound,
+            None,
+        ),
+        (
             GitError::RevisionNotFound("nope".into()),
             AppErrorKind::RevisionNotFound,
             None,
@@ -754,4 +769,32 @@ fn stash_kinds_serialize_camel_case() {
         serde_json::to_value(AppErrorKind::StaleStash).unwrap(),
         json!("staleStash")
     );
+}
+
+// GR-11b: the tag kinds are camelCase on the wire.
+#[test]
+fn tag_kinds_serialize_camel_case() {
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::InvalidTagName).unwrap(),
+        json!("invalidTagName")
+    );
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::TagExists).unwrap(),
+        json!("tagExists")
+    );
+    assert_eq!(
+        serde_json::to_value(AppErrorKind::TagNotFound).unwrap(),
+        json!("tagNotFound")
+    );
+}
+
+// GR-11b: the tag error messages name the tag.
+#[test]
+fn tag_error_messages_name_the_tag() {
+    let invalid: AppError = GitError::InvalidTagName("a b".into()).into();
+    let exists: AppError = GitError::TagExists("v1".into()).into();
+    let missing: AppError = GitError::TagNotFound("v1".into()).into();
+    assert_eq!(invalid.message, "a b is not a valid tag name");
+    assert_eq!(exists.message, "a tag named v1 already exists");
+    assert_eq!(missing.message, "no tag named v1");
 }

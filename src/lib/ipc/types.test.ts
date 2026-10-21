@@ -9,6 +9,8 @@ import type {
   RebaseAction,
   RebaseCommit,
   RebaseStep,
+  TagEntry,
+  TagList,
   Blame,
   BlameHunk,
   CommitFile,
@@ -424,5 +426,20 @@ describe("GR-10a operation types", () => {
       stoppedForEdit: true,
     };
     expect(state.kind === "rebase" && state.stoppedForEdit).toBe(true);
+  });
+});
+
+// GR-11b: the tag shapes.
+describe("tag types", () => {
+  it("should shape a lightweight TagEntry with a null subject and a TagList", () => {
+    const entry: TagEntry = {
+      name: "v1",
+      target: "a".repeat(40),
+      annotated: false,
+      subject: null,
+      time: 1,
+    };
+    const list: TagList = { tags: [entry], remotes: ["origin"] };
+    expect(list.tags[0]?.subject).toBeNull();
   });
 });
