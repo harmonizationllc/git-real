@@ -2124,7 +2124,7 @@ describe("GraphPanel cherry-pick and revert gaps", () => {
     provideMerge({ pending: true });
     await renderPanel();
     rightClick(optionAt(1));
-    expect(screen.getAllByRole("menuitem")).toHaveLength(7);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(8);
     for (const item of screen.getAllByRole("menuitem")) expect(item).toBeDisabled();
   });
 
