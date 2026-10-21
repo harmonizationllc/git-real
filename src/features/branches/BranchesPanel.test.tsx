@@ -19,6 +19,7 @@ import type {
   OperationState,
   RebaseCommit,
 } from "../../lib/ipc";
+import { useWorkspace } from "../../lib/store/workspace";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
 import { useCanFastForward } from "../merge/useCanFastForward";
@@ -106,6 +107,7 @@ function provideMerge(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useWorkspace.setState({ refsFilter: {} });
   integrationRun.mockResolvedValue(null);
   provideMerge();
   vi.mocked(listBranches).mockResolvedValue(list());
@@ -184,11 +186,38 @@ describe("BranchesPanel rendering", () => {
 
 // Contract: the filter narrows rows, keeps empty groups, and Escape clears it.
 describe("BranchesPanel filter", () => {
-  const filter = () => screen.getByRole("searchbox", { name: "Filter branches" });
+  const filter = () => screen.getByRole("searchbox", { name: "Filter branches and tags" });
 
-  it("should have a filter input with the placeholder Filter branches", async () => {
+  it("should have a filter input labelled and placeholdered Filter branches and tags", async () => {
     await renderPanel();
-    expect(filter()).toHaveAttribute("placeholder", "Filter branches");
+    expect(filter()).toHaveAttribute("placeholder", "Filter branches and tags");
+  });
+
+  it("should write the filter text to the workspace store for the repo", async () => {
+    const { user } = await renderPanel();
+    await user.type(filter(), "fe");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("fe");
+  });
+
+  it("should show the stored filter text on mount and filter by it", async () => {
+    useWorkspace.getState().setRefsFilter(1, "feat");
+    await renderPanel();
+    expect(filter()).toHaveValue("feat");
+    expect(localRow("feature")).toBeInTheDocument();
+    expect(screen.queryByTitle("refs/heads/main")).toBeNull();
+  });
+
+  it("should clear the stored filter text on Escape", async () => {
+    const { user } = await renderPanel();
+    await user.type(filter(), "oth");
+    await user.keyboard("{Escape}");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("");
+  });
+
+  it("should not read the filter text of another repo", async () => {
+    useWorkspace.getState().setRefsFilter(2, "feat");
+    await renderPanel();
+    expect(filter()).toHaveValue("");
   });
 
   it("should narrow the rows to the matches", async () => {
@@ -1071,7 +1100,10 @@ describe("BranchesPanel remote checkout title with a filter", () => {
       ],
     });
     const { user } = await renderPanel(data);
-    await user.type(screen.getByRole("searchbox", { name: "Filter branches" }), "origin/f");
+    await user.type(
+      screen.getByRole("searchbox", { name: "Filter branches and tags" }),
+      "origin/f",
+    );
     expect(screen.queryByTitle("refs/heads/feature")).toBeNull();
     rightClick(remoteRow("origin", "feature"));
     expect(menuItem("Checkout")).not.toHaveAttribute("title");
@@ -1216,7 +1248,7 @@ describe("BranchesPanel cancelled force delete", () => {
 describe("BranchesPanel filter across refetch", () => {
   it("should keep the query and the narrowed rows after the list is refetched", async () => {
     const { user } = await renderPanel();
-    const filter = screen.getByRole("searchbox", { name: "Filter branches" });
+    const filter = screen.getByRole("searchbox", { name: "Filter branches and tags" });
     await user.type(filter, "feat");
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));

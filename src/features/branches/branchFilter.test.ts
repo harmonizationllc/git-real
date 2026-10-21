@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BranchList } from "../../lib/ipc";
-import { filterBranches } from "./branchFilter";
+import { tagEntry } from "../../test/tagFixtures";
+import { filterBranches, filterTags, isFiltering } from "./branchFilter";
 
 const list: BranchList = {
   head: { kind: "branch", name: "main" },
@@ -135,5 +136,54 @@ describe("filterBranches literal matching", () => {
       "feature login",
     ]);
     expect(filterBranches(accented, "feature  login").local).toEqual([]);
+  });
+});
+
+// Contract (GR-11b): tags are filtered by name with the same rule as branches.
+describe("filterTags", () => {
+  const tags = [tagEntry("v1.0"), tagEntry("Release/V2"), tagEntry("beta")];
+
+  it("should return the input itself for an empty query", () => {
+    expect(filterTags(tags, "")).toBe(tags);
+  });
+
+  it("should return the input itself for a whitespace-only query", () => {
+    expect(filterTags(tags, "   ")).toBe(tags);
+  });
+
+  it("should match a case-insensitive substring of the name, keeping the order", () => {
+    expect(filterTags(tags, "v").map((t) => t.name)).toEqual(["v1.0", "Release/V2"]);
+  });
+
+  it("should trim the query like filterBranches", () => {
+    expect(filterTags(tags, "  beta ").map((t) => t.name)).toEqual(["beta"]);
+  });
+
+  it("should match nothing for an unknown text", () => {
+    expect(filterTags(tags, "zzz")).toEqual([]);
+  });
+
+  it("should treat regex metacharacters literally", () => {
+    expect(filterTags(tags, "v1.0")).toHaveLength(1);
+    expect(filterTags(tags, "v1x0")).toEqual([]);
+  });
+
+  it("should match the name only, not the subject or target", () => {
+    const annotated = [tagEntry("a", { annotated: true, subject: "release notes" })];
+    expect(filterTags(annotated, "release")).toEqual([]);
+  });
+});
+
+describe("isFiltering", () => {
+  it("should be false for an empty query", () => {
+    expect(isFiltering("")).toBe(false);
+  });
+
+  it("should be false for a whitespace-only query", () => {
+    expect(isFiltering("  ")).toBe(false);
+  });
+
+  it("should be true for a query with text, spaces around it included", () => {
+    expect(isFiltering(" a ")).toBe(true);
   });
 });

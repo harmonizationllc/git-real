@@ -5,6 +5,7 @@ import {
   checkoutCommit,
   copyText,
   createBranch,
+  createTag,
   getLogPage,
   getLogSummary,
   listBranches,
@@ -37,6 +38,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutCommit: vi.fn(),
   resetToCommit: vi.fn(),
   createBranch: vi.fn(),
+  createTag: vi.fn(),
   listBranches: vi.fn(),
   copyText: vi.fn(),
   rebasePlan: vi.fn(),
@@ -132,6 +134,7 @@ beforeEach(() => {
     tracking: null,
   });
   vi.mocked(copyText).mockResolvedValue(undefined);
+  vi.mocked(createTag).mockResolvedValue(undefined);
   vi.mocked(rebasePlan).mockResolvedValue([]);
 });
 
@@ -920,12 +923,13 @@ describe("GraphPanel search lifecycle", () => {
 
 // Contract: the row context menu, its labels, titles and enabled states.
 describe("GraphPanel context menu", () => {
-  it("should list the seven items in order on right-click", async () => {
+  it("should list the eight items in order on right-click", async () => {
     await renderPanel();
     rightClick(optionAt(1));
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Checkout",
       "Create branch here…",
+      "Create tag here…",
       "Reset to this commit…",
       "Cherry-pick commit",
       "Revert commit",
@@ -1125,6 +1129,67 @@ describe("GraphPanel create branch", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(createBranch).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+// Contract (GR-11b): Create tag here… opens the tag dialog bound to the commit's full oid.
+describe("GraphPanel create tag", () => {
+  const ITEM = "Create tag here…";
+  async function openTag(index = 1) {
+    const view = await renderPanel();
+    rightClick(optionAt(index));
+    await view.user.click(menuItem(ITEM));
+    const dialog = await screen.findByRole("dialog", {
+      name: `Create tag on ${shortOf(oidOf(index))}`,
+    });
+    return { ...view, dialog };
+  }
+
+  it("should open the dialog titled Create tag on the row's short hash", async () => {
+    const { dialog } = await openTag();
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("should tag the row's full oid", async () => {
+    const { dialog, user } = await openTag();
+    await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "v1");
+    await user.type(within(dialog).getByRole("textbox", { name: "Message" }), "msg");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    expect(createTag).toHaveBeenCalledExactlyOnceWith(REPO, "v1", oidOf(1), "msg");
+  });
+
+  it("should close the dialog after a successful create", async () => {
+    const { dialog, user } = await openTag();
+    await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "v1");
+    await user.type(within(dialog).getByRole("textbox", { name: "Message" }), "msg");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("should not call createTag when the dialog is cancelled", async () => {
+    const { dialog, user } = await openTag();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(createTag).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should focus the Commit graph region when the dialog is cancelled", async () => {
+    const { dialog, user } = await openTag();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Commit graph" })).toHaveFocus();
+  });
+
+  it("should disable the item while a graph action runs", async () => {
+    provideMerge({ pending: true });
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeDisabled();
+  });
+
+  it("should enable the item when no action runs", async () => {
+    await renderPanel();
+    rightClick(optionAt(1));
+    expect(menuItem(ITEM)).toBeEnabled();
   });
 });
 

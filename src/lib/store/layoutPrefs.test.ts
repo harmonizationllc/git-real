@@ -3,7 +3,7 @@ import { REFS_DEFAULT, SIDEBAR_DEFAULT, useLayoutPrefs } from "./layoutPrefs";
 
 beforeEach(() => {
   localStorage.clear();
-  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
+  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
 });
 
 afterEach(() => {
@@ -63,10 +63,14 @@ describe("useLayoutPrefs", () => {
     expect(useLayoutPrefs.persist.getOptions().name).toBe("git-real.layoutPrefs");
   });
 
-  it("should persist only the widths, not the setters", () => {
+  it("should persist the widths and tagsCollapsed, not the setters", () => {
     useLayoutPrefs.getState().setSidebarWidth(400);
     const raw = localStorage.getItem("git-real.layoutPrefs") as string;
-    expect(Object.keys(JSON.parse(raw).state).sort()).toEqual(["refsWidth", "sidebarWidth"]);
+    expect(Object.keys(JSON.parse(raw).state).sort()).toEqual([
+      "refsWidth",
+      "sidebarWidth",
+      "tagsCollapsed",
+    ]);
   });
 
   it("should rehydrate from storage", async () => {
@@ -133,5 +137,61 @@ describe("useLayoutPrefs rehydration of unexpected values", () => {
   it("should rehydrate empty storage as the defaults", async () => {
     await useLayoutPrefs.persist.rehydrate();
     expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
+  });
+});
+
+// Contract (GR-11b): the Tags section starts collapsed and the flag persists beside the widths.
+describe("useLayoutPrefs tagsCollapsed", () => {
+  it("should start with tags collapsed", () => {
+    expect(useLayoutPrefs.getInitialState().tagsCollapsed).toBe(true);
+  });
+
+  it("should expand when setTagsCollapsed(false) is called", () => {
+    useLayoutPrefs.getState().setTagsCollapsed(false);
+    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
+  });
+
+  it("should collapse again when setTagsCollapsed(true) is called", () => {
+    useLayoutPrefs.getState().setTagsCollapsed(false);
+    useLayoutPrefs.getState().setTagsCollapsed(true);
+    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(true);
+  });
+
+  it("should leave the widths alone when setTagsCollapsed is called", () => {
+    useLayoutPrefs.getState().setTagsCollapsed(false);
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
+  });
+
+  it("should store and persist the flag", () => {
+    useLayoutPrefs.getState().setTagsCollapsed(false);
+    const raw = localStorage.getItem("git-real.layoutPrefs") as string;
+    expect(JSON.parse(raw).state.tagsCollapsed).toBe(false);
+  });
+
+  it("should rehydrate a stored flag", async () => {
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({
+        state: { refsWidth: 200, sidebarWidth: 300, tagsCollapsed: false },
+        version: 0,
+      }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
+  });
+
+  it("should keep tags collapsed when restoring a state saved before tagsCollapsed existed", async () => {
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({ state: { refsWidth: 200, sidebarWidth: 300 }, version: 0 }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 200, tagsCollapsed: true });
+  });
+
+  it("should leave tagsCollapsed alone on reset", () => {
+    useLayoutPrefs.setState({ refsWidth: 180, tagsCollapsed: false });
+    useLayoutPrefs.getState().reset("refs");
+    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
   });
 });
