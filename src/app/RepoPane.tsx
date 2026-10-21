@@ -11,6 +11,7 @@ import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
 import { StashSummary } from "../features/stash/StashSummary";
 import { StashesPanel } from "../features/stash/StashesPanel";
+import { TagsPanel } from "../features/tags/TagsPanel";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { HeadState } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
@@ -93,12 +94,13 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         className={styles.body}
         style={{ gridTemplateColumns: `${refs}px auto 1fr auto ${sidebar}px` }}
       >
-        {/* Keyed so filter, menu, dialog and mutation state never leak across tabs. */}
+        {/* Keyed so menu, dialog and mutation state never leak across tabs. */}
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
             <>
               <BranchesPanel repoId={tab.id} />
               <StashesPanel repoId={tab.id} />
+              <TagsPanel repoId={tab.id} />
             </>
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.

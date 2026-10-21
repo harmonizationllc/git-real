@@ -21,6 +21,7 @@ import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
+import { CreateTagDialog } from "../tags/CreateTagDialog";
 import { GraphRow } from "./GraphRow";
 import { GraphToolbar } from "./GraphToolbar";
 import { ROW_HEIGHT, SEARCH_DEBOUNCE_MS, shortOid } from "./model/layout";
@@ -45,7 +46,8 @@ interface MenuState {
 type Dialog =
   | { kind: "create"; oid: string; checkout: boolean }
   | { kind: "reset"; oid: string; mode: ResetMode }
-  | { kind: "rebase"; oid: string };
+  | { kind: "rebase"; oid: string }
+  | { kind: "createTag"; oid: string };
 
 type CreateDialog = Extract<Dialog, { kind: "create" }>;
 type ResetDialog = Extract<Dialog, { kind: "reset" }>;
@@ -147,6 +149,12 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
         label: "Create branch here…",
         disabled: pending,
         onSelect: () => openDialog({ kind: "create", oid: row.oid, checkout: true }),
+      },
+      {
+        id: "createTag",
+        label: "Create tag here…",
+        disabled: pending,
+        onSelect: () => openDialog({ kind: "createTag", oid: row.oid }),
       },
       {
         id: "reset",
@@ -252,6 +260,15 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
           pending={pending}
           onConfirm={(name) => void confirmCreate(dialog, name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
+        />
+      )}
+      {dialog?.kind === "createTag" && (
+        <CreateTagDialog
+          repoId={repoId}
+          oid={dialog.oid}
+          open
+          onClose={closeDialog}
           fallbackFocus={rootRef}
         />
       )}
