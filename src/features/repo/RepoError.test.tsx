@@ -201,6 +201,18 @@ describe("RepoError layout", () => {
     expect(panelMessage).not.toContain("overflow-wrap: anywhere");
   });
 
+  it("should stretch the panel variant children so the message uses the full width", () => {
+    expect(panelRoot).toContain("align-items: stretch");
+  });
+
+  it("should reset overflow-wrap to normal on the panel message when the stylesheet is read", () => {
+    expect(panelMessage).toMatch(/overflow-wrap:\s*normal\s*;/);
+  });
+
+  it("should right-align the panel variant actions when the stylesheet is read", () => {
+    expect(blockOf('.root[data-variant="panel"] .actions')).toContain("justify-content: flex-end");
+  });
+
   it("should keep pre-wrap on the default message when the stylesheet is read", () => {
     expect(/\.message\s*\{([^}]*)\}/.exec(css)?.[1]).toContain("white-space: pre-wrap");
   });
