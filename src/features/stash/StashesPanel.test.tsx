@@ -417,6 +417,12 @@ describe("StashesPanel feedback", () => {
     await waitFor(() => expect(listStashes).toHaveBeenCalledTimes(2));
   });
 
+  it("tags a failed action's alert with the panel variant", async () => {
+    vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
+    await applyWith();
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("shows git's message on operationFailed", async () => {
     vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
     await applyWith();

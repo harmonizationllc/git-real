@@ -465,3 +465,72 @@ describe("clear with a selected stash", () => {
     expect(useWorkspace.getState().selectedStash[2]).toBe("w2");
   });
 });
+
+// Contract: the branch and tag filter text is stored per repo and forgotten with the repo.
+describe("refsFilter", () => {
+  it("should start with no filter text for any repo", () => {
+    expect(useWorkspace.getState().refsFilter).toEqual({});
+  });
+
+  it("should store the filter text per repo", () => {
+    useWorkspace.getState().setRefsFilter(1, "rel");
+    useWorkspace.getState().setRefsFilter(2, "fix");
+    expect(useWorkspace.getState().refsFilter).toEqual({ 1: "rel", 2: "fix" });
+  });
+
+  it("should keep the text as typed, spaces included", () => {
+    useWorkspace.getState().setRefsFilter(1, "  v1 ");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("  v1 ");
+  });
+
+  it("should replace the previous text of the same repo", () => {
+    useWorkspace.getState().setRefsFilter(1, "a");
+    useWorkspace.getState().setRefsFilter(1, "");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("");
+  });
+
+  it("should replace the record instead of mutating it", () => {
+    useWorkspace.getState().setRefsFilter(1, "a");
+    const before = useWorkspace.getState().refsFilter;
+    useWorkspace.getState().setRefsFilter(1, "b");
+    expect(useWorkspace.getState().refsFilter).not.toBe(before);
+    expect(before).toEqual({ 1: "a" });
+  });
+});
+
+describe("clear with a refs filter", () => {
+  it("should forget the refs filter of that repo", () => {
+    useWorkspace.getState().setRefsFilter(1, "x");
+    useWorkspace.getState().clear(1);
+    expect(1 in useWorkspace.getState().refsFilter).toBe(false);
+  });
+
+  it("should keep the refs filter of another repo", () => {
+    useWorkspace.getState().setRefsFilter(1, "x");
+    useWorkspace.getState().setRefsFilter(2, "y");
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().refsFilter).toEqual({ 2: "y" });
+  });
+
+  it("should clear a repo whose only stored value is a refs filter", () => {
+    useWorkspace.getState().setRefsFilter(1, "x");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState()).not.toBe(before);
+  });
+
+  it("should keep the whole state when clearing a repo with no refs filter", () => {
+    useWorkspace.getState().setRefsFilter(2, "y");
+    const before = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState()).toBe(before);
+  });
+
+  it("should keep the refsFilter record by reference when only a selection is cleared", () => {
+    useWorkspace.getState().setRefsFilter(2, "y");
+    useWorkspace.getState().select(1, { path: "a", scope: "staged" });
+    const { refsFilter } = useWorkspace.getState();
+    useWorkspace.getState().clear(1);
+    expect(useWorkspace.getState().refsFilter).toBe(refsFilter);
+  });
+});

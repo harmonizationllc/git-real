@@ -31,6 +31,7 @@ import type {
   StashEntry,
   StashFiles,
   StashOutcome,
+  TagList,
   WorkingTreeStatus,
 } from "./types";
 
@@ -325,4 +326,31 @@ export function stashPop(id: RepoId, index: number, oid: string): Promise<StashO
 
 export function stashDrop(id: RepoId, index: number, oid: string): Promise<void> {
   return invoke<void>("stash_drop", { id, index, oid });
+}
+
+/** Local tags (newest first) and every configured remote. */
+export function listTags(id: RepoId): Promise<TagList> {
+  return invoke<TagList>("list_tags", { id });
+}
+
+/** Annotated when `message` is non-null (signed if tag.gpgSign is set), else lightweight. */
+export function createTag(
+  id: RepoId,
+  name: string,
+  oid: string,
+  message: string | null,
+): Promise<void> {
+  return invoke<void>("create_tag", { id, name, oid, message });
+}
+
+export function deleteTag(id: RepoId, name: string): Promise<void> {
+  return invoke<void>("delete_tag", { id, name });
+}
+
+export function pushTag(id: RepoId, remote: string, name: string): Promise<void> {
+  return invoke<void>("push_tag", { id, remote, name });
+}
+
+export function deleteRemoteTag(id: RepoId, remote: string, name: string): Promise<void> {
+  return invoke<void>("delete_remote_tag", { id, remote, name });
 }

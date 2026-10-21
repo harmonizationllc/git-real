@@ -88,6 +88,12 @@ pub enum GitError {
     NothingToStash,
     #[error("the stash list changed; reload it")]
     StaleStash,
+    #[error("{0} is not a valid tag name")]
+    InvalidTagName(String),
+    #[error("a tag named {0} already exists")]
+    TagExists(String),
+    #[error("no tag named {0}")]
+    TagNotFound(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

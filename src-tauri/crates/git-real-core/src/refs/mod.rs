@@ -1,7 +1,9 @@
 //! Branch listing and local branch operations through git2; checkout and
 //! remote deletion shell out (see [`switch`] and [`crate::remote::push_delete`]).
+//! Tags live in the private `tags` child module.
 
 pub(crate) mod switch;
+mod tags;
 
 use git2::{Branch, BranchType, Commit, ErrorCode, Repository};
 
@@ -195,27 +197,30 @@ impl RepoSession {
         ))
     }
 
-    /// Validates `name`, checks that `remote` exists and that `<remote>/<name>`
+    /// Checks that `remote` exists, validates `name` and that `<remote>/<name>`
     /// is a remote branch. Returns its full refname, so git can never resolve
     /// it to a local branch that happens to be called `<remote>/<name>`.
-    ///
-    /// A remote whose name starts with `-` is refused outright: it would be
-    /// read as a flag by `git push`, and git itself never creates one.
     fn remote_branch_ref(&self, remote: &str, name: &str) -> Result<String, GitError> {
+        self.ensure_remote(remote)?;
+        validate_branch_name(name)?;
+        let short = format!("{remote}/{name}");
+        match self.repo().find_branch(&short, BranchType::Remote) {
+            Ok(_) => Ok(format!("refs/remotes/{short}")),
+            Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(short)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// `RemoteNotFound` unless `remote` is configured. A name starting with `-`
+    /// is refused outright: `git push` would read it as a flag, and git itself
+    /// never creates one.
+    fn ensure_remote(&self, remote: &str) -> Result<(), GitError> {
         if remote.starts_with('-') {
             return Err(GitError::RemoteNotFound(remote.to_owned()));
         }
-        validate_branch_name(name)?;
-        let repo = self.repo();
-        match repo.find_remote(remote) {
-            Ok(_) => {}
-            Err(e) if is_not_found(&e) => return Err(GitError::RemoteNotFound(remote.to_owned())),
-            Err(e) => return Err(e.into()),
-        }
-        let short = format!("{remote}/{name}");
-        match repo.find_branch(&short, BranchType::Remote) {
-            Ok(_) => Ok(format!("refs/remotes/{short}")),
-            Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(short)),
+        match self.repo().find_remote(remote) {
+            Ok(_) => Ok(()),
+            Err(e) if is_not_found(&e) => Err(GitError::RemoteNotFound(remote.to_owned())),
             Err(e) => Err(e.into()),
         }
     }

@@ -41,6 +41,8 @@ export const queryKeys = {
   operation: (id: RepoId) => ["repo", id, "operation"] as const,
   /** The stash list; under the repo prefix so a repo change refreshes it. */
   stashes: (id: RepoId) => ["repo", id, "stashes"] as const,
+  /** The tag list; under the repo prefix so a repo change refreshes it. */
+  tags: (id: RepoId) => ["repo", id, "tags"] as const,
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
   rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
 };
@@ -49,4 +51,6 @@ export const queryKeys = {
 export const mutationKeys = {
   /** Every stash action of a repo: one key, so any trigger can see a push or drop running elsewhere. */
   stash: (id: RepoId) => ["stash", id] as const,
+  /** Every tag action of a repo: one key, so the panel and the create dialogs share one busy state. */
+  tag: (id: RepoId) => ["tag", id] as const,
 };

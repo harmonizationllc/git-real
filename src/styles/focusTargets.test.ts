@@ -11,6 +11,7 @@ const ALLOWED_WITHOUT_ATTRIBUTE: Record<string, number> = {
   "src/components/ConfirmDialog.tsx": 1,
   "src/components/PromptDialog.tsx": 1,
   "src/features/stash/StashDialog.tsx": 1,
+  "src/features/tags/CreateTagDialog.tsx": 1,
   "src/features/merge/rebase/RebaseDialog.tsx": 1,
 };
 
@@ -85,6 +86,6 @@ describe("focus target convention", () => {
   });
 
   it("should find the focus targets it is meant to guard", () => {
-    expect(found.length - unmarked.length).toBeGreaterThanOrEqual(8);
+    expect(found.length - unmarked.length).toBeGreaterThanOrEqual(9);
   });
 });

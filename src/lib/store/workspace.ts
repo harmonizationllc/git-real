@@ -21,6 +21,8 @@ interface WorkspaceState {
   historyPath: Record<RepoId, string | null>;
   /** Survives selecting another file, so Blame stays on while browsing. */
   centreView: Record<RepoId, CentreView>;
+  /** The branch and tag filter text of the refs column; shared by BranchesPanel and TagsPanel. */
+  refsFilter: Record<RepoId, string>;
   select(repoId: RepoId, file: SelectedFile | null): void;
   /** A non-null oid also clears the selected stash. */
   selectCommit(repoId: RepoId, oid: string | null): void;
@@ -28,6 +30,7 @@ interface WorkspaceState {
   selectStash(repoId: RepoId, oid: string | null): void;
   showHistory(repoId: RepoId, path: string | null): void;
   setCentreView(repoId: RepoId, view: CentreView): void;
+  setRefsFilter(repoId: RepoId, text: string): void;
   /** Forgets everything stored for a repo. */
   clear(repoId: RepoId): void;
 }
@@ -46,6 +49,7 @@ export const useWorkspace = create<WorkspaceState>()((set) => ({
   selectedStash: {},
   historyPath: {},
   centreView: {},
+  refsFilter: {},
   select: (repoId, file) => set((state) => ({ selected: { ...state.selected, [repoId]: file } })),
   selectCommit: (repoId, oid) =>
     set((state) => ({
@@ -61,10 +65,20 @@ export const useWorkspace = create<WorkspaceState>()((set) => ({
     set((state) => ({ historyPath: { ...state.historyPath, [repoId]: path } })),
   setCentreView: (repoId, view) =>
     set((state) => ({ centreView: { ...state.centreView, [repoId]: view } })),
+  setRefsFilter: (repoId, text) =>
+    set((state) => ({ refsFilter: { ...state.refsFilter, [repoId]: text } })),
   clear: (repoId) =>
     set((state) => {
-      const { selected, selectedCommit, selectedStash, historyPath, centreView } = state;
-      const records = [selected, selectedCommit, selectedStash, historyPath, centreView];
+      const { selected, selectedCommit, selectedStash, historyPath, centreView, refsFilter } =
+        state;
+      const records = [
+        selected,
+        selectedCommit,
+        selectedStash,
+        historyPath,
+        centreView,
+        refsFilter,
+      ];
       if (!records.some((r) => repoId in r)) {
         return state;
       }
@@ -74,6 +88,7 @@ export const useWorkspace = create<WorkspaceState>()((set) => ({
         selectedStash: without(selectedStash, repoId),
         historyPath: without(historyPath, repoId),
         centreView: without(centreView, repoId),
+        refsFilter: without(refsFilter, repoId),
       };
     }),
 }));

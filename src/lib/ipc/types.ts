@@ -70,7 +70,10 @@ export type AppErrorKind =
   | "unresolvedConflicts"
   | "mergeCommit"
   | "nothingToStash"
-  | "staleStash";
+  | "staleStash"
+  | "invalidTagName"
+  | "tagExists"
+  | "tagNotFound";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -363,6 +366,26 @@ export interface StashFiles {
  * `appliedNotDropped`: only from pop, which applied cleanly but could not drop the stash.
  */
 export type StashOutcome = "applied" | "conflicts" | "appliedNotDropped";
+
+/** A local tag that peels to a commit. */
+export interface TagEntry {
+  /** Short name, without `refs/tags/`. */
+  name: string;
+  /** Full hex id of the commit the tag peels to. */
+  target: string;
+  annotated: boolean;
+  /** First line of an annotated tag's message, trimmed; null when blank or lightweight. */
+  subject: string | null;
+  /** Tagger time (annotated) or the commit's time (lightweight), in Unix seconds. */
+  time: number;
+}
+
+export interface TagList {
+  /** Newest first by `time`, then by name. */
+  tags: TagEntry[];
+  /** Every configured remote, sorted. */
+  remotes: string[];
+}
 
 export type ConflictSide = "ours" | "theirs";
 

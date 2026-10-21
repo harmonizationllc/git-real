@@ -28,6 +28,16 @@ describe("isAppError stash kinds", () => {
   });
 });
 
+// Contract: the GR-11b tag kinds are recognised.
+describe("isAppError tag kinds", () => {
+  it.each(["invalidTagName", "tagExists", "tagNotFound"] as const)(
+    "isAppError accepts kind %s",
+    (kind) => {
+      expect(isAppError({ kind, message: "m" })).toBe(true);
+    },
+  );
+});
+
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.
 describe("isAppError", () => {
   it.each(kinds)("isAppError accepts kind %s", (kind) => {

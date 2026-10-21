@@ -12,9 +12,12 @@ interface LayoutPrefsState {
   setRefsWidth(px: number): void;
   setSidebarWidth(px: number): void;
   reset(column: LayoutColumn): void;
+  /** The Tags section is collapsed; app-wide, like the widths. */
+  tagsCollapsed: boolean;
+  setTagsCollapsed(collapsed: boolean): void;
 }
 
-/** Column widths shared by every repository tab; survives restarts via localStorage. */
+/** Column widths and the Tags section's collapsed state, shared by every repository tab; survives restarts via localStorage. */
 export const useLayoutPrefs = create<LayoutPrefsState>()(
   persist(
     (set) => ({
@@ -24,11 +27,17 @@ export const useLayoutPrefs = create<LayoutPrefsState>()(
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
       reset: (column) =>
         set(column === "refs" ? { refsWidth: REFS_DEFAULT } : { sidebarWidth: SIDEBAR_DEFAULT }),
+      tagsCollapsed: true,
+      setTagsCollapsed: (tagsCollapsed) => set({ tagsCollapsed }),
     }),
     {
       name: "git-real.layoutPrefs",
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ refsWidth: s.refsWidth, sidebarWidth: s.sidebarWidth }),
+      partialize: (s) => ({
+        refsWidth: s.refsWidth,
+        sidebarWidth: s.sidebarWidth,
+        tagsCollapsed: s.tagsCollapsed,
+      }),
     },
   ),
 );

@@ -15,6 +15,7 @@ import {
   getStashFiles,
   listBranches,
   listStashes,
+  listTags,
   listTrackedFiles,
   onRepoChanged,
 } from "../lib/ipc";
@@ -68,6 +69,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getStashFiles: vi.fn(),
   listBranches: vi.fn(),
   listStashes: vi.fn(),
+  listTags: vi.fn(),
   listTrackedFiles: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
@@ -103,7 +105,7 @@ beforeEach(() => {
   StubResizeObserver.instances = [];
   bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
-  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320 });
+  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
   vi.mocked(listBranches).mockResolvedValue(branchList());
   useWorkspace.setState({
     selected: {},
@@ -111,8 +113,10 @@ beforeEach(() => {
     selectedStash: {},
     historyPath: {},
     centreView: {},
+    refsFilter: {},
   });
   vi.mocked(listStashes).mockResolvedValue([]);
+  vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
   vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
@@ -381,11 +385,20 @@ describe("RepoPane columns", () => {
     expect(listBranches).toHaveBeenCalledWith(7);
   });
 
-  it("should reset the branches filter when the active tab changes", async () => {
+  it("should keep each tab's filter text when switching tabs", async () => {
     const { rerender, user } = renderWithProviders(<RepoPane tab={tab(1)} />);
-    await user.type(await screen.findByRole("searchbox", { name: "Filter branches" }), "zzz");
+    await user.type(
+      await screen.findByRole("searchbox", { name: "Filter branches and tags" }),
+      "zzz",
+    );
     rerender(<RepoPane tab={tab(2)} />);
-    expect(await screen.findByRole("searchbox", { name: "Filter branches" })).toHaveValue("");
+    expect(await screen.findByRole("searchbox", { name: "Filter branches and tags" })).toHaveValue(
+      "",
+    );
+    rerender(<RepoPane tab={tab(1)} />);
+    expect(await screen.findByRole("searchbox", { name: "Filter branches and tags" })).toHaveValue(
+      "zzz",
+    );
   });
 });
 
@@ -1162,5 +1175,30 @@ describe("RepoPane stashes", () => {
     );
     expect(useWorkspace.getState().selectedStash[1]).toBeNull();
     expect(await screen.findByRole("region", { name: "Changes" })).toBeInTheDocument();
+  });
+});
+
+// Contract (GR-11b): the refs column stacks Branches, Stashes and Tags, or shows the file history.
+describe("RepoPane tags", () => {
+  it("should render the Tags panel below the Stashes panel in the refs column", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const stashes = await screen.findByRole("heading", { name: "Stashes (0)" });
+    const tags = await screen.findByRole("button", { name: "Tags (0)" });
+    expect(follows(stashes, tags)).toBe(true);
+  });
+
+  it("should load the tag list for the tab's repo id", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await screen.findByRole("button", { name: "Tags (0)" });
+    expect(listTags).toHaveBeenCalledWith(7);
+  });
+
+  it("should replace Branches, Stashes and Tags with file history while history is open", async () => {
+    useWorkspace.setState({ historyPath: { 1: "src/a.ts" } });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "File history" });
+    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^Stashes/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Tags/ })).toBeNull();
   });
 });

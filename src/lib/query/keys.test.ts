@@ -372,6 +372,18 @@ describe("queryKeys stashes", () => {
   });
 });
 
+// Contract: the tag list key (GR-11b) refreshes with the repo.
+describe("queryKeys tags", () => {
+  it("should define tags(id) under the repo prefix", () => {
+    expect(queryKeys.tags(3)).toEqual(["repo", 3, "tags"]);
+  });
+
+  it("should refresh tags on repo invalidation", () => {
+    const prefix = queryKeys.repo(3);
+    expect(queryKeys.tags(3).slice(0, prefix.length)).toEqual(prefix);
+  });
+});
+
 // Contract: mutation keys are separate from query keys, so repo invalidation never touches them.
 describe("mutationKeys", () => {
   it("should define stash(id) as ['stash', id]", () => {
@@ -384,5 +396,21 @@ describe("mutationKeys", () => {
 
   it("should not sit under the repo query prefix", () => {
     expect(mutationKeys.stash(3)[0]).not.toBe(queryKeys.repo(3)[0]);
+  });
+
+  it("should define tag(id) as ['tag', id]", () => {
+    expect(mutationKeys.tag(3)).toEqual(["tag", 3]);
+  });
+
+  it("should give different repos different tag keys", () => {
+    expect(mutationKeys.tag(3)).not.toEqual(mutationKeys.tag(4));
+  });
+
+  it("should differ from the stash key", () => {
+    expect(mutationKeys.tag(3)).not.toEqual(mutationKeys.stash(3));
+  });
+
+  it("should not sit under the repo query prefix for tags", () => {
+    expect(mutationKeys.tag(3)[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });

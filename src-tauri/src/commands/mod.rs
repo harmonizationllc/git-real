@@ -7,6 +7,7 @@ pub mod merge;
 pub mod refs;
 pub mod repo;
 pub mod stash;
+pub mod tags;
 pub mod worktree;
 
 use std::sync::PoisonError;

@@ -51,6 +51,11 @@ describe("ipc barrel", () => {
     "stashApply",
     "stashPop",
     "stashDrop",
+    "listTags",
+    "createTag",
+    "deleteTag",
+    "pushTag",
+    "deleteRemoteTag",
   ])("barrel exposes %s as a function", (name) => {
     expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
   });

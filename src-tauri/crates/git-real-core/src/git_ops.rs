@@ -1,5 +1,5 @@
 //! Shared plumbing of the git CLI writes (merge, rebase, cherry-pick, revert,
-//! stash): the runner, the precondition guards and the failure mapping.
+//! stash, tag): the runner, the precondition guards and the failure mapping.
 
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -27,6 +27,19 @@ pub(crate) fn run(
         cmd.env(key, value);
     }
     Ok(git_cli::capture(&mut cmd)?)
+}
+
+/// As [`run`], with `input` on stdin instead of a closed stdin.
+pub(crate) fn run_with_input(
+    git: &Path,
+    workdir: &Path,
+    verb: &str,
+    args: &[&str],
+    input: &[u8],
+) -> Result<Output, GitError> {
+    let mut cmd = git_cli::command(git);
+    cmd.arg("-C").arg(workdir).arg(verb).args(args);
+    Ok(git_cli::capture_with_input(&mut cmd, input)?)
 }
 
 pub(crate) fn operation_failed(verb: &str, output: &Output) -> GitError {

@@ -19,6 +19,7 @@ import type {
   OperationState,
   RebaseCommit,
 } from "../../lib/ipc";
+import { useWorkspace } from "../../lib/store/workspace";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
 import { useCanFastForward } from "../merge/useCanFastForward";
@@ -106,6 +107,7 @@ function provideMerge(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useWorkspace.setState({ refsFilter: {} });
   integrationRun.mockResolvedValue(null);
   provideMerge();
   vi.mocked(listBranches).mockResolvedValue(list());
@@ -184,11 +186,38 @@ describe("BranchesPanel rendering", () => {
 
 // Contract: the filter narrows rows, keeps empty groups, and Escape clears it.
 describe("BranchesPanel filter", () => {
-  const filter = () => screen.getByRole("searchbox", { name: "Filter branches" });
+  const filter = () => screen.getByRole("searchbox", { name: "Filter branches and tags" });
 
-  it("should have a filter input with the placeholder Filter branches", async () => {
+  it("should have a filter input labelled and placeholdered Filter branches and tags", async () => {
     await renderPanel();
-    expect(filter()).toHaveAttribute("placeholder", "Filter branches");
+    expect(filter()).toHaveAttribute("placeholder", "Filter branches and tags");
+  });
+
+  it("should write the filter text to the workspace store for the repo", async () => {
+    const { user } = await renderPanel();
+    await user.type(filter(), "fe");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("fe");
+  });
+
+  it("should show the stored filter text on mount and filter by it", async () => {
+    useWorkspace.getState().setRefsFilter(1, "feat");
+    await renderPanel();
+    expect(filter()).toHaveValue("feat");
+    expect(localRow("feature")).toBeInTheDocument();
+    expect(screen.queryByTitle("refs/heads/main")).toBeNull();
+  });
+
+  it("should clear the stored filter text on Escape", async () => {
+    const { user } = await renderPanel();
+    await user.type(filter(), "oth");
+    await user.keyboard("{Escape}");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("");
+  });
+
+  it("should not read the filter text of another repo", async () => {
+    useWorkspace.getState().setRefsFilter(2, "feat");
+    await renderPanel();
+    expect(filter()).toHaveValue("");
   });
 
   it("should narrow the rows to the matches", async () => {
@@ -285,6 +314,13 @@ describe("BranchesPanel activation", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     expect(await screen.findByRole("alert")).toHaveTextContent(checkoutFailed.message);
+  });
+
+  it("should tag a checkout failure alert with the panel variant", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should clear the failure alert on Dismiss", async () => {
@@ -681,6 +717,14 @@ describe("BranchesPanel delete", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("should tag a delete failure alert with the panel variant", async () => {
+    vi.mocked(deleteBranch).mockRejectedValue({ kind: "io", message: "disk exploded" });
+    const { user } = await renderPanel();
+    const dialog = await openDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should close the dialog and show the error in the panel on another failure", async () => {
     vi.mocked(deleteBranch).mockRejectedValue({ kind: "io", message: "disk exploded" });
     const { user } = await renderPanel();
@@ -799,6 +843,12 @@ describe("BranchesPanel head states", () => {
 
 // Contract: query errors show a RepoError with Retry.
 describe("BranchesPanel query errors", () => {
+  it("should render the list error alert without a data-variant", async () => {
+    vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
+  });
+
   it("should show the list error with its message", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
     renderWithProviders(<BranchesPanel repoId={1} />);
@@ -1071,7 +1121,10 @@ describe("BranchesPanel remote checkout title with a filter", () => {
       ],
     });
     const { user } = await renderPanel(data);
-    await user.type(screen.getByRole("searchbox", { name: "Filter branches" }), "origin/f");
+    await user.type(
+      screen.getByRole("searchbox", { name: "Filter branches and tags" }),
+      "origin/f",
+    );
     expect(screen.queryByTitle("refs/heads/feature")).toBeNull();
     rightClick(remoteRow("origin", "feature"));
     expect(menuItem("Checkout")).not.toHaveAttribute("title");
@@ -1216,7 +1269,7 @@ describe("BranchesPanel cancelled force delete", () => {
 describe("BranchesPanel filter across refetch", () => {
   it("should keep the query and the narrowed rows after the list is refetched", async () => {
     const { user } = await renderPanel();
-    const filter = screen.getByRole("searchbox", { name: "Filter branches" });
+    const filter = screen.getByRole("searchbox", { name: "Filter branches and tags" });
     await user.type(filter, "feat");
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));

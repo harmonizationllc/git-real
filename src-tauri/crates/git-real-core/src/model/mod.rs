@@ -11,6 +11,7 @@ mod recent;
 mod repo;
 mod stash;
 mod status;
+mod tag;
 
 pub use branch::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
 pub use commit::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
@@ -31,3 +32,4 @@ pub use recent::RecentEntry;
 pub use repo::RepoSummary;
 pub use stash::{StashEntry, StashFiles, StashOutcome};
 pub use status::{ChangeKind, StatusEntry, WorkingTreeStatus};
+pub use tag::{TagEntry, TagList};

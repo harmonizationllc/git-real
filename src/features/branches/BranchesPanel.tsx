@@ -3,6 +3,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
 import type { BranchList, HeadState, RepoId } from "../../lib/ipc";
+import { useWorkspace } from "../../lib/store/workspace";
 import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
 import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useCanFastForward } from "../merge/useCanFastForward";
@@ -67,7 +68,8 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const integration = useIntegrationActions(repoId);
   const pending = actions.pending || integration.pending;
   const panelError = actions.error ?? integration.error;
-  const [query, setQuery] = useState("");
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
+  const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // Drag-to-merge: the branch being dragged, and how deep the pointer is inside the current
@@ -306,8 +308,8 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           <input
             type="search"
             className={styles.filter}
-            aria-label="Filter branches"
-            placeholder="Filter branches"
+            aria-label="Filter branches and tags"
+            placeholder="Filter branches and tags"
             value={query}
             spellCheck={false}
             autoComplete="off"
@@ -327,7 +329,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           </button>
         </div>
         {dialog === null && panelError !== null && (
-          <RepoError error={panelError} path={null} onDismiss={clearErrors} />
+          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         )}
         <BranchGroup
           heading="Local"

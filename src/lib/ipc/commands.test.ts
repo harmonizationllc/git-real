@@ -15,8 +15,11 @@ import {
   closeRepo,
   commit,
   createBranch,
+  createTag,
   deleteBranch,
   deleteRemoteBranch,
+  deleteRemoteTag,
+  deleteTag,
   discardPaths,
   getBlame,
   getOperationState,
@@ -36,8 +39,10 @@ import {
   listBranches,
   listRecent,
   listStashes,
+  listTags,
   mergeBranch,
   openRepo,
+  pushTag,
   rebaseInteractive,
   rebaseOnto,
   rebasePlan,
@@ -74,6 +79,7 @@ import type {
   RecentEntry,
   StashEntry,
   StashFiles,
+  TagList,
   WorkingTreeStatus,
 } from "./types";
 
@@ -888,5 +894,63 @@ describe("stash command wrappers", () => {
       kind: "staleStash",
       message: "the stash list changed; reload it",
     });
+  });
+});
+
+// Contract: the GR-11b tag wrappers send the documented command names and camelCase args.
+describe("tag command wrappers", () => {
+  const oid = "c".repeat(40);
+
+  it("listTags sends list_tags with id", async () => {
+    const list: TagList = { tags: [], remotes: [] };
+    const calls = mockWith(list);
+    const result = await listTags(2);
+    expect(calls).toEqual([{ cmd: "list_tags", args: { id: 2 } }]);
+    expect(result).toEqual(list);
+  });
+
+  it("createTag sends create_tag with id, name, oid and message", async () => {
+    const calls = mockWith(null);
+    await createTag(2, "v1", oid, "Release");
+    expect(calls).toEqual([
+      { cmd: "create_tag", args: { id: 2, name: "v1", oid, message: "Release" } },
+    ]);
+  });
+
+  it("createTag sends a null message through", async () => {
+    const calls = mockWith(null);
+    await createTag(2, "v1", oid, null);
+    expect(calls).toEqual([{ cmd: "create_tag", args: { id: 2, name: "v1", oid, message: null } }]);
+  });
+
+  it("deleteTag sends delete_tag with id and name", async () => {
+    const calls = mockWith(null);
+    await deleteTag(2, "v1");
+    expect(calls).toEqual([{ cmd: "delete_tag", args: { id: 2, name: "v1" } }]);
+  });
+
+  it("pushTag sends push_tag with id, remote and name", async () => {
+    const calls = mockWith(null);
+    await pushTag(2, "origin", "v1");
+    expect(calls).toEqual([{ cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1" } }]);
+  });
+
+  it("deleteRemoteTag sends delete_remote_tag with id, remote and name", async () => {
+    const calls = mockWith(null);
+    await deleteRemoteTag(2, "origin", "v1");
+    expect(calls).toEqual([
+      { cmd: "delete_remote_tag", args: { id: 2, remote: "origin", name: "v1" } },
+    ]);
+  });
+
+  it.each([
+    ["listTags", () => listTags(1)],
+    ["createTag", () => createTag(1, "v1", oid, null)],
+    ["deleteTag", () => deleteTag(1, "v1")],
+    ["pushTag", () => pushTag(1, "origin", "v1")],
+    ["deleteRemoteTag", () => deleteRemoteTag(1, "origin", "v1")],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing({ kind: "tagNotFound", message: "no tag named v1" });
+    await expect(call()).rejects.toEqual({ kind: "tagNotFound", message: "no tag named v1" });
   });
 });

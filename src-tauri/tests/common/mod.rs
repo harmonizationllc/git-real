@@ -101,8 +101,8 @@ pub fn fresh_state() -> (TempDir, RepoRegistry, RecentStore) {
     (dir, RepoRegistry::default(), store)
 }
 
-/// Sets a repo-local identity and turns signing off, so the developer's
-/// global config (which may sign every commit) never reaches the test.
+/// Sets a repo-local identity and turns commit and tag signing off, so the
+/// developer's global config (which may sign everything) never reaches the test.
 pub fn configure_identity(root: &Path) {
     let repo = Repository::open(root).expect("open repo");
     let mut config = repo.config().expect("config");
@@ -113,6 +113,9 @@ pub fn configure_identity(root: &Path) {
     config
         .set_bool("commit.gpgsign", false)
         .expect("set gpgsign");
+    config
+        .set_bool("tag.gpgSign", false)
+        .expect("set tag.gpgSign");
 }
 
 /// Writes `name` with `content`, stages it and commits on HEAD; returns the new oid.

@@ -1105,3 +1105,178 @@ fn stash_drop_non_zero_exit_is_operation_failed() {
         matches!(session.stash_drop(0, &oid), Err(GitError::OperationFailed { verb, .. }) if verb == "stash")
     );
 }
+
+// ---------- GR-11b: tag argv ----------
+
+/// A repo whose HEAD commit is returned as full hex; the stand-in git is on PATH.
+fn tag_repo() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
+    use_fake_git();
+    let (dir, path) = common::temp_repo_with_commit();
+    let head = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap()
+        .to_string();
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session, head)
+}
+
+#[test]
+fn create_annotated_tag_sends_the_message_on_stdin() {
+    let (_d, path, session, head) = tag_repo();
+    script_behaviour(&path, r#"cat > "$2/.git/stdin.txt""#);
+    session
+        .create_tag("v1", &head, Some("Release\n\n-x body\n"))
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        [
+            "tag",
+            "-a",
+            "--cleanup=whitespace",
+            "-F",
+            "-",
+            "v1",
+            head.as_str()
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(path.join(".git/stdin.txt")).unwrap(),
+        "Release\n\n-x body\n"
+    );
+}
+
+#[test]
+fn create_lightweight_tag_passes_no_sign() {
+    let (_d, path, session, head) = tag_repo();
+    session.create_tag("rel/v1", &head, None).unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["tag", "--no-sign", "rel/v1", head.as_str()]
+    );
+}
+
+#[test]
+fn create_tag_with_a_leading_dash_runs_no_git() {
+    let (_d, path, session, head) = tag_repo();
+    assert!(matches!(
+        session.create_tag("-f", &head, Some("m")),
+        Err(GitError::InvalidTagName(_))
+    ));
+    assert!(!path.join(".git/argv.txt").exists());
+}
+
+#[test]
+fn create_tag_non_zero_exit_is_operation_failed_with_verb_tag() {
+    let (_d, path, session, head) = tag_repo();
+    script_behaviour(&path, "echo boom >&2; exit 128");
+    match session.create_tag("v1", &head, None).unwrap_err() {
+        GitError::OperationFailed {
+            verb, code, stderr, ..
+        } => {
+            assert_eq!(
+                (verb.as_str(), code, stderr.as_str()),
+                ("tag", Some(128), "boom\n")
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn push_tag_pushes_the_full_tag_refname() {
+    let (_d, _b, path, session) = fixture();
+    common::tag_lightweight(
+        &path,
+        "v1",
+        Repository::open(&path)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap(),
+    );
+    session
+        .prepare_tag_push("origin", "v1")
+        .unwrap()
+        .run()
+        .unwrap();
+    assert_eq!(after_workdir(&path), ["push", "origin", "refs/tags/v1"]);
+}
+
+#[test]
+fn delete_remote_tag_pushes_a_tags_qualified_delete() {
+    let (_d, _b, path, session) = fixture();
+    common::tag_lightweight(
+        &path,
+        "rel/v1",
+        Repository::open(&path)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap(),
+    );
+    session
+        .prepare_remote_tag_delete("origin", "rel/v1")
+        .unwrap()
+        .run()
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["push", "origin", "--delete", "tags/rel/v1"]
+    );
+}
+
+#[test]
+fn tag_push_failure_is_push_failed_with_git_output() {
+    let (_d, _b, path, session) = fixture();
+    common::tag_lightweight(
+        &path,
+        "v1",
+        Repository::open(&path)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap(),
+    );
+    script_behaviour(&path, "echo out\necho err >&2\nexit 1");
+    for result in [
+        session.prepare_tag_push("origin", "v1").unwrap().run(),
+        session
+            .prepare_remote_tag_delete("origin", "v1")
+            .unwrap()
+            .run(),
+    ] {
+        assert!(
+            matches!(result, Err(GitError::PushFailed { code: Some(1), ref stdout, ref stderr }) if stdout == "out\n" && stderr == "err\n")
+        );
+    }
+}
+
+#[test]
+fn tag_pushes_expose_the_validated_remote_name_and_workdir() {
+    let (_d, _b, path, session) = fixture();
+    common::tag_lightweight(
+        &path,
+        "v1",
+        Repository::open(&path)
+            .unwrap()
+            .head()
+            .unwrap()
+            .target()
+            .unwrap(),
+    );
+    let push = session.prepare_tag_push("origin", "v1").unwrap();
+    let delete = session.prepare_remote_tag_delete("origin", "v1").unwrap();
+    assert_eq!(
+        (push.remote(), push.name(), delete.remote(), delete.name()),
+        ("origin", "v1", "origin", "v1")
+    );
+    let canon = std::fs::canonicalize(&path).unwrap();
+    assert_eq!(std::fs::canonicalize(push.workdir()).unwrap(), canon);
+    assert_eq!(std::fs::canonicalize(delete.workdir()).unwrap(), canon);
+}
