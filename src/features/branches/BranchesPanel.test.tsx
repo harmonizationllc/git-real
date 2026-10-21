@@ -316,6 +316,13 @@ describe("BranchesPanel activation", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(checkoutFailed.message);
   });
 
+  it("should tag a checkout failure alert with the panel variant", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
+    const { user } = await renderPanel();
+    await user.dblClick(localRow("feature"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should clear the failure alert on Dismiss", async () => {
     vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
     const { user } = await renderPanel();
@@ -710,6 +717,14 @@ describe("BranchesPanel delete", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("should tag a delete failure alert with the panel variant", async () => {
+    vi.mocked(deleteBranch).mockRejectedValue({ kind: "io", message: "disk exploded" });
+    const { user } = await renderPanel();
+    const dialog = await openDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should close the dialog and show the error in the panel on another failure", async () => {
     vi.mocked(deleteBranch).mockRejectedValue({ kind: "io", message: "disk exploded" });
     const { user } = await renderPanel();
@@ -828,6 +843,12 @@ describe("BranchesPanel head states", () => {
 
 // Contract: query errors show a RepoError with Retry.
 describe("BranchesPanel query errors", () => {
+  it("should render the list error alert without a data-variant", async () => {
+    vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
+  });
+
   it("should show the list error with its message", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
     renderWithProviders(<BranchesPanel repoId={1} />);

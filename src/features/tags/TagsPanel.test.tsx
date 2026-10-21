@@ -136,6 +136,13 @@ describe("TagsPanel list", () => {
     expect(screen.queryByText("Loading tags…")).toBeNull();
   });
 
+  it("should render the list error alert without a data-variant", async () => {
+    vi.mocked(listTags).mockRejectedValueOnce({ kind: "io", message: "list broke" });
+    renderWithProviders(<TagsPanel repoId={1} />);
+    useLayoutPrefs.setState({ tagsCollapsed: false });
+    expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
+  });
+
   it("should show the list error with Retry while expanded", async () => {
     vi.mocked(listTags).mockRejectedValueOnce({ kind: "io", message: "list broke" });
     const { user } = renderWithProviders(<TagsPanel repoId={1} />);
@@ -480,6 +487,14 @@ describe("TagsPanel errors", () => {
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
     expect(await screen.findByRole("alert")).toHaveTextContent("remote rejected");
+  });
+
+  it("tags the push error alert with the panel variant", async () => {
+    vi.mocked(pushTag).mockRejectedValue({ kind: "pushFailed", message: "remote rejected" });
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Push to origin"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("shows no status after a failed push", async () => {

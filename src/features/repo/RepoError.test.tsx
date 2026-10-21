@@ -146,6 +146,19 @@ describe("RepoError retry", () => {
   });
 });
 
+// Contract: variant="panel" tags the alert for the narrow-column layout; omitting it adds nothing.
+describe("RepoError variant", () => {
+  it('should put data-variant="panel" on the alert when variant is panel', () => {
+    render(<RepoError error={missing} path={null} variant="panel" onDismiss={vi.fn()} />);
+    expect(screen.getByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
+  it("should render no data-variant attribute when variant is omitted", () => {
+    render(<RepoError error={missing} path={null} onDismiss={vi.fn()} />);
+    expect(screen.getByRole("alert")).not.toHaveAttribute("data-variant");
+  });
+});
+
 // Contract: the action buttons sit at the top of the alert so Dismiss stays visible when the
 // message is long. happy-dom applies no CSS modules, so the stylesheet source is pinned instead.
 describe("RepoError layout", () => {
@@ -155,5 +168,40 @@ describe("RepoError layout", () => {
   it("should pin the root row to flex-start and not center when the stylesheet is read", () => {
     expect(rootBlock).toContain("align-items: flex-start");
     expect(rootBlock).not.toContain("align-items: center");
+  });
+
+  // Contract: the panel variant scrolls a long message in place instead of wrapping it per
+  // character, and stacks the message above right-aligned actions.
+  const blockOf = (selector: string) =>
+    new RegExp(`${selector.replace(/[.[\]"=]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+  const panelRoot = blockOf('.root[data-variant="panel"]');
+  const panelMessage = blockOf('.root[data-variant="panel"] .message');
+
+  it("should stack the panel variant root in a column when the stylesheet is read", () => {
+    expect(panelRoot).toContain("flex-direction: column");
+  });
+
+  it("should cap the panel message height when the stylesheet is read", () => {
+    expect(panelMessage).toContain("max-height");
+  });
+
+  it("should scroll the panel message when the stylesheet is read", () => {
+    expect(panelMessage).toContain("overflow: auto");
+  });
+
+  it("should keep panel message lines unwrapped with white-space: pre when the stylesheet is read", () => {
+    expect(panelMessage).toMatch(/white-space:\s*pre\s*;/);
+  });
+
+  it("should not use pre-wrap in the panel message when the stylesheet is read", () => {
+    expect(panelMessage).not.toContain("pre-wrap");
+  });
+
+  it("should not break anywhere in the panel message when the stylesheet is read", () => {
+    expect(panelMessage).not.toContain("overflow-wrap: anywhere");
+  });
+
+  it("should keep pre-wrap on the default message when the stylesheet is read", () => {
+    expect(/\.message\s*\{([^}]*)\}/.exec(css)?.[1]).toContain("white-space: pre-wrap");
   });
 });
