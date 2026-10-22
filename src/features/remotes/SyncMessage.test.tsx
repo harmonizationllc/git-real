@@ -106,3 +106,11 @@ describe("SyncMessage", () => {
     expect(sync.dismissMessage).toHaveBeenCalledOnce();
   });
 });
+
+// Contract (M1): SyncMessage sits in the padded header, so its alert is flush.
+describe("SyncMessage flush", () => {
+  it("should render the alert with data-flush", () => {
+    renderMessage({ message: message() });
+    expect(screen.getByRole("alert")).toHaveAttribute("data-flush");
+  });
+});

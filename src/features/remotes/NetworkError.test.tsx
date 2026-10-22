@@ -75,3 +75,22 @@ describe("NetworkError buttons", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
+
+// Contract (M1): flush marks the root so the header can drop its horizontal margin; the attribute
+// is present only when flush is true.
+describe("NetworkError flush", () => {
+  it("should mark the root with data-flush when flush is true", () => {
+    renderWithProviders(<NetworkError message={message()} onDismiss={vi.fn()} flush />);
+    expect(screen.getByRole("alert")).toHaveAttribute("data-flush");
+  });
+
+  it("should not mark the root with data-flush when flush is omitted", () => {
+    renderWithProviders(<NetworkError message={message()} onDismiss={vi.fn()} />);
+    expect(screen.getByRole("alert")).not.toHaveAttribute("data-flush");
+  });
+
+  it("should not mark the root with data-flush when flush is false", () => {
+    renderWithProviders(<NetworkError message={message()} onDismiss={vi.fn()} flush={false} />);
+    expect(screen.getByRole("alert")).not.toHaveAttribute("data-flush");
+  });
+});
