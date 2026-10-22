@@ -1,1 +1,25 @@
-{"pagelen":50,"page":1,"values":[{"id":3,"title":"Same repo","author":{"nickname":"alice","display_name":"Alice A"},"source":{"branch":{"name":"feat"},"repository":{"full_name":"ws/repo"}},"destination":{"branch":{"name":"main"},"repository":{"full_name":"ws/repo"}},"updated_on":"2026-10-20T12:00:00.123456+00:00","links":{"html":{"href":"https://bitbucket.org/ws/repo/pull-requests/3"}}},{"id":2,"title":"From a fork","author":{"display_name":"Bob B"},"source":{"branch":{"name":"main"},"repository":{"full_name":"bob/repo"}},"destination":{"branch":{"name":"main"},"repository":{"full_name":"ws/repo"}},"draft":true,"updated_on":"2026-10-19T08:30:15.000000+00:00","links":{"html":{"href":"https://bitbucket.org/ws/repo/pull-requests/2"}}}]}
+{
+  "pagelen": 50,
+  "page": 1,
+  "values": [
+    {
+      "id": 3,
+      "title": "Same repo",
+      "author": { "nickname": "alice", "display_name": "Alice A" },
+      "source": { "branch": { "name": "feat" }, "repository": { "full_name": "ws/repo" } },
+      "destination": { "branch": { "name": "main" }, "repository": { "full_name": "ws/repo" } },
+      "updated_on": "2026-10-20T12:00:00.123456+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/ws/repo/pull-requests/3" } }
+    },
+    {
+      "id": 2,
+      "title": "From a fork",
+      "author": { "display_name": "Bob B" },
+      "source": { "branch": { "name": "main" }, "repository": { "full_name": "bob/repo" } },
+      "destination": { "branch": { "name": "main" }, "repository": { "full_name": "ws/repo" } },
+      "draft": true,
+      "updated_on": "2026-10-19T08:30:15.000000+00:00",
+      "links": { "html": { "href": "https://bitbucket.org/ws/repo/pull-requests/2" } }
+    }
+  ]
+}
