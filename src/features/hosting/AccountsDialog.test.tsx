@@ -200,6 +200,14 @@ describe("AccountsDialog connect", () => {
     expect(screen.queryByRole("dialog", { name: "Connect account" })).toBeNull();
   });
 
+  it("does not allow Connect before the accounts have loaded", async () => {
+    vi.mocked(hostingListAccounts).mockReturnValue(new Promise(() => undefined));
+    const { user } = renderDialog({ preset: { provider: "github", host: "github.com" } });
+    await screen.findByRole("dialog", { name: "Connect account" });
+    await user.type(screen.getByLabelText("Token"), "t");
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+  });
+
   it("Cancel in the form returns to the list", async () => {
     const { user } = await renderList();
     await user.click(button("Connect account…"));

@@ -215,6 +215,17 @@ describe("PullRequestsPanel list", () => {
     expect(await screen.findByRole("button", { name: "Loading…" })).toBeInTheDocument();
   });
 
+  it("keeps the loaded list when Show more fails", async () => {
+    vi.mocked(hostingListPullRequests)
+      .mockResolvedValueOnce(pullRequests(50, 100))
+      .mockRejectedValueOnce(networkError("hostUnreachable"));
+    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Show more" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(50);
+    expect(screen.getByRole("button", { name: "Pull requests (50+)" })).toBeInTheDocument();
+  });
+
   it("appends page 2 to the list", async () => {
     vi.mocked(hostingListPullRequests)
       .mockResolvedValueOnce(pullRequests(50, 100))
@@ -222,6 +233,14 @@ describe("PullRequestsPanel list", () => {
     const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
     await user.click(await screen.findByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("button", { name: "Pull requests (52)" })).toBeInTheDocument();
+  });
+});
+
+// Contract: the status live region is always mounted so a later announcement is read out.
+describe("PullRequestsPanel status region", () => {
+  it("renders an empty status live region before any action", async () => {
+    await renderPanel();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 });
 
