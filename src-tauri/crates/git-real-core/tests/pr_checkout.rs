@@ -288,3 +288,36 @@ fn prepare_ref_fetch_validates_source_and_refspec() {
         vec!["https://bitbucket.org/bob/repo.git".to_owned()]
     );
 }
+
+// A Bitbucket-style fork fetch of `refs/heads/<branch>`: git writes `branch 'feat/x' of <url>`
+// to FETCH_HEAD and libgit2 must map that line back to `refs/heads/feat/x`.
+#[test]
+fn bitbucket_style_fork_fetch_of_refs_heads_lands_on_pr_n() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, _head) = fx();
+    let side_dir = tempfile::tempdir().expect("side dir");
+    let side = side_dir.path().join("side");
+    let out = std::process::Command::new("git")
+        .arg("clone")
+        .arg(&bare)
+        .arg(&side)
+        .output()
+        .expect("spawn git");
+    assert!(out.status.success(), "clone failed");
+    common::configure_identity(&side);
+    common::run_git_ok(&side, &["switch", "-c", "feat/x"]);
+    let oid = common::commit_file(&side, "x.txt", "x\n", "feat x");
+    common::run_git_ok(&side, &["push", "-q", "origin", "feat/x"]);
+    let session = RepoSession::open(&path).unwrap();
+    let fetch = session
+        .prepare_ref_fetch("origin", "refs/heads/feat/x")
+        .unwrap();
+    fetch.run(None).unwrap();
+
+    let outcome = session.checkout_fetch_head(&fetch, 11, false).unwrap();
+
+    assert_eq!(outcome, checked_out("pr/11"));
+    assert_eq!(ref_oid(&path, "refs/heads/pr/11"), Some(oid.to_string()));
+}

@@ -102,3 +102,90 @@ fn a_refused_connection_is_unreachable() {
         Err(GitError::HostingUnreachable { .. })
     ));
 }
+
+/// Like `serve_once`, with a raw byte reply.
+fn serve_bytes(reply: Vec<u8>) -> (String, thread::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 1024];
+        while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = sock.read(&mut chunk).unwrap();
+            buf.extend_from_slice(&chunk[..n]);
+        }
+        sock.write_all(&reply).unwrap();
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    (url, handle)
+}
+
+fn get_req(url: String, headers: &[(&str, &str)]) -> Request {
+    Request {
+        method: Method::Get,
+        url,
+        headers: headers
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect(),
+        body: None,
+    }
+}
+
+// The status is what the caller maps to an error; an undecodable body must not hide it.
+#[test]
+fn a_non_utf8_body_keeps_its_status() {
+    let mut reply =
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 3\r\nConnection: close\r\n\r\n".to_vec();
+    reply.extend_from_slice(&[0xff, 0xfe, 0x41]);
+    let (base, server) = serve_bytes(reply);
+
+    let resp = UreqTransport::new().send(&get_req(base, &[])).unwrap();
+
+    server.join().unwrap();
+    assert_eq!(resp.status, 404);
+    assert!(resp.body.contains('A'), "{:?}", resp.body);
+}
+
+// The token goes to its own host; a redirect inside the same origin keeps it.
+#[test]
+fn a_redirect_to_the_same_host_keeps_the_authorization_header() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let mut seen = Vec::new();
+        for reply in [
+            format!(
+                "HTTP/1.1 302 Found\r\nLocation: http://{addr}/next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            ),
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
+        ] {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = sock.read(&mut chunk).unwrap();
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+            sock.write_all(reply.as_bytes()).unwrap();
+            seen.push(String::from_utf8_lossy(&buf).to_ascii_lowercase());
+        }
+        seen
+    });
+
+    let resp = UreqTransport::new()
+        .send(&get_req(
+            format!("http://{addr}/start"),
+            &[("Authorization", "Bearer t0k")],
+        ))
+        .unwrap();
+
+    let seen = server.join().unwrap();
+    assert_eq!(resp.status, 200);
+    assert!(seen[1].starts_with("get /next"), "{}", seen[1]);
+    assert!(seen[1].contains("authorization: bearer t0k"), "{}", seen[1]);
+}
