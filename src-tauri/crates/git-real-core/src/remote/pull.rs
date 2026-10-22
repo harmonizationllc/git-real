@@ -27,6 +27,11 @@ pub struct Pull {
 }
 
 impl Pull {
+    /// The URLs this operation talks to, in the order git uses them.
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
     pub fn remote(&self) -> &str {
         &self.remote
     }

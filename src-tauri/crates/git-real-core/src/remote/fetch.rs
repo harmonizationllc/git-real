@@ -20,6 +20,11 @@ pub struct Fetch {
 }
 
 impl Fetch {
+    /// The URLs this operation talks to, in the order git uses them.
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
     /// True when any fetched remote's URL is HTTP(S), so a credential prompt can help.
     pub fn https(&self) -> bool {
         self.urls.iter().any(|u| is_http(u))

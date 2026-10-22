@@ -25,8 +25,8 @@ pub use log::{
     CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,
 };
 pub use merge::{
-    ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState, RebaseAction,
-    RebaseCommit, RebaseStep,
+    CheckoutPrOutcome, ConflictSide, FastForwardCheck, MergeMode, OperationOutcome, OperationState,
+    RebaseAction, RebaseCommit, RebaseStep,
 };
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;

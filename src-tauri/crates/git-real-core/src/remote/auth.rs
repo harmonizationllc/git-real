@@ -1,7 +1,8 @@
 //! HTTPS credentials for one git run (spec §3.1): a one-shot inline helper,
 //! scoped to one origin, reads them from the environment, so they never reach
 //! the command line; after a successful run `git credential approve` hands
-//! them to the user's own helper.
+//! them to the user's own helper. A connected account's token
+//! ([`Credentials::account`]) is never approved: it stays in the keychain only.
 //!
 //! The environment of that run is inherited by git's children, so a
 //! repository's own hooks (`pre-push`) can read `GR_TOKEN`.
@@ -14,6 +15,7 @@ use serde::Deserialize;
 
 use crate::error::GitError;
 use crate::git_cli;
+use crate::hosting::Token;
 
 /// The inline helper. `printf '%s\n'`, not `echo`: dash's `echo` expands
 /// backslash escapes and would corrupt a token. Only `get` is answered.
@@ -28,6 +30,8 @@ pub struct Credentials {
     origin: String,
     username: String,
     token: String,
+    /// Hand these to the user's credential helper after a successful run.
+    approve: bool,
 }
 
 /// The IPC shape, validated through [`Credentials::new`]. No `Debug`.
@@ -60,7 +64,22 @@ impl Credentials {
             origin: origin.to_owned(),
             username: username.to_owned(),
             token: token.to_owned(),
+            approve: true,
         })
+    }
+
+    /// A connected account's token for `origin`, validated like [`Credentials::new`]; it is
+    /// never approved into the user's credential helper.
+    pub fn account(origin: &str, username: &str, token: &Token) -> Result<Self, GitError> {
+        Ok(Self {
+            approve: false,
+            ..Self::new(origin, username, token.expose_secret())?
+        })
+    }
+
+    /// False for account credentials: a successful run does not `git credential approve` them.
+    pub fn approves(&self) -> bool {
+        self.approve
     }
 
     pub fn origin(&self) -> &str {

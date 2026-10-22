@@ -74,7 +74,7 @@ pub fn clone_repo_inner(
     dest: &str,
     sink: &mut dyn ProgressSink,
 ) -> Result<OpenedRepo, AppError> {
-    let cloned = clone(url, Path::new(dest), sink)?;
+    let cloned = clone(url, Path::new(dest), None, sink)?;
     let session = RepoSession::open(&cloned)?;
     Ok(register_session(reg, recent, session))
 }

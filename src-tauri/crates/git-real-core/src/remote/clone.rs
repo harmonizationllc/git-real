@@ -7,22 +7,32 @@ use std::process::Stdio;
 use crate::error::GitError;
 use crate::git_cli;
 use crate::progress::ProgressSink;
+use crate::remote::auth::{self, Credentials};
 use crate::remote::progress_parser::{LineBuffer, parse_line};
 
 /// Clones `url` into `dest` using the `git` found on `PATH`.
-pub fn clone(url: &str, dest: &Path, sink: &mut dyn ProgressSink) -> Result<PathBuf, GitError> {
-    clone_with(&git_cli::locate()?, url, dest, sink)
+pub fn clone(
+    url: &str,
+    dest: &Path,
+    creds: Option<&Credentials>,
+    sink: &mut dyn ProgressSink,
+) -> Result<PathBuf, GitError> {
+    clone_with(&git_cli::locate()?, url, dest, creds, sink)
 }
 
 /// Clones `url` into `dest` using the given `git` executable, reporting
-/// progress parsed from its stderr.
+/// progress parsed from its stderr. `creds` go through the inline helper
+/// ([`auth::apply`]); there is no prompt-and-retry.
 pub fn clone_with(
     git: &Path,
     url: &str,
     dest: &Path,
+    creds: Option<&Credentials>,
     sink: &mut dyn ProgressSink,
 ) -> Result<PathBuf, GitError> {
-    let mut child = git_cli::command(git)
+    let mut cmd = git_cli::command(git);
+    auth::apply(&mut cmd, creds);
+    let mut child = cmd
         .args(["clone", "--progress", "--"])
         .arg(url)
         .arg(dest)
