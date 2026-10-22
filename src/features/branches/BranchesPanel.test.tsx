@@ -8,6 +8,7 @@ import {
   deleteRemoteBranch,
   listBranches,
   rebasePlan,
+  removeRemote,
   renameBranch,
 } from "../../lib/ipc";
 import type {
@@ -43,6 +44,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutRemoteBranch: vi.fn(),
   deleteRemoteBranch: vi.fn(),
   rebasePlan: vi.fn(),
+  removeRemote: vi.fn(),
 }));
 
 const oid = (c: string) => c.repeat(40);
@@ -119,6 +121,7 @@ beforeEach(() => {
   vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
   vi.mocked(deleteRemoteBranch).mockResolvedValue(undefined);
   vi.mocked(rebasePlan).mockResolvedValue([]);
+  vi.mocked(removeRemote).mockResolvedValue(undefined);
 });
 
 async function renderPanel(data: BranchList = list()) {
@@ -2400,5 +2403,126 @@ describe("BranchesPanel focus fallback", () => {
     const target = screen.getByRole("region", { name: "Branches" });
     expect(target).toHaveAttribute("data-focus-target");
     expect(target).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+// Contract: a remote group's heading has its own menu (Edit remote…, Remove remote…); Local has none.
+describe("BranchesPanel remote heading menu", () => {
+  const originHeading = () => screen.getByRole("heading", { level: 2, name: "origin" });
+
+  async function renderWithOpen() {
+    const onOpenRemotes = vi.fn();
+    vi.mocked(listBranches).mockResolvedValue(list());
+    const view = renderWithProviders(<BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} />);
+    await screen.findByRole("heading", { name: "Local" });
+    return { ...view, onOpenRemotes };
+  }
+
+  it("a remote heading's context menu lists Edit remote… and Remove remote…", async () => {
+    await renderPanel();
+    rightClick(originHeading());
+    expect(itemLabels()).toEqual(["Edit remote…", "Remove remote…"]);
+  });
+
+  it("opens the heading menu with Shift+F10 on the focused heading", async () => {
+    await renderPanel();
+    fireEvent.keyDown(originHeading(), { key: "F10", shiftKey: true });
+    expect(itemLabels()).toEqual(["Edit remote…", "Remove remote…"]);
+  });
+
+  it("opens the heading menu with the ContextMenu key", async () => {
+    await renderPanel();
+    fireEvent.keyDown(originHeading(), { key: "ContextMenu" });
+    expect(itemLabels()).toEqual(["Edit remote…", "Remove remote…"]);
+  });
+
+  it("the Local heading has no context menu", async () => {
+    await renderPanel();
+    rightClick(screen.getByRole("heading", { level: 2, name: "Local" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Edit remote… asks to open the remotes dialog in edit mode for that remote", async () => {
+    const { user, onOpenRemotes } = await renderWithOpen();
+    rightClick(originHeading());
+    await user.click(menuItem("Edit remote…"));
+    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "origin" });
+  });
+
+  it("Edit remote… names the remote of the heading that was clicked", async () => {
+    const onOpenRemotes = vi.fn();
+    vi.mocked(listBranches).mockResolvedValue(
+      list({
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "main", oid: oid("a") }] },
+          { remote: "up", branches: [{ remote: "up", name: "main", oid: oid("b") }] },
+        ],
+      }),
+    );
+    const { user } = renderWithProviders(
+      <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} />,
+    );
+    rightClick(await screen.findByRole("heading", { level: 2, name: "up" }));
+    await user.click(menuItem("Edit remote…"));
+    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "up" });
+  });
+
+  it("Edit remote… is disabled without onOpenRemotes", async () => {
+    await renderPanel();
+    rightClick(originHeading());
+    expect(menuItem("Edit remote…")).toBeDisabled();
+  });
+
+  it("Remove remote… asks Remove remote origin? with the body and does not remove yet", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    expect(dialog).toHaveTextContent(
+      "Its remote-tracking branches are deleted locally. Nothing changes on the server.",
+    );
+    expect(removeRemote).not.toHaveBeenCalled();
+  });
+
+  it("removes the remote on confirm and closes the dialog", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(removeRemote).toHaveBeenCalledExactlyOnceWith(1, "origin"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("Cancel does not remove the remote", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(removeRemote).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a failed remove shows its error in the panel", async () => {
+    vi.mocked(removeRemote).mockRejectedValue({ kind: "remoteNotFound", message: "already gone" });
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("already gone");
+    expect(alert).toHaveAttribute("data-variant", "panel");
+  });
+
+  it("refreshes the branch list after a remove", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    const before = vi.mocked(listBranches).mock.calls.length;
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(vi.mocked(listBranches).mock.calls.length).toBeGreaterThan(before));
   });
 });

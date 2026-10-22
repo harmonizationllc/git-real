@@ -12,6 +12,7 @@ const ALLOWED_WITHOUT_ATTRIBUTE: Record<string, number> = {
   "src/components/PromptDialog.tsx": 1,
   "src/features/stash/StashDialog.tsx": 1,
   "src/features/remotes/CredentialDialog.tsx": 1,
+  "src/features/remotes/RemotesDialog.tsx": 1,
   "src/features/remotes/SetUpstreamDialog.tsx": 1,
   "src/features/tags/CreateTagDialog.tsx": 1,
   "src/features/merge/rebase/RebaseDialog.tsx": 1,

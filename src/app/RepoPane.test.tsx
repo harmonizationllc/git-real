@@ -1374,3 +1374,75 @@ describe("RepoPane sync toolbar and shortcuts", () => {
     await waitFor(() => expect(push).toHaveBeenCalledOnce());
   });
 });
+
+// Contract: Remotes… and the Branches heading menu open the Remotes dialog; it belongs to its tab.
+describe("RepoPane remotes dialog", () => {
+  const withOrigin = () =>
+    branchList({
+      remotes: [
+        {
+          remote: "origin",
+          branches: [{ remote: "origin", name: "main", oid: "a".repeat(40) }],
+        },
+      ],
+    });
+
+  beforeEach(() => {
+    vi.mocked(listBranches).mockResolvedValue(withOrigin());
+  });
+
+  it("Remotes… opens the Remotes dialog and Close closes it", async () => {
+    const { user } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await user.click(await screen.findByRole("button", { name: "Remotes…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remotes" });
+    expect(await within(dialog).findByRole("list", { name: "Remotes" })).toHaveTextContent(
+      "origin",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Remotes" })).toBeNull();
+  });
+
+  it("shows no Remotes dialog until one is requested", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Remotes…" });
+    expect(screen.queryByRole("dialog", { name: "Remotes" })).toBeNull();
+  });
+
+  it("Edit remote… on a remote heading opens the dialog on that remote's form", async () => {
+    const { user } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.contextMenu(await screen.findByRole("heading", { level: 2, name: "origin" }), {
+      clientX: 5,
+      clientY: 5,
+    });
+    await user.click(screen.getByRole("menuitem", { name: "Edit remote…" }));
+    await screen.findByRole("dialog", { name: "Remotes" });
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("origin"));
+    expect(screen.getByLabelText("URL")).toHaveValue("/srv/origin.git");
+  });
+
+  it("the Remotes dialog does not follow the user to another tab", async () => {
+    const { user, rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await user.click(await screen.findByRole("button", { name: "Remotes…" }));
+    await screen.findByRole("dialog", { name: "Remotes" });
+    rerender(<RepoPane tab={tab(2)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(screen.queryByRole("dialog", { name: "Remotes" })).toBeNull();
+  });
+
+  it("the dialog does not reappear when returning to the first tab", async () => {
+    const { user, rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await user.click(await screen.findByRole("button", { name: "Remotes…" }));
+    await screen.findByRole("dialog", { name: "Remotes" });
+    rerender(<RepoPane tab={tab(2)} />);
+    rerender(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(screen.queryByRole("dialog", { name: "Remotes" })).toBeNull();
+  });
+
+  it("the dialog lists the remotes of its own tab's repo", async () => {
+    const { user } = renderWithProviders(<RepoPane tab={tab(7)} />);
+    await user.click(await screen.findByRole("button", { name: "Remotes…" }));
+    await screen.findByRole("dialog", { name: "Remotes" });
+    expect(listRemotes).toHaveBeenCalledWith(7);
+  });
+});
