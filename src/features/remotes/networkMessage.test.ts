@@ -166,6 +166,58 @@ describe("networkMessage remote rejected", () => {
   });
 });
 
+// Contract (M3): a long remote-rejected reason is cut to its first 200 characters, trimmed, plus
+// an ellipsis; 200 characters or fewer are shown unchanged.
+describe("networkMessage remote rejected reason length", () => {
+  const hintFor = (reason: string) =>
+    networkMessage(networkError("remoteRejected", { reason })).hint;
+
+  it("should cut a 201-character reason to its first 200 characters plus an ellipsis", () => {
+    const reason = "a".repeat(201);
+    expect(hintFor(reason)).toBe(`${"a".repeat(200)}…`);
+  });
+
+  it("should trim trailing whitespace from the cut before adding the ellipsis", () => {
+    const reason = `${"a".repeat(195)}     bbbbbbbb`;
+    expect(hintFor(reason)).toBe(`${"a".repeat(195)}…`);
+  });
+
+  it("should cut a much longer reason to 200 characters plus an ellipsis", () => {
+    expect(hintFor("x".repeat(1000))).toBe(`${"x".repeat(200)}…`);
+  });
+
+  it("should leave a reason of exactly 200 characters unchanged", () => {
+    const reason = "a".repeat(200);
+    expect(hintFor(reason)).toBe(reason);
+  });
+
+  it("should leave a short reason unchanged", () => {
+    expect(hintFor("pre-receive hook declined")).toBe("pre-receive hook declined");
+  });
+
+  it("should keep the full stderr under details when the reason is cut", () => {
+    const error = networkError("remoteRejected", { reason: "a".repeat(300) });
+    expect(networkMessage(error).details).toBe("git output");
+  });
+});
+
+// Contract (M4): the ssh auth hint names the host when known, else keeps the generic text.
+describe("networkMessage ssh auth host", () => {
+  it("should name the host in the hint when the host is known", () => {
+    const error = networkError("sshAuthFailed", { host: "github.com" });
+    expect(networkMessage(error).hint).toBe(
+      "Add your key to the agent with ssh-add, and check it is registered with github.com.",
+    );
+  });
+
+  it("should keep the existing hint when the host is null", () => {
+    const error = networkError("sshAuthFailed", { host: null });
+    expect(networkMessage(error).hint).toBe(
+      "Add your key to the agent with ssh-add, and check it is registered with the host.",
+    );
+  });
+});
+
 // Contract (W2): the core's operationInProgress (a race, or the push branch guard) gets a titled
 // message rather than the raw error string.
 describe("networkMessage operation in progress", () => {

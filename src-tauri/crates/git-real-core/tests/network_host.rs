@@ -326,3 +326,33 @@ fn an_invalid_stderr_host_falls_back_to_the_single_url() {
         Some("real.test")
     );
 }
+
+// GR-12 follow-up M2: a Windows drive path (one ASCII letter, `:`, then `\` or `/`) is a local
+// path, never a host. A two-letter prefix is still an scp-like host.
+#[test]
+fn a_windows_drive_path_has_no_host_as_the_single_url() {
+    for url in ["C:\\repo", "c:/repo", "D:\\x\\y.git"] {
+        assert_eq!(from_url(url), None, "{url:?}");
+    }
+}
+
+#[test]
+fn a_windows_drive_path_has_no_host_alongside_stderr_without_one() {
+    for url in ["C:\\repo", "c:/repo", "D:\\x\\y.git"] {
+        assert_eq!(
+            ssh_host("Host key verification failed.\n", &[url]),
+            None,
+            "{url:?}"
+        );
+    }
+}
+
+#[test]
+fn a_two_letter_scp_like_prefix_is_still_a_host() {
+    assert_eq!(from_url("ab:path").as_deref(), Some("ab"));
+}
+
+#[test]
+fn a_one_letter_scp_like_host_without_a_slash_after_the_colon_is_not_a_drive() {
+    assert_eq!(from_url("c:repo").as_deref(), Some("c"));
+}
