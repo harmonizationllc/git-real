@@ -32,7 +32,7 @@ import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
-import { remoteInfo, trackedList } from "../test/remoteFixtures";
+import { networkError, remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
@@ -1508,5 +1508,112 @@ describe("RepoPane remotes dialog", () => {
     await screen.findByRole("heading", { level: 2, name: "renamed" });
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.getByRole("region", { name: "repo1" })).toHaveFocus();
+  });
+});
+
+// Contract (W1): the network error panel sits in its own row below the toolbar row in the header,
+// so it is neither inside the Sync group nor inside the row that holds the branch line and toolbar.
+describe("RepoPane network error layout", () => {
+  async function showError() {
+    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fetch" })).toBeEnabled());
+    await view.user.click(screen.getByRole("button", { name: "Fetch" }));
+    const alert = await screen.findByRole("alert");
+    const group = screen.getByRole("group", { name: "Sync" });
+    return { alert, group, row: group.parentElement as HTMLElement };
+  }
+
+  it("should render the panel inside the header", async () => {
+    const { alert } = await showError();
+    expect(header().closest("header")).toContainElement(alert);
+  });
+
+  it("should not render the panel inside the Sync group", async () => {
+    const { alert, group } = await showError();
+    expect(group.contains(alert)).toBe(false);
+  });
+
+  it("should not render the panel inside the toolbar row", async () => {
+    const { alert, row } = await showError();
+    expect(row.contains(alert)).toBe(false);
+  });
+
+  it("should keep the toolbar row's children the same when an error shows", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fetch" })).toBeEnabled());
+    const row = screen.getByRole("group", { name: "Sync" }).parentElement as HTMLElement;
+    const before = row.childElementCount;
+    await view.user.click(screen.getByRole("button", { name: "Fetch" }));
+    await screen.findByRole("alert");
+    expect(row.childElementCount).toBe(before);
+  });
+
+  it("should render the panel after the toolbar row in document order", async () => {
+    const { alert, row } = await showError();
+    expect(row.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("should render the panel before the operation banner", async () => {
+    const { alert } = await showError();
+    const banner = screen.getByTestId("operation-banner");
+    expect(alert.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("should still offer Dismiss inside the panel", async () => {
+    const { alert } = await showError();
+    expect(within(alert).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+});
+
+// Contract (W2): the toolbar reads the operation state the banner uses; pull and push are gated
+// during an operation, fetch and Remotes… are not.
+describe("RepoPane sync during an in-progress operation", () => {
+  const rebase = {
+    kind: "rebase",
+    onto: "b".repeat(40),
+    ontoName: "main",
+    branch: "topic",
+    step: 1,
+    total: 2,
+    stoppedForEdit: false,
+  } as const;
+
+  async function renderDuringRebase() {
+    vi.mocked(getOperationState).mockResolvedValue(rebase);
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Pull" })).toHaveAttribute(
+        "title",
+        "Finish or abort the rebase first",
+      ),
+    );
+    return view;
+  }
+
+  it("should disable Pull, Pull options, Push and Push options with the finish-or-abort title", async () => {
+    await renderDuringRebase();
+    for (const name of ["Pull", "Pull options", "Push", "Push options"]) {
+      const b = screen.getByRole("button", { name });
+      expect([name, b.hasAttribute("disabled"), b.getAttribute("title")]).toEqual([
+        name,
+        true,
+        "Finish or abort the rebase first",
+      ]);
+    }
+  });
+
+  it("should keep Fetch and Remotes… enabled", async () => {
+    await renderDuringRebase();
+    expect(screen.getByRole("button", { name: "Fetch" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Remotes…" })).toBeEnabled();
+  });
+
+  it("should ignore the pull and push shortcuts", async () => {
+    await renderDuringRebase();
+    fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "L" });
+    fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "P" });
+    expect([pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0]);
   });
 });

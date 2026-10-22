@@ -4,8 +4,6 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu } from "../../components/ContextMenu";
 import type { MenuItem } from "../../components/ContextMenu";
 import { CredentialDialog } from "./CredentialDialog";
-import { NetworkError } from "./NetworkError";
-import type { MessageAction } from "./networkMessage";
 import type { RemotesTarget } from "./remotesTarget";
 import { SetUpstreamDialog } from "./SetUpstreamDialog";
 import { busyLabel, forcePushCopy } from "./syncCopy";
@@ -20,7 +18,10 @@ export interface SyncToolbarProps {
 
 type OpenMenu = { verb: "pull" | "push"; x: number; y: number };
 
-/** The header's sync controls: upstream state, Fetch, Pull, Push, Remotes…, and their dialogs. */
+/**
+ * The header's sync controls: upstream state, Fetch, Pull, Push, Remotes…, and their dialogs.
+ * A failure is shown by SyncMessage, in its own row, so it never changes this row's height.
+ */
 export function SyncToolbar({ sync, onOpenRemotes }: SyncToolbarProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
@@ -48,27 +49,6 @@ export function SyncToolbar({ sync, onOpenRemotes }: SyncToolbarProps) {
           { id: "merge", label: "Pull (merge)", onSelect: () => sync.pull("merge") },
           { id: "rebase", label: "Pull (rebase)", onSelect: () => sync.pull("rebase") },
         ];
-
-  const onAction = (kind: MessageAction) => {
-    switch (kind) {
-      case "pull":
-        sync.pull();
-        break;
-      case "fetch":
-        sync.fetch();
-        break;
-      case "editRemote":
-        onOpenRemotes(
-          sync.upstreamRemote === null
-            ? { mode: "list" }
-            : { mode: "edit", name: sync.upstreamRemote },
-        );
-        break;
-      case "addRemote":
-        onOpenRemotes({ mode: "add" });
-        break;
-    }
-  };
 
   const force =
     sync.forcePush &&
@@ -159,9 +139,6 @@ export function SyncToolbar({ sync, onOpenRemotes }: SyncToolbarProps) {
         onClose={() => setMenu(null)}
         fallbackFocus={rootRef}
       />
-      {sync.message !== null && (
-        <NetworkError message={sync.message} onAction={onAction} onDismiss={sync.dismissMessage} />
-      )}
       {sync.setUpstream !== null && (
         <SetUpstreamDialog
           remotes={sync.setUpstream.remotes}

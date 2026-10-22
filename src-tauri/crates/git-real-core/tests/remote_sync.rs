@@ -211,6 +211,166 @@ fn https_flag_follows_insteadof_rewrites() {
     assert!(fx.reopen().prepare_fetch().unwrap().https());
 }
 
+// ---------- fetch one remote (GR-12 follow-up W3) ----------
+
+#[test]
+fn prepare_fetch_remote_of_an_unknown_remote_is_remote_not_found() {
+    let fx = fx();
+    assert!(matches!(
+        fx.session.prepare_fetch_remote("nope"),
+        Err(GitError::RemoteNotFound(name)) if name == "nope"
+    ));
+}
+
+#[test]
+fn prepare_fetch_remote_without_any_remotes_is_remote_not_found_not_no_remotes() {
+    let (_d, _p, session) = plain();
+    assert!(matches!(
+        session.prepare_fetch_remote("origin"),
+        Err(GitError::RemoteNotFound(name)) if name == "origin"
+    ));
+}
+
+#[test]
+fn prepare_fetch_remote_with_a_leading_dash_is_remote_not_found() {
+    let fx = fx();
+    for name in ["-x", "--all", "--upload-pack=evil", "-"] {
+        assert!(
+            matches!(
+                fx.session.prepare_fetch_remote(name),
+                Err(GitError::RemoteNotFound(ref n)) if n == name
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn prepare_fetch_remote_with_an_empty_name_is_remote_not_found() {
+    let fx = fx();
+    assert!(matches!(
+        fx.session.prepare_fetch_remote(""),
+        Err(GitError::RemoteNotFound(name)) if name.is_empty()
+    ));
+}
+
+#[test]
+fn fetch_remote_updates_only_that_remotes_tracking_refs() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    let (_d, mirror_bare) = common::temp_bare_clone(&fx.path);
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("mirror", mirror_bare.to_str().unwrap())
+        .unwrap();
+    let before = fx.tracking();
+    fx.push_from_other("b.txt", "b\n"); // origin moved; a fetch of everything would see it
+    fx.reopen()
+        .prepare_fetch_remote("mirror")
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert!(tip(&fx.path, &format!("refs/remotes/mirror/{}", fx.head)).is_some());
+    assert_eq!(fx.tracking(), before);
+}
+
+#[test]
+fn fetch_remote_of_the_origin_does_not_create_other_remotes_tracking_refs() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    let (_d, mirror_bare) = common::temp_bare_clone(&fx.path);
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("mirror", mirror_bare.to_str().unwrap())
+        .unwrap();
+    let theirs = fx.push_from_other("b.txt", "b\n");
+    fx.reopen()
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert_eq!(fx.tracking().as_deref(), Some(theirs.as_str()));
+    assert_eq!(
+        tip(&fx.path, &format!("refs/remotes/mirror/{}", fx.head)),
+        None
+    );
+}
+
+#[test]
+fn fetch_remote_failure_is_network_failed_with_verb_fetch() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("gone", "/nonexistent/gone.git")
+        .unwrap();
+    let err = fx
+        .reopen()
+        .prepare_fetch_remote("gone")
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    let (verb, kind, https, stderr) = network_failure(err);
+    assert_eq!(
+        (verb, kind, https),
+        ("fetch", NetworkErrorKind::RepoNotFound, false),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn fetch_remote_https_flag_counts_only_that_remote() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("web", "https://example.test/me/x.git")
+        .unwrap();
+    let session = fx.reopen();
+    assert!(!session.prepare_fetch_remote("origin").unwrap().https());
+    assert!(session.prepare_fetch_remote("web").unwrap().https());
+}
+
+#[test]
+fn fetch_remote_https_flag_is_false_when_only_another_remote_is_https() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("ssh", "git@example.test:me/x.git")
+        .unwrap();
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("web", "https://example.test/me/x.git")
+        .unwrap();
+    assert!(!fx.reopen().prepare_fetch_remote("ssh").unwrap().https());
+}
+
+#[test]
+fn fetch_remote_https_flag_follows_insteadof_rewrites() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    Repository::open(&fx.path)
+        .unwrap()
+        .remote("gh", "gh:me/x.git")
+        .unwrap();
+    assert!(!fx.reopen().prepare_fetch_remote("gh").unwrap().https());
+    fx.set_config("url.https://github.com/.insteadOf", "gh:");
+    assert!(fx.reopen().prepare_fetch_remote("gh").unwrap().https());
+}
+
 // ---------- pull ----------
 
 #[test]

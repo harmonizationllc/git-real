@@ -57,6 +57,7 @@ describe("ipc barrel", () => {
     "pushTag",
     "deleteRemoteTag",
     "fetchAll",
+    "fetchRemote",
     "pullDefaultMode",
     "pull",
     "push",

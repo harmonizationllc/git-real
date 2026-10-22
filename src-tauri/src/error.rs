@@ -64,6 +64,11 @@ pub struct NetworkInfo {
     pub kind: NetworkErrorKind,
     pub https: bool,
     pub origin: Option<String>,
+    // `Box<str>` keeps `AppError` under clippy's `result_large_err` threshold (128 bytes).
+    /// The SSH host named by an SSH auth or host-key failure.
+    pub host: Option<Box<str>>,
+    /// The server's reason for a `remoteRejected` push.
+    pub reason: Option<Box<str>>,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -169,12 +174,15 @@ impl From<GitError> for AppError {
                 kind,
                 https,
                 origin,
+                detail,
                 ..
             } => Some(NetworkInfo {
                 verb: (*verb).to_owned(),
                 kind: *kind,
                 https: *https,
                 origin: origin.clone(),
+                host: detail.host.as_deref().map(Box::from),
+                reason: detail.reason.as_deref().map(Box::from),
             }),
             _ => None,
         };

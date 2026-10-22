@@ -39,3 +39,13 @@ export function remoteFieldError(
       return null;
   }
 }
+
+const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
+
+/** The sign-in dialog's note on what to type as the password, for `host` (any `:port` ignored). */
+export function tokenHint(host: string): string {
+  const name = host.replace(/:\d+$/, "").toLowerCase();
+  return GITHUB_HOSTS.has(name)
+    ? "GitHub needs a personal access token, not your account password."
+    : "Many hosts need a personal access token instead of your password.";
+}

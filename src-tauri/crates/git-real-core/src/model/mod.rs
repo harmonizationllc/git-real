@@ -30,7 +30,7 @@ pub use merge::{
 };
 pub use progress::{Progress, ProgressPhase};
 pub use recent::RecentEntry;
-pub use remote::{NetworkErrorKind, PullMode, PushTarget, RemoteInfo};
+pub use remote::{NetworkDetail, NetworkErrorKind, PullMode, PushTarget, RemoteInfo};
 pub use repo::RepoSummary;
 pub use stash::{StashEntry, StashFiles, StashOutcome};
 pub use status::{ChangeKind, StatusEntry, WorkingTreeStatus};

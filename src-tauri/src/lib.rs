@@ -87,6 +87,7 @@ pub fn run() {
             commands::tags::push_tag,
             commands::tags::delete_remote_tag,
             commands::remote::fetch,
+            commands::remote::fetch_remote,
             commands::remote::pull_default_mode,
             commands::remote::pull,
             commands::remote::push,

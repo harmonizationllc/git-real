@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::model::NetworkErrorKind;
+use crate::model::{NetworkDetail, NetworkErrorKind};
 
 /// Errors produced by the Git domain.
 #[derive(Debug, Error)]
@@ -113,6 +113,8 @@ pub enum GitError {
         https: bool,
         /// `scheme://host[:port]` git asked credentials for (HTTPS auth kinds only).
         origin: Option<String>,
+        /// The SSH host and the server's rejection reason, when known.
+        detail: Box<NetworkDetail>,
         code: Option<i32>,
         stdout: String,
         stderr: String,

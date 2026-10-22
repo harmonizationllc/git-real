@@ -12,9 +12,20 @@ pub enum NetworkErrorKind {
     HostKeyUnverified,
     HostUnreachable,
     RepoNotFound,
+    /// The server refused a ref (`[remote rejected]`), e.g. a hook or a push policy.
+    RemoteRejected,
     PushRejectedNonFastForward,
     LeaseStale,
     Other,
+}
+
+/// Extra facts about a network failure, boxed in `GitError::NetworkFailed` to keep the error small.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NetworkDetail {
+    /// The SSH host named by the failure (SSH auth and host-key kinds only).
+    pub host: Option<String>,
+    /// The server's reason for refusing the push (`RemoteRejected` only).
+    pub reason: Option<String>,
 }
 
 /// How a pull integrates the fetched upstream.

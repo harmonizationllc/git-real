@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 use std::process::Command;
 
 use git_real_core::remote::auth::{self, Credentials, HELPER, origin_of};
-use git_real_core::remote::classify::{auth_origin, classify};
+use git_real_core::remote::classify::{auth_origin, classify, rejection_reason};
 use git_real_core::{GitError, NetworkErrorKind as K};
 
 const TOKEN: &str = "TOPSECRET-123";
@@ -44,6 +44,11 @@ fn classifies_every_fixture() {
             K::PushRejectedNonFastForward,
         ),
         (fixture!("push_stale_info.txt"), K::LeaseStale),
+        (
+            fixture!("push_remote_rejected_gh007.txt"),
+            K::RemoteRejected,
+        ),
+        (fixture!("push_remote_rejected_hook.txt"), K::RemoteRejected),
         (fixture!("push_tag_exists.txt"), K::Other),
         (fixture!("remote_ref_missing.txt"), K::Other),
     ];
@@ -327,4 +332,184 @@ fn auth_origin_skips_a_fatal_line_with_an_unterminated_quote() {
 #[test]
 fn origin_of_rejects_an_ipv6_literal_without_a_closing_bracket() {
     assert_eq!(origin_of("https://[::1/r"), None);
+}
+
+// ---------- GR-12 follow-ups: W7 remote rejected ----------
+
+#[test]
+fn a_remote_rejected_line_alone_is_remote_rejected() {
+    assert_eq!(
+        classify(" ! [remote rejected] a -> b (hook declined)\n"),
+        K::RemoteRejected
+    );
+}
+
+// C7: a bare `remote: error:` line is not enough (servers also write it on fetch), only the
+// `[remote rejected]` ref status line is.
+#[test]
+fn a_bare_remote_error_line_is_not_remote_rejected() {
+    assert_eq!(classify("remote: error: no direct pushes\n"), K::Other);
+    assert_eq!(
+        classify(
+            "remote: error: upload-pack: not our ref abc\nfatal: remote error: upload-pack: not our ref abc\n"
+        ),
+        K::Other
+    );
+}
+
+#[test]
+fn a_remote_error_line_next_to_a_remote_rejected_line_is_remote_rejected() {
+    assert_eq!(
+        classify("remote: error: nope\n ! [remote rejected] a -> b (hook declined)\n"),
+        K::RemoteRejected
+    );
+}
+
+#[test]
+fn an_indented_or_mid_line_remote_error_is_not_remote_rejected() {
+    assert_eq!(classify("  remote: error: nope\n"), K::Other);
+    assert_eq!(classify("see remote: error: nope\n"), K::Other);
+}
+
+#[test]
+fn a_plain_remote_line_is_not_remote_rejected() {
+    assert_eq!(classify("remote: Resolving deltas\n"), K::Other);
+}
+
+#[test]
+fn auth_kinds_outrank_remote_rejected() {
+    let ssh = " ! [remote rejected] a -> b (x)\ngit@h: Permission denied (publickey).\n";
+    assert_eq!(classify(ssh), K::SshAuthFailed);
+    let https = " ! [remote rejected] a -> b (x)\nfatal: Authentication failed for 'https://h/x'\n";
+    assert_eq!(classify(https), K::HttpsAuthRejected);
+    let prompt = " ! [remote rejected] a -> b (x)\nfatal: could not read Username for 'https://h': terminal prompts disabled\n";
+    assert_eq!(classify(prompt), K::HttpsAuthRequired);
+    let host_key = " ! [remote rejected] a -> b (x)\nHost key verification failed.\n";
+    assert_eq!(classify(host_key), K::HostKeyUnverified);
+}
+
+#[test]
+fn remote_rejected_outranks_the_non_fast_forward_and_lease_kinds() {
+    let nff = " ! [remote rejected] a -> b (x)\n ! [rejected]        main -> main (fetch first)\n";
+    assert_eq!(classify(nff), K::RemoteRejected);
+    let stale =
+        " ! [remote rejected] a -> b (hook)\n ! [rejected]        main -> main (stale info)\n";
+    assert_eq!(classify(stale), K::RemoteRejected);
+}
+
+#[test]
+fn repo_not_found_outranks_remote_rejected() {
+    let text = " ! [remote rejected] a -> b (x)\nremote: Repository not found.\n";
+    assert_eq!(classify(text), K::RepoNotFound);
+}
+
+#[test]
+fn a_plain_rejection_is_still_not_remote_rejected() {
+    assert_eq!(
+        classify(" ! [rejected]        main -> main (fetch first)\n"),
+        K::PushRejectedNonFastForward
+    );
+}
+
+#[test]
+fn rejection_reason_prefers_the_first_remote_error_line_with_trailing_space_trimmed() {
+    assert_eq!(
+        rejection_reason(fixture!("push_remote_rejected_gh007.txt")).as_deref(),
+        Some("GH007: Your push would publish a private email address.")
+    );
+}
+
+#[test]
+fn rejection_reason_falls_back_to_the_parenthesised_reason() {
+    assert_eq!(
+        rejection_reason(fixture!("push_remote_rejected_hook.txt")).as_deref(),
+        Some("pre-receive hook declined")
+    );
+}
+
+#[test]
+fn rejection_reason_takes_the_first_of_several_remote_error_lines() {
+    assert_eq!(
+        rejection_reason("remote: error: first\nremote: error: second\n").as_deref(),
+        Some("first")
+    );
+}
+
+#[test]
+fn rejection_reason_prefers_a_remote_error_line_over_the_parenthesised_one() {
+    let text = " ! [remote rejected] a -> b (parenthesised)\nremote: error: spoken\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("spoken"));
+}
+
+#[test]
+fn rejection_reason_trims_the_text_after_the_prefix() {
+    assert_eq!(
+        rejection_reason("remote: error:    padded text \t \n").as_deref(),
+        Some("padded text")
+    );
+}
+
+#[test]
+fn rejection_reason_is_none_without_a_reason() {
+    assert_eq!(rejection_reason(""), None);
+    assert_eq!(rejection_reason(" ! [remote rejected] a -> b\n"), None);
+    assert_eq!(rejection_reason("remote: error:   \n"), None);
+    assert_eq!(rejection_reason("remote: Counting objects\n"), None);
+    assert_eq!(rejection_reason("  remote: error: indented\n"), None);
+}
+
+// Coverage audit: rejection_reason on mixed, realistic server output.
+#[test]
+fn rejection_reason_skips_an_empty_remote_error_line_for_the_next_one() {
+    let text = "remote: error:\nremote: error:   \nremote: error: the real reason\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("the real reason"));
+}
+
+#[test]
+fn rejection_reason_ignores_non_error_remote_lines_before_the_error() {
+    let text = "remote: Resolving deltas: 100%\nremote: warning: noisy\nremote: error: refused\n remote: error: indented\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("refused"));
+}
+
+#[test]
+fn rejection_reason_keeps_inner_parentheses_of_the_parenthesised_reason() {
+    let text = " ! [remote rejected] a -> b (hook (pre-receive) declined)\n";
+    assert_eq!(
+        rejection_reason(text).as_deref(),
+        Some("hook (pre-receive) declined")
+    );
+}
+
+#[test]
+fn rejection_reason_uses_only_the_remote_rejected_line_not_a_plain_rejected_one() {
+    let text =
+        " ! [rejected] a -> a (fetch first)\n ! [remote rejected] b -> b (protected branch)\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("protected branch"));
+}
+
+#[test]
+fn rejection_reason_is_none_for_an_unclosed_parenthesis_or_empty_reason() {
+    assert_eq!(
+        rejection_reason(" ! [remote rejected] a -> b (unclosed\n"),
+        None
+    );
+    assert_eq!(rejection_reason(" ! [remote rejected] a -> b ()\n"), None);
+    assert_eq!(
+        rejection_reason(" ! [remote rejected] a (no arrow)\n"),
+        None
+    );
+}
+
+#[test]
+fn rejection_reason_handles_crlf_line_endings() {
+    assert_eq!(
+        rejection_reason("remote: error: crlf reason\r\n").as_deref(),
+        Some("crlf reason")
+    );
+}
+
+#[test]
+fn remote_rejected_outranks_a_non_fast_forward_hint_on_another_ref() {
+    let text = " ! [rejected] a -> a (fetch first)\n ! [remote rejected] b -> b (hook declined)\n";
+    assert_eq!(classify(text), K::RemoteRejected);
 }

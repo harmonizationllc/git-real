@@ -379,6 +379,15 @@ export function fetchAll(id: RepoId, credentials: Credentials | null = null): Pr
   return invoke<void>("fetch", { id, credentials });
 }
 
+/** `git fetch <remote>`: one remote only. */
+export function fetchRemote(
+  id: RepoId,
+  remote: string,
+  credentials: Credentials | null = null,
+): Promise<void> {
+  return invoke<void>("fetch_remote", { id, remote, credentials });
+}
+
 /** `branch.<head>.rebase`, else `pull.rebase`, else merge. */
 export function pullDefaultMode(id: RepoId): Promise<PullMode> {
   return invoke<PullMode>("pull_default_mode", { id });

@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
-import { fetchAll } from "../../lib/ipc";
+import { fetchRemote } from "../../lib/ipc";
 import type { AppError, RemoteInfo, RepoId } from "../../lib/ipc";
 import { RepoError } from "../repo/RepoError";
 import { CredentialDialog } from "./CredentialDialog";
@@ -93,10 +93,11 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
 
   const dismissListError = () => setListError(null);
 
-  // The remote stays whatever the fetch does; a failure shows above the list.
-  const fetchAfterAdd = async () => {
+  // Fetches only the remote just added. It stays whatever the fetch does; a failure shows above
+  // the list.
+  const fetchAfterAdd = async (name: string) => {
     setFetching(true);
-    const result = await network.run((credentials) => fetchAll(repoId, credentials));
+    const result = await network.run((credentials) => fetchRemote(repoId, name, credentials));
     setFetching(false);
     if (result.status === "failed") setListError(result.error);
   };
@@ -112,7 +113,7 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
     if (error !== null) setFormError({ error, input });
     else {
       setView({ kind: "list", from: form });
-      if (fetchAfter) await fetchAfterAdd();
+      if (fetchAfter) await fetchAfterAdd(input.name);
     }
   };
 

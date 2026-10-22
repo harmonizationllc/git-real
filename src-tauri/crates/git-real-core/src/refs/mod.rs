@@ -225,11 +225,11 @@ impl RepoSession {
         }
     }
 
-    /// `RemoteNotFound` unless `remote` is configured. A name starting with `-`
+    /// `RemoteNotFound` unless `remote` is configured. An empty name, or one starting with `-`,
     /// is refused outright: `git push` would read it as a flag, and git itself
     /// never creates one.
     pub(crate) fn ensure_remote(&self, remote: &str) -> Result<(), GitError> {
-        if remote.starts_with('-') {
+        if remote.is_empty() || remote.starts_with('-') {
             return Err(GitError::RemoteNotFound(remote.to_owned()));
         }
         match self.repo().find_remote(remote) {

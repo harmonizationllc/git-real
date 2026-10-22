@@ -456,6 +456,7 @@ exit 128"#,
             code,
             stdout,
             stderr,
+            ..
         } => {
             assert_eq!(
                 (verb, kind, https, origin.as_deref(), code),
@@ -566,4 +567,383 @@ fn credentials_never_appear_in_a_network_error() {
     for text in [format!("{err:?}"), err.to_string()] {
         assert!(!text.contains(TOKEN), "{text}");
     }
+}
+
+// ---------- GR-12 follow-ups ----------
+
+const SECOND_URL: &str = "https://example.test/me/y.git";
+
+fn add_remote(path: &Path, name: &str, url: &str) {
+    Repository::open(path).unwrap().remote(name, url).unwrap();
+}
+
+fn set_origin_url(path: &Path, url: &str) {
+    Repository::open(path)
+        .unwrap()
+        .remote_set_url("origin", url)
+        .unwrap();
+}
+
+fn network_failed(err: GitError) -> (NetworkErrorKind, Option<String>, Option<String>) {
+    match err {
+        GitError::NetworkFailed { kind, detail, .. } => (kind, detail.host, detail.reason),
+        other => panic!("expected NetworkFailed, got {other:?}"),
+    }
+}
+
+const HOST_KEY_FAILURE: &str = "printf 'Host key verification failed.\\n' >&2\nexit 128";
+
+// W3: fetch_remote runs `git fetch <name>` and nothing else.
+#[test]
+fn fetch_remote_runs_fetch_with_only_the_remote_name() {
+    let (_d, _b, path, _h) = fixture();
+    add_remote(&path, "second", SECOND_URL);
+    session(&path)
+        .prepare_fetch_remote("second")
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert_eq!(after_workdir(&path), ["fetch", "second"]);
+}
+
+#[test]
+fn fetch_remote_without_credentials_sets_no_secrets_and_approves_nothing() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path)
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert_eq!(read(&path, "env.txt").unwrap(), "<unset>\n<unset>\n");
+    assert_eq!(read(&path, "approve-stdin.txt"), None);
+}
+
+#[test]
+fn fetch_remote_with_credentials_scopes_the_helper_and_keeps_the_token_out_of_argv() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path)
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    let mut want = auth_args("https://example.test");
+    want.push("fetch".into());
+    want.push("origin".into());
+    assert_eq!(after_workdir(&path), want);
+    assert!(!after_workdir(&path).iter().any(|a| a.contains(TOKEN)));
+}
+
+// The approve and https handling consider the fetched remote only: a second remote on the same
+// origin must not be approved by a fetch of the first.
+#[test]
+fn fetch_remote_approves_only_the_fetched_remotes_url() {
+    let (_d, _b, path, _h) = fixture();
+    add_remote(&path, "second", SECOND_URL);
+    session(&path)
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    assert_eq!(read(&path, "approve-stdin.txt").unwrap(), approved(URL));
+}
+
+#[test]
+fn fetch_remote_of_another_origin_approves_nothing_for_these_credentials() {
+    let (_d, _b, path, _h) = fixture();
+    add_remote(&path, "other", "https://elsewhere.test/me/z.git");
+    session(&path)
+        .prepare_fetch_remote("other")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    assert_eq!(read(&path, "approve-stdin.txt"), None);
+}
+
+#[test]
+fn a_failed_fetch_remote_never_approves_and_is_a_fetch_failure() {
+    let (_d, _b, path, _h) = fixture();
+    behaviour(&path, "exit 1");
+    let err = session(&path)
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            GitError::NetworkFailed {
+                verb: "fetch",
+                https: true,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(read(&path, "approve-stdin.txt"), None);
+}
+
+#[test]
+fn a_fetch_remote_failure_is_not_https_when_only_another_remote_is() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "/srv/local.git");
+    add_remote(&path, "web", SECOND_URL);
+    behaviour(&path, "exit 1");
+    let err = session(&path)
+        .prepare_fetch_remote("origin")
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::NetworkFailed { https: false, .. }),
+        "{err:?}"
+    );
+}
+
+// W4: the host for the SSH kinds.
+#[test]
+fn a_host_key_failure_names_the_host_from_stderr_first() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "git@url-host.test:me/x.git");
+    behaviour(
+        &path,
+        "printf 'No ED25519 host key is known for [stderr-host.test]:2222 and you have requested strict checking.\\nHost key verification failed.\\n' >&2\nexit 128",
+    );
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::HostKeyUnverified,
+            Some("stderr-host.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn a_host_key_failure_without_a_host_in_stderr_uses_the_only_remotes_scp_url() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "git@url-host.test:me/x.git");
+    behaviour(&path, HOST_KEY_FAILURE);
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::HostKeyUnverified,
+            Some("url-host.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn an_ssh_auth_failure_uses_the_ssh_url_host_with_a_port() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "ssh://git@url-host.test:2222/me/x.git");
+    behaviour(
+        &path,
+        "printf 'git@url-host.test: Permission denied (publickey).\\n' >&2\nexit 128",
+    );
+    let err = session(&path)
+        .prepare_pull()
+        .unwrap()
+        .fetch(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::SshAuthFailed,
+            Some("url-host.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn a_push_ssh_failure_uses_the_push_url_host() {
+    let (_d, _b, path, head) = fixture();
+    set_origin_url(&path, "git@fetch-host.test:me/x.git");
+    Repository::open(&path)
+        .unwrap()
+        .remote_set_pushurl("origin", Some("git@push-host.test:me/x.git"))
+        .unwrap();
+    behaviour(&path, HOST_KEY_FAILURE);
+    let err = session(&path)
+        .prepare_push(&PushTarget::Upstream, false, &head)
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::HostKeyUnverified,
+            Some("push-host.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn a_fetch_remote_ssh_failure_uses_that_remotes_url_host() {
+    let (_d, _b, path, _h) = fixture();
+    add_remote(&path, "mirror", "git@mirror-host.test:me/x.git");
+    behaviour(&path, HOST_KEY_FAILURE);
+    let err = session(&path)
+        .prepare_fetch_remote("mirror")
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::HostKeyUnverified,
+            Some("mirror-host.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn a_fetch_of_several_remotes_has_no_host_when_stderr_names_none() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "git@one.test:me/x.git");
+    add_remote(&path, "mirror", "git@two.test:me/x.git");
+    behaviour(&path, HOST_KEY_FAILURE);
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (NetworkErrorKind::HostKeyUnverified, None, None)
+    );
+}
+
+#[test]
+fn a_fetch_of_several_remotes_still_takes_the_host_from_stderr() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "git@one.test:me/x.git");
+    add_remote(&path, "mirror", "git@two.test:me/x.git");
+    behaviour(
+        &path,
+        "printf 'Host key for two.test has changed and you have requested strict checking.\\nHost key verification failed.\\n' >&2\nexit 128",
+    );
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::HostKeyUnverified,
+            Some("two.test".into()),
+            None
+        )
+    );
+}
+
+#[test]
+fn an_ssh_failure_on_a_non_ssh_remote_has_no_host() {
+    let (_d, _b, path, _h) = fixture();
+    behaviour(&path, HOST_KEY_FAILURE);
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (NetworkErrorKind::HostKeyUnverified, None, None)
+    );
+}
+
+#[test]
+fn a_non_ssh_kind_has_no_host_even_on_an_ssh_remote() {
+    let (_d, _b, path, _h) = fixture();
+    set_origin_url(&path, "git@url-host.test:me/x.git");
+    behaviour(
+        &path,
+        "printf 'ssh: Could not resolve hostname url-host.test: Name or service not known\\n' >&2\nexit 128",
+    );
+    let err = session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (NetworkErrorKind::HostUnreachable, None, None)
+    );
+}
+
+// W7: the reason, for RemoteRejected only.
+#[test]
+fn a_remote_rejected_push_carries_the_remote_error_line_as_its_reason() {
+    let (_d, _b, path, head) = fixture();
+    behaviour(
+        &path,
+        "cat >&2 <<'EOF'\nremote: error: GH007: Your push would publish a private email address.        \n ! [remote rejected] a -> a (push declined due to email privacy restrictions)\nEOF\nexit 1",
+    );
+    let err = session(&path)
+        .prepare_push(&PushTarget::Upstream, false, &head)
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::RemoteRejected,
+            None,
+            Some("GH007: Your push would publish a private email address.".into())
+        )
+    );
+}
+
+#[test]
+fn a_hook_declined_push_carries_the_parenthesised_reason() {
+    let (_d, _b, path, head) = fixture();
+    behaviour(
+        &path,
+        "printf ' ! [remote rejected] main -> main (pre-receive hook declined)\\n' >&2\nexit 1",
+    );
+    let err = session(&path)
+        .prepare_push(&PushTarget::Upstream, false, &head)
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (
+            NetworkErrorKind::RemoteRejected,
+            None,
+            Some("pre-receive hook declined".into())
+        )
+    );
+}
+
+#[test]
+fn a_failure_that_is_not_remote_rejected_has_no_reason() {
+    let (_d, _b, path, head) = fixture();
+    behaviour(
+        &path,
+        "printf ' ! [rejected]        HEAD -> main (fetch first)\\n' >&2\nexit 1",
+    );
+    let err = session(&path)
+        .prepare_push(&PushTarget::Upstream, false, &head)
+        .unwrap()
+        .run(None)
+        .unwrap_err();
+    assert_eq!(
+        network_failed(err),
+        (NetworkErrorKind::PushRejectedNonFastForward, None, None)
+    );
 }

@@ -1,4 +1,4 @@
-import type { AppError, NetworkErrorKind } from "../../lib/ipc";
+import type { AppError, NetworkErrorInfo, NetworkErrorKind } from "../../lib/ipc";
 
 export type MessageAction = "pull" | "fetch" | "editRemote" | "addRemote";
 
@@ -18,19 +18,12 @@ const SIGN_IN: Copy = {
   action: null,
 };
 
-const BY_KIND: Record<Exclude<NetworkErrorKind, "other">, Copy> = {
+const BY_KIND: Record<
+  Exclude<NetworkErrorKind, "other" | "hostKeyUnverified" | "remoteRejected" | "sshAuthFailed">,
+  Copy
+> = {
   httpsAuthRequired: SIGN_IN,
   httpsAuthRejected: SIGN_IN,
-  sshAuthFailed: {
-    title: "SSH key was refused",
-    hint: "Add your key to the agent with ssh-add, and check it is registered with the host.",
-    action: null,
-  },
-  hostKeyUnverified: {
-    title: "Host key not trusted",
-    hint: "Connect once from a terminal (ssh -T <host>) to verify and save the host key.",
-    action: null,
-  },
   hostUnreachable: {
     title: "Could not reach the remote",
     hint: "Check your network connection and the remote URL.",
@@ -53,13 +46,45 @@ const BY_KIND: Record<Exclude<NetworkErrorKind, "other">, Copy> = {
   },
 };
 
+function hostKeyHint(host: string | null): string {
+  return host === null
+    ? "Connect once from a terminal with ssh to verify and save this host's key."
+    : `Connect once from a terminal (ssh -T git@${host}) to verify and save the host key.`;
+}
+
+function sshAuthHint(host: string | null): string {
+  return `Add your key to the agent with ssh-add, and check it is registered with ${host ?? "the host"}.`;
+}
+
+const REASON_LIMIT = 200;
+
+function reasonHint(reason: string): string {
+  return reason.length > REASON_LIMIT ? `${reason.slice(0, REASON_LIMIT).trimEnd()}…` : reason;
+}
+
+function networkCopy({ kind, verb, host, reason }: NetworkErrorInfo): Copy {
+  switch (kind) {
+    case "other":
+      return { title: `git ${verb} failed`, hint: null, action: null };
+    case "hostKeyUnverified":
+      return { title: "Host key not trusted", hint: hostKeyHint(host), action: null };
+    case "sshAuthFailed":
+      return { title: "SSH key was refused", hint: sshAuthHint(host), action: null };
+    case "remoteRejected":
+      return {
+        title: "The remote rejected the push",
+        hint: reason === null ? "See Details for the remote's message." : reasonHint(reason),
+        action: null,
+      };
+    default:
+      return BY_KIND[kind];
+  }
+}
+
 /** What to tell the user about a failed network or sync action. */
 export function networkMessage(error: AppError): NetworkMessage {
   if (error.kind === "networkFailed" && error.network) {
-    const { kind, verb } = error.network;
-    const copy: Copy =
-      kind === "other" ? { title: `git ${verb} failed`, hint: null, action: null } : BY_KIND[kind];
-    return { ...copy, details: error.message };
+    return { ...networkCopy(error.network), details: error.message };
   }
   switch (error.kind) {
     case "noRemotes":
@@ -67,6 +92,13 @@ export function networkMessage(error: AppError): NetworkMessage {
         title: "No remotes configured",
         hint: "Add a remote to fetch, pull or push.",
         action: { kind: "addRemote", label: "Add remote…" },
+        details: null,
+      };
+    case "operationInProgress":
+      return {
+        title: "Another operation is in progress",
+        hint: "Finish or abort it, then try again.",
+        action: null,
         details: null,
       };
     case "detachedHead":

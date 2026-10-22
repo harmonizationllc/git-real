@@ -1,0 +1,3 @@
+To /srv/bare.git
+ ! [remote rejected] main -> main (pre-receive hook declined)
+error: failed to push some refs to '/srv/bare.git'

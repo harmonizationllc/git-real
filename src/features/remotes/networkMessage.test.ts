@@ -7,7 +7,10 @@ import { networkMessage } from "./networkMessage";
 // and git's output goes to details.
 describe("networkMessage classified failures", () => {
   const cases: [
-    Exclude<NetworkErrorKind, "other" | "httpsAuthRequired" | "httpsAuthRejected">,
+    Exclude<
+      NetworkErrorKind,
+      "other" | "httpsAuthRequired" | "httpsAuthRejected" | "remoteRejected"
+    >,
     { title: string; hint: string; action: { kind: string; label: string } | null },
   ][] = [
     [
@@ -22,7 +25,7 @@ describe("networkMessage classified failures", () => {
       "hostKeyUnverified",
       {
         title: "Host key not trusted",
-        hint: "Connect once from a terminal (ssh -T <host>) to verify and save the host key.",
+        hint: "Connect once from a terminal with ssh to verify and save this host's key.",
         action: null,
       },
     ],
@@ -110,6 +113,131 @@ describe("networkMessage sign-in", () => {
   });
 });
 
+// Contract (W4): the host-key hint names the real host when the core found one, otherwise it
+// falls back to generic copy with no placeholder.
+describe("networkMessage host key", () => {
+  it("should name the host in the ssh command when the host is known", () => {
+    const error = networkError("hostKeyUnverified", { host: "github.com" });
+    expect(networkMessage(error).hint).toBe(
+      "Connect once from a terminal (ssh -T git@github.com) to verify and save the host key.",
+    );
+  });
+
+  it("should name a host with a non-default name verbatim", () => {
+    const error = networkError("hostKeyUnverified", { host: "git.example.org" });
+    expect(networkMessage(error).hint).toContain("ssh -T git@git.example.org)");
+  });
+
+  it("should fall back to generic copy when the host is null", () => {
+    const error = networkError("hostKeyUnverified", { host: null });
+    expect(networkMessage(error).hint).toBe(
+      "Connect once from a terminal with ssh to verify and save this host's key.",
+    );
+  });
+
+  it("should never show a literal <host> placeholder", () => {
+    for (const host of [null, "github.com"]) {
+      const hint = networkMessage(networkError("hostKeyUnverified", { host })).hint;
+      expect(hint).not.toContain("<host>");
+    }
+  });
+});
+
+// Contract (W7): a remote-rejected push shows a fixed title, the server's reason as the hint
+// (or a pointer to Details), and git's whole output under Details.
+describe("networkMessage remote rejected", () => {
+  it("should use the reason as the hint", () => {
+    const reason = "GH007: Your push would publish a private email address.";
+    expect(networkMessage(networkError("remoteRejected", { reason }))).toEqual({
+      title: "The remote rejected the push",
+      hint: reason,
+      action: null,
+      details: "git output",
+    });
+  });
+
+  it("should point to Details when there is no reason", () => {
+    expect(networkMessage(networkError("remoteRejected", { reason: null }))).toEqual({
+      title: "The remote rejected the push",
+      hint: "See Details for the remote's message.",
+      action: null,
+      details: "git output",
+    });
+  });
+});
+
+// Contract (M3): a long remote-rejected reason is cut to its first 200 characters, trimmed, plus
+// an ellipsis; 200 characters or fewer are shown unchanged.
+describe("networkMessage remote rejected reason length", () => {
+  const hintFor = (reason: string) =>
+    networkMessage(networkError("remoteRejected", { reason })).hint;
+
+  it("should cut a 201-character reason to its first 200 characters plus an ellipsis", () => {
+    const reason = "a".repeat(201);
+    expect(hintFor(reason)).toBe(`${"a".repeat(200)}…`);
+  });
+
+  it("should trim trailing whitespace from the cut before adding the ellipsis", () => {
+    const reason = `${"a".repeat(195)}     bbbbbbbb`;
+    expect(hintFor(reason)).toBe(`${"a".repeat(195)}…`);
+  });
+
+  it("should cut a much longer reason to 200 characters plus an ellipsis", () => {
+    expect(hintFor("x".repeat(1000))).toBe(`${"x".repeat(200)}…`);
+  });
+
+  it("should leave a reason of exactly 200 characters unchanged", () => {
+    const reason = "a".repeat(200);
+    expect(hintFor(reason)).toBe(reason);
+  });
+
+  it("should leave a short reason unchanged", () => {
+    expect(hintFor("pre-receive hook declined")).toBe("pre-receive hook declined");
+  });
+
+  it("should keep the full stderr under details when the reason is cut", () => {
+    const error = networkError("remoteRejected", { reason: "a".repeat(300) });
+    expect(networkMessage(error).details).toBe("git output");
+  });
+});
+
+// Contract (M4): the ssh auth hint names the host when known, else keeps the generic text.
+describe("networkMessage ssh auth host", () => {
+  it("should name the host in the hint when the host is known", () => {
+    const error = networkError("sshAuthFailed", { host: "github.com" });
+    expect(networkMessage(error).hint).toBe(
+      "Add your key to the agent with ssh-add, and check it is registered with github.com.",
+    );
+  });
+
+  it("should keep the existing hint when the host is null", () => {
+    const error = networkError("sshAuthFailed", { host: null });
+    expect(networkMessage(error).hint).toBe(
+      "Add your key to the agent with ssh-add, and check it is registered with the host.",
+    );
+  });
+});
+
+// Contract (W2): the core's operationInProgress (a race, or the push branch guard) gets a titled
+// message rather than the raw error string.
+describe("networkMessage operation in progress", () => {
+  it("should give a titled message with a finish-or-abort hint", () => {
+    expect(
+      networkMessage({ kind: "operationInProgress", message: "a merge is in progress" }),
+    ).toEqual({
+      title: "Another operation is in progress",
+      hint: "Finish or abort it, then try again.",
+      action: null,
+      details: null,
+    });
+  });
+
+  it("should not show the raw message as the title", () => {
+    const { title } = networkMessage({ kind: "operationInProgress", message: "raw text" });
+    expect(title).not.toBe("raw text");
+  });
+});
+
 // Contract: errors raised before any network call have their own copy.
 describe("networkMessage non-network kinds", () => {
   it("should offer Add remote… when there are no remotes", () => {
@@ -131,7 +259,7 @@ describe("networkMessage non-network kinds", () => {
   });
 
   it("should show the error's own message for any other kind", () => {
-    expect(networkMessage({ kind: "operationInProgress", message: "m" })).toEqual({
+    expect(networkMessage({ kind: "invalidBranchName", message: "m" })).toEqual({
       title: "m",
       hint: null,
       action: null,
