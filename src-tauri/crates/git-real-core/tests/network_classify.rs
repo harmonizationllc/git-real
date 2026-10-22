@@ -297,3 +297,34 @@ fn the_helper_is_the_verified_printf_form() {
         r#"!f() { test "$1" = get || return 0; printf '%s\n' "username=$GR_USERNAME" "password=$GR_TOKEN"; }; f"#
     );
 }
+
+#[test]
+fn origin_of_accepts_an_ipv6_literal_with_an_embedded_ipv4_dotted_quad() {
+    assert_eq!(
+        origin_of("https://[::ffff:1.2.3.4]:8443/r").as_deref(),
+        Some("https://[::ffff:1.2.3.4]:8443")
+    );
+}
+
+#[test]
+fn origin_of_rejects_ipv6_literals_with_non_hex_characters() {
+    assert_eq!(origin_of("https://[::g]/r"), None);
+    assert_eq!(origin_of("https://[::1 ]/r"), None);
+}
+
+#[test]
+fn auth_origin_skips_a_fatal_line_with_an_unterminated_quote() {
+    assert_eq!(
+        auth_origin(
+            "fatal: could not read Username for 'https://broken.test\n\
+             fatal: Authentication failed for 'https://good.test/x'\n"
+        )
+        .as_deref(),
+        Some("https://good.test")
+    );
+}
+
+#[test]
+fn origin_of_rejects_an_ipv6_literal_without_a_closing_bracket() {
+    assert_eq!(origin_of("https://[::1/r"), None);
+}

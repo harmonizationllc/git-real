@@ -1037,3 +1037,20 @@ fn remove_remote_deletes_tracking_refs_and_upstream_config() {
         Err(GitError::RemoteNotFound(_))
     ));
 }
+
+#[test]
+fn integrate_pull_propagates_a_git2_error_when_head_is_corrupt() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    fx.push_from_other("b.txt", "b\n");
+    let pull = fx.session.prepare_pull().unwrap();
+    pull.fetch(None).unwrap();
+    std::fs::write(fx.path.join(".git").join("HEAD"), "not a valid head\n").unwrap();
+    let err = fx
+        .session
+        .integrate_pull(&pull, PullMode::Merge)
+        .unwrap_err();
+    assert!(matches!(err, GitError::Git2(_)), "{err:?}");
+}
