@@ -1017,22 +1017,31 @@ describe("remote command wrappers", () => {
     await expect(pull(2, "merge")).resolves.toBe("conflicts");
   });
 
-  it("push sends target, force and credentials", async () => {
+  it("push sends target, force, expectedBranch and credentials", async () => {
     const calls = mockWith(null);
     const target = { kind: "setUpstream", remote: "origin", branch: "b" } as const;
-    await push(2, target, true, creds);
+    await push(2, target, true, "main", creds);
     expect(calls).toEqual([
-      { cmd: "push", args: { id: 2, target, force: true, credentials: creds } },
+      {
+        cmd: "push",
+        args: { id: 2, target, force: true, expectedBranch: "main", credentials: creds },
+      },
     ]);
   });
 
   it("push sends null credentials by default", async () => {
     const calls = mockWith(null);
-    await push(2, { kind: "upstream" }, false);
+    await push(2, { kind: "upstream" }, false, "main");
     expect(calls).toEqual([
       {
         cmd: "push",
-        args: { id: 2, target: { kind: "upstream" }, force: false, credentials: null },
+        args: {
+          id: 2,
+          target: { kind: "upstream" },
+          force: false,
+          expectedBranch: "main",
+          credentials: null,
+        },
       },
     ]);
   });

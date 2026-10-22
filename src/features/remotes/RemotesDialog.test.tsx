@@ -78,10 +78,8 @@ describe("RemotesDialog list", () => {
   it("titles the dialog Remotes and lists each remote's name and fetch URL", async () => {
     remotes = [remoteInfo("origin"), remoteInfo("up", { fetchUrl: "https://x/up.git" })];
     renderDialog();
-    expect(await screen.findByRole("dialog", { name: "Remotes" })).toHaveAttribute(
-      "aria-modal",
-      "true",
-    );
+    await screen.findByRole("list", { name: "Remotes" });
+    expect(screen.getByRole("dialog", { name: "Remotes" })).toHaveAttribute("aria-modal", "true");
     const items = within(screen.getByRole("list", { name: "Remotes" })).getAllByRole("listitem");
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent("origin");
@@ -864,6 +862,13 @@ describe("RemotesDialog busy state", () => {
 
 // Contract (architect R9): an edit target waits for the list, then opens the prefilled form or resolves to the list once.
 describe("RemotesDialog edit target loading", () => {
+  it("keeps role dialog with its name and aria-modal while Loading remotes… shows", () => {
+    vi.mocked(listRemotes).mockReturnValue(new Promise<RemoteInfo[]>(() => undefined));
+    renderDialog();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading remotes…");
+    expect(screen.getByRole("dialog", { name: "Remotes" })).toHaveAttribute("aria-modal", "true");
+  });
+
   it("shows Loading remotes… until the list arrives, then the prefilled form", async () => {
     let resolve!: (r: RemoteInfo[]) => void;
     vi.mocked(listRemotes).mockReturnValue(new Promise<RemoteInfo[]>((r) => (resolve = r)));

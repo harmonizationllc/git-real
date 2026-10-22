@@ -132,31 +132,40 @@ fn pull_fetches_only_the_upstream_remote() {
 fn push_to_the_upstream_names_the_remote_branch() {
     let (_d, _b, path, head) = fixture();
     session(&path)
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &head)
         .unwrap()
         .run(None)
         .unwrap();
     assert_eq!(
         after_workdir(&path),
-        ["push", "origin", &format!("HEAD:refs/heads/{head}")]
+        [
+            "push",
+            "origin",
+            &format!("refs/heads/{head}:refs/heads/{head}")
+        ]
     );
 }
 
 #[test]
 fn set_upstream_push_adds_dash_u() {
-    let (_d, _b, path, _h) = fixture();
+    let (_d, _b, path, head) = fixture();
     let target = PushTarget::SetUpstream {
         remote: "origin".into(),
         branch: "topic/x".into(),
     };
     session(&path)
-        .prepare_push(&target, false)
+        .prepare_push(&target, false, &head)
         .unwrap()
         .run(None)
         .unwrap();
     assert_eq!(
         after_workdir(&path),
-        ["push", "-u", "origin", "HEAD:refs/heads/topic/x"]
+        [
+            "push",
+            "-u",
+            "origin",
+            &format!("refs/heads/{head}:refs/heads/topic/x")
+        ]
     );
 }
 
@@ -168,7 +177,7 @@ fn force_push_carries_the_lease_before_the_remote() {
         .refname_to_id(&format!("refs/remotes/origin/{head}"))
         .unwrap();
     session(&path)
-        .prepare_push(&PushTarget::Upstream, true)
+        .prepare_push(&PushTarget::Upstream, true, &head)
         .unwrap()
         .run(None)
         .unwrap();
@@ -178,20 +187,20 @@ fn force_push_carries_the_lease_before_the_remote() {
             "push",
             &format!("--force-with-lease=refs/heads/{head}:{oid}"),
             "origin",
-            &format!("HEAD:refs/heads/{head}")
+            &format!("refs/heads/{head}:refs/heads/{head}")
         ]
     );
 }
 
 #[test]
 fn set_upstream_force_push_without_a_tracking_ref_uses_an_empty_lease() {
-    let (_d, _b, path, _h) = fixture();
+    let (_d, _b, path, head) = fixture();
     let target = PushTarget::SetUpstream {
         remote: "origin".into(),
         branch: "fresh".into(),
     };
     session(&path)
-        .prepare_push(&target, true)
+        .prepare_push(&target, true, &head)
         .unwrap()
         .run(None)
         .unwrap();
@@ -202,7 +211,7 @@ fn set_upstream_force_push_without_a_tracking_ref_uses_an_empty_lease() {
             "-u",
             "--force-with-lease=refs/heads/fresh:",
             "origin",
-            "HEAD:refs/heads/fresh"
+            &format!("refs/heads/{head}:refs/heads/fresh")
         ]
     );
 }
@@ -225,6 +234,44 @@ fn fetch_with_credentials_scopes_the_helper_and_keeps_the_token_out_of_argv() {
     assert_eq!(
         read(&path, "helper-out.txt").unwrap(),
         format!("username=me\npassword={TOKEN}\n")
+    );
+}
+
+/// A remote URL holding `control` on the credentials' origin, next to a clean mirror
+/// (so the approve harness demonstrably works): only the mirror may be approved.
+fn approved_inputs_with_a_url_containing(control: char) -> String {
+    let (_d, _b, path, _h) = fixture();
+    let evil = format!("https://example.test/me/x.git{control}host=evil.test");
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.remote("mirror", "https://example.test/me/mirror.git")
+            .unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("remote.origin.url", &evil).unwrap();
+    }
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    read(&path, "approve-stdin.txt").unwrap_or_default()
+}
+
+// Credential-protocol injection defence: a URL with a line break would add its own
+// key=value lines to the approve input, so it is never approved.
+#[test]
+fn a_url_with_a_newline_is_never_sent_to_credential_approve() {
+    assert_eq!(
+        approved_inputs_with_a_url_containing('\n'),
+        approved("https://example.test/me/mirror.git")
+    );
+}
+
+#[test]
+fn a_url_with_a_carriage_return_is_never_sent_to_credential_approve() {
+    assert_eq!(
+        approved_inputs_with_a_url_containing('\r'),
+        approved("https://example.test/me/mirror.git")
     );
 }
 
@@ -315,7 +362,7 @@ fn push_with_credentials_approves_the_push_url_only() {
         .unwrap();
     let push_creds = Credentials::new("https://push.example.test", "me", TOKEN).unwrap();
     session(&path)
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &head)
         .unwrap()
         .run(Some(&push_creds))
         .unwrap();
@@ -432,13 +479,13 @@ exit 128"#,
 
 #[test]
 fn a_non_auth_failure_has_no_origin() {
-    let (_d, _b, path, _h) = fixture();
+    let (_d, _b, path, head) = fixture();
     behaviour(
         &path,
         "printf ' ! [rejected]        HEAD -> main (fetch first)\\n' >&2\nexit 1",
     );
     let err = session(&path)
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &head)
         .unwrap()
         .run(None)
         .unwrap_err();

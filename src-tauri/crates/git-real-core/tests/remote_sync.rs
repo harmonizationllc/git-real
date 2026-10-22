@@ -285,7 +285,7 @@ fn prepare_pull_and_push_on_an_unborn_head_are_unborn_head() {
     let session = RepoSession::open(&path).unwrap();
     assert!(matches!(session.prepare_pull(), Err(GitError::UnbornHead)));
     assert!(matches!(
-        session.prepare_push(&PushTarget::Upstream, false),
+        session.prepare_push(&PushTarget::Upstream, false, "main"),
         Err(GitError::UnbornHead)
     ));
 }
@@ -302,21 +302,22 @@ fn prepare_pull_and_push_on_a_detached_head_are_detached_head() {
         Err(GitError::DetachedHead)
     ));
     assert!(matches!(
-        session.prepare_push(&PushTarget::Upstream, false),
+        session.prepare_push(&PushTarget::Upstream, false, "main"),
         Err(GitError::DetachedHead)
     ));
     assert!(matches!(
-        session.prepare_push(&set_upstream("origin", "b"), true),
+        session.prepare_push(&set_upstream("origin", "b"), true, "main"),
         Err(GitError::DetachedHead)
     ));
 }
 
 #[test]
 fn prepare_pull_and_push_without_an_upstream_are_no_upstream() {
-    let (_d, _p, session) = plain();
+    let (_d, path, session) = plain();
+    let head = common::head_branch_name(&path);
     assert!(matches!(session.prepare_pull(), Err(GitError::NoUpstream)));
     assert!(matches!(
-        session.prepare_push(&PushTarget::Upstream, false),
+        session.prepare_push(&PushTarget::Upstream, false, &head),
         Err(GitError::NoUpstream)
     ));
 }
@@ -338,7 +339,7 @@ fn an_upstream_on_the_local_repository_is_no_upstream() {
     let session = RepoSession::open(&path).unwrap();
     assert!(matches!(session.prepare_pull(), Err(GitError::NoUpstream)));
     assert!(matches!(
-        session.prepare_push(&PushTarget::Upstream, false),
+        session.prepare_push(&PushTarget::Upstream, false, &head),
         Err(GitError::NoUpstream)
     ));
 }
@@ -362,7 +363,7 @@ fn an_upstream_on_a_remote_that_is_not_configured_is_remote_not_found() {
     let session = RepoSession::open(&path).unwrap();
     assert!(matches!(session.prepare_pull(), Err(GitError::RemoteNotFound(r)) if r == "gone"));
     assert!(matches!(
-        session.prepare_push(&PushTarget::Upstream, false),
+        session.prepare_push(&PushTarget::Upstream, false, &head),
         Err(GitError::RemoteNotFound(r)) if r == "gone"
     ));
 }
@@ -551,26 +552,27 @@ fn pull_https_flag_follows_the_upstream_remote_url() {
 #[test]
 fn prepare_set_upstream_push_checks_the_remote_then_the_branch_name() {
     let (_d, path, _s) = plain();
+    let head = common::head_branch_name(&path);
     Repository::open(&path)
         .unwrap()
         .remote("origin", "/srv/x.git")
         .unwrap();
     let session = RepoSession::open(&path).unwrap();
     assert!(
-        matches!(session.prepare_push(&set_upstream("nope", "b"), false), Err(GitError::RemoteNotFound(r)) if r == "nope")
+        matches!(session.prepare_push(&set_upstream("nope", "b"), false, &head), Err(GitError::RemoteNotFound(r)) if r == "nope")
     );
     assert!(matches!(
-        session.prepare_push(&set_upstream("-x", "b"), false),
+        session.prepare_push(&set_upstream("-x", "b"), false, &head),
         Err(GitError::RemoteNotFound(_))
     ));
     assert!(matches!(
-        session.prepare_push(&set_upstream("nope", "bad..name"), false),
+        session.prepare_push(&set_upstream("nope", "bad..name"), false, &head),
         Err(GitError::RemoteNotFound(_))
     ));
     for bad in ["bad..name", "-b", ""] {
         assert!(
             matches!(
-                session.prepare_push(&set_upstream("origin", bad), false),
+                session.prepare_push(&set_upstream("origin", bad), false, &head),
                 Err(GitError::InvalidBranchName(_))
             ),
             "{bad:?}"
@@ -587,7 +589,7 @@ fn push_sends_head_to_the_upstream_branch() {
     let ours = fx.commit_here("c.txt", "c\n");
     let push = fx
         .session
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &fx.head)
         .unwrap();
     assert_eq!(
         (push.remote(), push.branch(), push.lease()),
@@ -596,6 +598,103 @@ fn push_sends_head_to_the_upstream_branch() {
     assert!(!push.https());
     push.run(None).unwrap();
     assert_eq!(fx.bare_tip(&fx.head).as_deref(), Some(ours.as_str()));
+}
+
+// I1: the push names the branch the caller saw. When HEAD is on another branch it is
+// OperationInProgress and nothing reaches the remote.
+fn fx_on_another_branch() -> (Fx, String) {
+    let fx = fx();
+    fx.session
+        .create_and_checkout_branch("other", None)
+        .unwrap();
+    let before = fx.bare_tip(&fx.head).unwrap();
+    fx.commit_here("o.txt", "o\n");
+    (fx, before)
+}
+
+#[test]
+fn push_is_operation_in_progress_when_head_is_not_the_expected_branch() {
+    let (fx, _) = fx_on_another_branch();
+    assert!(matches!(
+        fx.session
+            .prepare_push(&PushTarget::Upstream, false, &fx.head),
+        Err(GitError::OperationInProgress)
+    ));
+}
+
+#[test]
+fn force_push_is_operation_in_progress_when_head_is_not_the_expected_branch() {
+    let (fx, _) = fx_on_another_branch();
+    assert!(matches!(
+        fx.session
+            .prepare_push(&PushTarget::Upstream, true, &fx.head),
+        Err(GitError::OperationInProgress)
+    ));
+}
+
+#[test]
+fn set_upstream_push_is_operation_in_progress_when_head_is_not_the_expected_branch() {
+    let (fx, _) = fx_on_another_branch();
+    assert!(matches!(
+        fx.session
+            .prepare_push(&set_upstream("origin", "topic-pub"), false, &fx.head),
+        Err(GitError::OperationInProgress)
+    ));
+}
+
+#[test]
+fn a_mismatched_push_leaves_the_remote_untouched() {
+    if !common::git_available() {
+        return;
+    }
+    let (fx, before) = fx_on_another_branch();
+    let _ = fx
+        .session
+        .prepare_push(&PushTarget::Upstream, true, &fx.head)
+        .and_then(|p| p.run(None));
+    let _ = fx
+        .session
+        .prepare_push(&set_upstream("origin", "topic-pub"), false, &fx.head)
+        .and_then(|p| p.run(None));
+    assert_eq!(
+        (
+            fx.bare_tip(&fx.head),
+            fx.bare_tip("topic-pub"),
+            fx.bare_tip("other")
+        ),
+        (Some(before), None, None)
+    );
+}
+
+#[test]
+fn the_expected_branch_check_comes_before_the_upstream_check() {
+    let (fx, _) = fx_on_another_branch();
+    // "other" has no upstream: a matching push would be NoUpstream, a mismatching one is not.
+    assert!(matches!(
+        fx.session
+            .prepare_push(&PushTarget::Upstream, false, "other"),
+        Err(GitError::NoUpstream)
+    ));
+    assert!(matches!(
+        fx.session
+            .prepare_push(&PushTarget::Upstream, false, "nope"),
+        Err(GitError::OperationInProgress)
+    ));
+}
+
+#[test]
+fn set_upstream_push_of_the_expected_branch_publishes_that_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let (fx, _) = fx_on_another_branch();
+    let ours = fx.head_oid();
+    fx.session
+        .prepare_push(&set_upstream("origin", "other-pub"), false, "other")
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert_eq!(fx.bare_tip("other-pub").as_deref(), Some(ours.as_str()));
 }
 
 #[test]
@@ -619,7 +718,7 @@ fn push_to_an_upstream_with_another_name_updates_that_branch() {
     let ours = fx.commit_here("c.txt", "c\n");
     let push = fx
         .reopen()
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &fx.head)
         .unwrap();
     assert_eq!(push.branch(), "published");
     push.run(None).unwrap();
@@ -639,7 +738,7 @@ fn set_upstream_push_publishes_the_branch_and_records_the_upstream() {
     let ours = fx.commit_here("t.txt", "t\n");
     let push = fx
         .session
-        .prepare_push(&set_upstream("origin", "topic-pub"), false)
+        .prepare_push(&set_upstream("origin", "topic-pub"), false, &fx.head)
         .unwrap();
     assert_eq!(
         (push.remote(), push.branch(), push.lease()),
@@ -670,7 +769,7 @@ fn push_behind_the_remote_is_push_rejected_non_fast_forward() {
     fx.commit_here("c.txt", "c\n");
     let err = fx
         .session
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &fx.head)
         .unwrap()
         .run(None)
         .unwrap_err();
@@ -684,7 +783,7 @@ fn push_behind_the_remote_is_push_rejected_non_fast_forward() {
     fx.fetch();
     let err = fx
         .session
-        .prepare_push(&PushTarget::Upstream, false)
+        .prepare_push(&PushTarget::Upstream, false, &fx.head)
         .unwrap()
         .run(None)
         .unwrap_err();
@@ -704,7 +803,7 @@ fn force_push_with_a_holding_lease_replaces_the_remote_branch() {
     let ours = fx.commit_here("c.txt", "c\n");
     let push = fx
         .session
-        .prepare_push(&PushTarget::Upstream, true)
+        .prepare_push(&PushTarget::Upstream, true, &fx.head)
         .unwrap();
     assert_eq!(
         push.lease(),
@@ -723,7 +822,7 @@ fn force_push_is_lease_stale_when_the_remote_moved_after_the_last_fetch() {
     fx.commit_here("c.txt", "c\n");
     let push = fx
         .session
-        .prepare_push(&PushTarget::Upstream, true)
+        .prepare_push(&PushTarget::Upstream, true, &fx.head)
         .unwrap();
     let theirs = fx.push_from_other("b.txt", "b\n");
     let (_, kind, _, stderr) = network_failure(push.run(None).unwrap_err());
@@ -745,7 +844,7 @@ fn force_push_without_a_tracking_ref_is_lease_stale_when_the_remote_branch_exist
     fx.commit_here("c.txt", "c\n");
     let push = fx
         .session
-        .prepare_push(&set_upstream("origin", "theirs-only"), true)
+        .prepare_push(&set_upstream("origin", "theirs-only"), true, &fx.head)
         .unwrap();
     assert_eq!(push.lease(), Some("refs/heads/theirs-only:"));
     let (_, kind, _, _) = network_failure(push.run(None).unwrap_err());
@@ -761,7 +860,7 @@ fn force_push_without_a_tracking_ref_creates_a_new_remote_branch() {
     let fx = fx();
     let ours = fx.head_oid();
     fx.session
-        .prepare_push(&set_upstream("origin", "fresh"), true)
+        .prepare_push(&set_upstream("origin", "fresh"), true, &fx.head)
         .unwrap()
         .run(None)
         .unwrap();
@@ -779,7 +878,7 @@ fn push_https_flag_follows_the_push_url_not_the_fetch_url() {
         .unwrap();
     assert!(
         fx.reopen()
-            .prepare_push(&PushTarget::Upstream, false)
+            .prepare_push(&PushTarget::Upstream, false, &fx.head)
             .unwrap()
             .https()
     );
@@ -790,7 +889,7 @@ fn push_https_flag_follows_the_push_url_not_the_fetch_url() {
     let session = fx.reopen();
     assert!(
         !session
-            .prepare_push(&PushTarget::Upstream, false)
+            .prepare_push(&PushTarget::Upstream, false, &fx.head)
             .unwrap()
             .https()
     );
@@ -813,7 +912,7 @@ fn push_https_flag_follows_push_insteadof() {
     );
     assert!(
         !fx.reopen()
-            .prepare_push(&PushTarget::Upstream, false)
+            .prepare_push(&PushTarget::Upstream, false, &fx.head)
             .unwrap()
             .https()
     );

@@ -1274,7 +1274,7 @@ describe("RepoPane sync toolbar and shortcuts", () => {
     await renderReady();
     press(ctrlShift("P"));
     await waitFor(() =>
-      expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, false, null),
+      expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, false, "main", null),
     );
   });
 

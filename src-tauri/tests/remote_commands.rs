@@ -188,6 +188,7 @@ fn pull_inner_reports_conflicts_for_the_banner() {
 #[test]
 fn pull_and_push_inner_map_head_and_upstream_errors() {
     let (_d, path) = common::temp_repo_with_commit();
+    let head = common::head_branch_name(&path);
     let (reg, id) = registered(&path);
     assert_eq!(
         pull_inner(&reg, id, PullMode::Merge, None)
@@ -196,7 +197,7 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
         AppErrorKind::NoUpstream
     );
     assert_eq!(
-        push_inner(&reg, id, &PushTarget::Upstream, false, None)
+        push_inner(&reg, id, &PushTarget::Upstream, false, &head, None)
             .unwrap_err()
             .kind,
         AppErrorKind::NoUpstream
@@ -211,7 +212,7 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
         AppErrorKind::DetachedHead
     );
     assert_eq!(
-        push_inner(&reg, id, &PushTarget::Upstream, false, None)
+        push_inner(&reg, id, &PushTarget::Upstream, false, &head, None)
             .unwrap_err()
             .kind,
         AppErrorKind::DetachedHead
@@ -226,14 +227,28 @@ fn push_inner_pushes_to_the_upstream_and_publishes_a_new_branch() {
     let fx = fx();
     let ours = common::commit_file(&fx.path, "c.txt", "c\n", "ours").to_string();
     let (reg, id) = registered(&fx.path);
-    push_inner(&reg, id, &PushTarget::Upstream, false, None).unwrap();
+    push_inner(&reg, id, &PushTarget::Upstream, false, &fx.head, None).unwrap();
     assert_eq!(tip(&fx.bare, &format!("refs/heads/{}", fx.head)), ours);
     let target: PushTarget = serde_json::from_value(
         json!({ "kind": "setUpstream", "remote": "origin", "branch": "pub" }),
     )
     .unwrap();
-    push_inner(&reg, id, &target, false, None).unwrap();
+    push_inner(&reg, id, &target, false, &fx.head, None).unwrap();
     assert_eq!(tip(&fx.bare, "refs/heads/pub"), ours);
+}
+
+// I1: the app layer forwards the expected branch; a HEAD on another branch is OperationInProgress.
+#[test]
+fn push_inner_is_operation_in_progress_when_head_is_not_the_expected_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    let (reg, id) = registered(&fx.path);
+    let before = tip(&fx.bare, &format!("refs/heads/{}", fx.head));
+    let err = push_inner(&reg, id, &PushTarget::Upstream, true, "not-the-head", None).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::OperationInProgress);
+    assert_eq!(tip(&fx.bare, &format!("refs/heads/{}", fx.head)), before);
 }
 
 #[test]
@@ -245,7 +260,7 @@ fn a_rejected_push_maps_to_network_failed_with_its_payload() {
     push_from_other(&fx, "b.txt", "b\n");
     common::commit_file(&fx.path, "c.txt", "c\n", "ours");
     let (reg, id) = registered(&fx.path);
-    let err = push_inner(&reg, id, &PushTarget::Upstream, false, None).unwrap_err();
+    let err = push_inner(&reg, id, &PushTarget::Upstream, false, &fx.head, None).unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(
         err.network,
@@ -273,7 +288,7 @@ fn a_force_push_over_an_unseen_remote_update_is_lease_stale() {
     push_from_other(&fx, "b.txt", "b\n"); // not fetched: the tracking ref is stale
     common::commit_file(&fx.path, "c.txt", "c\n", "ours");
     let (reg, id) = registered(&fx.path);
-    let err = push_inner(&reg, id, &PushTarget::Upstream, true, None).unwrap_err();
+    let err = push_inner(&reg, id, &PushTarget::Upstream, true, &fx.head, None).unwrap_err();
     assert_eq!(
         err.network.map(|n| n.kind),
         Some(NetworkErrorKind::LeaseStale)
@@ -295,7 +310,15 @@ fn credentials_never_appear_in_an_app_error() {
     let errors = [
         fetch_inner(&reg, id, Some(&creds)).unwrap_err(),
         pull_inner(&reg, id, PullMode::Merge, Some(&creds)).unwrap_err(),
-        push_inner(&reg, id, &PushTarget::Upstream, false, Some(&creds)).unwrap_err(),
+        push_inner(
+            &reg,
+            id,
+            &PushTarget::Upstream,
+            false,
+            &fx.head,
+            Some(&creds),
+        )
+        .unwrap_err(),
     ];
     for err in errors {
         assert_eq!(err.kind, AppErrorKind::NetworkFailed);
@@ -385,6 +408,7 @@ fn remote_crud_through_the_commands() {
 #[test]
 fn remote_commands_map_the_new_kinds() {
     let (_d, path) = common::temp_repo_with_commit();
+    let head = common::head_branch_name(&path);
     let (reg, id) = registered(&path);
     add_remote_inner(&reg, id, "origin", "/srv/a.git", None).unwrap();
     add_remote_inner(&reg, id, "other", "/srv/b.git", None).unwrap();
@@ -427,7 +451,7 @@ fn remote_commands_map_the_new_kinds() {
         branch: "b".into(),
     };
     assert_eq!(
-        push_inner(&reg, id, &set_upstream, false, None)
+        push_inner(&reg, id, &set_upstream, false, &head, None)
             .unwrap_err()
             .kind,
         AppErrorKind::RemoteNotFound
@@ -443,7 +467,7 @@ fn remote_commands_report_unknown_repo() {
         pull_inner(&reg, MISSING_ID, PullMode::Merge, None)
             .unwrap_err()
             .kind,
-        push_inner(&reg, MISSING_ID, &PushTarget::Upstream, false, None)
+        push_inner(&reg, MISSING_ID, &PushTarget::Upstream, false, "main", None)
             .unwrap_err()
             .kind,
         list_remotes_inner(&reg, MISSING_ID).unwrap_err().kind,

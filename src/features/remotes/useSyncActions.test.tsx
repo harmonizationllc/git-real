@@ -4,6 +4,7 @@ import { fetchAll, listBranches, listRemotes, pull, pullDefaultMode, push } from
 import type { Tracking } from "../../lib/ipc";
 import { authError, networkError, remoteInfo, trackedList } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
+import { queryKeys } from "../../lib/query/keys";
 import { useSyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -168,7 +169,17 @@ describe("useSyncActions push", () => {
   it("should push to the upstream without force", async () => {
     const { result } = await setup();
     await act(async () => result.current.push());
-    expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, false, null);
+    expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, false, "main", null);
+  });
+
+  it("should show a message when the push fails because HEAD is no longer the displayed branch", async () => {
+    vi.mocked(push).mockRejectedValue({
+      kind: "operationInProgress",
+      message: "HEAD moved to another branch",
+    });
+    const { result } = await setup();
+    await act(async () => result.current.push());
+    await waitFor(() => expect(result.current.message?.title).toBe("HEAD moved to another branch"));
   });
 
   it("should open the set-upstream dialog with every remote and the branch name when push has no upstream", async () => {
@@ -210,9 +221,16 @@ describe("useSyncActions publish", () => {
       1,
       { kind: "setUpstream", remote: "origin", branch: "topic" },
       false,
+      "main",
       null,
     );
     await waitFor(() => expect(result.current.setUpstream).toBeNull());
+  });
+
+  it("should send the displayed HEAD branch as expectedBranch, not the remote branch name", async () => {
+    const { result } = await openDialog();
+    await act(async () => result.current.publish("origin", "topic"));
+    expect(vi.mocked(push).mock.lastCall?.[3]).toBe("main");
   });
 
   it("should keep the dialog open with the error when the branch name is invalid", async () => {
@@ -299,7 +317,7 @@ describe("useSyncActions force push", () => {
     const { result } = await setup();
     act(() => result.current.requestForcePush());
     await act(async () => result.current.confirmForcePush());
-    expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, true, null);
+    expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, true, "main", null);
     await waitFor(() => expect(result.current.forcePush).toBeNull());
   });
 
@@ -310,6 +328,49 @@ describe("useSyncActions force push", () => {
     await act(async () => result.current.confirmForcePush());
     await waitFor(() => expect(result.current.forcePush).toBeNull());
     expect(result.current.message?.title).toBe("The remote branch moved since your last fetch");
+  });
+
+  it("should send the branch confirmed at confirm time even when HEAD moves to another branch before the confirm", async () => {
+    const { result, queryClient } = await setup();
+    act(() => result.current.requestForcePush());
+    vi.mocked(listBranches).mockResolvedValue(
+      trackedList(origin, { kind: "branch", name: "feature" }),
+    );
+    await act(async () => queryClient.invalidateQueries({ queryKey: queryKeys.branches(1) }));
+    await waitFor(() => expect(result.current.forcePush?.local).toBe("main"));
+    await act(async () => result.current.confirmForcePush());
+    expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, true, "main", null);
+  });
+
+  it("should still send the confirmed branch on the retry after sign-in when HEAD moved meanwhile", async () => {
+    vi.mocked(push).mockRejectedValueOnce(authError()).mockResolvedValueOnce(undefined);
+    const { result, queryClient } = await setup();
+    act(() => result.current.requestForcePush());
+    act(() => result.current.confirmForcePush());
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    vi.mocked(listBranches).mockResolvedValue(
+      trackedList(origin, { kind: "branch", name: "feature" }),
+    );
+    await act(async () => queryClient.invalidateQueries({ queryKey: queryKeys.branches(1) }));
+    act(() => result.current.prompt?.submit("me", "tok"));
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(push).toHaveBeenLastCalledWith(1, { kind: "upstream" }, true, "main", {
+      origin: "https://github.com",
+      username: "me",
+      token: "tok",
+    });
+  });
+
+  it("should show a message when the force push fails because HEAD is no longer the confirmed branch", async () => {
+    vi.mocked(push).mockRejectedValue({
+      kind: "operationInProgress",
+      message: "HEAD moved to another branch",
+    });
+    const { result } = await setup();
+    act(() => result.current.requestForcePush());
+    await act(async () => result.current.confirmForcePush());
+    await waitFor(() => expect(result.current.forcePush).toBeNull());
+    expect(result.current.message?.title).toBe("HEAD moved to another branch");
   });
 
   it("should keep the confirmation open while the push runs", async () => {
@@ -366,7 +427,7 @@ describe("useSyncActions messages", () => {
     await waitFor(() => expect(result.current.prompt?.host).toBe("github.com"));
     act(() => result.current.prompt?.submit("me", "tok"));
     await waitFor(() => expect(result.current.running).toBeNull());
-    expect(push).toHaveBeenLastCalledWith(1, { kind: "upstream" }, false, {
+    expect(push).toHaveBeenLastCalledWith(1, { kind: "upstream" }, false, "main", {
       origin: "https://github.com",
       username: "me",
       token: "tok",
