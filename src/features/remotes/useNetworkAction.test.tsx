@@ -281,6 +281,68 @@ describe("useNetworkAction pending", () => {
   });
 });
 
+// Contract: credentials never sit in TanStack's mutation cache (variables or state).
+describe("useNetworkAction credential hygiene", () => {
+  const SECRET_USER = "secret-user-name";
+  const SECRET_TOKEN = "secret-token-value";
+
+  const cacheText = (mutations: { state: unknown; options: unknown }[]) =>
+    JSON.stringify(
+      mutations.map((m) => ({
+        state: m.state,
+        variables: (m.state as { variables?: unknown }).variables,
+      })),
+    );
+
+  it("should keep the entered credentials out of the mutation cache during and after the retry", async () => {
+    const retry = deferred();
+    const action = vi
+      .fn<Action>()
+      .mockRejectedValueOnce(authError())
+      .mockReturnValueOnce(retry.promise);
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    const outcome = start(result.current.run, action);
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => result.current.prompt?.submit(SECRET_USER, SECRET_TOKEN));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    expect(cacheText(queryClient.getMutationCache().getAll())).not.toContain(SECRET_USER);
+    expect(cacheText(queryClient.getMutationCache().getAll())).not.toContain(SECRET_TOKEN);
+    await act(async () => {
+      retry.resolve("done");
+      await outcome;
+    });
+    await waitFor(() => expect(queryClient.getMutationCache().getAll()).toEqual([]));
+  });
+
+  it("should leave the mutation cache empty once a failed run settles", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    await act(() =>
+      result.current.run(vi.fn<Action>().mockRejectedValue(networkError("hostUnreachable"))),
+    );
+    await waitFor(() => expect(queryClient.getMutationCache().getAll()).toEqual([]));
+  });
+});
+
+// Contract: while a prompt is open, another ask opens no second dialog and starts no action.
+describe("useNetworkAction concurrent prompts", () => {
+  it("should not open a second prompt or start a second action while the prompt is open", async () => {
+    const first = vi.fn<Action>().mockRejectedValue(authError());
+    const second = vi.fn<Action>().mockRejectedValue(authError());
+    const { result } = renderHookWithProviders(() => useNetworkAction(1));
+    const outcome = start(result.current.run, first);
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    const shown = result.current.prompt;
+    act(() => {
+      void result.current.run(second);
+    });
+    expect(second).not.toHaveBeenCalled();
+    expect(result.current.prompt).toBe(shown);
+    act(() => result.current.prompt?.cancel());
+    await expect(outcome).resolves.toEqual({ status: "cancelled" });
+    expect(second).not.toHaveBeenCalled();
+  });
+});
+
 // Contract: a prompt can help only for an HTTPS auth failure with a known origin.
 describe("needsCredentials", () => {
   it.each<[string, AppError, boolean]>([

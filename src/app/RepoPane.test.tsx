@@ -1244,13 +1244,13 @@ describe("RepoPane sync toolbar and shortcuts", () => {
 
   it("should render the sync toolbar in the header", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    const toolbar = await screen.findByRole("toolbar", { name: "Sync" });
+    const toolbar = await screen.findByRole("group", { name: "Sync" });
     expect(header().closest("header")).toContainElement(toolbar);
   });
 
   it("should show the upstream of the current branch in the toolbar", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    const toolbar = await screen.findByRole("toolbar", { name: "Sync" });
+    const toolbar = await screen.findByRole("group", { name: "Sync" });
     expect(await within(toolbar).findByText("→ origin/main")).toBeInTheDocument();
   });
 
@@ -1352,5 +1352,25 @@ describe("RepoPane sync toolbar and shortcuts", () => {
     );
     press(ctrlShift("L"));
     expect(pull).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a repeated Ctrl+Shift+P keydown", async () => {
+    await renderReady();
+    press({ ...ctrlShift("P"), repeat: true });
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a keydown that is already default-prevented", async () => {
+    await renderReady();
+    const event = new KeyboardEvent("keydown", { ...ctrlShift("P"), cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("should push once for one normal Ctrl+Shift+P press", async () => {
+    await renderReady();
+    press(ctrlShift("P"));
+    await waitFor(() => expect(push).toHaveBeenCalledOnce());
   });
 });

@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { SyncToolbar } from "./SyncToolbar";
@@ -49,23 +50,23 @@ const message = (over: Partial<NetworkMessage> = {}): NetworkMessage => ({
 
 // Contract: the toolbar landmark and the upstream text with ahead/behind counts.
 describe("SyncToolbar upstream text", () => {
-  it("should be a toolbar labelled Sync", () => {
+  it("should be a group labelled Sync", () => {
     renderToolbar();
-    expect(screen.getByRole("toolbar", { name: "Sync" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Sync" })).toBeInTheDocument();
   });
 
   it("should show → origin/main with ↑2 and ↓3 labelled 2 ahead and 3 behind", () => {
     renderToolbar({ upstream: { text: "→ origin/main", ahead: 2, behind: 3 } });
-    const toolbar = screen.getByRole("toolbar", { name: "Sync" });
+    const toolbar = screen.getByRole("group", { name: "Sync" });
     expect(within(toolbar).getByText("→ origin/main")).toBeInTheDocument();
-    expect(within(toolbar).getByLabelText("2 ahead")).toHaveTextContent("↑2");
-    expect(within(toolbar).getByLabelText("3 behind")).toHaveTextContent("↓3");
+    expect(within(toolbar).getByRole("img", { name: "2 ahead" })).toHaveTextContent("↑2");
+    expect(within(toolbar).getByRole("img", { name: "3 behind" })).toHaveTextContent("↓3");
   });
 
   it("should hide a zero count", () => {
     renderToolbar({ upstream: { text: "→ origin/main", ahead: 0, behind: 3 } });
-    expect(screen.queryByLabelText("0 ahead")).toBeNull();
-    expect(screen.getByLabelText("3 behind")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "0 ahead" })).toBeNull();
+    expect(screen.getByRole("img", { name: "3 behind" })).toBeInTheDocument();
   });
 
   it("should show → origin/main (upstream gone)", () => {
@@ -341,5 +342,86 @@ describe("SyncToolbar dialogs", () => {
     expect(screen.getByRole("dialog", { name: "Force push main to origin?" })).toHaveTextContent(
       "Working…",
     );
+  });
+});
+
+// Contract: the option buttons are gated like the main buttons.
+describe("SyncToolbar option buttons gating", () => {
+  it("should disable Pull options with the pull gate as its title", () => {
+    renderToolbar({ gates: { ...enabled, pull: NO_UPSTREAM } });
+    expect(button("Pull options")).toBeDisabled();
+    expect(button("Pull options")).toHaveAttribute("title", "This branch has no upstream");
+  });
+
+  it("should disable Push options with the push gate as its title", () => {
+    renderToolbar({ gates: { ...enabled, push: CHECK_OUT_A_BRANCH } });
+    expect(button("Push options")).toBeDisabled();
+    expect(button("Push options")).toHaveAttribute("title", "Check out a branch to pull or push.");
+  });
+
+  it("should enable both option buttons when nothing gates them", () => {
+    renderToolbar();
+    expect(button("Pull options")).toBeEnabled();
+    expect(button("Push options")).toBeEnabled();
+  });
+});
+
+// Contract: dialog stacking and focus return for the three toolbar dialogs.
+describe("SyncToolbar dialog order and focus", () => {
+  const prompt = {
+    origin: "https://github.com",
+    host: "github.com",
+    rejected: false,
+    submit: vi.fn(),
+    cancel: vi.fn(),
+  };
+
+  it("should render the sign-in dialog last when it opens over the set-upstream dialog", () => {
+    renderToolbar({
+      setUpstream: { remotes: ["origin"], branch: "main", error: null },
+      prompt,
+    });
+    const dialogs = screen.getAllByRole("dialog");
+    expect(dialogs.at(-1)).toHaveAccessibleName("Sign in to github.com");
+  });
+
+  it("should render the sign-in dialog last when it opens over the force-push confirmation", () => {
+    renderToolbar({
+      forcePush: { local: "main", remote: "origin", upstream: "origin/main" },
+      prompt,
+    });
+    expect(screen.getAllByRole("dialog").at(-1)).toHaveAccessibleName("Sign in to github.com");
+  });
+
+  it("should make the toolbar root a programmatic focus target", () => {
+    renderToolbar();
+    const root = screen.getByRole("group", { name: "Sync" });
+    expect(root).toHaveAttribute("tabindex", "-1");
+    expect(root).toHaveAttribute("data-focus-target");
+  });
+
+  function Harness() {
+    const [sync, setSync] = useState(
+      fakeSync({ setUpstream: { remotes: ["origin"], branch: "main", error: null } }),
+    );
+    return (
+      <SyncToolbar
+        sync={{
+          ...sync,
+          cancelSetUpstream: () =>
+            setSync({
+              ...fakeSync({ gates: { fetch: "b", pull: "b", push: "b", forcePush: "b" } }),
+            }),
+        }}
+        onOpenRemotes={vi.fn()}
+      />
+    );
+  }
+
+  it("should land focus on the toolbar root when a dialog closes while Push is disabled", async () => {
+    const { user } = renderWithProviders(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("group", { name: "Sync" })).toHaveFocus();
   });
 });
