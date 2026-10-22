@@ -888,3 +888,72 @@ describe("RemotesDialog edit target loading", () => {
     expect(screen.queryByLabelText("Name")).toBeNull();
   });
 });
+
+// Contract (coverage): a click on the backdrop itself closes an idle dialog, but not while a
+// nested confirm is open.
+describe("RemotesDialog backdrop", () => {
+  const backdrop = () =>
+    screen.getByRole("dialog", { name: "Remotes" }).parentElement as HTMLElement;
+
+  it("closes an idle dialog when the backdrop is clicked", async () => {
+    const view = await renderList();
+    await view.user.click(backdrop());
+    expect(view.props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not close while the remove confirm is open", async () => {
+    const view = await renderList();
+    await view.user.click(button("Remove origin"));
+    await screen.findByRole("dialog", { name: "Remove remote origin?" });
+    await view.user.click(backdrop());
+    expect(view.props.onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (developer-flagged gap): when listRemotes fails the dialog shows the panel RepoError
+// with Retry instead of sitting on "Loading remotes…"; Close and Escape still work.
+describe("RemotesDialog list load error", () => {
+  const loadError: AppError = { kind: "io", message: "list exploded" };
+
+  it("shows the load error as a panel RepoError instead of Loading remotes…", async () => {
+    vi.mocked(listRemotes).mockRejectedValue(loadError);
+    renderDialog();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("list exploded");
+    expect(alert).toHaveAttribute("data-variant", "panel");
+    expect(screen.queryByText("Loading remotes…")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Remotes" })).toBeNull();
+  });
+
+  it("shows the load error when the dialog opened for an edit target", async () => {
+    vi.mocked(listRemotes).mockRejectedValue(loadError);
+    renderDialog({ target: { mode: "edit", name: "origin" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("list exploded");
+    expect(screen.queryByText("Loading remotes…")).toBeNull();
+  });
+
+  it("Retry refetches the remotes and shows the list when it succeeds", async () => {
+    vi.mocked(listRemotes).mockRejectedValueOnce(loadError);
+    const { user } = renderDialog();
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("list", { name: "Remotes" })).toHaveTextContent("origin");
+    expect(listRemotes).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("Close calls onClose while the load error shows", async () => {
+    vi.mocked(listRemotes).mockRejectedValue(loadError);
+    const view = renderDialog();
+    await screen.findByRole("alert");
+    await view.user.click(button("Close"));
+    expect(view.props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("Escape closes the dialog while the load error shows", async () => {
+    vi.mocked(listRemotes).mockRejectedValue(loadError);
+    const view = renderDialog();
+    await screen.findByRole("alert");
+    await view.user.keyboard("{Escape}");
+    expect(view.props.onClose).toHaveBeenCalledOnce();
+  });
+});
