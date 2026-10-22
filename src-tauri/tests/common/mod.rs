@@ -1,10 +1,14 @@
 //! Shared fixtures for integration tests.
 #![allow(dead_code)]
 
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use git_real_core::git_cli;
-use git_real_core::{Progress, ProgressSink};
+use git_real_core::hosting::{Account, Provider, Request, Response, Token, Transport, UserInfo};
+use git_real_core::{GitError, Progress, ProgressSink};
+use git_real_lib::hosting_store::{HostingStore, TokenStore};
 use git_real_lib::recent_store::RecentStore;
 use git_real_lib::state::RepoRegistry;
 
@@ -241,4 +245,147 @@ pub fn ahead_fixture() -> (TempDir, PathBuf, git2::Oid) {
     let (dir, path) = temp_repo_with_commit();
     let tip = branch_with_commit(&path, "fast", "fast.txt", "fast\n");
     (dir, path, tip)
+}
+
+/// An in-memory `TokenStore`; `fail_get` / `fail_set` / `fail_delete` make that call return
+/// `KeychainUnavailable`. Clones share one map, so a test keeps a clone to inspect what the
+/// store wrote.
+#[derive(Clone, Default)]
+pub struct MemoryTokenStore {
+    pub map: Arc<Mutex<HashMap<String, String>>>,
+    pub fail_get: bool,
+    pub fail_set: bool,
+    pub fail_delete: bool,
+}
+
+fn keychain_down(what: &str) -> GitError {
+    GitError::KeychainUnavailable(format!("fake keychain: {what} refused"))
+}
+
+impl TokenStore for MemoryTokenStore {
+    fn set(&self, key: &str, token: &Token) -> Result<(), GitError> {
+        if self.fail_set {
+            return Err(keychain_down("set"));
+        }
+        self.map
+            .lock()
+            .expect("token map lock")
+            .insert(key.to_owned(), token.expose_secret().to_owned());
+        Ok(())
+    }
+
+    fn get(&self, key: &str) -> Result<Option<Token>, GitError> {
+        if self.fail_get {
+            return Err(keychain_down("get"));
+        }
+        let found = self.map.lock().expect("token map lock").get(key).cloned();
+        found.map(|s| Token::new(&s)).transpose()
+    }
+
+    fn delete(&self, key: &str) -> Result<(), GitError> {
+        if self.fail_delete {
+            return Err(keychain_down("delete"));
+        }
+        self.map.lock().expect("token map lock").remove(key);
+        Ok(())
+    }
+}
+
+/// A scripted `Transport`: answers each `send` with the next queued response and records
+/// every request (method, url, headers, body). An empty queue panics with
+/// "unexpected request <url>".
+pub struct FakeTransport {
+    pub replies: Mutex<VecDeque<Result<Response, GitError>>>,
+    pub seen: Mutex<Vec<Request>>,
+}
+
+impl FakeTransport {
+    /// An empty queue.
+    pub fn new() -> Self {
+        FakeTransport {
+            replies: Mutex::new(VecDeque::new()),
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Queues a response with no headers.
+    pub fn reply(self, status: u16, body: &str) -> Self {
+        self.reply_with(status, &[], body)
+    }
+
+    /// Queues a response with the given headers (names are stored lower-cased).
+    pub fn reply_with(self, status: u16, headers: &[(&str, &str)], body: &str) -> Self {
+        self.replies
+            .lock()
+            .expect("replies lock")
+            .push_back(Ok(Response {
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_ascii_lowercase(), (*v).to_owned()))
+                    .collect(),
+                body: body.to_owned(),
+            }));
+        self
+    }
+
+    /// Queues a transport failure.
+    pub fn fail(self, error: GitError) -> Self {
+        self.replies
+            .lock()
+            .expect("replies lock")
+            .push_back(Err(error));
+        self
+    }
+
+    /// Every request sent so far, oldest first.
+    pub fn requests(&self) -> Vec<Request> {
+        self.seen.lock().expect("seen lock").clone()
+    }
+}
+
+impl Transport for FakeTransport {
+    fn send(&self, req: &Request) -> Result<Response, GitError> {
+        self.seen.lock().expect("seen lock").push(req.clone());
+        self.replies
+            .lock()
+            .expect("replies lock")
+            .pop_front()
+            .unwrap_or_else(|| panic!("unexpected request {}", req.url))
+    }
+}
+
+/// A `HostingStore` at `<tmp>/hosting_accounts.json` over a `MemoryTokenStore` the test can
+/// inspect. Keep the `TempDir` alive for the file to remain valid.
+pub fn hosting_store() -> (TempDir, HostingStore, MemoryTokenStore) {
+    hosting_store_with(MemoryTokenStore::default())
+}
+
+/// Like `hosting_store`, over the given (possibly failing) `tokens`.
+pub fn hosting_store_with(tokens: MemoryTokenStore) -> (TempDir, HostingStore, MemoryTokenStore) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = HostingStore::load(
+        dir.path().join("hosting_accounts.json"),
+        Box::new(tokens.clone()),
+    );
+    (dir, store, tokens)
+}
+
+/// A store with no accounts and a working fake keychain.
+pub fn no_accounts() -> (TempDir, HostingStore) {
+    let (dir, store, _tokens) = hosting_store();
+    (dir, store)
+}
+
+/// A GitHub account on `github.com` for `username`, with no display name or avatar.
+pub fn github_account(username: &str) -> Account {
+    Account::new(
+        Provider::GitHub,
+        "github.com",
+        UserInfo {
+            username: username.to_owned(),
+            display_name: None,
+            avatar_url: None,
+        },
+    )
 }

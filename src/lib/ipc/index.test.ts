@@ -65,6 +65,13 @@ describe("ipc barrel", () => {
     "addRemote",
     "updateRemote",
     "removeRemote",
+    "hostingListAccounts",
+    "hostingConnect",
+    "hostingDisconnect",
+    "hostingRepoContext",
+    "hostingListPullRequests",
+    "hostingCheckoutPullRequest",
+    "openExternal",
   ])("barrel exposes %s as a function", (name) => {
     expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
   });

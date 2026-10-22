@@ -451,3 +451,53 @@ describe("remote query keys", () => {
     expect(mutationKeys.network(3)[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });
+
+// Contract: hosting keys. The PR list sits OUTSIDE the repo prefix so watcher events (which
+// invalidate ["repo", id]) never cost a provider API call (Review Focus 4).
+describe("hosting query keys", () => {
+  it("should define hostingAccounts as ['hosting', 'accounts']", () => {
+    expect(queryKeys.hostingAccounts).toEqual(["hosting", "accounts"]);
+  });
+
+  it("should define hostingContext(id) under the repo prefix", () => {
+    expect(queryKeys.hostingContext(3)).toEqual(["repo", 3, "hostingContext"]);
+  });
+
+  it("should define pullRequests(id) as ['hosting', 'pullRequests', id]", () => {
+    expect(queryKeys.pullRequests(3)).toEqual(["hosting", "pullRequests", 3]);
+  });
+
+  it("should not start pullRequests(id) with the repo(id) prefix", () => {
+    expect(queryKeys.pullRequests(1).slice(0, 2)).not.toEqual(queryKeys.repo(1));
+  });
+
+  it("should not refresh pullRequests(id) when repo(id) is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.pullRequests(1), []);
+    qc.setQueryData(queryKeys.hostingContext(1), null);
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect([
+      qc.getQueryState(queryKeys.pullRequests(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.hostingContext(1))?.isInvalidated,
+    ]).toEqual([false, true]);
+  });
+
+  it("should refresh pullRequests(id) when the hosting prefix is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.pullRequests(1), []);
+    qc.setQueryData(queryKeys.hostingAccounts, []);
+    await qc.invalidateQueries({ queryKey: ["hosting"] });
+    expect([
+      qc.getQueryState(queryKeys.pullRequests(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.hostingAccounts)?.isInvalidated,
+    ]).toEqual([true, true]);
+  });
+
+  it("should define mutationKeys.hostingAccount as ['hostingAccount']", () => {
+    expect(mutationKeys.hostingAccount).toEqual(["hostingAccount"]);
+  });
+
+  it("should not start hostingAccount with the repo query prefix", () => {
+    expect(mutationKeys.hostingAccount[0]).not.toBe(queryKeys.repo(3)[0]);
+  });
+});

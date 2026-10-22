@@ -3,6 +3,7 @@
 mod common;
 
 use git_real_core::git_cli;
+use git_real_lib::commands::remote::NetworkAuth;
 use git_real_lib::commands::repo::{
     GitCliInfo, check_git_cli_inner, clone_repo_inner, close_repo_inner, init_repo_inner,
     list_recent_inner, open_repo_inner, remove_recent_inner,
@@ -394,6 +395,7 @@ fn clone_inner_opens_result() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap();
@@ -418,6 +420,7 @@ fn clone_inner_reports_progress_to_sink() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap();
@@ -442,6 +445,7 @@ fn clone_inner_registers_session_and_touches_recent() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap();
@@ -465,6 +469,7 @@ fn clone_inner_failure_kind() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap_err();
@@ -487,6 +492,7 @@ fn clone_inner_failure_message_is_reduced_to_fatal_line() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap_err();
@@ -509,6 +515,7 @@ fn clone_inner_failure_message_omits_progress_noise() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap_err();
@@ -531,6 +538,7 @@ fn clone_inner_failure_registers_and_touches_nothing() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     );
 
@@ -556,6 +564,7 @@ fn clone_inner_into_non_empty_dest_fails() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     )
     .unwrap_err();
@@ -582,6 +591,7 @@ fn clone_inner_into_non_empty_dest_leaves_existing_file_untouched() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
+        NetworkAuth::None,
         &mut sink,
     );
 
