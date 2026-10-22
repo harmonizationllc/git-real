@@ -9,6 +9,7 @@ import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
+import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
 import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { SyncMessage } from "../features/remotes/SyncMessage";
@@ -150,6 +151,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
               <BranchesPanel repoId={tab.id} onOpenRemotes={openRemotes} />
               <StashesPanel repoId={tab.id} />
               <TagsPanel repoId={tab.id} />
+              <PullRequestsPanel repoId={tab.id} />
             </>
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.

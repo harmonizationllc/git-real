@@ -15,9 +15,12 @@ interface LayoutPrefsState {
   /** The Tags section is collapsed; app-wide, like the widths. */
   tagsCollapsed: boolean;
   setTagsCollapsed(collapsed: boolean): void;
+  /** The Pull requests section is collapsed; app-wide, like the widths. */
+  pullRequestsCollapsed: boolean;
+  setPullRequestsCollapsed(collapsed: boolean): void;
 }
 
-/** Column widths and the Tags section's collapsed state, shared by every repository tab; survives restarts via localStorage. */
+/** Column widths and the Tags and Pull requests sections' collapsed state, shared by every repository tab; survives restarts via localStorage. */
 export const useLayoutPrefs = create<LayoutPrefsState>()(
   persist(
     (set) => ({
@@ -29,6 +32,8 @@ export const useLayoutPrefs = create<LayoutPrefsState>()(
         set(column === "refs" ? { refsWidth: REFS_DEFAULT } : { sidebarWidth: SIDEBAR_DEFAULT }),
       tagsCollapsed: true,
       setTagsCollapsed: (tagsCollapsed) => set({ tagsCollapsed }),
+      pullRequestsCollapsed: false,
+      setPullRequestsCollapsed: (pullRequestsCollapsed) => set({ pullRequestsCollapsed }),
     }),
     {
       name: "git-real.layoutPrefs",
@@ -37,6 +42,7 @@ export const useLayoutPrefs = create<LayoutPrefsState>()(
         refsWidth: s.refsWidth,
         sidebarWidth: s.sidebarWidth,
         tagsCollapsed: s.tagsCollapsed,
+        pullRequestsCollapsed: s.pullRequestsCollapsed,
       }),
     },
   ),

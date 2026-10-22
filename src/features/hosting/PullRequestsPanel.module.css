@@ -1,0 +1,84 @@
+/* The section rules mirror TagsPanel.module.css; no feature imports another feature's module. */
+.root {
+  flex: 0 1 auto;
+  max-height: 40%;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 4px;
+}
+
+.heading {
+  flex: 1;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* A text-styled button carrying the heading's font. */
+.toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+/* The caret's alt text is empty, so it stays out of the accessible name. */
+.toggle::before {
+  content: "▸ ";
+  content: "▸ " / "";
+}
+
+.toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+  content: "▾ " / "";
+}
+
+.refresh {
+  flex: none;
+}
+
+.list {
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+}
+
+.empty {
+  margin: 4px 16px 8px;
+  color: var(--color-text-muted);
+}
+
+/* The no-account and reconnect states: the line, then its button. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 0 8px;
+}
+
+.notice > button {
+  margin: 0 16px;
+}
+
+.more {
+  margin: 0 16px 8px;
+}
+
+.status {
+  margin: 4px 16px;
+  color: var(--color-text-muted);
+}
