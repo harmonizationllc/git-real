@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -105,6 +105,26 @@ describe("CredentialDialog submit", () => {
   });
 });
 
+// Contract: the submit handler itself refuses incomplete fields, even when the button is bypassed.
+describe("CredentialDialog submit guard", () => {
+  it("should not submit a form event with an empty token", async () => {
+    const p = prompt();
+    const { user } = renderWithProviders(<CredentialDialog prompt={p} />);
+    await user.type(username(), "me");
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form") as HTMLFormElement);
+    expect(p.submit).not.toHaveBeenCalled();
+  });
+
+  it("should not submit a form event with a blank username", async () => {
+    const p = prompt();
+    const { user } = renderWithProviders(<CredentialDialog prompt={p} />);
+    await user.type(username(), "  ");
+    await user.type(token(), "tok");
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form") as HTMLFormElement);
+    expect(p.submit).not.toHaveBeenCalled();
+  });
+});
+
 // Contract: Cancel and Escape cancel; a backdrop click does too.
 describe("CredentialDialog cancel", () => {
   it("should cancel when Cancel is pressed", async () => {
@@ -119,6 +139,20 @@ describe("CredentialDialog cancel", () => {
     const { user } = renderWithProviders(<CredentialDialog prompt={p} />);
     await user.keyboard("{Escape}");
     expect(p.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("should cancel when the backdrop is clicked", () => {
+    const p = prompt();
+    renderWithProviders(<CredentialDialog prompt={p} />);
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(p.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("should not cancel when the dialog body is clicked", () => {
+    const p = prompt();
+    renderWithProviders(<CredentialDialog prompt={p} />);
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(p.cancel).not.toHaveBeenCalled();
   });
 
   it("should not submit when cancelled", async () => {

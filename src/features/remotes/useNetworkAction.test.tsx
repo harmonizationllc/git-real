@@ -321,6 +321,16 @@ describe("useNetworkAction credential hygiene", () => {
     );
     await waitFor(() => expect(queryClient.getMutationCache().getAll()).toEqual([]));
   });
+
+  it("should leave the mutation cache empty once a cancelled run settles", async () => {
+    const action = vi.fn<Action>().mockRejectedValue(authError());
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    const outcome = start(result.current.run, action);
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => result.current.prompt?.cancel());
+    await outcome;
+    await waitFor(() => expect(queryClient.getMutationCache().getAll()).toEqual([]));
+  });
 });
 
 // Contract: while a prompt is open, another ask opens no second dialog and starts no action.

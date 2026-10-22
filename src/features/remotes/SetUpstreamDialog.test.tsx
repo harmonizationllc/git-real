@@ -90,6 +90,14 @@ describe("SetUpstreamDialog submit", () => {
     await user.keyboard("{Enter}");
     expect(props.onPublish).not.toHaveBeenCalled();
   });
+
+  // WebKit submits a one-field form on Enter even when the submit button is disabled.
+  it("should not publish a form submit event with a blank name", async () => {
+    const { user, props } = renderDialog();
+    await user.clear(branchName());
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form") as HTMLFormElement);
+    expect(props.onPublish).not.toHaveBeenCalled();
+  });
 });
 
 // Contract: the inline error names an invalid branch name, else shows the message.
@@ -126,6 +134,24 @@ describe("SetUpstreamDialog pending and cancel", () => {
     const { user, props } = renderDialog();
     await user.keyboard("{Escape}");
     expect(props.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should cancel when the backdrop is clicked", () => {
+    const { props } = renderDialog();
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(props.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should not cancel when the dialog body is clicked", () => {
+    const { props } = renderDialog();
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should not cancel on a backdrop click while pending", () => {
+    const { props } = renderDialog({ pending: true });
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(props.onCancel).not.toHaveBeenCalled();
   });
 
   it("should not cancel on Escape while pending", () => {

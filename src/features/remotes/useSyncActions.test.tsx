@@ -270,6 +270,15 @@ describe("useSyncActions force push", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("should open the confirmation with an empty remote when the upstream's remote is not configured", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      trackedList({ upstream: "gone/main", ahead: 0, behind: 0 }),
+    );
+    const { result } = await setup();
+    act(() => result.current.requestForcePush());
+    expect(result.current.forcePush).toEqual({ local: "main", remote: "", upstream: "gone/main" });
+  });
+
   it("should ignore requestForcePush while gated", async () => {
     vi.mocked(listBranches).mockResolvedValue(trackedList(null));
     const { result } = renderHookWithProviders(() => useSyncActions(1));
