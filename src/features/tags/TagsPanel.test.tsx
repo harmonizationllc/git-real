@@ -481,8 +481,12 @@ describe("TagsPanel delete", () => {
 
 // Contract: failures surface as dismissable alerts with the mapped copy.
 describe("TagsPanel errors", () => {
-  it("shows git's output on pushFailed", async () => {
-    vi.mocked(pushTag).mockRejectedValue({ kind: "pushFailed", message: "remote rejected" });
+  it("shows git's output on networkFailed", async () => {
+    vi.mocked(pushTag).mockRejectedValue({
+      kind: "networkFailed",
+      message: "remote rejected",
+      network: { verb: "push", kind: "other", https: false, origin: null },
+    });
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -490,7 +494,11 @@ describe("TagsPanel errors", () => {
   });
 
   it("tags the push error alert with the panel variant", async () => {
-    vi.mocked(pushTag).mockRejectedValue({ kind: "pushFailed", message: "remote rejected" });
+    vi.mocked(pushTag).mockRejectedValue({
+      kind: "networkFailed",
+      message: "remote rejected",
+      network: { verb: "push", kind: "other", https: false, origin: null },
+    });
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -498,7 +506,11 @@ describe("TagsPanel errors", () => {
   });
 
   it("shows no status after a failed push", async () => {
-    vi.mocked(pushTag).mockRejectedValue({ kind: "pushFailed", message: "remote rejected" });
+    vi.mocked(pushTag).mockRejectedValue({
+      kind: "networkFailed",
+      message: "remote rejected",
+      network: { verb: "push", kind: "other", https: false, origin: null },
+    });
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -527,7 +539,11 @@ describe("TagsPanel errors", () => {
   });
 
   it("dismissing an error clears it", async () => {
-    vi.mocked(pushTag).mockRejectedValue({ kind: "pushFailed", message: "remote rejected" });
+    vi.mocked(pushTag).mockRejectedValue({
+      kind: "networkFailed",
+      message: "remote rejected",
+      network: { verb: "push", kind: "other", https: false, origin: null },
+    });
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -538,7 +554,11 @@ describe("TagsPanel errors", () => {
 
   it("the next action clears an undismissed error", async () => {
     vi.mocked(pushTag)
-      .mockRejectedValueOnce({ kind: "pushFailed", message: "remote rejected" })
+      .mockRejectedValueOnce({
+        kind: "networkFailed",
+        message: "remote rejected",
+        network: { verb: "push", kind: "other", https: false, origin: null },
+      })
       .mockReturnValueOnce(new Promise(() => undefined));
     const { user } = await renderPanel();
     rightClick(row("v1"));

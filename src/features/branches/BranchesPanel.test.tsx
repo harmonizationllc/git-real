@@ -779,8 +779,9 @@ describe("BranchesPanel delete on remote", () => {
 
   it("should close the dialog and show the push error in the panel when it fails", async () => {
     vi.mocked(deleteRemoteBranch).mockRejectedValue({
-      kind: "pushFailed",
+      kind: "networkFailed",
       message: "remote: permission denied",
+      network: { verb: "push", kind: "other", https: false, origin: null },
     });
     const { user } = await renderPanel();
     const dialog = await openRemoteDelete(user);

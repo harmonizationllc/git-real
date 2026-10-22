@@ -14,7 +14,11 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 }));
 
 const OID = "a".repeat(40);
-const failure = { kind: "pushFailed", message: "rejected" };
+const failure = {
+  kind: "networkFailed",
+  message: "rejected",
+  network: { verb: "push", kind: "other", https: false, origin: null },
+};
 
 function deferred() {
   let resolve!: () => void;
