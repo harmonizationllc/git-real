@@ -99,6 +99,14 @@
 - **The PR panel ignores the refs filter** (`useWorkspace.refsFilter`); filtering PRs is a follow-up.
 - **`disconnect` keeps the entry when deleting the keychain secret fails** (`KeychainUnavailable`), so a token is never orphaned silently; deleting an unknown id is `Ok(())`.
 
+- **Implementation-time decisions (recorded after each cycle's review):**
+  - `UreqTransport` follows redirects itself (`max_redirects(0)`, up to 10 hops) and keeps `Authorization` only when the target has the same `scheme://host[:port]` (`origin_of`); ureq's `RedirectAuthHeaders::SameHost` ignores the port, which leaked the token to another port in the cross-origin test. The body is read as bytes and decoded lossily, so a non-UTF-8 4xx keeps its status.
+  - `validate_host` drops only `:443` (matching `detect`/`https_host`), bounds the port to 1–65535, and refuses Bitbucket with any port; `detect` validates every path segment against `[A-Za-z0-9._-]+` and rejects `.`/`..`; Bitbucket's `is_plain_full_name` rejects `.`/`..` segments.
+  - `HostingStore::connect` stores the new token **before** deleting the old secret when the account id differs; a failed delete is logged and the connect still succeeds (an orphan secret in the keychain is preferable to a listed account without a token). Same-id reconnect never deletes.
+  - `clone_repo` reads the store through `app.state::<Arc<HostingStore>>()` (an eighth parameter would trip clippy's `too_many_arguments`) and always uses `NetworkAuth::Accounts`. The same-repo PR checkout reuses `fetch_remote_inner(.., "origin", auth)`. A keychain read error inside a provider call surfaces as `keychainUnavailable`.
+  - `openExternal` also rejects URLs with userinfo.
+  - Dialogs do not close on a backdrop click. After a nested dialog closes, focus goes to the outer box (AccountsDialog) or the Token field (ConnectAccountDialog) because the outer box is still `inert` when the inner `useRestoreFocus` runs; AccountsDialog records its opener through a `RestoreFocus` sibling rendered before the body. Refresh is disabled while collapsed, without a usable account, or while fetching; only `Check out` is disabled while busy. The row button's `title` is the full updated-at date.
+
 ---
 
 ### Task 1: Core hosting domain, PR-checkout git work, account-aware credentials, and the `AppError` mapping
