@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use super::http::{Token, Transport, get, parse_timestamp, percent_encode, send_json, unexpected};
 use super::model::{CiState, PullRequest, UserInfo};
-use super::provider::{Provider, RepoRef};
+use super::provider::{Provider, RepoRef, is_plain_segment};
 use crate::error::GitError;
 
 #[derive(Deserialize)]
@@ -157,13 +157,8 @@ fn convert(p: WirePullRequest, host: &str) -> Result<PullRequest, GitError> {
     })
 }
 
-/// `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`
+/// `workspace/slug`, each `[A-Za-z0-9._-]+` but not `.` or `..`.
 fn is_plain_full_name(name: &str) -> bool {
-    let part = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-    };
     name.split_once('/')
-        .is_some_and(|(a, b)| part(a) && part(b))
+        .is_some_and(|(a, b)| is_plain_segment(a) && is_plain_segment(b))
 }

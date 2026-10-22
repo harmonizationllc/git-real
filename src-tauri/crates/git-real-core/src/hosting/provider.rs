@@ -90,10 +90,7 @@ pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef>
     let path = path.trim_end_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path);
     let segments: Vec<&str> = path.split('/').collect();
-    if segments
-        .iter()
-        .any(|s| s.is_empty() || *s == "." || *s == "..")
-    {
+    if segments.iter().any(|s| !is_plain_segment(s)) {
         return None;
     }
     let (name, namespace) = segments.split_last()?;
@@ -107,6 +104,15 @@ pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef>
         namespace: namespace.join("/"),
         name: (*name).to_owned(),
     })
+}
+
+/// `[A-Za-z0-9._-]+`, but not `.` or `..`.
+pub(crate) fn is_plain_segment(s: &str) -> bool {
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// The lower-cased host (`name[:port]`, the scheme's default port dropped) and the path after
@@ -139,31 +145,38 @@ fn split_url(url: &str) -> Option<(String, &str)> {
 }
 
 /// Splits `name[:port]` and lower-cases the name: `[a-z0-9.-]+` not starting with `-` or `.`
-/// (no IPv6 literals), port 1–5 digits.
+/// (no IPv6 literals), port 1–65535 written in at most 5 digits.
 fn host_port(host: &str) -> Option<(String, Option<&str>)> {
     let (name, port) = match host.split_once(':') {
         Some((name, port)) => (name, Some(port)),
         None => (host, None),
     };
-    let port_ok =
-        port.is_none_or(|p| (1..=5).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()));
+    let port_ok = port.is_none_or(|p| {
+        (1..=5).contains(&p.len())
+            && p.bytes().all(|b| b.is_ascii_digit())
+            && p.parse::<u16>().is_ok_and(|n| n > 0)
+    });
     let name = valid(name).filter(|n| !n.starts_with('.') && !n.contains(':'))?;
     port_ok.then(|| (name.to_ascii_lowercase(), port))
 }
 
 /// The host for a new account: the provider's default when `host` is absent or blank, else
-/// the lower-cased `name[:port]`. Bitbucket accepts only `bitbucket.org`.
+/// the lower-cased `name[:port]`, `:443` dropped as [`detect`] and [`https_host`] drop it.
+/// Bitbucket accepts only `bitbucket.org`, without a port.
 pub fn validate_host(provider: Provider, host: Option<&str>) -> Result<String, GitError> {
     let Some(input) = host.filter(|h| !h.trim().is_empty()) else {
         return Ok(provider.default_host().to_owned());
     };
     let invalid = || GitError::InvalidHostingHost(input.to_owned());
     let (name, port) = host_port(input.trim()).ok_or_else(invalid)?;
-    let host = port.map_or_else(|| name.clone(), |p| format!("{name}:{p}"));
-    if provider == Provider::Bitbucket && host != provider.default_host() {
+    // Bitbucket Cloud is only ever `bitbucket.org`, written without a port.
+    if provider == Provider::Bitbucket && (port.is_some() || name != provider.default_host()) {
         return Err(invalid());
     }
-    Ok(host)
+    Ok(match port {
+        Some(p) if p != "443" => format!("{name}:{p}"),
+        _ => name,
+    })
 }
 
 /// The lower-cased `host[:port]` of an `https://` URL (port 443 dropped, userinfo dropped);
