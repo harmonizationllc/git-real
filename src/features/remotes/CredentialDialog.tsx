@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import styles from "./CredentialDialog.module.css";
+import { tokenHint } from "./remoteCopy";
 import type { CredentialPrompt } from "./useNetworkAction";
 
 export interface CredentialDialogProps {
@@ -97,6 +98,7 @@ function CredentialDialogBody({
               onChange={(e) => setToken(e.target.value)}
             />
           </div>
+          <p className={styles.note}>{tokenHint(prompt.host)}</p>
           <p className={styles.note}>
             Your git credential helper will store these if one is configured.
           </p>

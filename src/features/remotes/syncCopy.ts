@@ -1,4 +1,5 @@
-import type { HeadState, Tracking } from "../../lib/ipc";
+import type { HeadState, OperationState, Tracking } from "../../lib/ipc";
+import { operationNoun } from "../merge/operationCopy";
 
 export const NO_REMOTES = "No remotes configured";
 export const CHECK_OUT_A_BRANCH = "Check out a branch to pull or push.";
@@ -6,6 +7,9 @@ export const MAKE_A_COMMIT_FIRST = "Make a commit first";
 export const NO_UPSTREAM = "This branch has no upstream";
 export const NETWORK_BUSY = "Another network operation is running";
 export const LOADING = "Loading…";
+
+/** The pull / push tooltip while `noun` (merge, rebase, …) is in progress. */
+export const finishOperationFirst = (noun: string): string => `Finish or abort the ${noun} first`;
 
 export type SyncVerb = "fetch" | "pull" | "push";
 
@@ -31,17 +35,27 @@ function headGate(head: HeadState | undefined): string | null {
   return null;
 }
 
-/** Precedence: remotes loading, no remotes, a network action running, then the HEAD state. */
+/** Pull and push wait for a merge, rebase, cherry-pick or revert; none or unknown gates nothing. */
+function operationGate(operation: OperationState | undefined): string | null {
+  if (operation === undefined || operation.kind === "none") return null;
+  return finishOperationFirst(operationNoun(operation));
+}
+
+/**
+ * Precedence: remotes loading, no remotes, a network action running, an operation in progress,
+ * the HEAD state, then the upstream. The operation comes before HEAD because a rebase detaches it.
+ */
 export function syncGates(
   head: HeadState | undefined,
   tracking: Tracking | null,
   remotes: number | undefined,
   busy: boolean,
+  operation?: OperationState,
 ): SyncGates {
   if (remotes === undefined) return all(LOADING);
   if (remotes === 0) return all(NO_REMOTES);
   if (busy) return all(NETWORK_BUSY);
-  const gate = headGate(head);
+  const gate = operationGate(operation) ?? headGate(head);
   if (gate !== null) return { fetch: null, pull: gate, push: gate, forcePush: gate };
   const upstreamGate = tracking === null ? NO_UPSTREAM : null;
   return { fetch: null, pull: upstreamGate, push: null, forcePush: upstreamGate };

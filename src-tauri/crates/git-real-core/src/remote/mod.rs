@@ -9,6 +9,7 @@ pub mod auth;
 pub mod classify;
 pub mod clone;
 pub mod fetch;
+pub mod host;
 pub mod progress_parser;
 pub mod pull;
 pub mod push;
@@ -20,7 +21,7 @@ use std::path::Path;
 
 use crate::error::GitError;
 use crate::git_cli;
-use crate::model::NetworkErrorKind;
+use crate::model::{NetworkDetail, NetworkErrorKind};
 use auth::Credentials;
 
 /// Runs `git -C <workdir> [credential args] <args...>` for a network
@@ -53,6 +54,17 @@ pub(crate) fn run_network(
         kind,
         NetworkErrorKind::HttpsAuthRequired | NetworkErrorKind::HttpsAuthRejected
     );
+    let host = match kind {
+        NetworkErrorKind::SshAuthFailed | NetworkErrorKind::HostKeyUnverified => {
+            let urls: Vec<&str> = urls.iter().map(String::as_str).collect();
+            host::ssh_host(&stderr, &urls)
+        }
+        _ => None,
+    };
+    let reason = match kind {
+        NetworkErrorKind::RemoteRejected => classify::rejection_reason(&stderr),
+        _ => None,
+    };
     Err(GitError::NetworkFailed {
         verb,
         kind,
@@ -62,6 +74,7 @@ pub(crate) fn run_network(
         } else {
             None
         },
+        detail: Box::new(NetworkDetail { host, reason }),
         code: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr,

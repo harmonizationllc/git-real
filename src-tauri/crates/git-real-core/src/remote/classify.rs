@@ -13,6 +13,12 @@ const UNREACHABLE: [&str; 6] = [
     "Couldn't connect to server",
 ];
 
+/// git's ref status for a ref the server refused. It never contains `[rejected]`.
+const REMOTE_REJECTED: &str = "[remote rejected]";
+
+/// A server's error line, as git relays it.
+const REMOTE_ERROR: &str = "remote: error:";
+
 /// First match wins, in the order of the Global Constraints list.
 pub fn classify(stderr: &str) -> NetworkErrorKind {
     let has = |s: &str| stderr.contains(s);
@@ -38,6 +44,8 @@ pub fn classify(stderr: &str) -> NetworkErrorKind {
         || stderr.lines().any(is_missing_repository_line)
     {
         NetworkErrorKind::RepoNotFound
+    } else if has(REMOTE_REJECTED) {
+        NetworkErrorKind::RemoteRejected
     } else if rejected && (has("(fetch first)") || has("(non-fast-forward)")) {
         NetworkErrorKind::PushRejectedNonFastForward
     } else if rejected && has("(stale info)") {
@@ -63,4 +71,30 @@ pub fn auth_origin(stderr: &str) -> Option<String> {
             let (url, _) = rest.split_once('\'')?;
             origin_of(url)
         })
+}
+
+/// Why the server refused a push: the first non-empty `remote: error:` line with the prefix
+/// stripped, or else the parenthesised reason on the `[remote rejected] a -> b (reason)` line.
+pub fn rejection_reason(stderr: &str) -> Option<String> {
+    stderr
+        .lines()
+        .find_map(|line| non_empty(line.strip_prefix(REMOTE_ERROR)?))
+        .or_else(|| {
+            stderr
+                .lines()
+                .find(|l| l.contains(REMOTE_REJECTED))
+                .and_then(parenthesised_reason)
+        })
+}
+
+/// The text between the first ` (` after ` -> ` and the line's final `)`.
+fn parenthesised_reason(line: &str) -> Option<String> {
+    let (_, after_arrow) = line.split_once(" -> ")?;
+    let (_, reason) = after_arrow.split_once(" (")?;
+    non_empty(reason.trim_end().strip_suffix(')')?)
+}
+
+fn non_empty(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }

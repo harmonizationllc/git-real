@@ -11,6 +11,7 @@ import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
 import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
+import { SyncMessage } from "../features/remotes/SyncMessage";
 import { SyncToolbar } from "../features/remotes/SyncToolbar";
 import { useSyncActions } from "../features/remotes/useSyncActions";
 import type { SyncActions } from "../features/remotes/useSyncActions";
@@ -132,6 +133,8 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
           <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
           <SyncToolbar sync={sync} onOpenRemotes={openRemotes} />
         </div>
+        {/* Its own full-width row, so an error never changes the toolbar row's height. */}
+        <SyncMessage sync={sync} onOpenRemotes={openRemotes} />
       </header>
       {/* Keyed so the abort dialog and mutation state never leak across tabs. */}
       <OperationBanner key={tab.id} repoId={tab.id} />

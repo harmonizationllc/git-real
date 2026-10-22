@@ -44,6 +44,16 @@ pub fn fetch_inner(
     fetch.run(credentials).map_err(AppError::from)
 }
 
+pub fn fetch_remote_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    remote: &str,
+    credentials: Option<&Credentials>,
+) -> Result<(), AppError> {
+    let fetch = with_session(reg, id, |s| s.prepare_fetch_remote(remote))?;
+    fetch.run(credentials).map_err(AppError::from)
+}
+
 pub fn pull_default_mode_inner(reg: &RepoRegistry, id: RepoId) -> Result<PullMode, AppError> {
     with_session(reg, id, |s| s.pull_default_mode())
 }
@@ -109,6 +119,18 @@ pub async fn fetch(
     let credentials = credentials_from_arg(credentials)?;
     let reg = Arc::clone(reg.inner());
     run_blocking(move || fetch_inner(&reg, id, credentials.as_ref())).await
+}
+
+#[tauri::command]
+pub async fn fetch_remote(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    remote: String,
+    credentials: Option<CredentialsArg>,
+) -> Result<(), AppError> {
+    let credentials = credentials_from_arg(credentials)?;
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || fetch_remote_inner(&reg, id, &remote, credentials.as_ref())).await
 }
 
 #[tauri::command]

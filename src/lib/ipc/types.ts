@@ -405,6 +405,7 @@ export type NetworkErrorKind =
   | "repoNotFound"
   | "pushRejectedNonFastForward"
   | "leaseStale"
+  | "remoteRejected"
   | "other";
 
 export interface NetworkErrorInfo {
@@ -413,6 +414,10 @@ export interface NetworkErrorInfo {
   https: boolean;
   /** `scheme://host[:port]` git asked credentials for; null unless an HTTPS auth kind. */
   origin: string | null;
+  /** The SSH host named by an SSH auth or host-key failure, when known. */
+  host: string | null;
+  /** The server's reason for a `remoteRejected` push, when it gave one. */
+  reason: string | null;
 }
 
 /** Sent for one network call only; never stored by the app. */

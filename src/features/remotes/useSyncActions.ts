@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
 import { useBranches } from "../branches/useBranches";
+import { useOperationState } from "../merge/useOperationState";
 import { networkMessage } from "./networkMessage";
 import type { NetworkMessage } from "./networkMessage";
 import { syncGates, upstreamRemote as remoteOfUpstream, upstreamText } from "./syncCopy";
@@ -42,6 +43,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   const { branches } = useBranches(repoId);
   const { remotes } = useRemotes(repoId);
   const defaultMode = usePullMode(repoId);
+  const { state: operation } = useOperationState(repoId);
   const network = useNetworkAction(repoId);
   const [running, setRunning] = useState<SyncVerb | null>(null);
   const [message, setMessage] = useState<NetworkMessage | null>(null);
@@ -54,7 +56,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   const branch = head?.kind === "branch" ? head.name : null;
   const tracking = branches?.local.find((b) => b.isHead)?.tracking ?? null;
   const remoteNames = (remotes ?? []).map((r) => r.name);
-  const gates = syncGates(head, tracking, remotes?.length, network.pending);
+  const gates = syncGates(head, tracking, remotes?.length, network.pending, operation);
   const upstreamRemote =
     tracking === null ? null : remoteOfUpstream(tracking.upstream, remoteNames);
 
