@@ -11,6 +11,7 @@ use crate::error::GitError;
 use crate::git_cli;
 use crate::model::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
 use crate::remote::push_delete::PushDelete;
+use crate::remote::remotes::Direction;
 use crate::repo::RepoSession;
 
 /// Accepts names git accepts for a branch that can never be read as a
@@ -21,6 +22,16 @@ pub fn validate_branch_name(name: &str) -> Result<(), GitError> {
         Ok(_) => Err(GitError::InvalidBranchName(name.to_owned())),
         Err(e) => Err(e.into()),
     }
+}
+
+/// A local branch's upstream on a configured remote.
+#[derive(Debug)]
+pub(crate) struct Upstream {
+    pub(crate) remote: String,
+    /// The branch on the remote (`branch.<b>.merge` without `refs/heads/`).
+    pub(crate) branch: String,
+    /// The remote-tracking refname, such as `refs/remotes/origin/main`.
+    pub(crate) tracking_ref: String,
 }
 
 impl RepoSession {
@@ -194,6 +205,9 @@ impl RepoSession {
             self.workdir()?.to_path_buf(),
             remote.to_owned(),
             name.to_owned(),
+            self.used_url(remote, Direction::Push)?
+                .into_iter()
+                .collect(),
         ))
     }
 
@@ -214,7 +228,7 @@ impl RepoSession {
     /// `RemoteNotFound` unless `remote` is configured. A name starting with `-`
     /// is refused outright: `git push` would read it as a flag, and git itself
     /// never creates one.
-    fn ensure_remote(&self, remote: &str) -> Result<(), GitError> {
+    pub(crate) fn ensure_remote(&self, remote: &str) -> Result<(), GitError> {
         if remote.starts_with('-') {
             return Err(GitError::RemoteNotFound(remote.to_owned()));
         }
@@ -223,6 +237,52 @@ impl RepoSession {
             Err(e) if is_not_found(&e) => Err(GitError::RemoteNotFound(remote.to_owned())),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// The local branch HEAD is on: `UnbornHead` before the first commit,
+    /// `DetachedHead` off a branch.
+    pub(crate) fn head_branch(&self) -> Result<String, GitError> {
+        match head_state(self.repo())? {
+            HeadState::Branch { name } => Ok(name),
+            HeadState::Detached { .. } => Err(GitError::DetachedHead),
+            HeadState::Unborn { .. } => Err(GitError::UnbornHead),
+        }
+    }
+
+    /// `branch`'s upstream; `None` without one, for an upstream on `.`, or for
+    /// a merge ref outside `refs/heads/`. `RemoteNotFound` when the configured
+    /// remote no longer exists.
+    pub(crate) fn upstream_of(&self, branch: &str) -> Result<Option<Upstream>, GitError> {
+        let repo = self.repo();
+        let refname = format!("refs/heads/{branch}");
+        let remote = match repo.branch_upstream_remote(&refname) {
+            Ok(buf) => String::from_utf8_lossy(&buf).into_owned(),
+            Err(e) if is_not_found(&e) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        if remote == "." {
+            return Ok(None);
+        }
+        // Before `branch_upstream_name`, which reports a missing remote as not found.
+        self.ensure_remote(&remote)?;
+        let merge = match repo.config()?.get_string(&format!("branch.{branch}.merge")) {
+            Ok(m) => m,
+            Err(e) if is_not_found(&e) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let Some(remote_branch) = merge.strip_prefix("refs/heads/") else {
+            return Ok(None);
+        };
+        let tracking_ref = match repo.branch_upstream_name(&refname) {
+            Ok(buf) => String::from_utf8_lossy(&buf).into_owned(),
+            Err(e) if is_not_found(&e) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(Some(Upstream {
+            remote,
+            branch: remote_branch.to_owned(),
+            tracking_ref,
+        }))
     }
 
     /// The pre-checks for a new branch: a valid, free name and a start point
@@ -329,7 +389,7 @@ fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitErr
     }
 }
 
-fn is_not_found(e: &git2::Error) -> bool {
+pub(crate) fn is_not_found(e: &git2::Error) -> bool {
     e.code() == ErrorCode::NotFound
 }
 

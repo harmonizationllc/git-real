@@ -71,7 +71,7 @@ pub fn delete_remote_branch_inner(
     name: &str,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_remote_delete(remote, name))?;
-    push.run().map_err(AppError::from)
+    push.run(None).map_err(AppError::from)
 }
 
 #[tauri::command]

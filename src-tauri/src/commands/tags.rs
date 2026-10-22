@@ -37,7 +37,7 @@ pub fn push_tag_inner(
     name: &str,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_tag_push(remote, name))?;
-    push.run().map_err(AppError::from)
+    push.run(None).map_err(AppError::from)
 }
 
 /// As [`push_tag_inner`], for `git push --delete`.
@@ -48,7 +48,7 @@ pub fn delete_remote_tag_inner(
     name: &str,
 ) -> Result<(), AppError> {
     let delete = with_session(reg, id, |s| s.prepare_remote_tag_delete(remote, name))?;
-    delete.run().map_err(AppError::from)
+    delete.run(None).map_err(AppError::from)
 }
 
 #[tauri::command]

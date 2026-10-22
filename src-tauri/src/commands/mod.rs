@@ -28,6 +28,7 @@ where
         .map_err(|e| AppError {
             kind: AppErrorKind::Io,
             message: e.to_string(),
+            network: None,
         })?
 }
 

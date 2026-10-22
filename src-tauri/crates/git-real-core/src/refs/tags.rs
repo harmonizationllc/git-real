@@ -10,6 +10,7 @@ use crate::git_cli;
 use crate::git_ops::{self, operation_failed};
 use crate::model::{TagEntry, TagList};
 use crate::remote::push_tag::{TagPush, TagPushDelete};
+use crate::remote::remotes::Direction;
 use crate::repo::RepoSession;
 use crate::revision::resolve_commit;
 
@@ -93,6 +94,9 @@ impl RepoSession {
             self.workdir()?.to_path_buf(),
             remote.to_owned(),
             name.to_owned(),
+            self.used_url(remote, Direction::Push)?
+                .into_iter()
+                .collect(),
         ))
     }
 
@@ -109,6 +113,9 @@ impl RepoSession {
             self.workdir()?.to_path_buf(),
             remote.to_owned(),
             name.to_owned(),
+            self.used_url(remote, Direction::Push)?
+                .into_iter()
+                .collect(),
         ))
     }
 

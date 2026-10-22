@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::auth::Credentials;
 use super::run_push;
 use crate::error::GitError;
 
@@ -14,15 +15,24 @@ pub struct PushDelete {
     workdir: PathBuf,
     remote: String,
     name: String,
+    /// The push URL git uses, empty when the remote has none.
+    urls: Vec<String>,
 }
 
 impl PushDelete {
-    pub(crate) fn new(git: PathBuf, workdir: PathBuf, remote: String, name: String) -> Self {
+    pub(crate) fn new(
+        git: PathBuf,
+        workdir: PathBuf,
+        remote: String,
+        name: String,
+        urls: Vec<String>,
+    ) -> Self {
         Self {
             git,
             workdir,
             remote,
             name,
+            urls,
         }
     }
 
@@ -46,13 +56,15 @@ impl PushDelete {
     /// remote unchecked and reports success when the branch is already gone,
     /// while `heads/<name>` must match an advertised ref, so a missing branch
     /// fails with "remote ref does not exist". A non-zero exit is
-    /// `PushFailed` carrying git's output.
-    pub fn run(&self) -> Result<(), GitError> {
+    /// `NetworkFailed` carrying git's output.
+    pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError> {
         run_push(
             &self.git,
             &self.workdir,
             &self.remote,
             &["--delete", &format!("heads/{}", self.name)],
+            &self.urls,
+            creds,
         )
     }
 }
