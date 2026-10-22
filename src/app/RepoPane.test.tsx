@@ -23,6 +23,7 @@ import {
   pull,
   pullDefaultMode,
   push,
+  updateRemote,
 } from "../lib/ipc";
 import type { BranchList } from "../lib/ipc";
 import { queryKeys } from "../lib/query/keys";
@@ -83,6 +84,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pull: vi.fn(),
   pullDefaultMode: vi.fn(),
   push: vi.fn(),
+  updateRemote: vi.fn(),
 }));
 
 const tab = (id: number, headBranch: string | null = "main"): RepoTab => ({
@@ -1444,5 +1446,67 @@ describe("RepoPane remotes dialog", () => {
     await user.click(await screen.findByRole("button", { name: "Remotes…" }));
     await screen.findByRole("dialog", { name: "Remotes" });
     expect(listRemotes).toHaveBeenCalledWith(7);
+  });
+
+  // Architect R1: the target is derived per repo, so a no-key rerender never mounts the dialog for tab 2.
+  it("a rerender to another tab never mounts the Remotes dialog for it", async () => {
+    const { user, rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await user.click(await screen.findByRole("button", { name: "Remotes…" }));
+    await screen.findByRole("dialog", { name: "Remotes" });
+    const added: Element[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const r of records) r.addedNodes.forEach((n) => n instanceof Element && added.push(n));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    rerender(<RepoPane tab={tab(2)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    observer
+      .takeRecords()
+      .forEach((r) => r.addedNodes.forEach((n) => n instanceof Element && added.push(n)));
+    observer.disconnect();
+    expect(
+      added.some((n) => n.matches('[role="dialog"]') || n.querySelector('[role="dialog"]')),
+    ).toBe(false);
+  });
+
+  // Architect R4: the pane root is the fallback focus for the dialog.
+  it("marks the repo pane root as a programmatic focus target", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const root = await screen.findByRole("region", { name: "repo1" });
+    expect(root).toHaveAttribute("tabindex", "-1");
+    expect(root).toHaveAttribute("data-focus-target");
+  });
+
+  it("after renaming the remote opened from its heading, Close focuses the repo pane", async () => {
+    let named = "origin";
+    vi.mocked(listBranches).mockImplementation(() =>
+      Promise.resolve(
+        branchList({
+          remotes: [
+            { remote: named, branches: [{ remote: named, name: "main", oid: "a".repeat(40) }] },
+          ],
+        }),
+      ),
+    );
+    vi.mocked(listRemotes).mockImplementation(() =>
+      Promise.resolve([remoteInfo(named, { fetchUrl: "/srv/origin.git" })]),
+    );
+    vi.mocked(updateRemote).mockImplementation((_id, _name, newName) => {
+      named = newName;
+      return Promise.resolve();
+    });
+    const { user } = renderWithProviders(<RepoPane tab={tab(1)} />);
+    fireEvent.contextMenu(await screen.findByRole("heading", { level: 2, name: "origin" }), {
+      clientX: 5,
+      clientY: 5,
+    });
+    await user.click(screen.getByRole("menuitem", { name: "Edit remote…" }));
+    const nameInput = await screen.findByLabelText("Name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "renamed");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("heading", { level: 2, name: "renamed" });
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("region", { name: "repo1" })).toHaveFocus();
   });
 });

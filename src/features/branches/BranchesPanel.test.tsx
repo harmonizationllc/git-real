@@ -2525,4 +2525,37 @@ describe("BranchesPanel remote heading menu", () => {
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(vi.mocked(listBranches).mock.calls.length).toBeGreaterThan(before));
   });
+
+  // Architect R8: mutating items are disabled while anything is pending.
+  it("Remove remote… is disabled while a network action runs", async () => {
+    const d = deferred();
+    vi.mocked(deleteRemoteBranch).mockReturnValue(d.promise);
+    const { user } = await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    await user.click(menuItem("Delete on origin…"));
+    const dialog = await dialogNamed("Delete origin/other on origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+    );
+    rightClick(originHeading());
+    expect(menuItem("Remove remote…")).toBeDisabled();
+    d.resolve();
+  });
+
+  it("the heading menu returns focus to the Branches region when it closes", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
+
+  it("cancelling Remove remote… returns focus to the Branches region", async () => {
+    const { user } = await renderPanel();
+    rightClick(originHeading());
+    await user.click(menuItem("Remove remote…"));
+    const dialog = await dialogNamed("Remove remote origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
 });

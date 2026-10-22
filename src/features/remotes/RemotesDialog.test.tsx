@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addRemote, fetchAll, listRemotes, removeRemote, updateRemote } from "../../lib/ipc";
@@ -6,6 +6,7 @@ import type { AppError, RemoteInfo } from "../../lib/ipc";
 import { authError, networkError, remoteInfo } from "../../test/remoteFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { RemotesDialog } from "./RemotesDialog";
+import { useNetworkAction } from "./useNetworkAction";
 import type { RemotesDialogProps } from "./RemotesDialog";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -319,10 +320,10 @@ describe("RemotesDialog add", () => {
 
 // Contract: add errors that belong to a field show under it and keep the form's values.
 describe("RemotesDialog add errors", () => {
-  async function failAdd(error: AppError, name = "bad name", url = "/srv/x.git") {
+  async function failAdd(error: AppError, name = "bad name", url = "/srv/x.git", push = "") {
     vi.mocked(addRemote).mockRejectedValue(error);
     const view = await renderList();
-    await fillAdd(view, name, url, "/srv/p.git");
+    await fillAdd(view, name, url, push);
     await view.user.click(addButton());
     return view;
   }
@@ -350,8 +351,15 @@ describe("RemotesDialog add errors", () => {
     expect(nameField()).not.toHaveAccessibleDescription(alert.textContent as string);
   });
 
+  it("shows an invalid push URL under Push URL", async () => {
+    await failAdd({ kind: "invalidRemoteUrl", message: "raw" }, "up", "/srv/up.git", "bad");
+    const alert = await screen.findByRole("alert");
+    expect(pushField()).toHaveAccessibleDescription(alert.textContent as string);
+    expect(urlField()).not.toHaveAccessibleDescription(alert.textContent as string);
+  });
+
   it("keeps the form's values after a field error", async () => {
-    await failAdd({ kind: "invalidRemoteUrl", message: "raw" }, "up", "bad url");
+    await failAdd({ kind: "invalidRemoteUrl", message: "raw" }, "up", "bad url", "/srv/p.git");
     await screen.findByRole("alert");
     expect(nameField()).toHaveValue("up");
     expect(urlField()).toHaveValue("bad url");
@@ -490,9 +498,20 @@ describe("RemotesDialog edit", () => {
     vi.mocked(updateRemote).mockRejectedValue({ kind: "invalidRemoteUrl", message: "raw" });
     const view = await renderList();
     await view.user.click(button("Edit origin"));
+    await view.user.clear(pushField());
     await view.user.click(saveButton());
     const alert = await screen.findByRole("alert");
     expect(urlField()).toHaveAccessibleDescription(alert.textContent as string);
+  });
+
+  it("shows an invalid push URL under Push URL on Save", async () => {
+    vi.mocked(updateRemote).mockRejectedValue({ kind: "invalidRemoteUrl", message: "raw" });
+    const view = await renderList();
+    await view.user.click(button("Edit origin"));
+    await view.user.click(saveButton());
+    const alert = await screen.findByRole("alert");
+    expect(pushField()).toHaveAccessibleDescription(alert.textContent as string);
+    expect(urlField()).not.toHaveAccessibleDescription(alert.textContent as string);
   });
 
   it("shows any other Save error as a message", async () => {
@@ -658,5 +677,214 @@ describe("RemotesDialog focus on close", () => {
     rerender(<Harness openerDisabled />);
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.getByTestId("fallback")).toHaveFocus();
+  });
+});
+
+// Contract (architect R2): the confirm and sign-in dialogs are siblings after the Remotes box, sign-in last.
+describe("RemotesDialog nested dialogs", () => {
+  it("Escape in the remove confirm cancels it and leaves the Remotes dialog open", async () => {
+    const view = await renderList();
+    await view.user.click(button("Remove origin"));
+    await screen.findByRole("dialog", { name: "Remove remote origin?" });
+    await view.user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Remove remote origin?" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Remotes" })).toBeInTheDocument();
+    expect(view.props.onClose).not.toHaveBeenCalled();
+  });
+
+  it("the remove confirm is not inside the Remotes dialog or its backdrop", async () => {
+    const view = await renderList();
+    await view.user.click(button("Remove origin"));
+    const confirm = await screen.findByRole("dialog", { name: "Remove remote origin?" });
+    const box = screen.getByRole("dialog", { name: "Remotes" });
+    expect(box.contains(confirm)).toBe(false);
+    expect((box.parentElement as HTMLElement).contains(confirm)).toBe(false);
+  });
+
+  it("a sign-in prompt during fetch-after-add is the last dialog in the document", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const view = await renderList();
+    await fillAdd(view, "up", "https://github.com/x/up.git");
+    await view.user.click(addButton());
+    await screen.findByRole("dialog", { name: "Sign in to github.com" });
+    const dialogs = screen.getAllByRole("dialog");
+    expect(dialogs.at(-1)).toHaveAccessibleName("Sign in to github.com");
+    expect(dialogs[0]).toHaveAccessibleName("Remotes");
+    expect(dialogs[0]?.contains(dialogs.at(-1) as HTMLElement)).toBe(false);
+  });
+
+  it("Escape in the sign-in prompt does not close the Remotes dialog", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const view = await renderList();
+    await fillAdd(view, "up", "https://github.com/x/up.git");
+    await view.user.click(addButton());
+    await screen.findByRole("dialog", { name: "Sign in to github.com" });
+    await view.user.keyboard("{Escape}");
+    expect(view.props.onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (architect R3): focus survives view switches so Escape keeps working.
+describe("RemotesDialog focus across views", () => {
+  it("Cancel in the edit form focuses the Edit button again, and Escape then closes", async () => {
+    const view = await renderList();
+    await view.user.click(button("Edit origin"));
+    await view.user.click(button("Cancel"));
+    expect(button("Edit origin")).toHaveFocus();
+    await view.user.keyboard("{Escape}");
+    expect(view.props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("Cancel in the add form focuses Add remote again", async () => {
+    const view = await renderList();
+    await view.user.click(button("Add remote"));
+    await view.user.click(button("Cancel"));
+    expect(button("Add remote")).toHaveFocus();
+  });
+
+  it("Escape in the form returns focus to the opener button", async () => {
+    const view = await renderList();
+    await view.user.click(button("Add remote"));
+    await view.user.keyboard("{Escape}");
+    expect(button("Add remote")).toHaveFocus();
+  });
+
+  it("after removing a remote, focus is inside the Remotes dialog", async () => {
+    const view = await renderList();
+    await view.user.click(button("Remove origin"));
+    const confirm = await screen.findByRole("dialog", { name: "Remove remote origin?" });
+    await view.user.click(within(confirm).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Remove remote origin?" })).toBeNull(),
+    );
+    const box = screen.getByRole("dialog", { name: "Remotes" });
+    expect(box.contains(document.activeElement)).toBe(true);
+  });
+
+  it("after cancelling the sign-in prompt, focus is inside the Remotes dialog", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const view = await renderList();
+    await fillAdd(view, "up", "https://github.com/x/up.git");
+    await view.user.click(addButton());
+    const sign = await screen.findByRole("dialog", { name: "Sign in to github.com" });
+    await view.user.click(within(sign).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
+    expect(screen.getByRole("dialog", { name: "Remotes" }).contains(document.activeElement)).toBe(
+      true,
+    );
+  });
+});
+
+// Contract (architect R6): the dialog's busy state is its own; while busy it cannot be dismissed.
+describe("RemotesDialog busy state", () => {
+  function Other() {
+    const network = useNetworkAction(1);
+    return (
+      <button type="button" onClick={() => void network.run(() => fetchAll(1, null))}>
+        Other fetch
+      </button>
+    );
+  }
+
+  it("the form is not Working… while another network action runs", async () => {
+    let resolve!: () => void;
+    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    const { user } = renderWithProviders(
+      <>
+        <Other />
+        <RemotesDialog repoId={1} target={{ mode: "add" }} onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByLabelText("Name");
+    await user.click(screen.getByRole("button", { name: "Other fetch" }));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await user.type(nameField(), "up");
+    await user.type(urlField(), "/srv/up.git");
+    expect(screen.queryByRole("button", { name: "Working…" })).toBeNull();
+    expect(addButton()).toBeEnabled();
+    await act(async () => resolve());
+  });
+
+  it("Close, Edit and Remove are disabled during fetch after adding", async () => {
+    let resolve!: () => void;
+    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    const view = await renderList();
+    await fillAdd(view, "up", "/srv/up.git");
+    await view.user.click(addButton());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await screen.findByRole("list", { name: "Remotes" });
+    expect(button("Close")).toBeDisabled();
+    expect(button("Edit origin")).toBeDisabled();
+    expect(button("Remove origin")).toBeDisabled();
+    await act(async () => resolve());
+  });
+
+  it("Escape does not close the dialog during fetch after adding", async () => {
+    let resolve!: () => void;
+    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    const view = await renderList();
+    await fillAdd(view, "up", "/srv/up.git");
+    await view.user.click(addButton());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await view.user.keyboard("{Escape}");
+    expect(view.props.onClose).not.toHaveBeenCalled();
+    await act(async () => resolve());
+  });
+
+  it("the backdrop does not close the dialog during fetch after adding", async () => {
+    let resolve!: () => void;
+    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    const view = await renderList();
+    await fillAdd(view, "up", "/srv/up.git");
+    await view.user.click(addButton());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await view.user.click(
+      screen.getByRole("dialog", { name: "Remotes" }).parentElement as HTMLElement,
+    );
+    expect(view.props.onClose).not.toHaveBeenCalled();
+    await act(async () => resolve());
+  });
+
+  it("Remove is disabled while another network action of the repo runs", async () => {
+    let resolve!: () => void;
+    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    const { user } = renderWithProviders(
+      <>
+        <Other />
+        <RemotesDialog repoId={1} target={{ mode: "list" }} onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByRole("list", { name: "Remotes" });
+    await user.click(screen.getByRole("button", { name: "Other fetch" }));
+    await waitFor(() => expect(button("Remove origin")).toBeDisabled());
+    expect(button("Edit origin")).toBeEnabled();
+    await act(async () => resolve());
+  });
+});
+
+// Contract (architect R9): an edit target waits for the list, then opens the prefilled form or resolves to the list once.
+describe("RemotesDialog edit target loading", () => {
+  it("shows Loading remotes… until the list arrives, then the prefilled form", async () => {
+    let resolve!: (r: RemoteInfo[]) => void;
+    vi.mocked(listRemotes).mockReturnValue(new Promise<RemoteInfo[]>((r) => (resolve = r)));
+    renderDialog({ target: { mode: "edit", name: "origin" } });
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading remotes…");
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Remotes" })).toBeNull();
+    await act(async () => resolve([remoteInfo("origin", { fetchUrl: "/srv/origin.git" })]));
+    await waitFor(() => expect(nameField()).toHaveValue("origin"));
+    expect(urlField()).toHaveValue("/srv/origin.git");
+    expect(screen.queryByText("Loading remotes…")).toBeNull();
+  });
+
+  it("a missing remote switches to the list once and a later refetch does not pop the form open", async () => {
+    const view = renderDialog({ target: { mode: "edit", name: "ghost" } });
+    await screen.findByRole("list", { name: "Remotes" });
+    remotes = [...remotes, remoteInfo("ghost")];
+    await act(() => view.queryClient.invalidateQueries());
+    await waitFor(() =>
+      expect(screen.getByRole("list", { name: "Remotes" })).toHaveTextContent("ghost"),
+    );
+    expect(screen.queryByLabelText("Name")).toBeNull();
   });
 });
