@@ -254,6 +254,13 @@ describe("AccountsDialog closing", () => {
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("ignores keys other than Escape on the dialog box", async () => {
+    const { user } = await renderList();
+    await user.keyboard("{Enter}a{ArrowDown}");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Hosting accounts" })).toBeInTheDocument();
+  });
 });
 
 // Contract: on close, focus returns to the opener unless it is gone; then to the fallback.

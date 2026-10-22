@@ -29,7 +29,7 @@ function renderDialog(over: { preset?: AccountsPreset; accounts?: HostingAccount
   );
 }
 
-const radio = (name: string) => screen.getByRole("radio", { name });
+const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
 const host = () => screen.getByLabelText("Host");
 const token = () => screen.getByLabelText("Token");
 const connect = () => screen.getByRole("button", { name: "Connect" });

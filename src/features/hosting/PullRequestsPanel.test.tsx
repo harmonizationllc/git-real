@@ -128,6 +128,20 @@ describe("PullRequestsPanel account states", () => {
     expect(screen.getByRole("radio", { name: "GitHub" })).toBeChecked();
   });
 
+  it("closes the Hosting accounts dialog it opened and returns focus to Connect…", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Connect…" }));
+    await screen.findByRole("dialog", { name: "Connect account" });
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Connect account" })).toBeNull(),
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("button", { name: "Connect…" })).toHaveFocus();
+  });
+
   it("shows the reconnect line and Reconnect for an account that needs it, without listing", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(
       repoContext(hostingAccount({ needsReconnect: true })),
