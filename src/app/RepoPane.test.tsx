@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   commit,
+  fetchAll,
   getCommit,
   getCommitConfig,
   getCommitFiles,
@@ -14,10 +15,14 @@ import {
   getStatus,
   getStashFiles,
   listBranches,
+  listRemotes,
   listStashes,
   listTags,
   listTrackedFiles,
   onRepoChanged,
+  pull,
+  pullDefaultMode,
+  push,
 } from "../lib/ipc";
 import type { BranchList } from "../lib/ipc";
 import { queryKeys } from "../lib/query/keys";
@@ -26,6 +31,7 @@ import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
+import { remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
@@ -56,6 +62,7 @@ vi.mock("../features/merge/OperationBanner", async () => {
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   commit: vi.fn(),
+  fetchAll: vi.fn(),
   getCommit: vi.fn(),
   getCommitConfig: vi.fn(),
   getCommitFiles: vi.fn(),
@@ -68,10 +75,14 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getStatus: vi.fn(),
   getStashFiles: vi.fn(),
   listBranches: vi.fn(),
+  listRemotes: vi.fn(),
   listStashes: vi.fn(),
   listTags: vi.fn(),
   listTrackedFiles: vi.fn(),
   onRepoChanged: vi.fn(),
+  pull: vi.fn(),
+  pullDefaultMode: vi.fn(),
+  push: vi.fn(),
 }));
 
 const tab = (id: number, headBranch: string | null = "main"): RepoTab => ({
@@ -81,7 +92,14 @@ const tab = (id: number, headBranch: string | null = "main"): RepoTab => ({
 
 const branchList = (over: Partial<BranchList> = {}): BranchList => ({
   head: { kind: "branch", name: "main" },
-  local: [{ name: "main", oid: "a".repeat(40), isHead: true, tracking: null }],
+  local: [
+    {
+      name: "main",
+      oid: "a".repeat(40),
+      isHead: true,
+      tracking: { upstream: "origin/main", ahead: 0, behind: 0 },
+    },
+  ],
   remotes: [],
   ...over,
 });
@@ -107,6 +125,11 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
   vi.mocked(listBranches).mockResolvedValue(branchList());
+  vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
+  vi.mocked(pullDefaultMode).mockResolvedValue("merge");
+  vi.mocked(fetchAll).mockResolvedValue(undefined);
+  vi.mocked(pull).mockResolvedValue("completed");
+  vi.mocked(push).mockResolvedValue(undefined);
   useWorkspace.setState({
     selected: {},
     selectedCommit: {},
@@ -1200,5 +1223,134 @@ describe("RepoPane tags", () => {
     expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
     expect(screen.queryByRole("heading", { name: /^Stashes/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Tags/ })).toBeNull();
+  });
+});
+
+// Contract: the header carries the sync toolbar, and Ctrl/Cmd+Shift+F, L and P run fetch, pull
+// and push through it, under the same dialog guard as the file history shortcut.
+describe("RepoPane sync toolbar and shortcuts", () => {
+  const press = (init: KeyboardEventInit) => fireEvent.keyDown(window, init);
+  const ctrlShift = (key: string): KeyboardEventInit => ({ ctrlKey: true, shiftKey: true, key });
+
+  /** Renders the pane and waits until the toolbar's pull and push are enabled (data loaded). */
+  async function renderReady() {
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Pull" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Push" })).toBeEnabled();
+    });
+    return view;
+  }
+
+  it("should render the sync toolbar in the header", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const toolbar = await screen.findByRole("toolbar", { name: "Sync" });
+    expect(header().closest("header")).toContainElement(toolbar);
+  });
+
+  it("should show the upstream of the current branch in the toolbar", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const toolbar = await screen.findByRole("toolbar", { name: "Sync" });
+    expect(await within(toolbar).findByText("→ origin/main")).toBeInTheDocument();
+  });
+
+  it("should fetch on Ctrl+Shift+F", async () => {
+    await renderReady();
+    press(ctrlShift("F"));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null));
+  });
+
+  it("should pull in the default mode on Ctrl+Shift+L", async () => {
+    vi.mocked(pullDefaultMode).mockResolvedValue("rebase");
+    const { queryClient } = await renderReady();
+    await waitFor(() => expect(queryClient.getQueryData(["repo", 1, "pullMode"])).toBe("rebase"));
+    press(ctrlShift("L"));
+    await waitFor(() => expect(pull).toHaveBeenCalledExactlyOnceWith(1, "rebase", null));
+  });
+
+  it("should push on Ctrl+Shift+P", async () => {
+    await renderReady();
+    press(ctrlShift("P"));
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledExactlyOnceWith(1, { kind: "upstream" }, false, null),
+    );
+  });
+
+  it("should push on Cmd+Shift+P", async () => {
+    await renderReady();
+    press({ metaKey: true, shiftKey: true, key: "P" });
+    await waitFor(() => expect(push).toHaveBeenCalledOnce());
+  });
+
+  it("should match a lower-case key (Caps Lock)", async () => {
+    await renderReady();
+    press(ctrlShift("p"));
+    await waitFor(() => expect(push).toHaveBeenCalledOnce());
+  });
+
+  it("should prevent the default action when a sync shortcut matches", async () => {
+    await renderReady();
+    expect(press(ctrlShift("F"))).toBe(false);
+  });
+
+  it("should ignore the sync shortcuts while a dialog is open", async () => {
+    await renderReady();
+    const other = document.createElement("div");
+    other.setAttribute("role", "dialog");
+    document.body.append(other);
+    try {
+      const results = ["F", "L", "P"].map((key) => press(ctrlShift(key)));
+      expect(results).toEqual([true, true, true]);
+      expect([fetchAll, pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0, 0]);
+    } finally {
+      other.remove();
+    }
+  });
+
+  it("should ignore the sync shortcuts while the action is disabled", async () => {
+    vi.mocked(listRemotes).mockResolvedValue([]);
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Fetch" })).toHaveAttribute(
+        "title",
+        "No remotes configured",
+      ),
+    );
+    press(ctrlShift("F"));
+    press(ctrlShift("L"));
+    press(ctrlShift("P"));
+    expect([fetchAll, pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0, 0]);
+  });
+
+  it("should do nothing on Ctrl+F without Shift", async () => {
+    await renderReady();
+    expect(press({ ctrlKey: true, key: "f" })).toBe(true);
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("should not sync on Shift+F without Ctrl or Meta", async () => {
+    await renderReady();
+    press({ shiftKey: true, key: "F" });
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("should still open the file picker on Ctrl+Shift+H", async () => {
+    await renderReady();
+    press(ctrlShift("H"));
+    expect(await screen.findByRole("dialog", { name: "File history" })).toBeInTheDocument();
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("should ignore Ctrl+Shift+L while the branch has no upstream", async () => {
+    vi.mocked(listBranches).mockResolvedValue(trackedList(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Pull" })).toHaveAttribute(
+        "title",
+        "This branch has no upstream",
+      ),
+    );
+    press(ctrlShift("L"));
+    expect(pull).not.toHaveBeenCalled();
   });
 });

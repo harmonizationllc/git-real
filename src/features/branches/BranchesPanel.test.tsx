@@ -20,6 +20,7 @@ import type {
   RebaseCommit,
 } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
+import { authError, networkError } from "../../test/remoteFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
 import { useCanFastForward } from "../merge/useCanFastForward";
@@ -763,11 +764,11 @@ describe("BranchesPanel delete on remote", () => {
     expect(deleteRemoteBranch).not.toHaveBeenCalled();
   });
 
-  it("should delete on the remote when confirmed", async () => {
+  it("deleting a remote branch calls deleteRemoteBranch with null credentials", async () => {
     const { user } = await renderPanel();
     const dialog = await openRemoteDelete(user);
     await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
-    expect(deleteRemoteBranch).toHaveBeenCalledExactlyOnceWith(1, "origin", "other");
+    expect(deleteRemoteBranch).toHaveBeenCalledExactlyOnceWith(1, "origin", "other", null);
   });
 
   it("should close the dialog when the remote delete succeeds", async () => {
@@ -777,17 +778,93 @@ describe("BranchesPanel delete on remote", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("should close the dialog and show the push error in the panel when it fails", async () => {
+  it("a remote delete network failure closes the confirm and shows a NetworkError", async () => {
+    vi.mocked(deleteRemoteBranch).mockRejectedValue(
+      networkError("other", {}, "remote: permission denied"),
+    );
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("git push failed");
+    expect(within(alert).getByText("Details").closest("details")).toHaveTextContent(
+      "remote: permission denied",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a classified remote delete failure shows its copy", async () => {
+    vi.mocked(deleteRemoteBranch).mockRejectedValue(networkError("hostUnreachable"));
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the remote");
+  });
+
+  it("another remote delete failure renders through the panel error", async () => {
     vi.mocked(deleteRemoteBranch).mockRejectedValue({
-      kind: "networkFailed",
-      message: "remote: permission denied",
-      network: { verb: "push", kind: "other", https: false, origin: null },
+      kind: "remoteNotFound",
+      message: "no remote named origin",
     });
     const { user } = await renderPanel();
     const dialog = await openRemoteDelete(user);
     await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("remote: permission denied");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("no remote named origin");
+    expect(alert).toHaveAttribute("data-variant", "panel");
+  });
+
+  it("dismissing a remote delete error clears it", async () => {
+    vi.mocked(deleteRemoteBranch).mockRejectedValue(networkError("hostUnreachable"));
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a remote delete that needs sign-in opens the credential dialog and retries with the credentials", async () => {
+    vi.mocked(deleteRemoteBranch)
+      .mockRejectedValueOnce(authError())
+      .mockResolvedValueOnce(undefined);
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    const signIn = await dialogNamed("Sign in to github.com");
+    await user.type(within(signIn).getByRole("textbox", { name: "Username" }), "me");
+    await user.type(within(signIn).getByLabelText("Token or password"), "tok");
+    await user.click(within(signIn).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(deleteRemoteBranch).toHaveBeenLastCalledWith(1, "origin", "other", {
+      origin: "https://github.com",
+      username: "me",
+      token: "tok",
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a cancelled sign-in closes the confirm with no error", async () => {
+    vi.mocked(deleteRemoteBranch).mockRejectedValue(authError());
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    const signIn = await dialogNamed("Sign in to github.com");
+    await user.click(within(signIn).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(deleteRemoteBranch).toHaveBeenCalledOnce();
+  });
+
+  it("the confirm is pending while the network action runs", async () => {
+    const d = deferred();
+    vi.mocked(deleteRemoteBranch).mockReturnValue(d.promise);
+    const { user } = await renderPanel();
+    const dialog = await openRemoteDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    expect(await within(dialog).findByRole("button", { name: "Working…" })).toBeDisabled();
+    d.resolve();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("should not delete when cancelled", async () => {

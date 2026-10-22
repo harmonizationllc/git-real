@@ -5,7 +5,6 @@ import {
   checkoutRemoteBranch,
   createBranch,
   deleteBranch,
-  deleteRemoteBranch,
   renameBranch,
 } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
@@ -20,7 +19,6 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   deleteBranch: vi.fn(),
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
-  deleteRemoteBranch: vi.fn(),
 }));
 
 type Request = Parameters<UseBranchActions["run"]>[0];
@@ -44,7 +42,6 @@ beforeEach(() => {
   vi.mocked(deleteBranch).mockResolvedValue(undefined);
   vi.mocked(checkoutBranch).mockResolvedValue(undefined);
   vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
-  vi.mocked(deleteRemoteBranch).mockResolvedValue(undefined);
 });
 
 // Contract: each request calls its wrapper with the repo id and the given arguments.
@@ -101,12 +98,6 @@ describe("useBranchActions wrapper calls", () => {
     expect(checkoutRemoteBranch).toHaveBeenCalledExactlyOnceWith(4, "origin", "a");
   });
 
-  it("should call deleteRemoteBranch with remote and name when deleteRemote runs", async () => {
-    const { result } = renderHookWithProviders(() => useBranchActions(4));
-    await run(() => result.current, { action: "deleteRemote", remote: "origin", name: "a" });
-    expect(deleteRemoteBranch).toHaveBeenCalledExactlyOnceWith(4, "origin", "a");
-  });
-
   it("should not call any other wrapper when checkout runs", async () => {
     const { result } = renderHookWithProviders(() => useBranchActions(4));
     await run(() => result.current, { action: "checkout", name: "a" });
@@ -140,14 +131,12 @@ describe("useBranchActions run result", () => {
     ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
-    ["deleteRemote", { action: "deleteRemote", remote: "origin", name: "a" }],
   ])("should resolve the AppError when %s fails", async (_n, req) => {
     const err: AppError = { kind: "checkoutFailed", message: "no" };
     vi.mocked(renameBranch).mockRejectedValue(err);
     vi.mocked(deleteBranch).mockRejectedValue(err);
     vi.mocked(checkoutBranch).mockRejectedValue(err);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(err);
-    vi.mocked(deleteRemoteBranch).mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     expect(await run(() => result.current, req)).toEqual(err);
   });
@@ -213,7 +202,6 @@ describe("useBranchActions invalidation", () => {
     ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
-    ["deleteRemote", { action: "deleteRemote", remote: "origin", name: "a" }],
   ];
 
   it.each(cases)("should invalidate the repo key when %s succeeds", async (_n, req) => {
@@ -229,7 +217,6 @@ describe("useBranchActions invalidation", () => {
     vi.mocked(deleteBranch).mockRejectedValue(exists);
     vi.mocked(checkoutBranch).mockRejectedValue(exists);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(exists);
-    vi.mocked(deleteRemoteBranch).mockRejectedValue(exists);
     const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => result.current, req);

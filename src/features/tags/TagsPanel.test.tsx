@@ -13,6 +13,7 @@ import type { BranchList, TagList } from "../../lib/ipc";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import { useWorkspace } from "../../lib/store/workspace";
 import { oidOf, shortOf } from "../../test/graphFixtures";
+import { authError, networkError } from "../../test/remoteFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { tagEntry, tagList } from "../../test/tagFixtures";
 import { TagsPanel } from "./TagsPanel";
@@ -358,7 +359,7 @@ describe("TagsPanel context menu", () => {
     const { user } = await renderPanel();
     rightClick(row("beta"));
     await user.click(menuItem("Push to origin"));
-    expect(pushTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "beta");
+    expect(pushTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "beta", null);
   });
 
   it("disables the remote and delete items while an action runs but not Copy name", async () => {
@@ -400,7 +401,7 @@ describe("TagsPanel push and remote delete", () => {
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
-    expect(pushTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "v1");
+    expect(pushTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "v1", null);
     expect(await screen.findByRole("status")).toHaveTextContent("Pushed v1 to origin.");
   });
 
@@ -429,7 +430,7 @@ describe("TagsPanel push and remote delete", () => {
   it("confirming calls deleteRemoteTag and shows Deleted v1 from origin.", async () => {
     const { user } = await askRemoteDelete();
     await user.click(await screen.findByRole("button", { name: "Delete" }));
-    expect(deleteRemoteTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "v1");
+    expect(deleteRemoteTag).toHaveBeenCalledExactlyOnceWith(1, "origin", "v1", null);
     expect(await screen.findByRole("status")).toHaveTextContent("Deleted v1 from origin.");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -481,36 +482,48 @@ describe("TagsPanel delete", () => {
 
 // Contract: failures surface as dismissable alerts with the mapped copy.
 describe("TagsPanel errors", () => {
-  it("shows git's output on networkFailed", async () => {
-    vi.mocked(pushTag).mockRejectedValue({
-      kind: "networkFailed",
-      message: "remote rejected",
-      network: { verb: "push", kind: "other", https: false, origin: null },
-    });
+  it("shows git push failed with git's output on networkFailed", async () => {
+    vi.mocked(pushTag).mockRejectedValue(networkError("other", {}, "remote rejected"));
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("remote rejected");
+    expect(await screen.findByRole("alert")).toHaveTextContent("git push failed");
   });
 
-  it("tags the push error alert with the panel variant", async () => {
-    vi.mocked(pushTag).mockRejectedValue({
-      kind: "networkFailed",
-      message: "remote rejected",
-      network: { verb: "push", kind: "other", https: false, origin: null },
-    });
+  it("shows git's output under Details on a remote delete failure", async () => {
+    vi.mocked(deleteRemoteTag).mockRejectedValue(networkError("other", {}, "remote: denied"));
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Delete from origin…"));
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("git push failed");
+    expect(within(alert).getByText("Details").closest("details")).toHaveTextContent(
+      "remote: denied",
+    );
+  });
+
+  it("shows git's output under Details on a push failure", async () => {
+    vi.mocked(pushTag).mockRejectedValue(networkError("other", {}, "remote rejected"));
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
-    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Details").closest("details")).toHaveTextContent(
+      "remote rejected",
+    );
+  });
+
+  it("shows the classified copy for a network failure such as an unreachable host", async () => {
+    vi.mocked(pushTag).mockRejectedValue(networkError("hostUnreachable"));
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Push to origin"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the remote");
   });
 
   it("shows no status after a failed push", async () => {
-    vi.mocked(pushTag).mockRejectedValue({
-      kind: "networkFailed",
-      message: "remote rejected",
-      network: { verb: "push", kind: "other", https: false, origin: null },
-    });
+    vi.mocked(pushTag).mockRejectedValue(networkError("other", {}, "remote rejected"));
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -539,11 +552,7 @@ describe("TagsPanel errors", () => {
   });
 
   it("dismissing an error clears it", async () => {
-    vi.mocked(pushTag).mockRejectedValue({
-      kind: "networkFailed",
-      message: "remote rejected",
-      network: { verb: "push", kind: "other", https: false, origin: null },
-    });
+    vi.mocked(pushTag).mockRejectedValue(networkError("other", {}, "remote rejected"));
     const { user } = await renderPanel();
     rightClick(row("v1"));
     await user.click(menuItem("Push to origin"));
@@ -554,11 +563,7 @@ describe("TagsPanel errors", () => {
 
   it("the next action clears an undismissed error", async () => {
     vi.mocked(pushTag)
-      .mockRejectedValueOnce({
-        kind: "networkFailed",
-        message: "remote rejected",
-        network: { verb: "push", kind: "other", https: false, origin: null },
-      })
+      .mockRejectedValueOnce(networkError("other", {}, "remote rejected"))
       .mockReturnValueOnce(new Promise(() => undefined));
     const { user } = await renderPanel();
     rightClick(row("v1"));
@@ -567,5 +572,56 @@ describe("TagsPanel errors", () => {
     rightClick(row("v2"));
     await user.click(menuItem("Push to origin"));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+// Contract: a push that needs sign-in opens the credential dialog and retries with what is entered.
+describe("TagsPanel sign-in", () => {
+  it("opens the credential dialog when a push needs sign-in", async () => {
+    vi.mocked(pushTag).mockRejectedValueOnce(authError());
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Push to origin"));
+    expect(
+      await screen.findByRole("dialog", { name: "Sign in to github.com" }),
+    ).toBeInTheDocument();
+  });
+
+  it("retries the push with the entered credentials and reports it", async () => {
+    vi.mocked(pushTag).mockRejectedValueOnce(authError()).mockResolvedValueOnce(undefined);
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Push to origin"));
+    await user.type(await screen.findByRole("textbox", { name: "Username" }), "me");
+    await user.type(screen.getByLabelText("Token or password"), "tok");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Pushed v1 to origin.");
+    expect(pushTag).toHaveBeenLastCalledWith(1, "origin", "v1", {
+      origin: "https://github.com",
+      username: "me",
+      token: "tok",
+    });
+  });
+
+  it("shows no error and no status when the sign-in is cancelled", async () => {
+    vi.mocked(pushTag).mockRejectedValueOnce(authError());
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Push to origin"));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("opens the credential dialog when a remote delete needs sign-in", async () => {
+    vi.mocked(deleteRemoteTag).mockRejectedValueOnce(authError());
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Delete from origin…"));
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Sign in to github.com" }),
+    ).toBeInTheDocument();
   });
 });
