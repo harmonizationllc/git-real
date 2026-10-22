@@ -170,7 +170,7 @@ fn remote_delete_with_a_git_that_cannot_be_executed_fails_with_io() {
     // The executable is located when the deletion is prepared.
     with_path(broken.path().as_os_str().to_owned(), || {
         let push = session.prepare_remote_delete("origin", &head).unwrap();
-        assert!(matches!(push.run().unwrap_err(), GitError::Io(_)));
+        assert!(matches!(push.run(None).unwrap_err(), GitError::Io(_)));
     });
 }
 

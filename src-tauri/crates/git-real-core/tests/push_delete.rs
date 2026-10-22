@@ -8,7 +8,7 @@ use common::git_available;
 
 use std::path::PathBuf;
 
-use git_real_core::{GitError, RepoSession};
+use git_real_core::{GitError, NetworkErrorKind, RepoSession};
 use git2::{BranchType, Repository};
 
 /// Fixture with a fetched bare remote `origin` that holds a `feature` branch.
@@ -127,7 +127,7 @@ fn run_deletes_the_branch_on_the_bare_remote() {
     session
         .prepare_remote_delete("origin", "feature")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert!(!bare_has_branch(&bare, "feature"));
 }
@@ -142,7 +142,7 @@ fn run_removes_the_remote_tracking_ref() {
     session
         .prepare_remote_delete("origin", "feature")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert!(!tracking_ref_exists(&path, "feature"));
 }
@@ -158,7 +158,7 @@ fn run_leaves_the_local_branch_and_other_remote_branches_alone() {
     session
         .prepare_remote_delete("origin", "feature")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     let repo = Repository::open(&path).unwrap();
     assert!(repo.find_branch("feature", BranchType::Local).is_ok());
@@ -179,12 +179,12 @@ fn run_reports_push_failure_when_the_remote_branch_is_already_gone() {
         .unwrap()
         .delete()
         .unwrap();
-    match push.run().unwrap_err() {
-        GitError::PushFailed { code, stderr, .. } => {
+    match push.run(None).unwrap_err() {
+        GitError::NetworkFailed { code, stderr, .. } => {
             assert_eq!(code, Some(1));
             assert!(!stderr.trim().is_empty());
         }
-        other => panic!("expected PushFailed, got {other:?}"),
+        other => panic!("expected NetworkFailed, got {other:?}"),
     }
 }
 
@@ -204,8 +204,8 @@ fn run_reports_push_failure_when_the_remote_is_unreachable() {
         )
         .unwrap();
     assert!(matches!(
-        push.run().unwrap_err(),
-        GitError::PushFailed { stderr, .. } if !stderr.trim().is_empty()
+        push.run(None).unwrap_err(),
+        GitError::NetworkFailed { kind: NetworkErrorKind::RepoNotFound, stderr, .. } if !stderr.trim().is_empty()
     ));
 }
 
@@ -224,7 +224,7 @@ fn run_keeps_the_remote_tracking_ref_when_the_push_fails() {
             bare_dir.path().join("missing.git").to_str().unwrap(),
         )
         .unwrap();
-    let _ = push.run();
+    let _ = push.run(None);
     assert!(tracking_ref_exists(&path, "feature"));
 }
 

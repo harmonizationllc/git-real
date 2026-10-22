@@ -338,7 +338,7 @@ fn delete_remote_branch_inner_maps_unknown_remote_branch() {
 }
 
 #[test]
-fn delete_remote_branch_inner_maps_push_rejection_to_push_failed() {
+fn delete_remote_branch_inner_maps_push_rejection_to_network_failed() {
     if !common::git_available() {
         return;
     }
@@ -350,7 +350,8 @@ fn delete_remote_branch_inner_maps_push_rejection_to_push_failed() {
         .delete()
         .unwrap();
     let err = delete_remote_branch_inner(&reg, id, "origin", "feature").unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::PushFailed);
+    assert_eq!(err.kind, AppErrorKind::NetworkFailed);
+    assert_eq!(err.network.unwrap().verb, "push");
     assert!(!err.message.is_empty());
 }
 

@@ -1,0 +1,2 @@
+error: unable to delete 'heads/nosuch': remote ref does not exist
+error: failed to push some refs to '/srv/bare.git'

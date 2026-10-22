@@ -14,7 +14,9 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use git_real_core::{GitError, MergeMode, OperationOutcome, RepoSession, StashOutcome};
+use git_real_core::{
+    GitError, MergeMode, NetworkErrorKind, OperationOutcome, RepoSession, StashOutcome,
+};
 use git2::{BranchType, Repository};
 
 const SCRIPT: &str = r#"printf '%s\n' "$@" > "$2/.git/argv.txt"
@@ -219,7 +221,7 @@ fn failed_tracking_checkout_creates_no_local_branch() {
 fn remote_delete_pushes_a_heads_qualified_name() {
     let (_d, _b, path, session) = fixture();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
-    push.run().unwrap();
+    push.run(None).unwrap();
     assert_eq!(
         after_workdir(&path),
         ["push", "origin", "--delete", "heads/feature"]
@@ -232,7 +234,7 @@ fn remote_delete_keeps_slashes_in_the_name() {
     session
         .prepare_remote_delete("origin", "feat/slash")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert_eq!(
         after_workdir(&path),
@@ -244,7 +246,7 @@ fn remote_delete_keeps_slashes_in_the_name() {
 fn remote_delete_runs_in_the_accessor_workdir() {
     let (_d, _b, path, session) = fixture();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
-    push.run().unwrap();
+    push.run(None).unwrap();
     assert_eq!(argv(&path)[1], push.workdir().to_str().unwrap());
 }
 
@@ -253,17 +255,22 @@ fn push_failure_carries_exit_code_stdout_and_stderr_separately() {
     let (_d, _b, path, session) = fixture();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
     script_behaviour(&path, "echo push-out\necho push-err >&2\nexit 7");
-    match push.run().unwrap_err() {
-        GitError::PushFailed {
+    match push.run(None).unwrap_err() {
+        GitError::NetworkFailed {
+            verb,
+            kind,
             code,
             stdout,
             stderr,
+            ..
         } => {
+            assert_eq!(verb, "push");
+            assert_eq!(kind, NetworkErrorKind::Other);
             assert_eq!(code, Some(7));
             assert_eq!(stdout, "push-out\n");
             assert_eq!(stderr, "push-err\n");
         }
-        other => panic!("expected PushFailed, got {other:?}"),
+        other => panic!("expected NetworkFailed, got {other:?}"),
     }
 }
 
@@ -273,8 +280,8 @@ fn push_killed_by_a_signal_reports_no_exit_code() {
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
     script_behaviour(&path, "kill -9 $$");
     assert!(matches!(
-        push.run().unwrap_err(),
-        GitError::PushFailed { code: None, .. }
+        push.run(None).unwrap_err(),
+        GitError::NetworkFailed { code: None, .. }
     ));
 }
 
@@ -1201,7 +1208,7 @@ fn push_tag_pushes_the_full_tag_refname() {
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert_eq!(after_workdir(&path), ["push", "origin", "refs/tags/v1"]);
 }
@@ -1222,7 +1229,7 @@ fn delete_remote_tag_pushes_a_tags_qualified_delete() {
     session
         .prepare_remote_tag_delete("origin", "rel/v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert_eq!(
         after_workdir(&path),
@@ -1231,7 +1238,7 @@ fn delete_remote_tag_pushes_a_tags_qualified_delete() {
 }
 
 #[test]
-fn tag_push_failure_is_push_failed_with_git_output() {
+fn tag_push_failure_is_network_failed_with_git_output() {
     let (_d, _b, path, session) = fixture();
     common::tag_lightweight(
         &path,
@@ -1245,14 +1252,14 @@ fn tag_push_failure_is_push_failed_with_git_output() {
     );
     script_behaviour(&path, "echo out\necho err >&2\nexit 1");
     for result in [
-        session.prepare_tag_push("origin", "v1").unwrap().run(),
+        session.prepare_tag_push("origin", "v1").unwrap().run(None),
         session
             .prepare_remote_tag_delete("origin", "v1")
             .unwrap()
-            .run(),
+            .run(None),
     ] {
         assert!(
-            matches!(result, Err(GitError::PushFailed { code: Some(1), ref stdout, ref stderr }) if stdout == "out\n" && stderr == "err\n")
+            matches!(result, Err(GitError::NetworkFailed { code: Some(1), ref stdout, ref stderr, .. }) if stdout == "out\n" && stderr == "err\n")
         );
     }
 }

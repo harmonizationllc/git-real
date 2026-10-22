@@ -126,7 +126,8 @@ fn push_tag_and_delete_remote_tag_inner_round_trip() {
             .is_err()
     );
     let err = delete_remote_tag_inner(&reg, id, "origin", "v1").unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::PushFailed);
+    assert_eq!(err.kind, AppErrorKind::NetworkFailed);
+    assert_eq!(err.network.unwrap().verb, "push");
     assert!(
         err.message.contains("remote ref does not exist"),
         "{}",
