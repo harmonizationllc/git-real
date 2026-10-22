@@ -414,3 +414,40 @@ describe("mutationKeys", () => {
     expect(mutationKeys.tag(3)[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });
+
+// Contract: remotes and pull mode sit under the repo prefix; network mutations share one key.
+describe("remote query keys", () => {
+  it("should define remotes(id) and pullMode(id) under the repo prefix", () => {
+    expect(queryKeys.remotes(3)).toEqual(["repo", 3, "remotes"]);
+    expect(queryKeys.pullMode(3)).toEqual(["repo", 3, "pullMode"]);
+    expect(queryKeys.remotes(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+    expect(queryKeys.pullMode(3).slice(0, 2)).toEqual(queryKeys.repo(3));
+  });
+
+  it("should refresh remotes and pullMode on repo(id) invalidation of that repo only", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.remotes(1), 1);
+    qc.setQueryData(queryKeys.pullMode(1), 1);
+    qc.setQueryData(queryKeys.remotes(2), 1);
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect([
+      qc.getQueryState(queryKeys.remotes(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.pullMode(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.remotes(2))?.isInvalidated,
+    ]).toEqual([true, true, false]);
+  });
+
+  it("should define mutationKeys.network(id) as ['network', id]", () => {
+    expect(mutationKeys.network(3)).toEqual(["network", 3]);
+  });
+
+  it("should differ network keys per repo and from tag and stash keys", () => {
+    expect(mutationKeys.network(3)).not.toEqual(mutationKeys.network(4));
+    expect(mutationKeys.network(3)).not.toEqual(mutationKeys.tag(3));
+    expect(mutationKeys.network(3)).not.toEqual(mutationKeys.stash(3));
+  });
+
+  it("should not start network keys with the repo query prefix", () => {
+    expect(mutationKeys.network(3)[0]).not.toBe(queryKeys.repo(3)[0]);
+  });
+});

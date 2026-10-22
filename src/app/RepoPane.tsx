@@ -9,11 +9,16 @@ import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
+import { RemotesDialog } from "../features/remotes/RemotesDialog";
+import type { RemotesTarget } from "../features/remotes/remotesTarget";
+import { SyncToolbar } from "../features/remotes/SyncToolbar";
+import { useSyncActions } from "../features/remotes/useSyncActions";
+import type { SyncActions } from "../features/remotes/useSyncActions";
 import { StashSummary } from "../features/stash/StashSummary";
 import { StashesPanel } from "../features/stash/StashesPanel";
 import { TagsPanel } from "../features/tags/TagsPanel";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
-import type { HeadState } from "../lib/ipc";
+import type { HeadState, RepoId } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import type { RepoTab } from "../lib/store/repoTabs";
@@ -34,6 +39,13 @@ function headLine(head: HeadState | undefined, fallback: string | null): string 
   }
 }
 
+/** Ctrl/Cmd+Shift+<key> sync shortcuts, by lower-case key. */
+const SYNC_SHORTCUTS = new Map<string, (sync: SyncActions) => void>([
+  ["f", (sync) => sync.fetch()],
+  ["l", (sync) => sync.pull()],
+  ["p", (sync) => sync.push()],
+]);
+
 export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   // The single repo-changed subscription for this tab; it refreshes every query of the repo.
   useRepoChanged(tab.id);
@@ -51,15 +63,40 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const historyPath = useWorkspace((s) => s.historyPath[tab.id] ?? null);
   const showHistory = useWorkspace((s) => s.showHistory);
   const [picker, setPicker] = useState(false);
+  const sync = useSyncActions(tab.id);
+  const rootRef = useRef<HTMLElement>(null);
+  // The open remotes dialog, tagged with the tab that opened it: switching tabs drops it during
+  // render, so it never mounts for another repo and does not reappear on the way back.
+  const [remotes, setRemotes] = useState<{ repoId: RepoId; target: RemotesTarget } | null>(null);
+  if (remotes !== null && remotes.repoId !== tab.id) setRemotes(null);
+  const remotesTarget = remotes !== null && remotes.repoId === tab.id ? remotes.target : null;
+  const openRemotes = (target: RemotesTarget) => setRemotes({ repoId: tab.id, target });
 
-  // Ctrl+Shift+H (Cmd+Shift+H) opens the file picker; never on top of another dialog.
+  // The window handler is registered once; it reads the latest sync actions (and their gates).
+  const syncRef = useRef(sync);
+  useEffect(() => {
+    syncRef.current = sync;
+  });
+
+  // Ctrl/Cmd+Shift+H opens the file picker; Ctrl/Cmd+Shift+F, L and P fetch, pull and push.
+  // Never on top of another dialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Shift reports "H", and Caps Lock can flip it, so compare in lower case.
-      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.key.toLowerCase() !== "h") return;
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
       if (document.querySelector('[role="dialog"]') !== null) return;
+      // Shift reports upper case, and Caps Lock can flip it, so compare in lower case.
+      const key = e.key.toLowerCase();
+      if (key === "h") {
+        e.preventDefault();
+        setPicker(true);
+        return;
+      }
+      const action = SYNC_SHORTCUTS.get(key);
+      // A held chord must not queue actions, and a control that consumed it keeps it.
+      if (action === undefined || e.repeat || e.defaultPrevented) return;
       e.preventDefault();
-      setPicker(true);
+      // Each action ignores itself while gated.
+      action(syncRef.current);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -79,13 +116,22 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const { refs, sidebar } = clampWidths(available, refsWidth, sidebarWidth);
 
   return (
-    <section className={styles.root} aria-labelledby={headingId}>
+    <section
+      ref={rootRef}
+      tabIndex={-1}
+      data-focus-target
+      className={styles.root}
+      aria-labelledby={headingId}
+    >
       <header className={styles.header}>
         <h1 id={headingId} className={styles.name}>
           {name}
         </h1>
         <p className={styles.path}>{path}</p>
-        <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
+        <div className={styles.syncRow}>
+          <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
+          <SyncToolbar sync={sync} onOpenRemotes={openRemotes} />
+        </div>
       </header>
       {/* Keyed so the abort dialog and mutation state never leak across tabs. */}
       <OperationBanner key={tab.id} repoId={tab.id} />
@@ -98,7 +144,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
             <>
-              <BranchesPanel repoId={tab.id} />
+              <BranchesPanel repoId={tab.id} onOpenRemotes={openRemotes} />
               <StashesPanel repoId={tab.id} />
               <TagsPanel repoId={tab.id} />
             </>
@@ -159,6 +205,16 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         }}
         onCancel={() => setPicker(false)}
       />
+      {remotesTarget !== null && (
+        // The pane root takes focus on close when the opener is gone, e.g. a renamed remote's heading.
+        <RemotesDialog
+          key={tab.id}
+          repoId={tab.id}
+          target={remotesTarget}
+          onClose={() => setRemotes(null)}
+          fallbackFocus={rootRef}
+        />
+      )}
     </section>
   );
 }

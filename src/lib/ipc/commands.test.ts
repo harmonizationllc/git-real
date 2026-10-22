@@ -2,6 +2,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   abortOperation,
+  addRemote,
   addToGitignore,
   applyHunk,
   checkGitCli,
@@ -21,6 +22,7 @@ import {
   deleteRemoteTag,
   deleteTag,
   discardPaths,
+  fetchAll,
   getBlame,
   getOperationState,
   getCommit,
@@ -37,16 +39,21 @@ import {
   getStatus,
   initRepo,
   listBranches,
+  listRemotes,
   listRecent,
   listStashes,
   listTags,
   mergeBranch,
   openRepo,
+  pull,
+  pullDefaultMode,
+  push,
   pushTag,
   rebaseInteractive,
   rebaseOnto,
   rebasePlan,
   removeRecent,
+  removeRemote,
   renameBranch,
   resetToCommit,
   resolveConflicts,
@@ -60,11 +67,14 @@ import {
   stagePaths,
   unstageAll,
   unstagePaths,
+  updateRemote,
   writeResolution,
 } from "./commands";
 import { isAppError } from "./errors";
 import type {
   BranchList,
+  Credentials,
+  RemoteInfo,
   FastForwardCheck,
   OperationOutcome,
   OperationState,
@@ -470,7 +480,10 @@ describe("branch commands", () => {
     const calls = mockWith(null);
     await deleteRemoteBranch(3, "origin", "topic");
     expect(calls).toEqual([
-      { cmd: "delete_remote_branch", args: { id: 3, remote: "origin", name: "topic" } },
+      {
+        cmd: "delete_remote_branch",
+        args: { id: 3, remote: "origin", name: "topic", credentials: null },
+      },
     ]);
   });
 
@@ -932,14 +945,19 @@ describe("tag command wrappers", () => {
   it("pushTag sends push_tag with id, remote and name", async () => {
     const calls = mockWith(null);
     await pushTag(2, "origin", "v1");
-    expect(calls).toEqual([{ cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1" } }]);
+    expect(calls).toEqual([
+      { cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1", credentials: null } },
+    ]);
   });
 
   it("deleteRemoteTag sends delete_remote_tag with id, remote and name", async () => {
     const calls = mockWith(null);
     await deleteRemoteTag(2, "origin", "v1");
     expect(calls).toEqual([
-      { cmd: "delete_remote_tag", args: { id: 2, remote: "origin", name: "v1" } },
+      {
+        cmd: "delete_remote_tag",
+        args: { id: 2, remote: "origin", name: "v1", credentials: null },
+      },
     ]);
   });
 
@@ -952,5 +970,170 @@ describe("tag command wrappers", () => {
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing({ kind: "tagNotFound", message: "no tag named v1" });
     await expect(call()).rejects.toEqual({ kind: "tagNotFound", message: "no tag named v1" });
+  });
+});
+
+// Contract: the GR-12 wrappers invoke the pinned Rust command names with camelCase args.
+describe("remote command wrappers", () => {
+  const creds: Credentials = { origin: "https://h", username: "me", token: "t" };
+
+  it("fetchAll sends fetch with id and null credentials", async () => {
+    const calls = mockWith(null);
+    await fetchAll(2);
+    expect(calls).toEqual([{ cmd: "fetch", args: { id: 2, credentials: null } }]);
+  });
+
+  it("fetchAll sends the credentials through", async () => {
+    const calls = mockWith(null);
+    await fetchAll(2, creds);
+    expect(calls).toEqual([{ cmd: "fetch", args: { id: 2, credentials: creds } }]);
+  });
+
+  it("pullDefaultMode sends pull_default_mode with id", async () => {
+    const calls = mockWith("merge");
+    await pullDefaultMode(2);
+    expect(calls).toEqual([{ cmd: "pull_default_mode", args: { id: 2 } }]);
+  });
+
+  it("pullDefaultMode passes the mode through", async () => {
+    mockWith("rebase");
+    await expect(pullDefaultMode(2)).resolves.toBe("rebase");
+  });
+
+  it("pull sends mode and null credentials by default", async () => {
+    const calls = mockWith("completed");
+    await pull(2, "rebase");
+    expect(calls).toEqual([{ cmd: "pull", args: { id: 2, mode: "rebase", credentials: null } }]);
+  });
+
+  it("pull sends the credentials through", async () => {
+    const calls = mockWith("completed");
+    await pull(2, "merge", creds);
+    expect(calls).toEqual([{ cmd: "pull", args: { id: 2, mode: "merge", credentials: creds } }]);
+  });
+
+  it("pull passes the outcome through", async () => {
+    mockWith("conflicts");
+    await expect(pull(2, "merge")).resolves.toBe("conflicts");
+  });
+
+  it("push sends target, force, expectedBranch and credentials", async () => {
+    const calls = mockWith(null);
+    const target = { kind: "setUpstream", remote: "origin", branch: "b" } as const;
+    await push(2, target, true, "main", creds);
+    expect(calls).toEqual([
+      {
+        cmd: "push",
+        args: { id: 2, target, force: true, expectedBranch: "main", credentials: creds },
+      },
+    ]);
+  });
+
+  it("push sends null credentials by default", async () => {
+    const calls = mockWith(null);
+    await push(2, { kind: "upstream" }, false, "main");
+    expect(calls).toEqual([
+      {
+        cmd: "push",
+        args: {
+          id: 2,
+          target: { kind: "upstream" },
+          force: false,
+          expectedBranch: "main",
+          credentials: null,
+        },
+      },
+    ]);
+  });
+
+  it("listRemotes sends list_remotes with id and returns the list", async () => {
+    const list: RemoteInfo[] = [{ name: "origin", fetchUrl: "/f", pushUrl: null }];
+    const calls = mockWith(list);
+    const result = await listRemotes(2);
+    expect(calls).toEqual([{ cmd: "list_remotes", args: { id: 2 } }]);
+    expect(result).toEqual(list);
+  });
+
+  it("addRemote sends name, url and a null pushUrl", async () => {
+    const calls = mockWith(null);
+    await addRemote(2, "origin", "/f", null);
+    expect(calls).toEqual([
+      { cmd: "add_remote", args: { id: 2, name: "origin", url: "/f", pushUrl: null } },
+    ]);
+  });
+
+  it("addRemote sends a push url through", async () => {
+    const calls = mockWith(null);
+    await addRemote(2, "origin", "/f", "/p");
+    expect(calls).toEqual([
+      { cmd: "add_remote", args: { id: 2, name: "origin", url: "/f", pushUrl: "/p" } },
+    ]);
+  });
+
+  it("updateRemote sends name, newName, url and pushUrl", async () => {
+    const calls = mockWith(null);
+    await updateRemote(2, "origin", "up", "/f", "/p");
+    expect(calls).toEqual([
+      {
+        cmd: "update_remote",
+        args: { id: 2, name: "origin", newName: "up", url: "/f", pushUrl: "/p" },
+      },
+    ]);
+  });
+
+  it("removeRemote sends name", async () => {
+    const calls = mockWith(null);
+    await removeRemote(2, "origin");
+    expect(calls).toEqual([{ cmd: "remove_remote", args: { id: 2, name: "origin" } }]);
+  });
+
+  it("pushTag, deleteRemoteTag and deleteRemoteBranch send null credentials by default", async () => {
+    const calls = mockWith(null);
+    await pushTag(2, "origin", "v1");
+    await deleteRemoteTag(2, "origin", "v1");
+    await deleteRemoteBranch(2, "origin", "b");
+    expect(calls.map((c) => (c.args as { credentials: unknown }).credentials)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("pushTag, deleteRemoteTag and deleteRemoteBranch send the given credentials", async () => {
+    const calls = mockWith(null);
+    await pushTag(2, "origin", "v1", creds);
+    await deleteRemoteTag(2, "origin", "v1", creds);
+    await deleteRemoteBranch(2, "origin", "b", creds);
+    expect(calls).toEqual([
+      { cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1", credentials: creds } },
+      {
+        cmd: "delete_remote_tag",
+        args: { id: 2, remote: "origin", name: "v1", credentials: creds },
+      },
+      {
+        cmd: "delete_remote_branch",
+        args: { id: 2, remote: "origin", name: "b", credentials: creds },
+      },
+    ]);
+  });
+
+  const failure = {
+    kind: "networkFailed",
+    message: "x",
+    network: { verb: "fetch", kind: "hostUnreachable", https: false, origin: null },
+  };
+
+  it.each([
+    ["fetchAll", () => fetchAll(1)],
+    ["pullDefaultMode", () => pullDefaultMode(1)],
+    ["pull", () => pull(1, "merge")],
+    ["push", () => push(1, { kind: "upstream" }, false, "main")],
+    ["listRemotes", () => listRemotes(1)],
+    ["addRemote", () => addRemote(1, "o", "/f", null)],
+    ["updateRemote", () => updateRemote(1, "o", "o", "/f", null)],
+    ["removeRemote", () => removeRemote(1, "o")],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing(failure);
+    await expect(call()).rejects.toEqual(failure);
   });
 });

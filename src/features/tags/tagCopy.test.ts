@@ -48,7 +48,7 @@ describe("displayError", () => {
     expect(displayError(e, null)).toBe(e);
   });
 
-  it.each(["pushFailed", "remoteNotFound", "io"] as const)(
+  it.each(["networkFailed", "remoteNotFound", "io"] as const)(
     "should return a %s error as the same object",
     (kind) => {
       const e = err(kind);

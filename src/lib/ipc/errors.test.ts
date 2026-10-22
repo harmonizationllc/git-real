@@ -90,7 +90,7 @@ describe("isAppError worktree kinds", () => {
   });
 });
 
-// Contract: the ten branch-management error kinds are recognised by the guard.
+// Contract: the nine branch-management error kinds are recognised by the guard.
 describe("isAppError branch kinds", () => {
   const branchKinds: AppErrorKind[] = [
     "invalidBranchName",
@@ -102,7 +102,6 @@ describe("isAppError branch kinds", () => {
     "revisionNotFound",
     "remoteNotFound",
     "checkoutFailed",
-    "pushFailed",
   ];
 
   it.each(branchKinds)("isAppError accepts kind %s", (kind) => {
@@ -208,5 +207,34 @@ describe("isAppError operation kinds", () => {
 
   it("isAppError rejects a near-miss operation kind", () => {
     expect(isAppError({ kind: "operationfailed", message: "m" })).toBe(false);
+  });
+});
+
+// Contract: the GR-12 network and remote-management kinds are recognised; pushFailed is gone.
+describe("isAppError remote kinds", () => {
+  it.each([
+    "networkFailed",
+    "noRemotes",
+    "noUpstream",
+    "detachedHead",
+    "invalidRemoteName",
+    "invalidRemoteUrl",
+    "remoteExists",
+    "invalidCredentials",
+  ] as const)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it("isAppError rejects the removed pushFailed kind", () => {
+    expect(isAppError({ kind: "pushFailed", message: "m" })).toBe(false);
+  });
+
+  it("toAppError keeps the network payload", () => {
+    const e = {
+      kind: "networkFailed",
+      message: "x",
+      network: { verb: "fetch", kind: "hostUnreachable", https: false, origin: null },
+    };
+    expect(toAppError(e)).toBe(e);
   });
 });

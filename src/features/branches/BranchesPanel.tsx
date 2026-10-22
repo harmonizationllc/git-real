@@ -2,13 +2,21 @@ import { useCallback, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
-import type { BranchList, HeadState, RepoId } from "../../lib/ipc";
+import { deleteRemoteBranch } from "../../lib/ipc";
+import type { AppError, BranchList, HeadState, RepoId } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
 import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
+import { CredentialDialog } from "../remotes/CredentialDialog";
+import { NetworkError } from "../remotes/NetworkError";
+import { networkMessage } from "../remotes/networkMessage";
+import { removeRemoteCopy } from "../remotes/remoteCopy";
+import type { RemotesTarget } from "../remotes/remotesTarget";
+import { useNetworkAction } from "../remotes/useNetworkAction";
+import { useRemoteActions } from "../remotes/useRemoteActions";
 import { RepoError } from "../repo/RepoError";
 import { BranchGroup } from "./BranchGroup";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
@@ -19,6 +27,8 @@ import { useBranches } from "./useBranches";
 
 export interface BranchesPanelProps {
   repoId: RepoId;
+  /** Opens the remotes dialog; without it a remote heading's Edit remote… is disabled. */
+  onOpenRemotes?(target: RemotesTarget): void;
 }
 
 interface MenuState {
@@ -29,12 +39,20 @@ interface MenuState {
   dropMenu?: boolean;
 }
 
+/** The context menu of a remote group's heading. */
+interface HeadingMenuState {
+  x: number;
+  y: number;
+  remote: string;
+}
+
 type Dialog =
   | { kind: "create"; title: string; startPoint: string | null; checkout: boolean }
   | { kind: "rename"; name: string }
   | { kind: "deleteLocal"; name: string }
   | { kind: "forceDelete"; name: string }
   | { kind: "deleteRemote"; remote: string; name: string }
+  | { kind: "removeRemote"; name: string }
   | { kind: "rebase"; base: string };
 
 type CreateDialog = Extract<Dialog, { kind: "create" }>;
@@ -60,14 +78,19 @@ function headRow(head: HeadState) {
   );
 }
 
-export function BranchesPanel({ repoId }: BranchesPanelProps) {
+export function BranchesPanel({ repoId, onOpenRemotes }: BranchesPanelProps) {
   const rootRef = useRef<HTMLElement>(null);
   const { branches, error: listError, refetch } = useBranches(repoId);
   const actions = useBranchActions(repoId);
   const { state } = useOperationState(repoId);
   const integration = useIntegrationActions(repoId);
-  const pending = actions.pending || integration.pending;
-  const panelError = actions.error ?? integration.error;
+  const network = useNetworkAction(repoId);
+  const remoteActions = useRemoteActions(repoId);
+  // The last remote delete or remove failure; those actions resolve it rather than holding it.
+  const [remoteError, setRemoteError] = useState<AppError | null>(null);
+  const pending =
+    actions.pending || integration.pending || network.pending || remoteActions.pending;
+  const panelError = actions.error ?? integration.error ?? remoteError;
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -76,7 +99,9 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   // branch's row (dragenter and dragleave also fire for its children).
   const [dragging, setDragging] = useState<BranchTarget | null>(null);
   const [overDepth, setOverDepth] = useState(0);
+  const [headingMenu, setHeadingMenu] = useState<HeadingMenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const closeHeadingMenu = useCallback(() => setHeadingMenu(null), []);
   const menuBranch =
     menu === null || (menu.target.kind === "local" && menu.target.branch.isHead)
       ? null
@@ -86,6 +111,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const clearErrors = () => {
     actions.clearError();
     integration.clearError();
+    setRemoteError(null);
   };
 
   // A newer integration failure must not hide behind an older, undismissed panel error.
@@ -146,10 +172,35 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     setDialog(null);
   };
 
+  // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
   const confirmDeleteRemote = async (remote: string, name: string) => {
-    await actions.run({ action: "deleteRemote", remote, name });
+    const result = await network.run((c) => deleteRemoteBranch(repoId, remote, name, c));
     setDialog(null);
+    if (result.status === "failed") setRemoteError(result.error);
   };
+
+  const confirmRemoveRemote = async (name: string) => {
+    const error = await remoteActions.remove(name);
+    setDialog(null);
+    setRemoteError(error);
+  };
+
+  const headingItems = (remote: string): MenuItem[] => [
+    {
+      id: "editRemote",
+      label: "Edit remote…",
+      disabled: onOpenRemotes === undefined,
+      // A disabled item cannot be selected, so onOpenRemotes is set here.
+      onSelect: () => (onOpenRemotes as (t: RemotesTarget) => void)({ mode: "edit", name: remote }),
+    },
+    {
+      id: "removeRemote",
+      label: "Remove remote…",
+      danger: true,
+      disabled: pending,
+      onSelect: () => openDialog({ kind: "removeRemote", name: remote }),
+    },
+  ];
 
   /** Why the current branch cannot integrate another one right now, if it cannot. */
   const integrationGate = (head: HeadState): string | undefined =>
@@ -328,9 +379,13 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
             New branch…
           </button>
         </div>
-        {dialog === null && panelError !== null && (
-          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
-        )}
+        {dialog === null &&
+          panelError !== null &&
+          (panelError.kind === "networkFailed" ? (
+            <NetworkError message={networkMessage(panelError)} onDismiss={clearErrors} />
+          ) : (
+            <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
+          ))}
         <BranchGroup
           heading="Local"
           listLabel="Local branches"
@@ -349,6 +404,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
             listLabel={`${group.remote} branches`}
             filtered={filtered}
             count={group.branches.length}
+            onHeadingContextMenu={(x, y) => setHeadingMenu({ x, y, remote: group.remote })}
           >
             {group.branches.map((branch) =>
               row({ kind: "remote", branch }, `${branch.remote}/${branch.name}`, false),
@@ -361,6 +417,14 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           y={menu?.y ?? 0}
           items={menu === null ? [] : menuItems(menu, list)}
           onClose={closeMenu}
+          fallbackFocus={rootRef}
+        />
+        <ContextMenu
+          open={headingMenu !== null}
+          x={headingMenu?.x ?? 0}
+          y={headingMenu?.y ?? 0}
+          items={headingMenu === null ? [] : headingItems(headingMenu.remote)}
+          onClose={closeHeadingMenu}
           fallbackFocus={rootRef}
         />
       </>
@@ -468,12 +532,27 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           body="This removes the branch from the remote for everyone."
           confirmLabel={`Delete on ${dialog.remote}`}
           danger
-          pending={actions.pending}
+          pending={network.pending}
           onConfirm={() => void confirmDeleteRemote(dialog.remote, dialog.name)}
           onCancel={closeDialog}
           fallbackFocus={rootRef}
         />
       )}
+      {dialog?.kind === "removeRemote" && (
+        <ConfirmDialog
+          key="removeRemote"
+          open
+          {...removeRemoteCopy(dialog.name)}
+          confirmLabel="Remove"
+          danger
+          pending={remoteActions.pending}
+          onConfirm={() => void confirmRemoveRemote(dialog.name)}
+          onCancel={closeDialog}
+          fallbackFocus={rootRef}
+        />
+      )}
+      {/* Last, so a sign-in asked for during the remote delete paints above its confirm. */}
+      <CredentialDialog prompt={network.prompt} fallbackFocus={rootRef} />
     </section>
   );
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type {
+  AppError,
   AppErrorKind,
+  Credentials,
+  NetworkErrorInfo,
+  NetworkErrorKind,
+  PullMode,
+  PushTarget,
+  RemoteInfo,
   ConflictSide,
   FastForwardCheck,
   MergeMode,
@@ -210,7 +217,7 @@ describe("branch DTO shapes", () => {
     expect(heads.map((h) => h.kind)).toEqual(["branch", "detached", "unborn"]);
   });
 
-  it("should cover the ten branch AppErrorKind members", () => {
+  it("should cover the nine branch AppErrorKind members", () => {
     const kinds: AppErrorKind[] = [
       "invalidBranchName",
       "branchExists",
@@ -221,9 +228,8 @@ describe("branch DTO shapes", () => {
       "revisionNotFound",
       "remoteNotFound",
       "checkoutFailed",
-      "pushFailed",
     ];
-    expect(kinds).toHaveLength(10);
+    expect(kinds).toHaveLength(9);
   });
 });
 
@@ -441,5 +447,74 @@ describe("tag types", () => {
     };
     const list: TagList = { tags: [entry], remotes: ["origin"] };
     expect(list.tags[0]?.subject).toBeNull();
+  });
+});
+
+// Compile-time parity with the Rust GR-12 DTOs; `tsc` fails until the types exist.
+describe("remote DTO shapes", () => {
+  it("should cover the eight new AppErrorKind members", () => {
+    const kinds: AppErrorKind[] = [
+      "networkFailed",
+      "noRemotes",
+      "noUpstream",
+      "detachedHead",
+      "invalidRemoteName",
+      "invalidRemoteUrl",
+      "remoteExists",
+      "invalidCredentials",
+    ];
+    expect(kinds).toHaveLength(8);
+  });
+
+  it("should reject pushFailed as an AppErrorKind", () => {
+    // @ts-expect-error pushFailed was replaced by networkFailed
+    const kind: AppErrorKind = "pushFailed";
+    expect(kind).toBe("pushFailed");
+  });
+
+  it("should accept a NetworkErrorInfo with a null origin", () => {
+    const info: NetworkErrorInfo = { verb: "push", kind: "leaseStale", https: false, origin: null };
+    expect(Object.keys(info).sort()).toEqual(["https", "kind", "origin", "verb"]);
+  });
+
+  it("should cover every NetworkErrorKind", () => {
+    const kinds: Record<NetworkErrorKind, true> = {
+      httpsAuthRequired: true,
+      httpsAuthRejected: true,
+      sshAuthFailed: true,
+      hostKeyUnverified: true,
+      hostUnreachable: true,
+      repoNotFound: true,
+      pushRejectedNonFastForward: true,
+      leaseStale: true,
+      other: true,
+    };
+    expect(Object.keys(kinds)).toHaveLength(9);
+  });
+
+  it("should let an AppError carry an optional network payload", () => {
+    const plain: AppError = { kind: "io", message: "m" };
+    const net: AppError = {
+      kind: "networkFailed",
+      message: "m",
+      network: { verb: "fetch", kind: "other", https: true, origin: "https://h" },
+    };
+    expect([plain.network, net.network?.origin]).toEqual([undefined, "https://h"]);
+  });
+
+  it("should accept Credentials, PullMode, both PushTarget shapes and RemoteInfo", () => {
+    const creds: Credentials = { origin: "https://h", username: "me", token: "t" };
+    const modes: PullMode[] = ["merge", "rebase"];
+    const targets: PushTarget[] = [
+      { kind: "upstream" },
+      { kind: "setUpstream", remote: "origin", branch: "b" },
+    ];
+    const info: RemoteInfo = { name: "origin", fetchUrl: "/f", pushUrl: null };
+    expect([Object.keys(creds).sort(), modes, targets.length, Object.keys(info).sort()]).toEqual([
+      ["origin", "token", "username"],
+      ["merge", "rebase"],
+      2,
+      ["fetchUrl", "name", "pushUrl"],
+    ]);
   });
 });

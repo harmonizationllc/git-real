@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use git_real_core::GitError;
-use git_real_lib::error::{AppError, AppErrorKind};
+use git_real_core::{GitError, NetworkErrorKind};
+use git_real_lib::error::{AppError, AppErrorKind, NetworkInfo};
 use serde_json::json;
 
 fn path() -> PathBuf {
@@ -120,14 +120,28 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::CheckoutFailed,
             Some("git switch failed with exit code 128"),
         ),
+        (GitError::NoRemotes, AppErrorKind::NoRemotes, None),
+        (GitError::NoUpstream, AppErrorKind::NoUpstream, None),
+        (GitError::DetachedHead, AppErrorKind::DetachedHead, None),
         (
-            GitError::PushFailed {
-                code: Some(1),
-                stdout: String::new(),
-                stderr: String::new(),
-            },
-            AppErrorKind::PushFailed,
-            Some("git push failed with exit code 1"),
+            GitError::InvalidRemoteName("a b".into()),
+            AppErrorKind::InvalidRemoteName,
+            None,
+        ),
+        (
+            GitError::InvalidRemoteUrl(String::new()),
+            AppErrorKind::InvalidRemoteUrl,
+            None,
+        ),
+        (
+            GitError::RemoteExists("origin".into()),
+            AppErrorKind::RemoteExists,
+            None,
+        ),
+        (
+            GitError::InvalidCredentials,
+            AppErrorKind::InvalidCredentials,
+            None,
         ),
         (GitError::LogStale, AppErrorKind::LogStale, None),
         (
@@ -148,7 +162,8 @@ fn app_error_kind_for_each_git_error_variant() {
             app,
             AppError {
                 kind: expected,
-                message
+                message,
+                network: None
             }
         );
     }
@@ -435,7 +450,6 @@ fn branch_error_kinds_serialize_camel_case() {
         (AppErrorKind::RevisionNotFound, "revisionNotFound"),
         (AppErrorKind::RemoteNotFound, "remoteNotFound"),
         (AppErrorKind::CheckoutFailed, "checkoutFailed"),
-        (AppErrorKind::PushFailed, "pushFailed"),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
@@ -468,8 +482,12 @@ fn checkout_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
     .into()
 }
 
-fn push_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
-    GitError::PushFailed {
+fn network_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
+    GitError::NetworkFailed {
+        verb: "push",
+        kind: NetworkErrorKind::Other,
+        https: false,
+        origin: None,
         code,
         stdout: stdout.into(),
         stderr: stderr.into(),
@@ -511,30 +529,30 @@ fn checkout_failed_message_falls_back_to_signal() {
 }
 
 #[test]
-fn push_failed_message_prefers_stderr() {
-    let err = push_failed(Some(1), "out\n", "error: remote ref does not exist\n");
-    assert_eq!(err.kind, AppErrorKind::PushFailed);
+fn network_failed_message_prefers_stderr() {
+    let err = network_failed(Some(1), "out\n", "error: remote ref does not exist\n");
+    assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(err.message, "error: remote ref does not exist");
 }
 
 #[test]
-fn push_failed_message_falls_back_to_stdout() {
-    let err = push_failed(Some(1), "  from stdout \n", "");
+fn network_failed_message_falls_back_to_stdout() {
+    let err = network_failed(Some(1), "  from stdout \n", "");
     assert_eq!(err.message, "from stdout");
 }
 
 #[test]
-fn push_failed_message_falls_back_to_exit_code() {
+fn network_failed_message_falls_back_to_exit_code() {
     assert_eq!(
-        push_failed(Some(1), "", "").message,
+        network_failed(Some(1), "", "").message,
         "git push failed with exit code 1"
     );
 }
 
 #[test]
-fn push_failed_message_falls_back_to_signal() {
+fn network_failed_message_falls_back_to_signal() {
     assert_eq!(
-        push_failed(None, "", "").message,
+        network_failed(None, "", "").message,
         "git push was terminated by a signal"
     );
 }
@@ -559,7 +577,8 @@ fn log_stale_maps_to_the_log_stale_kind_with_the_core_message() {
         app,
         AppError {
             kind: AppErrorKind::LogStale,
-            message
+            message,
+            network: None
         }
     );
 }
@@ -577,7 +596,8 @@ fn commit_not_found_maps_to_its_kind_and_names_the_oid() {
         app,
         AppError {
             kind: AppErrorKind::CommitNotFound,
-            message: "abc123 is not a commit in this repository".into()
+            message: "abc123 is not a commit in this repository".into(),
+            network: None
         }
     );
 }
@@ -610,7 +630,8 @@ fn binary_file_maps_to_the_binary_file_kind_with_the_core_message() {
         app,
         AppError {
             kind: AppErrorKind::BinaryFile,
-            message
+            message,
+            network: None
         }
     );
 }
@@ -797,4 +818,88 @@ fn tag_error_messages_name_the_tag() {
     assert_eq!(invalid.message, "a b is not a valid tag name");
     assert_eq!(exists.message, "a tag named v1 already exists");
     assert_eq!(missing.message, "no tag named v1");
+}
+
+// GR-12: the new remote kinds cross IPC in camelCase.
+#[test]
+fn remote_kinds_serialize_camel_case() {
+    let cases = [
+        (AppErrorKind::NetworkFailed, "networkFailed"),
+        (AppErrorKind::NoRemotes, "noRemotes"),
+        (AppErrorKind::NoUpstream, "noUpstream"),
+        (AppErrorKind::DetachedHead, "detachedHead"),
+        (AppErrorKind::InvalidRemoteName, "invalidRemoteName"),
+        (AppErrorKind::InvalidRemoteUrl, "invalidRemoteUrl"),
+        (AppErrorKind::RemoteExists, "remoteExists"),
+        (AppErrorKind::InvalidCredentials, "invalidCredentials"),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
+    }
+}
+
+#[test]
+fn network_failed_carries_the_network_payload() {
+    let stderr =
+        "fatal: could not read Username for 'https://github.com': terminal prompts disabled\n";
+    let app: AppError = GitError::NetworkFailed {
+        verb: "fetch",
+        kind: NetworkErrorKind::HttpsAuthRequired,
+        https: true,
+        origin: Some("https://github.com".into()),
+        code: Some(128),
+        stdout: String::new(),
+        stderr: stderr.into(),
+    }
+    .into();
+    assert_eq!(app.kind, AppErrorKind::NetworkFailed);
+    assert_eq!(app.message, stderr.trim());
+    assert_eq!(
+        app.network,
+        Some(NetworkInfo {
+            verb: "fetch".into(),
+            kind: NetworkErrorKind::HttpsAuthRequired,
+            https: true,
+            origin: Some("https://github.com".into())
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(&app).unwrap(),
+        json!({
+            "kind": "networkFailed",
+            "message": stderr.trim(),
+            "network": { "verb": "fetch", "kind": "httpsAuthRequired", "https": true, "origin": "https://github.com" }
+        })
+    );
+}
+
+#[test]
+fn other_errors_serialize_without_a_network_key() {
+    assert_eq!(
+        serde_json::to_value(AppError::from(GitError::NoUpstream)).unwrap(),
+        json!({ "kind": "noUpstream", "message": "the current branch has no upstream branch" })
+    );
+}
+
+#[test]
+fn remote_error_messages_use_the_core_display_text() {
+    let msg = |e: GitError| AppError::from(e).message;
+    assert_eq!(msg(GitError::NoRemotes), "this repository has no remotes");
+    assert_eq!(msg(GitError::DetachedHead), "HEAD is not on a branch");
+    assert_eq!(
+        msg(GitError::InvalidRemoteName("a b".into())),
+        "a b is not a valid remote name"
+    );
+    assert_eq!(
+        msg(GitError::InvalidRemoteUrl(String::new())),
+        "\"\" is not a valid remote URL"
+    );
+    assert_eq!(
+        msg(GitError::RemoteExists("origin".into())),
+        "a remote named origin already exists"
+    );
+    assert_eq!(
+        msg(GitError::InvalidCredentials),
+        "the credentials must name an http(s) origin and contain no line breaks"
+    );
 }

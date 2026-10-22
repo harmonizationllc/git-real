@@ -1,0 +1,81 @@
+.backdrop {
+  composes: backdrop from "../../components/PromptDialog.module.css";
+}
+
+/* Wider than the other prompts: rows show full remote URLs. */
+.dialog {
+  composes: dialog from "../../components/PromptDialog.module.css";
+  max-width: 40rem;
+}
+
+.title {
+  composes: title from "../../components/PromptDialog.module.css";
+}
+
+.actions {
+  composes: actions from "../../components/PromptDialog.module.css";
+}
+
+.form {
+  composes: form from "../../components/PromptDialog.module.css";
+}
+
+.field {
+  composes: field from "../../components/PromptDialog.module.css";
+}
+
+.check {
+  composes: check from "../../components/PromptDialog.module.css";
+}
+
+.error {
+  composes: error from "../../components/PromptDialog.module.css";
+}
+
+.empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.url {
+  color: var(--color-text-muted);
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+.urlLabel {
+  font-family: inherit;
+}
+
+.rowActions {
+  display: flex;
+  gap: 8px;
+}

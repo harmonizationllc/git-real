@@ -85,7 +85,7 @@ pub struct Credentials { pub username: String, pub token: String }
 - `pub(crate) fn apply(cmd: &mut Command, creds: Option<&Credentials>)`:
   with `Some`, adds `-c credential.helper=` (clears configured helpers for
   this run) and `-c credential.helper=!f() { echo "username=$GR_USERNAME";
-  echo "password=$GR_TOKEN"; }; f`, and sets the two env vars. These `-c`
+echo "password=$GR_TOKEN"; }; f`, and sets the two env vars. These `-c`
   args go before the subcommand.
 - `pub(crate) fn approve(git, workdir, url, creds)`: runs
   `git credential approve` with `protocol`, `host`, `path` (parsed from the
@@ -171,7 +171,7 @@ pub enum PushTarget { Upstream, SetUpstream { remote: String, branch: String } }
     tracking ref is missing the lease is `refs/heads/<branch>:` (expect
     absent).
 - `Push::run(creds)`: `git push [-u] [--force-with-lease=<lease>] <remote>
-  HEAD:refs/heads/<branch>`.
+HEAD:refs/heads/<branch>`.
 
 ### 3.7 `src/remote/remotes.rs` (git2, no network)
 
@@ -201,16 +201,16 @@ New `src/commands/remote.rs`. Every command runs its git work in
 `tauri::async_runtime::spawn_blocking` and emits `REPO_CHANGED` after any
 success that changed refs or config.
 
-| Command | Args | Returns |
-|---|---|---|
-| `fetch` | `repo_id, credentials?` | `()` |
-| `pull_default_mode` | `repo_id` | `"merge" \| "rebase"` |
-| `pull` | `repo_id, mode, credentials?` | `OperationOutcome` |
-| `push` | `repo_id, target, force, credentials?` | `()` |
-| `list_remotes` | `repo_id` | `RemoteInfo[]` |
-| `add_remote` | `repo_id, name, url` | `()` |
-| `update_remote` | `repo_id, name, new_name, url, push_url?` | `()` |
-| `remove_remote` | `repo_id, name` | `()` |
+| Command             | Args                                      | Returns               |
+| ------------------- | ----------------------------------------- | --------------------- |
+| `fetch`             | `repo_id, credentials?`                   | `()`                  |
+| `pull_default_mode` | `repo_id`                                 | `"merge" \| "rebase"` |
+| `pull`              | `repo_id, mode, credentials?`             | `OperationOutcome`    |
+| `push`              | `repo_id, target, force, credentials?`    | `()`                  |
+| `list_remotes`      | `repo_id`                                 | `RemoteInfo[]`        |
+| `add_remote`        | `repo_id, name, url`                      | `()`                  |
+| `update_remote`     | `repo_id, name, new_name, url, push_url?` | `()`                  |
+| `remove_remote`     | `repo_id, name`                           | `()`                  |
 
 `credentials` is `{ username, token } | null`. It lives only in memory for
 the command; it is never logged, stored, or put into an error message.
@@ -244,7 +244,7 @@ remotes query's sibling key `queryKeys.pullMode(repoId)`.
   3. Any other failure becomes a `{ title, hint, action? }` message from
      `networkMessage.ts`.
   4. On success invalidates branches, log, tags and status queries.
-  Credentials are held in component state only until the retry settles.
+     Credentials are held in component state only until the retry settles.
 - **`networkMessage.ts`** — pure mapping, kind → text:
   - `SshAuthFailed`: "SSH key was refused" / "Add your key to the agent
     with `ssh-add`, and check it is registered with the host."
@@ -307,18 +307,18 @@ remotes query's sibling key `queryKeys.pullMode(repoId)`.
 
 ## 6. Error handling summary
 
-| Situation | Result |
-|---|---|
-| HTTPS, nothing stored | Credential dialog → retry → `credential approve` |
-| HTTPS, wrong token | Dialog reopens with "rejected" note |
-| SSH key refused / host key unknown | Panel message with `ssh-add` / `ssh -T` hint |
-| Offline, DNS, refused | "Could not reach the remote" |
-| Push behind remote | Message with **Pull** action |
-| Lease stale | Message with **Fetch** action |
-| Push, no upstream | Set-upstream dialog |
-| Pull conflicts | Existing GR-10 banner and conflict editor |
-| Detached HEAD / no remotes | Buttons disabled with tooltip |
-| Unknown git failure | "git push failed" + stderr under Details |
+| Situation                          | Result                                           |
+| ---------------------------------- | ------------------------------------------------ |
+| HTTPS, nothing stored              | Credential dialog → retry → `credential approve` |
+| HTTPS, wrong token                 | Dialog reopens with "rejected" note              |
+| SSH key refused / host key unknown | Panel message with `ssh-add` / `ssh -T` hint     |
+| Offline, DNS, refused              | "Could not reach the remote"                     |
+| Push behind remote                 | Message with **Pull** action                     |
+| Lease stale                        | Message with **Fetch** action                    |
+| Push, no upstream                  | Set-upstream dialog                              |
+| Pull conflicts                     | Existing GR-10 banner and conflict editor        |
+| Detached HEAD / no remotes         | Buttons disabled with tooltip                    |
+| Unknown git failure                | "git push failed" + stderr under Details         |
 
 ## 7. Testing
 

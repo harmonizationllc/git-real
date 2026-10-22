@@ -38,4 +38,5 @@ pub use ignore::gitignore_pattern;
 pub use model::*;
 pub use progress::ProgressSink;
 pub use recent::RecentRepos;
+pub use remote::auth::Credentials;
 pub use repo::RepoSession;

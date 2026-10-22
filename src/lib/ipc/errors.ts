@@ -26,7 +26,6 @@ const KINDS: Record<AppErrorKind, true> = {
   revisionNotFound: true,
   remoteNotFound: true,
   checkoutFailed: true,
-  pushFailed: true,
   logStale: true,
   commitNotFound: true,
   binaryFile: true,
@@ -40,6 +39,14 @@ const KINDS: Record<AppErrorKind, true> = {
   invalidTagName: true,
   tagExists: true,
   tagNotFound: true,
+  networkFailed: true,
+  noRemotes: true,
+  noUpstream: true,
+  detachedHead: true,
+  invalidRemoteName: true,
+  invalidRemoteUrl: true,
+  remoteExists: true,
+  invalidCredentials: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

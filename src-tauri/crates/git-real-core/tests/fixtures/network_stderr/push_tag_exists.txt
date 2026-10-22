@@ -1,0 +1,4 @@
+To /srv/bare.git
+ ! [rejected]        v9 -> v9 (already exists)
+error: failed to push some refs to '/srv/bare.git'
+hint: Updates were rejected because the tag already exists in the remote.

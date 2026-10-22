@@ -496,7 +496,7 @@ fn push_tag_sends_the_tag_to_the_remote() {
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert_eq!(tag_commit(&bare, "v1").as_deref(), Some(oid.as_str()));
 }
@@ -511,17 +511,17 @@ fn push_tag_already_on_the_remote_at_the_same_commit_succeeds() {
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap(); // "Everything up-to-date"
 }
 
 #[test]
-fn push_tag_moved_locally_is_push_failed_with_git_rejection() {
+fn push_tag_moved_locally_is_network_failed_with_git_rejection() {
     if !common::git_available() {
         return;
     }
@@ -531,13 +531,13 @@ fn push_tag_moved_locally_is_push_failed_with_git_rejection() {
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     let second = common::commit_file(&path, "a.txt", "a\n", "second").to_string();
     session.delete_tag("v1").unwrap();
     session.create_tag("v1", &second, None).unwrap();
-    match session.prepare_tag_push("origin", "v1").unwrap().run() {
-        Err(GitError::PushFailed { stderr, .. }) => {
+    match session.prepare_tag_push("origin", "v1").unwrap().run(None) {
+        Err(GitError::NetworkFailed { stderr, .. }) => {
             assert!(stderr.contains("already exists"), "{stderr}")
         }
         other => panic!("{other:?}"),
@@ -555,19 +555,19 @@ fn delete_remote_tag_removes_it_from_the_remote() {
     session
         .prepare_tag_push("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     session
         .prepare_remote_tag_delete("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
         .unwrap();
     assert_eq!(tag_commit(&bare, "v1"), None);
     assert!(tag_commit(&path, "v1").is_some(), "the local tag stays");
 }
 
 #[test]
-fn delete_remote_tag_missing_on_the_remote_is_push_failed() {
+fn delete_remote_tag_missing_on_the_remote_is_network_failed() {
     if !common::git_available() {
         return;
     }
@@ -576,9 +576,9 @@ fn delete_remote_tag_missing_on_the_remote_is_push_failed() {
     match session
         .prepare_remote_tag_delete("origin", "v1")
         .unwrap()
-        .run()
+        .run(None)
     {
-        Err(GitError::PushFailed { stderr, .. }) => {
+        Err(GitError::NetworkFailed { stderr, .. }) => {
             assert!(stderr.contains("remote ref does not exist"), "{stderr}")
         }
         other => panic!("{other:?}"),
@@ -602,8 +602,8 @@ fn delete_remote_tag_never_removes_a_branch_with_the_same_name() {
         session
             .prepare_remote_tag_delete("origin", "same")
             .unwrap()
-            .run(),
-        Err(GitError::PushFailed { .. })
+            .run(None),
+        Err(GitError::NetworkFailed { .. })
     ));
     assert!(
         Repository::open_bare(&bare)

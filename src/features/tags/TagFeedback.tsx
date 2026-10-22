@@ -1,3 +1,5 @@
+import { NetworkError } from "../remotes/NetworkError";
+import { networkMessage } from "../remotes/networkMessage";
 import { RepoError } from "../repo/RepoError";
 import styles from "./TagFeedback.module.css";
 import { displayError, statusText } from "./tagCopy";
@@ -19,14 +21,18 @@ export function TagFeedback({ actions }: TagFeedbackProps) {
           </button>
         </div>
       )}
-      {actions.error && (
-        <RepoError
-          error={displayError(actions.error, actions.lastName)}
-          path={null}
-          variant="panel"
-          onDismiss={actions.clearError}
-        />
-      )}
+      {/* A push or remote delete failure explains itself; anything else shows its message. */}
+      {actions.error &&
+        (actions.error.kind === "networkFailed" ? (
+          <NetworkError message={networkMessage(actions.error)} onDismiss={actions.clearError} />
+        ) : (
+          <RepoError
+            error={displayError(actions.error, actions.lastName)}
+            path={null}
+            variant="panel"
+            onDismiss={actions.clearError}
+          />
+        ))}
     </>
   );
 }

@@ -6,21 +6,25 @@ import {
   checkGitCli,
   cloneRepo,
   closeRepo,
+  fetchAll,
   getCommitConfig,
   getHeadMessage,
   getLogSummary,
   getStatus,
   listBranches,
   listRecent,
+  listRemotes,
   onCloneProgress,
   onRepoChanged,
   openRepo,
   pickFolder,
+  pullDefaultMode,
 } from "../lib/ipc";
 import type { OpenedRepo } from "../lib/ipc";
 import { useCommitDraft } from "../lib/store/commitDraft";
 import { useRepoTabs } from "../lib/store/repoTabs";
 import { useWorkspace } from "../lib/store/workspace";
+import { networkError, remoteInfo } from "../test/remoteFixtures";
 import App from "./App";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
@@ -39,6 +43,9 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getLogSummary: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
+  listRemotes: vi.fn(),
+  pullDefaultMode: vi.fn(),
+  fetchAll: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
 
@@ -66,6 +73,9 @@ beforeEach(() => {
     local: [],
     remotes: [],
   });
+  vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
+  vi.mocked(pullDefaultMode).mockResolvedValue("merge");
+  vi.mocked(fetchAll).mockResolvedValue(undefined);
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
@@ -271,5 +281,21 @@ describe("App clone dialog", () => {
       "aria-selected",
       "true",
     );
+  });
+});
+
+// Contract: each tab owns its sync state; a message shown on one tab is gone on another.
+describe("App sync state per tab", () => {
+  it("should not show a sync message from tab A after switching to tab B", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
+    await user.click(screen.getByRole("tab", { name: "alpha" }));
+    const fetchButton = await screen.findByRole("button", { name: "Fetch" });
+    await waitFor(() => expect(fetchButton).toBeEnabled());
+    await user.click(fetchButton);
+    expect(await screen.findByText("Could not reach the remote")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "beta" }));
+    await screen.findByRole("heading", heading("beta"));
+    expect(screen.queryByText("Could not reach the remote")).toBeNull();
   });
 });

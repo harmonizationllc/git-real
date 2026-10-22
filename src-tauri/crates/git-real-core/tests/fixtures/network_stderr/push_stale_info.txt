@@ -1,0 +1,3 @@
+To /srv/bare.git
+ ! [rejected]        HEAD -> main (stale info)
+error: failed to push some refs to '/srv/bare.git'

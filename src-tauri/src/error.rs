@@ -1,6 +1,6 @@
 //! Serializable error type sent across the IPC boundary.
 
-use git_real_core::GitError;
+use git_real_core::{GitError, NetworkErrorKind};
 use serde::Serialize;
 
 use crate::state::RepoId;
@@ -33,7 +33,6 @@ pub enum AppErrorKind {
     RevisionNotFound,
     RemoteNotFound,
     CheckoutFailed,
-    PushFailed,
     LogStale,
     CommitNotFound,
     BinaryFile,
@@ -47,6 +46,24 @@ pub enum AppErrorKind {
     InvalidTagName,
     TagExists,
     TagNotFound,
+    NetworkFailed,
+    NoRemotes,
+    NoUpstream,
+    DetachedHead,
+    InvalidRemoteName,
+    InvalidRemoteUrl,
+    RemoteExists,
+    InvalidCredentials,
+}
+
+/// What the UI needs to act on a network failure; stderr stays in `message`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkInfo {
+    pub verb: String,
+    pub kind: NetworkErrorKind,
+    pub https: bool,
+    pub origin: Option<String>,
 }
 
 /// Error returned from commands: a stable `kind` plus a human-readable `message`.
@@ -55,6 +72,9 @@ pub enum AppErrorKind {
 pub struct AppError {
     pub kind: AppErrorKind,
     pub message: String,
+    /// Present for `networkFailed` only; omitted from the JSON otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkInfo>,
 }
 
 impl AppError {
@@ -63,6 +83,7 @@ impl AppError {
         Self {
             kind: AppErrorKind::UnknownRepo,
             message: format!("no open repository with id {id}"),
+            network: None,
         }
     }
 }
@@ -92,7 +113,6 @@ impl From<GitError> for AppError {
             GitError::RevisionNotFound(_) => AppErrorKind::RevisionNotFound,
             GitError::RemoteNotFound(_) => AppErrorKind::RemoteNotFound,
             GitError::CheckoutFailed { .. } => AppErrorKind::CheckoutFailed,
-            GitError::PushFailed { .. } => AppErrorKind::PushFailed,
             GitError::LogStale => AppErrorKind::LogStale,
             GitError::CommitNotFound(_) => AppErrorKind::CommitNotFound,
             GitError::BinaryFile(_) => AppErrorKind::BinaryFile,
@@ -106,6 +126,14 @@ impl From<GitError> for AppError {
             GitError::InvalidTagName(_) => AppErrorKind::InvalidTagName,
             GitError::TagExists(_) => AppErrorKind::TagExists,
             GitError::TagNotFound(_) => AppErrorKind::TagNotFound,
+            GitError::NetworkFailed { .. } => AppErrorKind::NetworkFailed,
+            GitError::NoRemotes => AppErrorKind::NoRemotes,
+            GitError::NoUpstream => AppErrorKind::NoUpstream,
+            GitError::DetachedHead => AppErrorKind::DetachedHead,
+            GitError::InvalidRemoteName(_) => AppErrorKind::InvalidRemoteName,
+            GitError::InvalidRemoteUrl(_) => AppErrorKind::InvalidRemoteUrl,
+            GitError::RemoteExists(_) => AppErrorKind::RemoteExists,
+            GitError::InvalidCredentials => AppErrorKind::InvalidCredentials,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {
@@ -120,11 +148,13 @@ impl From<GitError> for AppError {
                 stdout,
                 stderr,
             } => cli_failure_message("switch", *code, stdout, stderr),
-            GitError::PushFailed {
+            GitError::NetworkFailed {
+                verb,
                 code,
                 stdout,
                 stderr,
-            } => cli_failure_message("push", *code, stdout, stderr),
+                ..
+            } => cli_failure_message(verb, *code, stdout, stderr),
             GitError::OperationFailed {
                 verb,
                 code,
@@ -133,7 +163,26 @@ impl From<GitError> for AppError {
             } => cli_failure_message(verb, *code, stdout, stderr),
             _ => error.to_string(),
         };
-        Self { kind, message }
+        let network = match &error {
+            GitError::NetworkFailed {
+                verb,
+                kind,
+                https,
+                origin,
+                ..
+            } => Some(NetworkInfo {
+                verb: (*verb).to_owned(),
+                kind: *kind,
+                https: *https,
+                origin: origin.clone(),
+            }),
+            _ => None,
+        };
+        Self {
+            kind,
+            message,
+            network,
+        }
     }
 }
 

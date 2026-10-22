@@ -7,6 +7,7 @@ import type {
   CommitFile,
   CommitMessage,
   CommitOutcome,
+  Credentials,
   ConflictSide,
   DiffScope,
   DiffSide,
@@ -23,9 +24,12 @@ import type {
   OpenedRepo,
   OperationOutcome,
   OperationState,
+  PullMode,
+  PushTarget,
   RebaseCommit,
   RebaseStep,
   RecentEntry,
+  RemoteInfo,
   RepoId,
   ResetMode,
   StashEntry,
@@ -174,8 +178,13 @@ export function checkoutRemoteBranch(id: RepoId, remote: string, name: string): 
 }
 
 /** Deletes `name` on `remote` through `git push --delete`. */
-export function deleteRemoteBranch(id: RepoId, remote: string, name: string): Promise<void> {
-  return invoke<void>("delete_remote_branch", { id, remote, name });
+export function deleteRemoteBranch(
+  id: RepoId,
+  remote: string,
+  name: string,
+  credentials: Credentials | null = null,
+): Promise<void> {
+  return invoke<void>("delete_remote_branch", { id, remote, name, credentials });
 }
 
 /** The cached log's generation, row count and lane width; reading it rebuilds a stale cache. */
@@ -347,10 +356,77 @@ export function deleteTag(id: RepoId, name: string): Promise<void> {
   return invoke<void>("delete_tag", { id, name });
 }
 
-export function pushTag(id: RepoId, remote: string, name: string): Promise<void> {
-  return invoke<void>("push_tag", { id, remote, name });
+export function pushTag(
+  id: RepoId,
+  remote: string,
+  name: string,
+  credentials: Credentials | null = null,
+): Promise<void> {
+  return invoke<void>("push_tag", { id, remote, name, credentials });
 }
 
-export function deleteRemoteTag(id: RepoId, remote: string, name: string): Promise<void> {
-  return invoke<void>("delete_remote_tag", { id, remote, name });
+export function deleteRemoteTag(
+  id: RepoId,
+  remote: string,
+  name: string,
+  credentials: Credentials | null = null,
+): Promise<void> {
+  return invoke<void>("delete_remote_tag", { id, remote, name, credentials });
+}
+
+/** `git fetch --all`. Not named `fetch`, which would shadow the global. */
+export function fetchAll(id: RepoId, credentials: Credentials | null = null): Promise<void> {
+  return invoke<void>("fetch", { id, credentials });
+}
+
+/** `branch.<head>.rebase`, else `pull.rebase`, else merge. */
+export function pullDefaultMode(id: RepoId): Promise<PullMode> {
+  return invoke<PullMode>("pull_default_mode", { id });
+}
+
+/** Fetches the upstream's remote, then fast-forwards, merges or rebases. */
+export function pull(
+  id: RepoId,
+  mode: PullMode,
+  credentials: Credentials | null = null,
+): Promise<OperationOutcome> {
+  return invoke<OperationOutcome>("pull", { id, mode, credentials });
+}
+
+/** Pushes `expectedBranch`, which must still be HEAD's branch, to `target`. */
+export function push(
+  id: RepoId,
+  target: PushTarget,
+  force: boolean,
+  expectedBranch: string,
+  credentials: Credentials | null = null,
+): Promise<void> {
+  return invoke<void>("push", { id, target, force, expectedBranch, credentials });
+}
+
+export function listRemotes(id: RepoId): Promise<RemoteInfo[]> {
+  return invoke<RemoteInfo[]>("list_remotes", { id });
+}
+
+export function addRemote(
+  id: RepoId,
+  name: string,
+  url: string,
+  pushUrl: string | null,
+): Promise<void> {
+  return invoke<void>("add_remote", { id, name, url, pushUrl });
+}
+
+export function updateRemote(
+  id: RepoId,
+  name: string,
+  newName: string,
+  url: string,
+  pushUrl: string | null,
+): Promise<void> {
+  return invoke<void>("update_remote", { id, name, newName, url, pushUrl });
+}
+
+export function removeRemote(id: RepoId, name: string): Promise<void> {
+  return invoke<void>("remove_remote", { id, name });
 }

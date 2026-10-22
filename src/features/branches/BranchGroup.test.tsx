@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { BranchGroup } from "./BranchGroup";
 import type { BranchGroupProps } from "./BranchGroup";
 
@@ -108,5 +108,79 @@ describe("BranchGroup empty copy with leading", () => {
       leading: <p>main (no commits yet)</p>,
     });
     expect(screen.getByText("No matches")).toBeInTheDocument();
+  });
+});
+
+// Contract: without onHeadingContextMenu the heading is plain; with it, the heading opens a menu by mouse or keyboard.
+describe("BranchGroup heading context menu", () => {
+  const heading = () => screen.getByRole("heading", { level: 2 });
+
+  it("without onHeadingContextMenu the heading is not focusable and has no menu", () => {
+    renderGroup();
+    expect(heading()).not.toHaveAttribute("tabindex");
+    expect(fireEvent.contextMenu(heading(), { clientX: 1, clientY: 2 })).toBe(true);
+  });
+
+  it("without onHeadingContextMenu Shift+F10 is not prevented", () => {
+    renderGroup();
+    expect(fireEvent.keyDown(heading(), { key: "F10", shiftKey: true })).toBe(true);
+  });
+
+  it("with it, the heading is focusable", () => {
+    renderGroup({ onHeadingContextMenu: vi.fn() });
+    expect(heading()).toHaveAttribute("tabindex", "0");
+  });
+
+  it("a right-click calls it with the pointer position", () => {
+    const onHeadingContextMenu = vi.fn();
+    renderGroup({ onHeadingContextMenu });
+    fireEvent.contextMenu(heading(), { clientX: 12, clientY: 34 });
+    expect(onHeadingContextMenu).toHaveBeenCalledExactlyOnceWith(12, 34);
+  });
+
+  it("a right-click prevents the browser menu", () => {
+    renderGroup({ onHeadingContextMenu: vi.fn() });
+    expect(fireEvent.contextMenu(heading(), { clientX: 1, clientY: 2 })).toBe(false);
+  });
+
+  it("Shift+F10 calls it at the heading's bottom-left", () => {
+    const onHeadingContextMenu = vi.fn();
+    renderGroup({ onHeadingContextMenu });
+    vi.spyOn(heading(), "getBoundingClientRect").mockReturnValue({
+      left: 7,
+      bottom: 19,
+    } as DOMRect);
+    fireEvent.keyDown(heading(), { key: "F10", shiftKey: true });
+    expect(onHeadingContextMenu).toHaveBeenCalledExactlyOnceWith(7, 19);
+  });
+
+  it("the ContextMenu key calls it at the heading's bottom-left", () => {
+    const onHeadingContextMenu = vi.fn();
+    renderGroup({ onHeadingContextMenu });
+    vi.spyOn(heading(), "getBoundingClientRect").mockReturnValue({
+      left: 3,
+      bottom: 8,
+    } as DOMRect);
+    fireEvent.keyDown(heading(), { key: "ContextMenu" });
+    expect(onHeadingContextMenu).toHaveBeenCalledExactlyOnceWith(3, 8);
+  });
+
+  it("the keyboard shortcuts prevent the default action", () => {
+    renderGroup({ onHeadingContextMenu: vi.fn() });
+    expect(fireEvent.keyDown(heading(), { key: "F10", shiftKey: true })).toBe(false);
+    expect(fireEvent.keyDown(heading(), { key: "ContextMenu" })).toBe(false);
+  });
+
+  it("F10 without Shift and other keys do not open the menu", () => {
+    const onHeadingContextMenu = vi.fn();
+    renderGroup({ onHeadingContextMenu });
+    fireEvent.keyDown(heading(), { key: "F10" });
+    fireEvent.keyDown(heading(), { key: "Enter" });
+    expect(onHeadingContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("an unrelated key is not prevented", () => {
+    renderGroup({ onHeadingContextMenu: vi.fn() });
+    expect(fireEvent.keyDown(heading(), { key: "a" })).toBe(true);
   });
 });

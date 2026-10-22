@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::auth::Credentials;
 use super::run_push;
 use crate::error::GitError;
 
@@ -15,15 +16,24 @@ pub struct TagPush {
     workdir: PathBuf,
     remote: String,
     name: String,
+    /// The push URL git uses, empty when the remote has none.
+    urls: Vec<String>,
 }
 
 impl TagPush {
-    pub(crate) fn new(git: PathBuf, workdir: PathBuf, remote: String, name: String) -> Self {
+    pub(crate) fn new(
+        git: PathBuf,
+        workdir: PathBuf,
+        remote: String,
+        name: String,
+        urls: Vec<String>,
+    ) -> Self {
         Self {
             git,
             workdir,
             remote,
             name,
+            urls,
         }
     }
 
@@ -42,12 +52,14 @@ impl TagPush {
     /// Runs `git -C <workdir> push <remote> refs/tags/<name>`. The full refname
     /// can never be read as a branch; git rejects it when the remote already
     /// has the tag at another object ("already exists").
-    pub fn run(&self) -> Result<(), GitError> {
+    pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError> {
         run_push(
             &self.git,
             &self.workdir,
             &self.remote,
             &[&format!("refs/tags/{}", self.name)],
+            &self.urls,
+            creds,
         )
     }
 }
@@ -60,15 +72,24 @@ pub struct TagPushDelete {
     workdir: PathBuf,
     remote: String,
     name: String,
+    /// The push URL git uses, empty when the remote has none.
+    urls: Vec<String>,
 }
 
 impl TagPushDelete {
-    pub(crate) fn new(git: PathBuf, workdir: PathBuf, remote: String, name: String) -> Self {
+    pub(crate) fn new(
+        git: PathBuf,
+        workdir: PathBuf,
+        remote: String,
+        name: String,
+        urls: Vec<String>,
+    ) -> Self {
         Self {
             git,
             workdir,
             remote,
             name,
+            urls,
         }
     }
 
@@ -88,12 +109,14 @@ impl TagPushDelete {
     /// must match a tag the remote advertises, so it never hits a branch of the
     /// same name, and a tag the remote lacks fails with "remote ref does not
     /// exist" instead of reporting success (as `heads/` does for branches).
-    pub fn run(&self) -> Result<(), GitError> {
+    pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError> {
         run_push(
             &self.git,
             &self.workdir,
             &self.remote,
             &["--delete", &format!("tags/{}", self.name)],
+            &self.urls,
+            creds,
         )
     }
 }

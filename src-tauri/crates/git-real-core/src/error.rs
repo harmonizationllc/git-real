@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::model::NetworkErrorKind;
+
 /// Errors produced by the Git domain.
 #[derive(Debug, Error)]
 pub enum GitError {
@@ -57,12 +59,6 @@ pub enum GitError {
         stdout: String,
         stderr: String,
     },
-    #[error("git push failed (exit code {code:?}): {stderr}")]
-    PushFailed {
-        code: Option<i32>,
-        stdout: String,
-        stderr: String,
-    },
     #[error("the commit graph changed; reload it")]
     LogStale,
     #[error("{0} is not a commit in this repository")]
@@ -94,6 +90,33 @@ pub enum GitError {
     TagExists(String),
     #[error("no tag named {0}")]
     TagNotFound(String),
+    #[error("this repository has no remotes")]
+    NoRemotes,
+    #[error("the current branch has no upstream branch")]
+    NoUpstream,
+    #[error("HEAD is not on a branch")]
+    DetachedHead,
+    #[error("{0} is not a valid remote name")]
+    InvalidRemoteName(String),
+    #[error("{0:?} is not a valid remote URL")]
+    InvalidRemoteUrl(String),
+    #[error("a remote named {0} already exists")]
+    RemoteExists(String),
+    #[error("the credentials must name an http(s) origin and contain no line breaks")]
+    InvalidCredentials,
+    /// A fetch, pull or push that git refused; `kind` says what to do next.
+    #[error("git {verb} failed (exit code {code:?}): {stderr}")]
+    NetworkFailed {
+        verb: &'static str,
+        kind: NetworkErrorKind,
+        /// The operation talks to an `http(s)://` URL, so a credential prompt can help.
+        https: bool,
+        /// `scheme://host[:port]` git asked credentials for (HTTPS auth kinds only).
+        origin: Option<String>,
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

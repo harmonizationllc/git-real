@@ -60,7 +60,6 @@ export type AppErrorKind =
   | "revisionNotFound"
   | "remoteNotFound"
   | "checkoutFailed"
-  | "pushFailed"
   | "logStale"
   | "commitNotFound"
   | "binaryFile"
@@ -73,11 +72,21 @@ export type AppErrorKind =
   | "staleStash"
   | "invalidTagName"
   | "tagExists"
-  | "tagNotFound";
+  | "tagNotFound"
+  | "networkFailed"
+  | "noRemotes"
+  | "noUpstream"
+  | "detachedHead"
+  | "invalidRemoteName"
+  | "invalidRemoteUrl"
+  | "remoteExists"
+  | "invalidCredentials";
 
 export interface AppError {
   kind: AppErrorKind;
   message: string;
+  /** Present on `networkFailed` only. */
+  network?: NetworkErrorInfo;
 }
 
 export interface GitCliInfo {
@@ -385,6 +394,45 @@ export interface TagList {
   tags: TagEntry[];
   /** Every configured remote, sorted. */
   remotes: string[];
+}
+
+export type NetworkErrorKind =
+  | "httpsAuthRequired"
+  | "httpsAuthRejected"
+  | "sshAuthFailed"
+  | "hostKeyUnverified"
+  | "hostUnreachable"
+  | "repoNotFound"
+  | "pushRejectedNonFastForward"
+  | "leaseStale"
+  | "other";
+
+export interface NetworkErrorInfo {
+  verb: "fetch" | "pull" | "push";
+  kind: NetworkErrorKind;
+  https: boolean;
+  /** `scheme://host[:port]` git asked credentials for; null unless an HTTPS auth kind. */
+  origin: string | null;
+}
+
+/** Sent for one network call only; never stored by the app. */
+export interface Credentials {
+  origin: string;
+  username: string;
+  token: string;
+}
+
+export type PullMode = "merge" | "rebase";
+
+export type PushTarget =
+  { kind: "upstream" } | { kind: "setUpstream"; remote: string; branch: string };
+
+export interface RemoteInfo {
+  name: string;
+  /** Raw `remote.<name>.url`, as configured. */
+  fetchUrl: string;
+  /** Raw `remote.<name>.pushurl`; null when unset. */
+  pushUrl: string | null;
 }
 
 export type ConflictSide = "ours" | "theirs";

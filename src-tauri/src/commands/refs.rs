@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
-use git_real_core::{BranchList, LocalBranch};
+use git_real_core::{BranchList, Credentials, LocalBranch};
 use tauri::State;
 
+use super::remote::{CredentialsArg, credentials_from_arg};
 use super::{run_blocking, with_session};
 use crate::error::AppError;
 use crate::state::{RepoId, RepoRegistry};
@@ -69,9 +70,10 @@ pub fn delete_remote_branch_inner(
     id: RepoId,
     remote: &str,
     name: &str,
+    credentials: Option<&Credentials>,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_remote_delete(remote, name))?;
-    push.run().map_err(AppError::from)
+    push.run(credentials).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -146,7 +148,10 @@ pub async fn delete_remote_branch(
     id: RepoId,
     remote: String,
     name: String,
+    credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
+    let credentials = credentials_from_arg(credentials)?;
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || delete_remote_branch_inner(&reg, id, &remote, &name)).await
+    run_blocking(move || delete_remote_branch_inner(&reg, id, &remote, &name, credentials.as_ref()))
+        .await
 }
