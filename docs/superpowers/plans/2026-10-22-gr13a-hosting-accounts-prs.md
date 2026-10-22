@@ -89,7 +89,9 @@
 - **`NetworkAuth` replaces `credentials: Option<&Credentials>`** in `fetch_inner`, `fetch_remote_inner`, `pull_inner`, `push_inner`, `delete_remote_branch_inner`, `push_tag_inner`, `delete_remote_tag_inner`, and is added to `clone_repo_inner`. One value carries either the typed credentials or the account store, so each call site resolves after prepare, when the URLs are known.
 - **`Credentials` gains a private `approve: bool`** (`Credentials::new` → true, `Credentials::account` → false; `pub fn approves(&self) -> bool`), and `run_network` approves only when it is true. Deserialization still goes through `new`.
 - **`clone` and `clone_with` take `creds: Option<&Credentials>`** (before `sink`), applied with `auth::apply` before `clone`, so 13c's repo browser clones private HTTPS repos on the first try. Clone still has no prompt-and-retry.
-- **`remote/host.rs`'s `valid` and `strip_user` become `pub(crate)`** for `hosting::provider`.
+- **`remote/host.rs`'s `valid`, `strip_user` and `is_drive_path` become `pub(crate)`** for `hosting::provider`. `valid` does not lower-case, accepts IPv6 literals and a leading `.`; `validate_host` and `detect` add those checks themselves. `https_host` is built on `auth::origin_of`, so there is no third URL parser.
+- **`checkout_fetch_head` takes the `RefFetch` and matches FETCH_HEAD by refspec** (architect pre-flight). The session lock is released between `RefFetch::run` and the checkout, so a concurrent `fetch --all` can overwrite FETCH_HEAD; the entry whose `ref_name` equals the fetched refspec (libgit2 rebuilds `refs/heads/<x>` from `branch 'x'` lines) is used, and no match is `RevisionNotFound("FETCH_HEAD")`.
+- **`CheckoutPrOutcome` lives in crate `model/`** beside `OperationOutcome` and is re-exported from `hosting`, so a git outcome stays out of the provider domain. Never `use CiState::*` (its `None` shadows `Option::None`).
 - **`FETCH_HEAD` is read with git2 `Repository::fetchhead_foreach`** (first entry), and `pr/<n>` is created or moved with `git switch -C pr/<n> <oid>` (a new `SwitchTarget::Reset`), which refuses on a conflicting dirty tree like every other switch (`CheckoutFailed`, the branch-checkout message). When `pr/<n>` already contains the fetched commit, it is a plain `switch pr/<n>`.
 - **The fork fetch passes `--no-tags`**, so a fork's tags never land in the user's repository.
 - **Bitbucket `draft` is read when present** (default false). The lead's note said Bitbucket has no draft flag, but Bitbucket Cloud PRs now carry `draft`, and reading an optional field costs nothing.
@@ -108,7 +110,7 @@
 - Create: `src-tauri/crates/git-real-core/src/remote/pr_checkout.rs`
 - Modify: `src-tauri/crates/git-real-core/src/lib.rs` (`pub mod hosting;` after `pub mod history;`)
 - Modify: `src-tauri/crates/git-real-core/src/error.rs` (nine variants after `NetworkFailed`)
-- Modify: `src-tauri/crates/git-real-core/src/remote/auth.rs` (`approve` flag, `Credentials::account`, `approves`), `remote/mod.rs` (`pub mod pr_checkout;`, approve only when `c.approves()`), `remote/host.rs` (`valid`, `strip_user` → `pub(crate)`), `remote/clone.rs` (`creds`), `remote/fetch.rs`, `remote/pull.rs`, `remote/push.rs`, `remote/push_tag.rs`, `remote/push_delete.rs` (`pub fn urls(&self) -> &[String]` on `Fetch`, `Pull`, `Push`, `TagPush`, `TagPushDelete`, `PushDelete`), `refs/switch.rs` (`SwitchTarget::Reset`)
+- Modify: `src-tauri/crates/git-real-core/src/remote/auth.rs` (`approve` flag, `Credentials::account`, `approves`), `remote/mod.rs` (`pub mod pr_checkout;`, approve only when `c.approves()`), `remote/host.rs` (`valid`, `strip_user`, `is_drive_path` → `pub(crate)`), `remote/clone.rs` (`creds`), `remote/fetch.rs`, `remote/pull.rs`, `remote/push.rs`, `remote/push_tag.rs`, `remote/push_delete.rs` (`pub fn urls(&self) -> &[String]` on `Fetch`, `Pull`, `Push`, `TagPush`, `TagPushDelete`, `PushDelete`), `refs/switch.rs` (`SwitchTarget::Reset`)
 - Modify (app crate, so every commit compiles): `src-tauri/src/error.rs` (nine kinds and their mapping), `src-tauri/src/commands/repo.rs` (`clone(url, dest, None, sink)`; Task 2 wires accounts)
 - Create (test role): `src-tauri/crates/git-real-core/tests/fixtures/hosting/{github_user,github_pulls,gitlab_user,gitlab_merge_requests,bitbucket_user,bitbucket_pullrequests}.json`, `tests/hosting_detect.rs`, `tests/hosting_http.rs`, `tests/hosting_providers.rs`, `tests/hosting_ureq.rs`, `tests/pr_checkout.rs`
 - Modify (test role): `src-tauri/crates/git-real-core/tests/common/mod.rs` (`FakeTransport`), `tests/network_cli.rs`, `tests/network_classify.rs`, `tests/clone.rs` (Step 7); `src-tauri/tests/error.rs` (Step 8)
@@ -196,7 +198,7 @@ impl UreqTransport { pub fn new() -> Self; } impl Default for UreqTransport; imp
 impl RefFetch { pub fn urls(&self) -> &[String]; pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError>; }
 impl RepoSession {
     pub fn prepare_ref_fetch(&self, source: &str, refspec: &str) -> Result<RefFetch, GitError>;
-    pub fn checkout_fetch_head(&self, number: u64, reset: bool) -> Result<CheckoutPrOutcome, GitError>;
+    pub fn checkout_fetch_head(&self, fetch: &RefFetch, number: u64, reset: bool) -> Result<CheckoutPrOutcome, GitError>;
 }
 // remote/auth.rs
 impl Credentials { pub fn account(origin: &str, username: &str, token: &Token) -> Result<Self, GitError>; pub fn approves(&self) -> bool; }
@@ -713,7 +715,11 @@ fn a_refused_connection_is_unreachable() {
     // or still points where it was.
 }
 #[test] fn checkout_fetch_head_without_a_fetch_head_is_revision_not_found() {
-    // fresh clone, no fetch run → Err(RevisionNotFound(s)) with s == "FETCH_HEAD".
+    // fresh clone, RefFetch prepared but not run → Err(RevisionNotFound(s)) with s == "FETCH_HEAD".
+}
+#[test] fn checkout_fetch_head_ignores_other_fetch_head_entries() {
+    // run the PR RefFetch, then `git fetch origin` overwrites FETCH_HEAD with the branch entry →
+    // checkout_fetch_head(&pr_fetch, 7, false) == Err(RevisionNotFound("FETCH_HEAD")); pr/7 does not exist.
 }
 #[test] fn prepare_ref_fetch_validates_source_and_refspec() {
     // "nope" → RemoteNotFound("nope"); "-x" → RemoteNotFound; "http://h/x.git", "https://h/x y", "https://h/x\n" → InvalidRemoteUrl;
@@ -810,7 +816,7 @@ Run (from `src-tauri`): `cargo test --workspace`. Expected: compile errors namin
 - `remote/pr_checkout.rs`: `prepare_ref_fetch` (a source starting with `https://` is a URL: it must pass `origin_of` and contain no whitespace or control characters, else `InvalidRemoteUrl`; otherwise `ensure_remote(source)` and `used_url(source, Fetch)`; the refspec must start with `refs/`, contain no `:`, `+` or whitespace, and pass `git2::Reference::is_valid_name`, else `InvalidBranchName(refspec)`); `RefFetch::run` → `run_network(git, workdir, "fetch", ["fetch", "--no-tags", source, refspec], urls, creds)`; `checkout_fetch_head` — the algorithm:
 
 ```text
-oid  := first FETCH_HEAD entry (repo.fetchhead_foreach; stop after one)  — none → RevisionNotFound("FETCH_HEAD")
+oid  := the FETCH_HEAD entry whose ref_name == fetch.refspec (repo.fetchhead_foreach) — none → RevisionNotFound("FETCH_HEAD")
 name := "pr/<number>"
 cur  := oid of local branch name, if it exists
 if cur == oid or cur descends from oid      → switch <name>                     → CheckedOut
