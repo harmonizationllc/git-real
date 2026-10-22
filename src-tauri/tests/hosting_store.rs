@@ -142,28 +142,90 @@ fn connect_keeps_accounts_on_other_hosts() {
     assert!(store.accounts().contains(&lab));
 }
 
+/// A store over the same keychain map and file as `dir`/`tokens`, but with a failing keychain.
+fn reload_failing(
+    dir: &std::path::Path,
+    tokens: &MemoryTokenStore,
+    fail_set: bool,
+) -> HostingStore {
+    HostingStore::load(
+        dir.join("hosting_accounts.json"),
+        Box::new(MemoryTokenStore {
+            map: tokens.map.clone(),
+            fail_set,
+            fail_delete: !fail_set,
+            ..Default::default()
+        }),
+    )
+}
+
 #[test]
-fn connect_aborts_with_keychain_unavailable_when_the_old_secret_cannot_be_deleted() {
-    let (_dir, store, _tokens) = hosting_store_with(MemoryTokenStore {
-        fail_delete: true,
-        ..Default::default()
-    });
+fn replacing_an_account_when_the_new_token_cannot_be_stored_is_keychain_unavailable() {
+    let (dir, store, tokens) = hosting_store();
     store.connect(github_account("octo"), &token()).unwrap();
-    let err = store
+    let failing = reload_failing(dir.path(), &tokens, true);
+    let err = failing
         .connect(github_account("other"), &token())
         .unwrap_err();
     assert!(matches!(err, GitError::KeychainUnavailable(_)), "{err:?}");
 }
 
 #[test]
-fn connect_keeps_the_old_account_when_the_old_secret_cannot_be_deleted() {
-    let (_dir, store, _tokens) = hosting_store_with(MemoryTokenStore {
-        fail_delete: true,
-        ..Default::default()
-    });
+fn replacing_an_account_when_the_new_token_cannot_be_stored_keeps_the_old_account_and_token() {
+    let (dir, store, tokens) = hosting_store();
     let old = store.connect(github_account("octo"), &token()).unwrap();
-    let _ = store.connect(github_account("other"), &token());
-    assert_eq!(store.accounts(), vec![old]);
+    let failing = reload_failing(dir.path(), &tokens, true);
+    let _ = failing.connect(github_account("other"), &token());
+    assert_eq!(failing.accounts(), vec![old]);
+    assert_eq!(
+        stored(&tokens, "github:github.com:octo"),
+        Some(SECRET.to_owned())
+    );
+}
+
+#[test]
+fn replacing_an_account_when_the_old_secret_cannot_be_deleted_still_connects() {
+    let (dir, store, tokens) = hosting_store();
+    store.connect(github_account("octo"), &token()).unwrap();
+    let failing = reload_failing(dir.path(), &tokens, false);
+    let new = failing.connect(github_account("other"), &token()).unwrap();
+    assert_eq!(failing.accounts(), vec![new]);
+}
+
+#[test]
+fn replacing_an_account_when_the_old_secret_cannot_be_deleted_stores_the_new_token() {
+    let (dir, store, tokens) = hosting_store();
+    store.connect(github_account("octo"), &token()).unwrap();
+    let failing = reload_failing(dir.path(), &tokens, false);
+    failing.connect(github_account("other"), &token()).unwrap();
+    assert_eq!(
+        stored(&tokens, "github:github.com:other"),
+        Some(SECRET.to_owned())
+    );
+}
+
+#[test]
+fn replacing_an_account_when_the_old_secret_cannot_be_deleted_leaves_the_old_token_orphaned() {
+    let (dir, store, tokens) = hosting_store();
+    store.connect(github_account("octo"), &token()).unwrap();
+    let failing = reload_failing(dir.path(), &tokens, false);
+    failing.connect(github_account("other"), &token()).unwrap();
+    assert_eq!(
+        stored(&tokens, "github:github.com:octo"),
+        Some(SECRET.to_owned())
+    );
+}
+
+#[test]
+fn reconnecting_the_same_account_never_deletes_its_secret() {
+    let (dir, store, tokens) = hosting_store();
+    store.connect(github_account("octo"), &token()).unwrap();
+    let failing = reload_failing(dir.path(), &tokens, false);
+    failing.connect(github_account("octo"), &token()).unwrap();
+    assert_eq!(
+        stored(&tokens, "github:github.com:octo"),
+        Some(SECRET.to_owned())
+    );
 }
 
 #[test]

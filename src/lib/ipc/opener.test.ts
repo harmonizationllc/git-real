@@ -44,6 +44,26 @@ describe("openExternal", () => {
     await expect(openExternal("not a url")).rejects.toThrow("Only https links can be opened");
   });
 
+  it("openExternal accepts an uppercase scheme and mixed-case host", async () => {
+    await openExternal("HTTPS://GitHub.com/o/r");
+    expect(openUrl).toHaveBeenCalledWith("HTTPS://GitHub.com/o/r");
+  });
+
+  it.each(["https://user:pw@github.com/o/r", "https://user@github.com/o/r"])(
+    "openExternal rejects %s because it carries userinfo",
+    async (url) => {
+      await expect(openExternal(url)).rejects.toThrow("Only https links can be opened");
+    },
+  );
+
+  it.each(["https://user:pw@github.com/o/r", "https://user@github.com/o/r"])(
+    "openExternal never calls the plugin for %s",
+    async (url) => {
+      await openExternal(url).catch(() => undefined);
+      expect(openUrl).not.toHaveBeenCalled();
+    },
+  );
+
   it("openExternal rejects with an Error instance", async () => {
     await expect(openExternal("http://x")).rejects.toBeInstanceOf(Error);
   });
