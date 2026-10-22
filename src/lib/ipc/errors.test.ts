@@ -233,7 +233,14 @@ describe("isAppError remote kinds", () => {
     const e = {
       kind: "networkFailed",
       message: "x",
-      network: { verb: "fetch", kind: "hostUnreachable", https: false, origin: null },
+      network: {
+        verb: "fetch",
+        kind: "hostUnreachable",
+        https: false,
+        origin: null,
+        host: null,
+        reason: null,
+      },
     };
     expect(toAppError(e)).toBe(e);
   });

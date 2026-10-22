@@ -25,7 +25,7 @@ export const networkError = (
 ): AppError => ({
   kind: "networkFailed",
   message,
-  network: { verb: "push", kind, https: false, origin: null, ...over },
+  network: { verb: "push", kind, https: false, origin: null, host: null, reason: null, ...over },
 });
 
 /** An HTTPS auth failure on https://github.com, which the credential prompt can answer. */

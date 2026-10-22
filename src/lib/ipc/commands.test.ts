@@ -23,6 +23,7 @@ import {
   deleteTag,
   discardPaths,
   fetchAll,
+  fetchRemote,
   getBlame,
   getOperationState,
   getCommit,
@@ -989,6 +990,29 @@ describe("remote command wrappers", () => {
     expect(calls).toEqual([{ cmd: "fetch", args: { id: 2, credentials: creds } }]);
   });
 
+  // GR-12 follow-up W3: a single-remote fetch with the pinned command name and camelCase args.
+  it("fetchRemote sends fetch_remote with id, remote and null credentials", async () => {
+    const calls = mockWith(null);
+    await fetchRemote(2, "up");
+    expect(calls).toEqual([
+      { cmd: "fetch_remote", args: { id: 2, remote: "up", credentials: null } },
+    ]);
+  });
+
+  it("fetchRemote sends the credentials through", async () => {
+    const calls = mockWith(null);
+    await fetchRemote(2, "up", creds);
+    expect(calls).toEqual([
+      { cmd: "fetch_remote", args: { id: 2, remote: "up", credentials: creds } },
+    ]);
+  });
+
+  it("fetchRemote does not use the fetch-all command", async () => {
+    const calls = mockWith(null);
+    await fetchRemote(2, "up");
+    expect(calls.map((c) => c.cmd)).not.toContain("fetch");
+  });
+
   it("pullDefaultMode sends pull_default_mode with id", async () => {
     const calls = mockWith("merge");
     await pullDefaultMode(2);
@@ -1120,11 +1144,19 @@ describe("remote command wrappers", () => {
   const failure = {
     kind: "networkFailed",
     message: "x",
-    network: { verb: "fetch", kind: "hostUnreachable", https: false, origin: null },
+    network: {
+      verb: "fetch",
+      kind: "hostUnreachable",
+      https: false,
+      origin: null,
+      host: null,
+      reason: null,
+    },
   };
 
   it.each([
     ["fetchAll", () => fetchAll(1)],
+    ["fetchRemote", () => fetchRemote(1, "up")],
     ["pullDefaultMode", () => pullDefaultMode(1)],
     ["pull", () => pull(1, "merge")],
     ["push", () => push(1, { kind: "upstream" }, false, "main")],

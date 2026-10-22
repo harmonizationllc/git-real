@@ -473,8 +473,27 @@ describe("remote DTO shapes", () => {
   });
 
   it("should accept a NetworkErrorInfo with a null origin", () => {
-    const info: NetworkErrorInfo = { verb: "push", kind: "leaseStale", https: false, origin: null };
-    expect(Object.keys(info).sort()).toEqual(["https", "kind", "origin", "verb"]);
+    const info: NetworkErrorInfo = {
+      verb: "push",
+      kind: "leaseStale",
+      https: false,
+      origin: null,
+      host: null,
+      reason: null,
+    };
+    expect(Object.keys(info).sort()).toEqual(["host", "https", "kind", "origin", "reason", "verb"]);
+  });
+
+  it("should carry a string host and reason on a NetworkErrorInfo", () => {
+    const info: NetworkErrorInfo = {
+      verb: "push",
+      kind: "remoteRejected",
+      https: true,
+      origin: null,
+      host: "github.com",
+      reason: "GH007: private email",
+    };
+    expect([info.host, info.reason]).toEqual(["github.com", "GH007: private email"]);
   });
 
   it("should cover every NetworkErrorKind", () => {
@@ -487,9 +506,10 @@ describe("remote DTO shapes", () => {
       repoNotFound: true,
       pushRejectedNonFastForward: true,
       leaseStale: true,
+      remoteRejected: true,
       other: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(9);
+    expect(Object.keys(kinds)).toHaveLength(10);
   });
 
   it("should let an AppError carry an optional network payload", () => {
@@ -497,7 +517,14 @@ describe("remote DTO shapes", () => {
     const net: AppError = {
       kind: "networkFailed",
       message: "m",
-      network: { verb: "fetch", kind: "other", https: true, origin: "https://h" },
+      network: {
+        verb: "fetch",
+        kind: "other",
+        https: true,
+        origin: "https://h",
+        host: null,
+        reason: null,
+      },
     };
     expect([plain.network, net.network?.origin]).toEqual([undefined, "https://h"]);
   });

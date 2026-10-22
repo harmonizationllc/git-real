@@ -62,6 +62,60 @@ describe("CredentialDialog rendering", () => {
   });
 });
 
+// Contract (W6): a token hint keyed off the host in the dialog title. github.com and
+// www.github.com (any case) get the GitHub note; every other host gets the generic one.
+describe("CredentialDialog token hint", () => {
+  const GITHUB = "GitHub needs a personal access token, not your account password.";
+  const GENERIC = "Many hosts need a personal access token instead of your password.";
+
+  it.each(["github.com", "www.github.com", "GitHub.com", "WWW.GITHUB.COM"])(
+    "should show the GitHub note when the host is %s",
+    (host) => {
+      renderWithProviders(<CredentialDialog prompt={prompt({ host })} />);
+      expect(screen.getByText(GITHUB)).toBeInTheDocument();
+    },
+  );
+
+  it.each(["github.com", "www.github.com", "GitHub.com"])(
+    "should not show the generic note when the host is %s",
+    (host) => {
+      renderWithProviders(<CredentialDialog prompt={prompt({ host })} />);
+      expect(screen.queryByText(GENERIC)).toBeNull();
+    },
+  );
+
+  it.each(["gitlab.com", "git.example.org", "127.0.0.1:8080"])(
+    "should show the generic note when the host is %s",
+    (host) => {
+      renderWithProviders(<CredentialDialog prompt={prompt({ host })} />);
+      expect(screen.getByText(GENERIC)).toBeInTheDocument();
+    },
+  );
+
+  it.each(["gitlab.com", "git.example.org"])(
+    "should not show the GitHub note when the host is %s",
+    (host) => {
+      renderWithProviders(<CredentialDialog prompt={prompt({ host })} />);
+      expect(screen.queryByText(GITHUB)).toBeNull();
+    },
+  );
+
+  it.each(["notgithub.com", "github.com.evil.test", "gist.github.com"])(
+    "should treat %s as another host",
+    (host) => {
+      renderWithProviders(<CredentialDialog prompt={prompt({ host })} />);
+      expect(screen.getByText(GENERIC)).toBeInTheDocument();
+    },
+  );
+
+  it("should keep the credential helper note alongside the token hint", () => {
+    renderWithProviders(<CredentialDialog prompt={prompt()} />);
+    expect(
+      screen.getByText("Your git credential helper will store these if one is configured."),
+    ).toBeInTheDocument();
+  });
+});
+
 // Contract: Sign in needs both fields and submits the username trimmed and the token as typed.
 describe("CredentialDialog submit", () => {
   it("should disable Sign in until both fields have text", async () => {

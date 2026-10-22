@@ -1,7 +1,14 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addRemote, fetchAll, listRemotes, removeRemote, updateRemote } from "../../lib/ipc";
+import {
+  addRemote,
+  fetchAll,
+  fetchRemote,
+  listRemotes,
+  removeRemote,
+  updateRemote,
+} from "../../lib/ipc";
 import type { AppError, RemoteInfo } from "../../lib/ipc";
 import { authError, networkError, remoteInfo } from "../../test/remoteFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -16,6 +23,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   updateRemote: vi.fn(),
   removeRemote: vi.fn(),
   fetchAll: vi.fn(),
+  fetchRemote: vi.fn(),
 }));
 
 let remotes: RemoteInfo[] = [];
@@ -37,6 +45,7 @@ beforeEach(() => {
     return Promise.resolve();
   });
   vi.mocked(fetchAll).mockResolvedValue(undefined);
+  vi.mocked(fetchRemote).mockResolvedValue(undefined);
 });
 
 function renderDialog(over: Partial<RemotesDialogProps> = {}) {
@@ -183,7 +192,7 @@ describe("RemotesDialog add", () => {
     const view = await renderList();
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null));
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledExactlyOnceWith(1, "up", null));
     expect(addRemote).toHaveBeenCalledExactlyOnceWith(1, "up", "/srv/up.git", null);
     expect(await screen.findByRole("list", { name: "Remotes" })).toHaveTextContent("up");
   });
@@ -194,7 +203,7 @@ describe("RemotesDialog add", () => {
       order.push("add");
       return Promise.resolve();
     });
-    vi.mocked(fetchAll).mockImplementation(() => {
+    vi.mocked(fetchRemote).mockImplementation(() => {
       order.push("fetch");
       return Promise.resolve();
     });
@@ -202,6 +211,35 @@ describe("RemotesDialog add", () => {
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
     await waitFor(() => expect(order).toEqual(["add", "fetch"]));
+  });
+
+  // GR-12 follow-up W3: only the remote just added is fetched, never every remote.
+  it("fetches only the newly added remote and never fetchAll", async () => {
+    const view = await renderList();
+    await fillAdd(view, "up", "/srv/up.git");
+    await view.user.click(addButton());
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledExactlyOnceWith(1, "up", null));
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("fetches the trimmed name of the new remote", async () => {
+    const view = await renderList();
+    await fillAdd(view, "  up  ", "/srv/up.git");
+    await view.user.click(addButton());
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledExactlyOnceWith(1, "up", null));
+  });
+
+  it("never calls fetchAll when the fetch after adding needs sign-in and is retried", async () => {
+    vi.mocked(fetchRemote).mockRejectedValueOnce(authError()).mockResolvedValue(undefined);
+    const view = await renderList();
+    await fillAdd(view, "up", "https://github.com/x/up.git");
+    await view.user.click(addButton());
+    const sign = await screen.findByRole("dialog", { name: "Sign in to github.com" });
+    await view.user.type(within(sign).getByRole("textbox", { name: "Username" }), "me");
+    await view.user.type(within(sign).getByLabelText("Token or password"), "tok");
+    await view.user.click(within(sign).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledTimes(2));
+    expect(fetchAll).not.toHaveBeenCalled();
   });
 
   it("sends a filled push URL", async () => {
@@ -234,7 +272,7 @@ describe("RemotesDialog add", () => {
     await view.user.click(fetchBox());
     await view.user.click(addButton());
     expect(await screen.findByRole("list", { name: "Remotes" })).toHaveTextContent("up");
-    expect(fetchAll).not.toHaveBeenCalled();
+    expect(fetchRemote).not.toHaveBeenCalled();
   });
 
   it("does not fetch when the add fails", async () => {
@@ -243,11 +281,11 @@ describe("RemotesDialog add", () => {
     await fillAdd(view, "origin", "/srv/o.git");
     await view.user.click(addButton());
     await screen.findByRole("alert");
-    expect(fetchAll).not.toHaveBeenCalled();
+    expect(fetchRemote).not.toHaveBeenCalled();
   });
 
   it("shows the credential dialog when the fetch after adding needs sign-in, then retries", async () => {
-    vi.mocked(fetchAll).mockRejectedValueOnce(authError()).mockResolvedValue(undefined);
+    vi.mocked(fetchRemote).mockRejectedValueOnce(authError()).mockResolvedValue(undefined);
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());
@@ -255,8 +293,8 @@ describe("RemotesDialog add", () => {
     await view.user.type(within(sign).getByRole("textbox", { name: "Username" }), "me");
     await view.user.type(within(sign).getByLabelText("Token or password"), "tok");
     await view.user.click(within(sign).getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
-    expect(fetchAll).toHaveBeenLastCalledWith(1, {
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledTimes(2));
+    expect(fetchRemote).toHaveBeenLastCalledWith(1, "up", {
       origin: "https://github.com",
       username: "me",
       token: "tok",
@@ -264,7 +302,7 @@ describe("RemotesDialog add", () => {
   });
 
   it("keeps the credentials out of the mutation cache after the fetch settles", async () => {
-    vi.mocked(fetchAll).mockRejectedValueOnce(authError()).mockResolvedValue(undefined);
+    vi.mocked(fetchRemote).mockRejectedValueOnce(authError()).mockResolvedValue(undefined);
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());
@@ -272,7 +310,7 @@ describe("RemotesDialog add", () => {
     await view.user.type(within(sign).getByRole("textbox", { name: "Username" }), "me");
     await view.user.type(within(sign).getByLabelText("Token or password"), "tok");
     await view.user.click(within(sign).getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalledTimes(2));
     await screen.findByRole("list", { name: "Remotes" });
     const cached = view.queryClient
       .getMutationCache()
@@ -282,7 +320,7 @@ describe("RemotesDialog add", () => {
   });
 
   it("cancelling the credential dialog keeps the remote and shows no error", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(authError());
+    vi.mocked(fetchRemote).mockRejectedValue(authError());
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());
@@ -293,7 +331,7 @@ describe("RemotesDialog add", () => {
   });
 
   it("keeps the remote and shows a NetworkError above the list when the fetch after adding fails", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(
+    vi.mocked(fetchRemote).mockRejectedValue(
       networkError("hostUnreachable", { verb: "fetch" }, "ssh: connect failed"),
     );
     const view = await renderList();
@@ -306,7 +344,7 @@ describe("RemotesDialog add", () => {
   });
 
   it("dismisses the NetworkError", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
+    vi.mocked(fetchRemote).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
     const view = await renderList();
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
@@ -468,7 +506,7 @@ describe("RemotesDialog edit", () => {
     await view.user.click(button("Edit origin"));
     await view.user.click(saveButton());
     await screen.findByRole("list", { name: "Remotes" });
-    expect(fetchAll).not.toHaveBeenCalled();
+    expect(fetchRemote).not.toHaveBeenCalled();
   });
 
   it("disables Save when the name or URL is emptied", async () => {
@@ -700,7 +738,7 @@ describe("RemotesDialog nested dialogs", () => {
   });
 
   it("a sign-in prompt during fetch-after-add is the last dialog in the document", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(authError());
+    vi.mocked(fetchRemote).mockRejectedValue(authError());
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());
@@ -712,7 +750,7 @@ describe("RemotesDialog nested dialogs", () => {
   });
 
   it("Escape in the sign-in prompt does not close the Remotes dialog", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(authError());
+    vi.mocked(fetchRemote).mockRejectedValue(authError());
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());
@@ -760,7 +798,7 @@ describe("RemotesDialog focus across views", () => {
   });
 
   it("after cancelling the sign-in prompt, focus is inside the Remotes dialog", async () => {
-    vi.mocked(fetchAll).mockRejectedValue(authError());
+    vi.mocked(fetchRemote).mockRejectedValue(authError());
     const view = await renderList();
     await fillAdd(view, "up", "https://github.com/x/up.git");
     await view.user.click(addButton());

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HeadState, Tracking } from "../../lib/ipc";
+import type { HeadState, OperationState, Tracking } from "../../lib/ipc";
 import {
   CHECK_OUT_A_BRANCH,
   LOADING,
@@ -105,6 +105,98 @@ describe("syncGates", () => {
       push: null,
       forcePush: null,
     });
+  });
+});
+
+// Contract (W2): while a merge, rebase, cherry-pick or revert is in progress, pull, push and force
+// push are gated with "Finish or abort the <operation> first"; fetch stays enabled. The check
+// follows loading and no-remotes and precedes HEAD, upstream and busy. The operation is the
+// optional fifth argument; undefined (still loading) and kind "none" gate nothing.
+describe("syncGates during an in-progress operation", () => {
+  const merge: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "topic",
+    message: { subject: "Merge", body: "" },
+  };
+  const rebase: OperationState = {
+    kind: "rebase",
+    onto: "b".repeat(40),
+    ontoName: "main",
+    branch: "topic",
+    step: 1,
+    total: 2,
+    stoppedForEdit: false,
+  };
+  const cherryPick: OperationState = {
+    kind: "cherryPick",
+    oid: "c".repeat(40),
+    message: { subject: "Pick", body: "" },
+  };
+  const revert: OperationState = {
+    kind: "revert",
+    oid: "d".repeat(40),
+    message: { subject: "Revert", body: "" },
+  };
+  const blocked = (noun: string) => ({
+    fetch: null,
+    pull: `Finish or abort the ${noun} first`,
+    push: `Finish or abort the ${noun} first`,
+    forcePush: `Finish or abort the ${noun} first`,
+  });
+
+  it.each<[string, OperationState]>([
+    ["merge", merge],
+    ["rebase", rebase],
+    ["cherry-pick", cherryPick],
+    ["revert", revert],
+  ])("should gate pull, push and force push but not fetch during a %s", (noun, operation) => {
+    expect(syncGates(branch, tracked, 1, false, operation)).toEqual(blocked(noun));
+  });
+
+  it("should gate nothing when the operation state is none", () => {
+    expect(syncGates(branch, tracked, 1, false, { kind: "none" })).toEqual({
+      fetch: null,
+      pull: null,
+      push: null,
+      forcePush: null,
+    });
+  });
+
+  it("should gate nothing while the operation state is still loading", () => {
+    expect(syncGates(branch, tracked, 1, false, undefined)).toEqual({
+      fetch: null,
+      pull: null,
+      push: null,
+      forcePush: null,
+    });
+  });
+
+  it("should keep Loading… for every button while the remotes load, before the operation", () => {
+    expect(syncGates(branch, tracked, undefined, false, merge)).toEqual(all("Loading…"));
+  });
+
+  it("should keep No remotes configured for every button, before the operation", () => {
+    expect(syncGates(branch, tracked, 0, false, merge)).toEqual(all("No remotes configured"));
+  });
+
+  it("should name the operation before the no-upstream gate", () => {
+    expect(syncGates(branch, null, 1, false, merge)).toEqual(blocked("merge"));
+  });
+
+  it("should name the operation before the busy gate for pull, push and force push", () => {
+    const gates = syncGates(branch, tracked, 1, true, merge);
+    expect([gates.pull, gates.push, gates.forcePush]).toEqual([
+      "Finish or abort the merge first",
+      "Finish or abort the merge first",
+      "Finish or abort the merge first",
+    ]);
+  });
+
+  // A rebase stops on a detached HEAD, so naming the operation must win over the detached copy.
+  it("should name the rebase rather than the detached HEAD when a rebase has detached HEAD", () => {
+    const head: HeadState = { kind: "detached", oid: "a".repeat(40) };
+    expect(syncGates(head, null, 1, false, rebase)).toEqual(blocked("rebase"));
   });
 });
 

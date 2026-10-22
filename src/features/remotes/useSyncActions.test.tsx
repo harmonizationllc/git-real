@@ -1,7 +1,15 @@
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAll, listBranches, listRemotes, pull, pullDefaultMode, push } from "../../lib/ipc";
-import type { Tracking } from "../../lib/ipc";
+import {
+  fetchAll,
+  getOperationState,
+  listBranches,
+  listRemotes,
+  pull,
+  pullDefaultMode,
+  push,
+} from "../../lib/ipc";
+import type { OperationState, Tracking } from "../../lib/ipc";
 import { authError, networkError, remoteInfo, trackedList } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { queryKeys } from "../../lib/query/keys";
@@ -13,6 +21,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   listRemotes: vi.fn(),
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
+  getOperationState: vi.fn(),
   pull: vi.fn(),
   push: vi.fn(),
 }));
@@ -33,6 +42,7 @@ beforeEach(() => {
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
   vi.mocked(fetchAll).mockResolvedValue(undefined);
+  vi.mocked(getOperationState).mockResolvedValue({ kind: "none" });
   vi.mocked(pull).mockResolvedValue("completed");
   vi.mocked(push).mockResolvedValue(undefined);
 });
@@ -179,7 +189,9 @@ describe("useSyncActions push", () => {
     });
     const { result } = await setup();
     await act(async () => result.current.push());
-    await waitFor(() => expect(result.current.message?.title).toBe("HEAD moved to another branch"));
+    await waitFor(() =>
+      expect(result.current.message?.title).toBe("Another operation is in progress"),
+    );
   });
 
   it("should open the set-upstream dialog with every remote and the branch name when push has no upstream", async () => {
@@ -474,10 +486,76 @@ describe("useSyncActions messages", () => {
     expect(result.current.message).toBeNull();
   });
 
-  it("should show a message for a non-network error such as an operation in progress", async () => {
+  it("should show the titled operation-in-progress message when a pull races an operation", async () => {
     vi.mocked(pull).mockRejectedValue({ kind: "operationInProgress", message: "merge running" });
     const { result } = await setup();
     await act(async () => result.current.pull());
-    await waitFor(() => expect(result.current.message?.title).toBe("merge running"));
+    await waitFor(() =>
+      expect(result.current.message?.title).toBe("Another operation is in progress"),
+    );
+  });
+});
+
+// Contract (W2): the gates follow the repo's operation state (the query OperationBanner uses), so
+// pull and push do nothing during a merge, rebase, cherry-pick or revert.
+describe("useSyncActions during an in-progress operation", () => {
+  const rebase: OperationState = {
+    kind: "rebase",
+    onto: "b".repeat(40),
+    ontoName: "main",
+    branch: "topic",
+    step: 1,
+    total: 2,
+    stoppedForEdit: false,
+  };
+  const merge: OperationState = {
+    kind: "merge",
+    head: "a".repeat(40),
+    branch: "topic",
+    message: { subject: "Merge", body: "" },
+  };
+
+  it("should gate pull, push and force push with the operation's name but leave fetch enabled", async () => {
+    vi.mocked(getOperationState).mockResolvedValue(merge);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.pull).toBe("Finish or abort the merge first"));
+    expect(result.current.gates).toEqual({
+      fetch: null,
+      pull: "Finish or abort the merge first",
+      push: "Finish or abort the merge first",
+      forcePush: "Finish or abort the merge first",
+    });
+  });
+
+  it("should name a rebase in the gates", async () => {
+    vi.mocked(getOperationState).mockResolvedValue(rebase);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.push).toBe("Finish or abort the rebase first"));
+  });
+
+  it("should ignore pull, push and requestForcePush while an operation is in progress", async () => {
+    vi.mocked(getOperationState).mockResolvedValue(merge);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.pull).toBe("Finish or abort the merge first"));
+    act(() => {
+      result.current.pull();
+      result.current.push();
+      result.current.requestForcePush();
+    });
+    expect([pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0]);
+    expect(result.current.forcePush).toBeNull();
+  });
+
+  it("should still fetch while an operation is in progress", async () => {
+    vi.mocked(getOperationState).mockResolvedValue(merge);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.pull).toBe("Finish or abort the merge first"));
+    await act(async () => result.current.fetch());
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
+  });
+
+  it("should enable pull and push again when the operation state is none", async () => {
+    const { result } = await setup();
+    expect(result.current.gates).toEqual({ fetch: null, pull: null, push: null, forcePush: null });
   });
 });

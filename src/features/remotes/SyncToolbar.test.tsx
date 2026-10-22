@@ -204,65 +204,12 @@ describe("SyncToolbar menus", () => {
   });
 });
 
-// Contract: a failure renders as a NetworkError whose actions drive the toolbar.
+// Contract (W1): the toolbar never renders the network error itself; SyncMessage does, in its
+// own row below the toolbar row.
 describe("SyncToolbar message", () => {
-  it("should render nothing alert-like without a message", () => {
-    renderToolbar();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("should render the message as a NetworkError", () => {
+  it("should render no alert even when sync carries a message", () => {
     renderToolbar({ message: message({ hint: "Check the URL." }) });
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not reach the remote");
-    expect(screen.getByRole("alert")).toHaveTextContent("Check the URL.");
-  });
-
-  it("should run pull from the message's Pull action", async () => {
-    const { user, sync } = renderToolbar({
-      message: message({ action: { kind: "pull", label: "Pull" } }),
-    });
-    await user.click(within(screen.getByRole("alert")).getByRole("button", { name: "Pull" }));
-    expect(sync.pull).toHaveBeenCalledExactlyOnceWith();
-  });
-
-  it("should run fetch from the message's Fetch action", async () => {
-    const { user, sync } = renderToolbar({
-      message: message({ action: { kind: "fetch", label: "Fetch" } }),
-    });
-    await user.click(within(screen.getByRole("alert")).getByRole("button", { name: "Fetch" }));
-    expect(sync.fetch).toHaveBeenCalledOnce();
-  });
-
-  it("should open the upstream's remote for Edit remote…", async () => {
-    const { user, onOpenRemotes } = renderToolbar({
-      upstreamRemote: "origin",
-      message: message({ action: { kind: "editRemote", label: "Edit remote…" } }),
-    });
-    await user.click(button("Edit remote…"));
-    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "origin" });
-  });
-
-  it("should open the remotes list for Edit remote… without an upstream remote", async () => {
-    const { user, onOpenRemotes } = renderToolbar({
-      upstreamRemote: null,
-      message: message({ action: { kind: "editRemote", label: "Edit remote…" } }),
-    });
-    await user.click(button("Edit remote…"));
-    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "list" });
-  });
-
-  it("should open the add form for Add remote…", async () => {
-    const { user, onOpenRemotes } = renderToolbar({
-      message: message({ action: { kind: "addRemote", label: "Add remote…" } }),
-    });
-    await user.click(button("Add remote…"));
-    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "add" });
-  });
-
-  it("should clear the message on Dismiss", async () => {
-    const { user, sync } = renderToolbar({ message: message() });
-    await user.click(button("Dismiss"));
-    expect(sync.dismissMessage).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 
@@ -357,6 +304,23 @@ describe("SyncToolbar option buttons gating", () => {
     renderToolbar({ gates: { ...enabled, push: CHECK_OUT_A_BRANCH } });
     expect(button("Push options")).toBeDisabled();
     expect(button("Push options")).toHaveAttribute("title", "Check out a branch to pull or push.");
+  });
+
+  it("should disable Pull options and Push options with the finish-or-abort title during an operation", () => {
+    const gate = "Finish or abort the rebase first";
+    renderToolbar({ gates: { fetch: null, pull: gate, push: gate, forcePush: gate } });
+    expect(
+      [button("Pull options"), button("Push options")].map((b) => b.getAttribute("title")),
+    ).toEqual([gate, gate]);
+    expect(button("Pull options")).toBeDisabled();
+    expect(button("Push options")).toBeDisabled();
+  });
+
+  it("should keep Fetch and Remotes… enabled during an operation", () => {
+    const gate = "Finish or abort the merge first";
+    renderToolbar({ gates: { fetch: null, pull: gate, push: gate, forcePush: gate } });
+    expect(button("Fetch")).toBeEnabled();
+    expect(button("Remotes…")).toBeEnabled();
   });
 
   it("should enable both option buttons when nothing gates them", () => {

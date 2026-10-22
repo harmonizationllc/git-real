@@ -488,6 +488,8 @@ fn network_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
         kind: NetworkErrorKind::Other,
         https: false,
         origin: None,
+        host: None,
+        reason: None,
         code,
         stdout: stdout.into(),
         stderr: stderr.into(),
@@ -847,6 +849,8 @@ fn network_failed_carries_the_network_payload() {
         kind: NetworkErrorKind::HttpsAuthRequired,
         https: true,
         origin: Some("https://github.com".into()),
+        host: None,
+        reason: None,
         code: Some(128),
         stdout: String::new(),
         stderr: stderr.into(),
@@ -860,7 +864,9 @@ fn network_failed_carries_the_network_payload() {
             verb: "fetch".into(),
             kind: NetworkErrorKind::HttpsAuthRequired,
             https: true,
-            origin: Some("https://github.com".into())
+            origin: Some("https://github.com".into()),
+            host: None,
+            reason: None
         })
     );
     assert_eq!(
@@ -868,8 +874,50 @@ fn network_failed_carries_the_network_payload() {
         json!({
             "kind": "networkFailed",
             "message": stderr.trim(),
-            "network": { "verb": "fetch", "kind": "httpsAuthRequired", "https": true, "origin": "https://github.com" }
+            "network": { "verb": "fetch", "kind": "httpsAuthRequired", "https": true, "origin": "https://github.com", "host": null, "reason": null }
         })
+    );
+}
+
+#[test]
+fn network_failed_carries_the_host_and_reason_into_the_network_payload() {
+    let app: AppError = GitError::NetworkFailed {
+        verb: "push",
+        kind: NetworkErrorKind::RemoteRejected,
+        https: true,
+        origin: None,
+        host: Some("github.com".into()),
+        reason: Some("GH007: private email".into()),
+        code: Some(1),
+        stdout: String::new(),
+        stderr: "remote: error: GH007: private email\n".into(),
+    }
+    .into();
+    assert_eq!(
+        serde_json::to_value(&app).unwrap()["network"],
+        json!({
+            "verb": "push",
+            "kind": "remoteRejected",
+            "https": true,
+            "origin": null,
+            "host": "github.com",
+            "reason": "GH007: private email"
+        })
+    );
+}
+
+#[test]
+fn network_failed_serializes_an_absent_host_and_reason_as_null() {
+    let value = serde_json::to_value(network_failed(Some(1), "", "x")).unwrap();
+    assert_eq!(value["network"]["host"], json!(null));
+    assert_eq!(value["network"]["reason"], json!(null));
+}
+
+#[test]
+fn remote_rejected_serializes_as_remote_rejected() {
+    assert_eq!(
+        serde_json::to_value(NetworkErrorKind::RemoteRejected).unwrap(),
+        json!("remoteRejected")
     );
 }
 
