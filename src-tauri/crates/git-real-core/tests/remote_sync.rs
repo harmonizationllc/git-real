@@ -738,7 +738,7 @@ fn set_upstream_push_publishes_the_branch_and_records_the_upstream() {
     let ours = fx.commit_here("t.txt", "t\n");
     let push = fx
         .session
-        .prepare_push(&set_upstream("origin", "topic-pub"), false, &fx.head)
+        .prepare_push(&set_upstream("origin", "topic-pub"), false, "topic")
         .unwrap();
     assert_eq!(
         (push.remote(), push.branch(), push.lease()),
