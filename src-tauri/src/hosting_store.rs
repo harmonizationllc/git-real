@@ -150,23 +150,35 @@ impl HostingStore {
         self.tokens.get(&account.id)
     }
 
-    /// Stores `token` and lists `account`, replacing (and deleting the secret of) any account on
-    /// the same `(provider, host)`. A keychain failure stores and lists nothing new.
+    /// Stores `token` and lists `account`, replacing any account on the same `(provider, host)`.
+    /// A failure to store the token changes nothing; a failure to delete the replaced account's
+    /// secret afterwards is logged and the connect still succeeds.
     pub fn connect(&self, account: Account, token: &Token) -> Result<Account, GitError> {
-        let replaced = self.find(account.provider, &account.host);
-        if let Some(old) = replaced.as_ref().filter(|old| old.id != account.id) {
-            self.tokens.delete(&old.id)?;
-        }
         self.tokens.set(&account.id, token)?;
-        let mut accounts = self.lock();
-        let slot = accounts.iter().position(|a| {
-            a.provider == account.provider && a.host.eq_ignore_ascii_case(&account.host)
-        });
-        match slot {
-            Some(i) => accounts[i] = account.clone(),
-            None => accounts.push(account.clone()),
+        let replaced = {
+            let mut accounts = self.lock();
+            let slot = accounts.iter().position(|a| {
+                a.provider == account.provider && a.host.eq_ignore_ascii_case(&account.host)
+            });
+            let replaced = match slot {
+                Some(i) => Some(std::mem::replace(&mut accounts[i], account.clone())),
+                None => {
+                    accounts.push(account.clone());
+                    None
+                }
+            };
+            self.save_logged(&accounts);
+            replaced
+        };
+        // A same-id reconnect was overwritten by `set`; only another user's secret is deleted.
+        if let Some(old) = replaced.filter(|old| old.id != account.id)
+            && let Err(e) = self.tokens.delete(&old.id)
+        {
+            eprintln!(
+                "hosting accounts: cannot delete the token of {}: {e}",
+                old.id
+            );
         }
-        self.save_logged(&accounts);
         Ok(account)
     }
 

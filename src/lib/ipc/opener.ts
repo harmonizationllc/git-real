@@ -1,8 +1,10 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-function isHttps(url: string): boolean {
+/** True for an `https:` URL without userinfo, which could smuggle credentials or disguise the host. */
+function isPlainHttps(url: string): boolean {
   try {
-    return new URL(url).protocol === "https:";
+    const u = new URL(url);
+    return u.protocol === "https:" && !u.username && !u.password;
   } catch {
     return false;
   }
@@ -10,6 +12,6 @@ function isHttps(url: string): boolean {
 
 /** Opens an `https:` link in the system browser; anything else is refused without opening. */
 export async function openExternal(url: string): Promise<void> {
-  if (!isHttps(url)) throw new Error("Only https links can be opened");
+  if (!isPlainHttps(url)) throw new Error("Only https links can be opened");
   await openUrl(url);
 }
