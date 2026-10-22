@@ -36,7 +36,7 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
-  const { remotes } = useRemotes(repoId);
+  const { remotes, error: loadError, refetch } = useRemotes(repoId);
   const actions = useRemoteActions(repoId);
   const network = useNetworkAction(repoId);
   const [view, setView] = useState<View>(() => initialView(target));
@@ -55,6 +55,8 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
       : undefined;
   // Only the add form can show before the remotes have loaded.
   const waiting = remotes === undefined && view.kind !== "add";
+  // A failed load replaces "Loading remotes…" with the error and Retry, for any target.
+  const loadFailed = waiting && loadError !== null;
   // An edit target for a remote that is not there resolves to the list once, so a later
   // refetch that brings the remote back cannot pop the form open.
   if (view.kind === "edit" && remotes !== undefined && editing === undefined) {
@@ -126,7 +128,7 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || inert) return;
-    if (view.kind === "list") onClose();
+    if (view.kind === "list" || loadFailed) onClose();
     else toList(view);
   };
 
@@ -193,7 +195,24 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
   );
 
   let body: React.ReactNode;
-  if (waiting) {
+  if (loadFailed) {
+    body = (
+      <>
+        <RepoError
+          error={loadError}
+          path={null}
+          variant="panel"
+          onRetry={refetch}
+          onDismiss={refetch}
+        />
+        <div className={styles.actions}>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </>
+    );
+  } else if (waiting) {
     body = <p role="status">Loading remotes…</p>;
   } else if (view.kind === "list") {
     body = renderList(remotes as RemoteInfo[]);
@@ -220,8 +239,8 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
         <div
           ref={dialogRef}
           // Announced as the dialog once it has content; until then the status speaks for it.
-          role={waiting ? undefined : "dialog"}
-          aria-modal={waiting ? undefined : "true"}
+          role={waiting && !loadFailed ? undefined : "dialog"}
+          aria-modal={waiting && !loadFailed ? undefined : "true"}
           aria-labelledby={titleId}
           className={styles.dialog}
           tabIndex={-1}
