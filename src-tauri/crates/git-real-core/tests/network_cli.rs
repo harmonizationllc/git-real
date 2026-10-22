@@ -370,7 +370,7 @@ fn push_with_credentials_approves_the_push_url_only() {
     want.extend([
         "push".to_owned(),
         "origin".to_owned(),
-        format!("HEAD:refs/heads/{head}"),
+        format!("refs/heads/{head}:refs/heads/{head}"),
     ]);
     assert_eq!(after_workdir(&path), want);
     assert_eq!(
