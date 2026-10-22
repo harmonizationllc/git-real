@@ -98,7 +98,8 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   };
 
   const publish = (remote: string, name: string) => {
-    const local = branch as string;
+    // The branch captured when the dialog opened, not the live HEAD.
+    const local = (publishTo as NonNullable<typeof publishTo>).branch;
     void start("push", (c) =>
       pushBranch(repoId, { kind: "setUpstream", remote, branch: name }, false, local, c),
     ).then((result) => {
