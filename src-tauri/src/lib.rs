@@ -1,14 +1,17 @@
 pub mod commands;
 pub mod error;
 pub mod events;
+pub mod hosting_store;
 pub mod recent_store;
 pub mod state;
 pub mod watcher;
 
 use std::sync::Arc;
 
+use git_real_core::hosting::ureq_transport::UreqTransport;
 use tauri::Manager;
 
+use crate::hosting_store::{HostingStore, KeyringTokenStore};
 use crate::recent_store::RecentStore;
 use crate::state::{RepoRegistry, WatcherRegistry};
 
@@ -20,9 +23,14 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RepoRegistry::default()))
         .manage(Arc::new(WatcherRegistry::default()))
+        .manage(Arc::new(UreqTransport::new()))
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(Arc::new(RecentStore::load(dir.join("recent-repos.json"))));
+            app.manage(Arc::new(HostingStore::load(
+                dir.join("hosting_accounts.json"),
+                Box::new(KeyringTokenStore),
+            )));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -95,6 +103,12 @@ pub fn run() {
             commands::remote::add_remote,
             commands::remote::update_remote,
             commands::remote::remove_remote,
+            commands::hosting::hosting_list_accounts,
+            commands::hosting::hosting_connect,
+            commands::hosting::hosting_disconnect,
+            commands::hosting::hosting_repo_context,
+            commands::hosting::hosting_list_pull_requests,
+            commands::hosting::hosting_checkout_pull_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

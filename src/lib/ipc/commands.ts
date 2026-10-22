@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Blame,
   BranchList,
+  CheckoutPrOutcome,
   CommitConfig,
   CommitDetail,
   CommitFile,
@@ -15,6 +16,8 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GitCliInfo,
+  HostingAccount,
+  HostingProvider,
   HunkAction,
   HunkSelection,
   LocalBranch,
@@ -25,11 +28,13 @@ import type {
   OperationOutcome,
   OperationState,
   PullMode,
+  PullRequest,
   PushTarget,
   RebaseCommit,
   RebaseStep,
   RecentEntry,
   RemoteInfo,
+  RepoContext,
   RepoId,
   ResetMode,
   StashEntry,
@@ -438,4 +443,46 @@ export function updateRemote(
 
 export function removeRemote(id: RepoId, name: string): Promise<void> {
   return invoke<void>("remove_remote", { id, name });
+}
+
+export function hostingListAccounts(): Promise<HostingAccount[]> {
+  return invoke<HostingAccount[]>("hosting_list_accounts", {});
+}
+
+/** Checks `token` with the provider, then stores it in the system keychain. `host` null is the provider's default. */
+export function hostingConnect(
+  provider: HostingProvider,
+  host: string | null,
+  token: string,
+): Promise<HostingAccount> {
+  return invoke<HostingAccount>("hosting_connect", { provider, host, token });
+}
+
+export function hostingDisconnect(accountId: string): Promise<void> {
+  return invoke<void>("hosting_disconnect", { accountId });
+}
+
+/** The hosted repository behind `origin`; null when no provider hosts it. */
+export function hostingRepoContext(id: RepoId): Promise<RepoContext | null> {
+  return invoke<RepoContext | null>("hosting_repo_context", { id });
+}
+
+/** One page (1-based, 50 per page) of open pull requests, newest update first. */
+export function hostingListPullRequests(id: RepoId, page: number): Promise<PullRequest[]> {
+  return invoke<PullRequest[]>("hosting_list_pull_requests", { id, page });
+}
+
+/** Fetches pull request `number` and checks it out; `reset` moves a diverged `pr/<n>`. */
+export function hostingCheckoutPullRequest(
+  id: RepoId,
+  number: number,
+  reset: boolean,
+  credentials: Credentials | null = null,
+): Promise<CheckoutPrOutcome> {
+  return invoke<CheckoutPrOutcome>("hosting_checkout_pull_request", {
+    id,
+    number,
+    reset,
+    credentials,
+  });
 }

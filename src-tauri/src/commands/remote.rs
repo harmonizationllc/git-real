@@ -3,7 +3,8 @@
 //! Network work follows the GR-7 shape: validate under the session lock, run
 //! git with the lock released (a slow network never blocks the repository),
 //! and, for pull, integrate under the lock again. `credentials` live only for
-//! the call; they are never logged, stored, or put into an error.
+//! the call; they are never logged, stored, or put into an error. Without typed
+//! credentials, a connected account's token is used for its own `https://` host.
 
 use std::sync::Arc;
 
@@ -13,6 +14,7 @@ use tauri::State;
 
 use super::{run_blocking, with_session};
 use crate::error::AppError;
+use crate::hosting_store::HostingStore;
 use crate::state::{RepoId, RepoRegistry};
 
 /// Credentials as the front end sends them, before validation. Deserializing
@@ -35,23 +37,48 @@ pub fn credentials_from_arg(arg: Option<CredentialsArg>) -> Result<Option<Creden
         .map_err(AppError::from)
 }
 
-pub fn fetch_inner(
-    reg: &RepoRegistry,
-    id: RepoId,
-    credentials: Option<&Credentials>,
-) -> Result<(), AppError> {
+/// How a network operation authenticates. Never glob-import its variants: `None` would shadow
+/// `Option::None`.
+#[derive(Clone, Copy)]
+pub enum NetworkAuth<'a> {
+    None,
+    Explicit(&'a Credentials),
+    Accounts(&'a HostingStore),
+}
+
+impl<'a> NetworkAuth<'a> {
+    /// Explicit when the user typed credentials, else the account store.
+    pub fn new(explicit: Option<&'a Credentials>, store: &'a HostingStore) -> Self {
+        explicit.map_or(Self::Accounts(store), Self::Explicit)
+    }
+
+    /// The credentials to run with once the operation's `urls` are known.
+    pub fn resolve(&self, urls: &[String]) -> Option<Credentials> {
+        match self {
+            Self::None => None,
+            Self::Explicit(c) => Some((*c).clone()),
+            Self::Accounts(store) => store.credentials_for(urls),
+        }
+    }
+}
+
+pub fn fetch_inner(reg: &RepoRegistry, id: RepoId, auth: NetworkAuth<'_>) -> Result<(), AppError> {
     let fetch = with_session(reg, id, |s| s.prepare_fetch())?;
-    fetch.run(credentials).map_err(AppError::from)
+    fetch
+        .run(auth.resolve(fetch.urls()).as_ref())
+        .map_err(AppError::from)
 }
 
 pub fn fetch_remote_inner(
     reg: &RepoRegistry,
     id: RepoId,
     remote: &str,
-    credentials: Option<&Credentials>,
+    auth: NetworkAuth<'_>,
 ) -> Result<(), AppError> {
     let fetch = with_session(reg, id, |s| s.prepare_fetch_remote(remote))?;
-    fetch.run(credentials).map_err(AppError::from)
+    fetch
+        .run(auth.resolve(fetch.urls()).as_ref())
+        .map_err(AppError::from)
 }
 
 pub fn pull_default_mode_inner(reg: &RepoRegistry, id: RepoId) -> Result<PullMode, AppError> {
@@ -62,10 +89,11 @@ pub fn pull_inner(
     reg: &RepoRegistry,
     id: RepoId,
     mode: PullMode,
-    credentials: Option<&Credentials>,
+    auth: NetworkAuth<'_>,
 ) -> Result<OperationOutcome, AppError> {
     let pull = with_session(reg, id, |s| s.prepare_pull())?;
-    pull.fetch(credentials).map_err(AppError::from)?;
+    pull.fetch(auth.resolve(pull.urls()).as_ref())
+        .map_err(AppError::from)?;
     with_session(reg, id, |s| s.integrate_pull(&pull, mode))
 }
 
@@ -75,10 +103,11 @@ pub fn push_inner(
     target: &PushTarget,
     force: bool,
     expected_branch: &str,
-    credentials: Option<&Credentials>,
+    auth: NetworkAuth<'_>,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_push(target, force, expected_branch))?;
-    push.run(credentials).map_err(AppError::from)
+    push.run(auth.resolve(push.urls()).as_ref())
+        .map_err(AppError::from)
 }
 
 pub fn list_remotes_inner(reg: &RepoRegistry, id: RepoId) -> Result<Vec<RemoteInfo>, AppError> {
@@ -113,24 +142,31 @@ pub fn remove_remote_inner(reg: &RepoRegistry, id: RepoId, name: &str) -> Result
 #[tauri::command]
 pub async fn fetch(
     reg: State<'_, Arc<RepoRegistry>>,
+    hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
-    let reg = Arc::clone(reg.inner());
-    run_blocking(move || fetch_inner(&reg, id, credentials.as_ref())).await
+    let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
+    run_blocking(move || fetch_inner(&reg, id, NetworkAuth::new(credentials.as_ref(), &hosting)))
+        .await
 }
 
 #[tauri::command]
 pub async fn fetch_remote(
     reg: State<'_, Arc<RepoRegistry>>,
+    hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     remote: String,
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
-    let reg = Arc::clone(reg.inner());
-    run_blocking(move || fetch_remote_inner(&reg, id, &remote, credentials.as_ref())).await
+    let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
+    run_blocking(move || {
+        let auth = NetworkAuth::new(credentials.as_ref(), &hosting);
+        fetch_remote_inner(&reg, id, &remote, auth)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -145,18 +181,28 @@ pub async fn pull_default_mode(
 #[tauri::command]
 pub async fn pull(
     reg: State<'_, Arc<RepoRegistry>>,
+    hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     mode: PullMode,
     credentials: Option<CredentialsArg>,
 ) -> Result<OperationOutcome, AppError> {
     let credentials = credentials_from_arg(credentials)?;
-    let reg = Arc::clone(reg.inner());
-    run_blocking(move || pull_inner(&reg, id, mode, credentials.as_ref())).await
+    let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
+    run_blocking(move || {
+        pull_inner(
+            &reg,
+            id,
+            mode,
+            NetworkAuth::new(credentials.as_ref(), &hosting),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn push(
     reg: State<'_, Arc<RepoRegistry>>,
+    hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     target: PushTarget,
     force: bool,
@@ -164,16 +210,10 @@ pub async fn push(
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
-    let reg = Arc::clone(reg.inner());
+    let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
     run_blocking(move || {
-        push_inner(
-            &reg,
-            id,
-            &target,
-            force,
-            &expected_branch,
-            credentials.as_ref(),
-        )
+        let auth = NetworkAuth::new(credentials.as_ref(), &hosting);
+        push_inner(&reg, id, &target, force, &expected_branch, auth)
     })
     .await
 }

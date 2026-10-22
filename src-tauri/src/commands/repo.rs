@@ -7,11 +7,13 @@ use git_real_core::git_cli;
 use git_real_core::remote::clone::clone;
 use git_real_core::{ProgressSink, RecentEntry, RepoSession, RepoSummary};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
+use super::remote::NetworkAuth;
 use super::run_blocking;
 use crate::error::AppError;
 use crate::events::{EventProgressSink, REPO_CHANGED, RepoChangedPayload};
+use crate::hosting_store::HostingStore;
 use crate::recent_store::RecentStore;
 use crate::state::{RepoId, RepoRegistry, WatcherRegistry};
 use crate::watcher::{RepoWatcher, WATCH_DEBOUNCE};
@@ -72,9 +74,11 @@ pub fn clone_repo_inner(
     recent: &RecentStore,
     url: &str,
     dest: &str,
+    auth: NetworkAuth<'_>,
     sink: &mut dyn ProgressSink,
 ) -> Result<OpenedRepo, AppError> {
-    let cloned = clone(url, Path::new(dest), None, sink)?;
+    let creds = auth.resolve(&[url.to_owned()]);
+    let cloned = clone(url, Path::new(dest), creds.as_ref(), sink)?;
     let session = RepoSession::open(&cloned)?;
     Ok(register_session(reg, recent, session))
 }
@@ -168,9 +172,12 @@ pub async fn clone_repo(
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
     let watchers = Arc::clone(watchers.inner());
+    // From the handle rather than a ninth parameter (clippy's argument limit).
+    let hosting = Arc::clone(app.state::<Arc<HostingStore>>().inner());
     run_blocking(move || {
         let mut sink = EventProgressSink::new(app.clone(), clone_id);
-        let opened = clone_repo_inner(&reg, &recent, &url, &dest, &mut sink);
+        let auth = NetworkAuth::Accounts(&hosting);
+        let opened = clone_repo_inner(&reg, &recent, &url, &dest, auth, &mut sink);
         watch_opened(&app, &watchers, opened)
     })
     .await
