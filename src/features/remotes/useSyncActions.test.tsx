@@ -233,6 +233,45 @@ describe("useSyncActions publish", () => {
     expect(vi.mocked(push).mock.lastCall?.[3]).toBe("main");
   });
 
+  // Contract: publish pushes the branch captured when the dialog opened, even if HEAD moves while it is open.
+  async function moveHeadToFeature(view: Awaited<ReturnType<typeof openDialog>>) {
+    vi.mocked(listBranches).mockResolvedValue(
+      trackedList(null, { kind: "branch", name: "feature" }),
+    );
+    await act(async () => view.queryClient.invalidateQueries({ queryKey: queryKeys.branches(1) }));
+    await waitFor(() => expect(view.result.current.upstream?.text).toBe("no upstream"));
+  }
+
+  it("should send the branch captured when the dialog opened as expectedBranch when HEAD moves while it is open", async () => {
+    const view = await openDialog();
+    await moveHeadToFeature(view);
+    await act(async () => view.result.current.publish("origin", "topic"));
+    expect(push).toHaveBeenLastCalledWith(
+      1,
+      { kind: "setUpstream", remote: "origin", branch: "topic" },
+      false,
+      "main",
+      null,
+    );
+  });
+
+  it("should still send the captured branch on the retry after sign-in when HEAD moved while the dialog was open", async () => {
+    const view = await openDialog();
+    await moveHeadToFeature(view);
+    vi.mocked(push).mockRejectedValueOnce(authError()).mockResolvedValueOnce(undefined);
+    act(() => view.result.current.publish("origin", "topic"));
+    await waitFor(() => expect(view.result.current.prompt).not.toBeNull());
+    act(() => view.result.current.prompt?.submit("me", "tok"));
+    await waitFor(() => expect(view.result.current.running).toBeNull());
+    expect(push).toHaveBeenLastCalledWith(
+      1,
+      { kind: "setUpstream", remote: "origin", branch: "topic" },
+      false,
+      "main",
+      { origin: "https://github.com", username: "me", token: "tok" },
+    );
+  });
+
   it("should keep the dialog open with the error when the branch name is invalid", async () => {
     const { result } = await openDialog();
     const error = { kind: "invalidBranchName", message: "bad..x" };
