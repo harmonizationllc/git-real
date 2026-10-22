@@ -25,6 +25,14 @@
   word-break: break-all;
 }
 
+/* The branch line and the sync toolbar share a row, wrapping on a narrow window. */
+.syncRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+}
+
 .branch {
   margin: 0;
   color: var(--color-accent);

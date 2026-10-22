@@ -7,6 +7,7 @@ import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterTags, isFiltering } from "../branches/branchFilter";
 import { useBranches } from "../branches/useBranches";
+import { CredentialDialog } from "../remotes/CredentialDialog";
 import { RepoError } from "../repo/RepoError";
 import { CreateTagDialog } from "./CreateTagDialog";
 import { TagFeedback } from "./TagFeedback";
@@ -224,6 +225,8 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
           fallbackFocus={headingRef}
         />
       )}
+      {/* Last, so it paints above any other dialog of the panel. */}
+      <CredentialDialog prompt={actions.prompt} fallbackFocus={headingRef} />
     </section>
   );
 }

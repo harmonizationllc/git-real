@@ -2,13 +2,18 @@ import { useCallback, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
-import type { BranchList, HeadState, RepoId } from "../../lib/ipc";
+import { deleteRemoteBranch } from "../../lib/ipc";
+import type { AppError, BranchList, HeadState, RepoId } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
 import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
+import { CredentialDialog } from "../remotes/CredentialDialog";
+import { NetworkError } from "../remotes/NetworkError";
+import { networkMessage } from "../remotes/networkMessage";
+import { useNetworkAction } from "../remotes/useNetworkAction";
 import { RepoError } from "../repo/RepoError";
 import { BranchGroup } from "./BranchGroup";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
@@ -66,8 +71,11 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const actions = useBranchActions(repoId);
   const { state } = useOperationState(repoId);
   const integration = useIntegrationActions(repoId);
-  const pending = actions.pending || integration.pending;
-  const panelError = actions.error ?? integration.error;
+  const network = useNetworkAction(repoId);
+  // The last remote delete failure; the network gate resolves it rather than holding it.
+  const [remoteError, setRemoteError] = useState<AppError | null>(null);
+  const pending = actions.pending || integration.pending || network.pending;
+  const panelError = actions.error ?? integration.error ?? remoteError;
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -86,6 +94,7 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
   const clearErrors = () => {
     actions.clearError();
     integration.clearError();
+    setRemoteError(null);
   };
 
   // A newer integration failure must not hide behind an older, undismissed panel error.
@@ -146,9 +155,11 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
     setDialog(null);
   };
 
+  // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
   const confirmDeleteRemote = async (remote: string, name: string) => {
-    await actions.run({ action: "deleteRemote", remote, name });
+    const result = await network.run((c) => deleteRemoteBranch(repoId, remote, name, c));
     setDialog(null);
+    if (result.status === "failed") setRemoteError(result.error);
   };
 
   /** Why the current branch cannot integrate another one right now, if it cannot. */
@@ -328,9 +339,13 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
             New branch…
           </button>
         </div>
-        {dialog === null && panelError !== null && (
-          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
-        )}
+        {dialog === null &&
+          panelError !== null &&
+          (panelError.kind === "networkFailed" ? (
+            <NetworkError message={networkMessage(panelError)} onDismiss={clearErrors} />
+          ) : (
+            <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
+          ))}
         <BranchGroup
           heading="Local"
           listLabel="Local branches"
@@ -468,12 +483,14 @@ export function BranchesPanel({ repoId }: BranchesPanelProps) {
           body="This removes the branch from the remote for everyone."
           confirmLabel={`Delete on ${dialog.remote}`}
           danger
-          pending={actions.pending}
+          pending={network.pending}
           onConfirm={() => void confirmDeleteRemote(dialog.remote, dialog.name)}
           onCancel={closeDialog}
           fallbackFocus={rootRef}
         />
       )}
+      {/* Last, so a sign-in asked for during the remote delete paints above its confirm. */}
+      <CredentialDialog prompt={network.prompt} fallbackFocus={rootRef} />
     </section>
   );
 }

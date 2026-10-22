@@ -4,7 +4,6 @@ import {
   checkoutRemoteBranch,
   createBranch,
   deleteBranch,
-  deleteRemoteBranch,
   renameBranch,
   toAppError,
 } from "../../lib/ipc";
@@ -16,8 +15,7 @@ export type BranchRequest =
   | { action: "rename"; oldName: string; newName: string }
   | { action: "delete"; name: string; force: boolean }
   | { action: "checkout"; name: string }
-  | { action: "checkoutRemote"; remote: string; name: string }
-  | { action: "deleteRemote"; remote: string; name: string };
+  | { action: "checkoutRemote"; remote: string; name: string };
 
 /** `run` never rejects: it resolves with the AppError or null, and `error` mirrors the last result. */
 export interface UseBranchActions {
@@ -39,8 +37,6 @@ function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
       return checkoutBranch(repoId, req.name);
     case "checkoutRemote":
       return checkoutRemoteBranch(repoId, req.remote, req.name);
-    case "deleteRemote":
-      return deleteRemoteBranch(repoId, req.remote, req.name);
   }
 }
 

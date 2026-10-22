@@ -37,7 +37,8 @@ export default function App(): React.JSX.Element {
         </header>
         <main className={styles.body}>
           {activeTab !== null ? (
-            <RepoPane tab={activeTab} />
+            // Keyed so sync state (messages, prompts, running verb) never leaks across tabs.
+            <RepoPane key={activeTab.id} tab={activeTab} />
           ) : (
             <StartScreen onClone={() => setCloneOpen(true)} />
           )}
