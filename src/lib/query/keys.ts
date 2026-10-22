@@ -59,4 +59,6 @@ export const mutationKeys = {
   tag: (id: RepoId) => ["tag", id] as const,
   /** Every network action of a repo (fetch, pull, push, tag and branch pushes): one key, so the toolbar sees any of them running. */
   network: (id: RepoId) => ["network", id] as const,
+  /** Remote config edits of a repo (add, update, remove); they never touch the network. */
+  remote: (id: RepoId) => ["remote", id] as const,
 };

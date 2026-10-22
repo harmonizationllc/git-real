@@ -9,6 +9,7 @@ import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
+import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { SyncToolbar } from "../features/remotes/SyncToolbar";
 import { useSyncActions } from "../features/remotes/useSyncActions";
@@ -17,7 +18,7 @@ import { StashSummary } from "../features/stash/StashSummary";
 import { StashesPanel } from "../features/stash/StashesPanel";
 import { TagsPanel } from "../features/tags/TagsPanel";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
-import type { HeadState } from "../lib/ipc";
+import type { HeadState, RepoId } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import type { RepoTab } from "../lib/store/repoTabs";
@@ -63,8 +64,13 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const showHistory = useWorkspace((s) => s.showHistory);
   const [picker, setPicker] = useState(false);
   const sync = useSyncActions(tab.id);
-  // Where the remotes dialog should open; the dialog itself lands with the remotes manager.
-  const [, setRemotesTarget] = useState<RemotesTarget | null>(null);
+  const rootRef = useRef<HTMLElement>(null);
+  // The open remotes dialog, tagged with the tab that opened it: switching tabs drops it during
+  // render, so it never mounts for another repo and does not reappear on the way back.
+  const [remotes, setRemotes] = useState<{ repoId: RepoId; target: RemotesTarget } | null>(null);
+  if (remotes !== null && remotes.repoId !== tab.id) setRemotes(null);
+  const remotesTarget = remotes !== null && remotes.repoId === tab.id ? remotes.target : null;
+  const openRemotes = (target: RemotesTarget) => setRemotes({ repoId: tab.id, target });
 
   // The window handler is registered once; it reads the latest sync actions (and their gates).
   const syncRef = useRef(sync);
@@ -110,7 +116,13 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const { refs, sidebar } = clampWidths(available, refsWidth, sidebarWidth);
 
   return (
-    <section className={styles.root} aria-labelledby={headingId}>
+    <section
+      ref={rootRef}
+      tabIndex={-1}
+      data-focus-target
+      className={styles.root}
+      aria-labelledby={headingId}
+    >
       <header className={styles.header}>
         <h1 id={headingId} className={styles.name}>
           {name}
@@ -118,7 +130,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <p className={styles.path}>{path}</p>
         <div className={styles.syncRow}>
           <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
-          <SyncToolbar sync={sync} onOpenRemotes={setRemotesTarget} />
+          <SyncToolbar sync={sync} onOpenRemotes={openRemotes} />
         </div>
       </header>
       {/* Keyed so the abort dialog and mutation state never leak across tabs. */}
@@ -132,7 +144,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
             <>
-              <BranchesPanel repoId={tab.id} />
+              <BranchesPanel repoId={tab.id} onOpenRemotes={openRemotes} />
               <StashesPanel repoId={tab.id} />
               <TagsPanel repoId={tab.id} />
             </>
@@ -193,6 +205,16 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         }}
         onCancel={() => setPicker(false)}
       />
+      {remotesTarget !== null && (
+        // The pane root takes focus on close when the opener is gone, e.g. a renamed remote's heading.
+        <RemotesDialog
+          key={tab.id}
+          repoId={tab.id}
+          target={remotesTarget}
+          onClose={() => setRemotes(null)}
+          fallbackFocus={rootRef}
+        />
+      )}
     </section>
   );
 }
