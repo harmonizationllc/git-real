@@ -184,3 +184,145 @@ fn a_stderr_host_with_shell_metacharacters_is_none() {
         None
     );
 }
+
+// Coverage audit: odd-but-plausible inputs.
+#[test]
+fn a_bare_ipv6_host_in_stderr_keeps_its_colons() {
+    assert_eq!(
+        from_stderr(
+            "No ED25519 host key is known for 2001:db8::1 and you have requested strict checking.\n"
+        )
+        .as_deref(),
+        Some("2001:db8::1")
+    );
+    assert_eq!(
+        from_stderr("Host key for ::1 has changed and you have requested strict checking.\n")
+            .as_deref(),
+        Some("::1")
+    );
+}
+
+#[test]
+fn a_bracketed_ipv6_host_in_stderr_drops_brackets_and_port() {
+    assert_eq!(
+        from_stderr(
+            "No ED25519 host key is known for [::1]:2222 and you have requested strict checking.\n"
+        )
+        .as_deref(),
+        Some("::1")
+    );
+}
+
+#[test]
+fn an_ssh_url_with_an_ipv6_host_and_no_port_reads_the_literal() {
+    assert_eq!(from_url("ssh://[::1]/x.git").as_deref(), Some("::1"));
+    assert_eq!(
+        from_url("ssh://git@[2001:db8::1]/x.git").as_deref(),
+        Some("2001:db8::1")
+    );
+}
+
+#[test]
+fn an_unterminated_or_non_hex_ipv6_bracket_is_none() {
+    for url in ["ssh://[::1/x.git", "ssh://[::g]/x.git", "ssh://[]/x.git"] {
+        assert_eq!(from_url(url), None, "{url:?}");
+    }
+}
+
+#[test]
+fn a_user_containing_an_at_sign_still_yields_the_host_after_the_last_at() {
+    assert_eq!(
+        from_url("ssh://us@er@host.test/x.git").as_deref(),
+        Some("host.test")
+    );
+    assert_eq!(
+        from_url("ssh://us@er@host.test:2222/x.git").as_deref(),
+        Some("host.test")
+    );
+    assert_eq!(
+        from_url("us@er@host.test:x.git").as_deref(),
+        Some("host.test")
+    );
+    assert_eq!(
+        from_stderr("us@er@host.test: Permission denied (publickey).\n").as_deref(),
+        Some("host.test")
+    );
+}
+
+#[test]
+fn an_attacker_host_after_an_at_sign_in_the_user_part_cannot_hide_metacharacters() {
+    // The user part is discarded; the host that remains is still validated.
+    assert_eq!(from_url("ssh://host.test@evil;id/x.git"), None);
+}
+
+#[test]
+fn host_case_and_a_trailing_dot_are_preserved_not_rewritten() {
+    assert_eq!(
+        from_url("ssh://GitHub.COM/x.git").as_deref(),
+        Some("GitHub.COM")
+    );
+    assert_eq!(
+        from_url("git@GitHub.com:me/x.git").as_deref(),
+        Some("GitHub.com")
+    );
+    assert_eq!(
+        from_url("ssh://github.com./x.git").as_deref(),
+        Some("github.com.")
+    );
+    assert_eq!(
+        from_stderr(
+            "Host key for GITHUB.com. has changed and you have requested strict checking.\n"
+        )
+        .as_deref(),
+        Some("GITHUB.com.")
+    );
+}
+
+#[test]
+fn a_scp_like_url_whose_host_part_is_a_path_is_none() {
+    for url in ["/srv/a:b.git", "./a:b.git", "dir/host:x.git"] {
+        assert_eq!(from_url(url), None, "{url:?}");
+    }
+}
+
+#[test]
+fn a_host_that_would_read_as_an_ssh_option_is_none() {
+    for url in [
+        "-oProxyCommand=x:y.git",
+        "ssh://-oProxyCommand=x/y.git",
+        "git@-h.test:x.git",
+    ] {
+        assert_eq!(from_url(url), None, "{url:?}");
+    }
+    assert_eq!(
+        from_stderr("Host key for -h.test has changed and you have requested strict checking.\n"),
+        None
+    );
+}
+
+#[test]
+fn an_empty_host_or_a_scheme_only_authority_is_none() {
+    for url in [
+        "ssh://git@/x.git",
+        "git@:x.git",
+        ":x.git",
+        "ssh://:22/x.git",
+    ] {
+        assert_eq!(from_url(url), None, "{url:?}");
+    }
+}
+
+#[test]
+fn the_first_valid_host_line_in_stderr_wins_over_later_ones() {
+    let text = "Host key for first.test has changed and you have requested strict checking.\nHost key for second.test has changed and you have requested strict checking.\n";
+    assert_eq!(from_stderr(text).as_deref(), Some("first.test"));
+}
+
+#[test]
+fn an_invalid_stderr_host_falls_back_to_the_single_url() {
+    let text = "Host key for evil;id has changed and you have requested strict checking.\n";
+    assert_eq!(
+        ssh_host(text, &["git@real.test:x.git"]).as_deref(),
+        Some("real.test")
+    );
+}

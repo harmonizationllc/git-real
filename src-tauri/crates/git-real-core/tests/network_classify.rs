@@ -457,3 +457,59 @@ fn rejection_reason_is_none_without_a_reason() {
     assert_eq!(rejection_reason("remote: Counting objects\n"), None);
     assert_eq!(rejection_reason("  remote: error: indented\n"), None);
 }
+
+// Coverage audit: rejection_reason on mixed, realistic server output.
+#[test]
+fn rejection_reason_skips_an_empty_remote_error_line_for_the_next_one() {
+    let text = "remote: error:\nremote: error:   \nremote: error: the real reason\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("the real reason"));
+}
+
+#[test]
+fn rejection_reason_ignores_non_error_remote_lines_before_the_error() {
+    let text = "remote: Resolving deltas: 100%\nremote: warning: noisy\nremote: error: refused\n remote: error: indented\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("refused"));
+}
+
+#[test]
+fn rejection_reason_keeps_inner_parentheses_of_the_parenthesised_reason() {
+    let text = " ! [remote rejected] a -> b (hook (pre-receive) declined)\n";
+    assert_eq!(
+        rejection_reason(text).as_deref(),
+        Some("hook (pre-receive) declined")
+    );
+}
+
+#[test]
+fn rejection_reason_uses_only_the_remote_rejected_line_not_a_plain_rejected_one() {
+    let text =
+        " ! [rejected] a -> a (fetch first)\n ! [remote rejected] b -> b (protected branch)\n";
+    assert_eq!(rejection_reason(text).as_deref(), Some("protected branch"));
+}
+
+#[test]
+fn rejection_reason_is_none_for_an_unclosed_parenthesis_or_empty_reason() {
+    assert_eq!(
+        rejection_reason(" ! [remote rejected] a -> b (unclosed\n"),
+        None
+    );
+    assert_eq!(rejection_reason(" ! [remote rejected] a -> b ()\n"), None);
+    assert_eq!(
+        rejection_reason(" ! [remote rejected] a (no arrow)\n"),
+        None
+    );
+}
+
+#[test]
+fn rejection_reason_handles_crlf_line_endings() {
+    assert_eq!(
+        rejection_reason("remote: error: crlf reason\r\n").as_deref(),
+        Some("crlf reason")
+    );
+}
+
+#[test]
+fn remote_rejected_outranks_a_non_fast_forward_hint_on_another_ref() {
+    let text = " ! [rejected] a -> a (fetch first)\n ! [remote rejected] b -> b (hook declined)\n";
+    assert_eq!(classify(text), K::RemoteRejected);
+}
