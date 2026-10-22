@@ -5,13 +5,15 @@ export interface NetworkErrorProps {
   message: NetworkMessage;
   onAction?(kind: MessageAction): void;
   onDismiss(): void;
+  /** Drop the horizontal margin so the panel lines up with a padded container (the sync row). */
+  flush?: boolean;
 }
 
 /** A failed network or sync action: what happened, what to try, and git's own output. */
-export function NetworkError({ message, onAction, onDismiss }: NetworkErrorProps) {
+export function NetworkError({ message, onAction, onDismiss, flush }: NetworkErrorProps) {
   const { title, hint, action, details } = message;
   return (
-    <div role="alert" className={styles.root}>
+    <div role="alert" className={styles.root} data-flush={flush || undefined}>
       <p className={styles.title}>{title}</p>
       {hint !== null && <p className={styles.hint}>{hint}</p>}
       {details !== null && (

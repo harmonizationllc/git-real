@@ -34,6 +34,11 @@ export function SyncMessage({ sync, onOpenRemotes }: SyncMessageProps) {
   };
 
   return (
-    <NetworkError message={sync.message} onAction={onAction} onDismiss={sync.dismissMessage} />
+    <NetworkError
+      message={sync.message}
+      onAction={onAction}
+      onDismiss={sync.dismissMessage}
+      flush
+    />
   );
 }

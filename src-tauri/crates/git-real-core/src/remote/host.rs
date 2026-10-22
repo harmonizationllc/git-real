@@ -29,6 +29,7 @@ fn host_in_line(line: &str) -> Option<String> {
 }
 
 /// The host of an `ssh://` / `git+ssh://` URL or an scp-like `[user@]host:path`.
+/// A Windows drive path (`C:\repo`, `C:/repo`) is a local path, not an scp-like URL.
 fn url_host(url: &str) -> Option<String> {
     let host = if let Some((scheme, rest)) = url.split_once("://") {
         if !matches!(scheme, "ssh" | "git+ssh") {
@@ -37,6 +38,9 @@ fn url_host(url: &str) -> Option<String> {
         let authority = rest.split('/').next().unwrap_or_default();
         strip_port(strip_user(authority))
     } else {
+        if is_drive_path(url) {
+            return None;
+        }
         let (host, _) = url.split_once(':')?;
         if host.contains('/') {
             return None;
@@ -44,6 +48,10 @@ fn url_host(url: &str) -> Option<String> {
         strip_user(host)
     };
     valid(host)
+}
+
+fn is_drive_path(url: &str) -> bool {
+    matches!(url.as_bytes(), [l, b':', b'\\' | b'/', ..] if l.is_ascii_alphabetic())
 }
 
 fn strip_user(authority: &str) -> &str {

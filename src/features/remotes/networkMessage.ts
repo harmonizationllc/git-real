@@ -19,16 +19,11 @@ const SIGN_IN: Copy = {
 };
 
 const BY_KIND: Record<
-  Exclude<NetworkErrorKind, "other" | "hostKeyUnverified" | "remoteRejected">,
+  Exclude<NetworkErrorKind, "other" | "hostKeyUnverified" | "remoteRejected" | "sshAuthFailed">,
   Copy
 > = {
   httpsAuthRequired: SIGN_IN,
   httpsAuthRejected: SIGN_IN,
-  sshAuthFailed: {
-    title: "SSH key was refused",
-    hint: "Add your key to the agent with ssh-add, and check it is registered with the host.",
-    action: null,
-  },
   hostUnreachable: {
     title: "Could not reach the remote",
     hint: "Check your network connection and the remote URL.",
@@ -57,16 +52,28 @@ function hostKeyHint(host: string | null): string {
     : `Connect once from a terminal (ssh -T git@${host}) to verify and save the host key.`;
 }
 
+function sshAuthHint(host: string | null): string {
+  return `Add your key to the agent with ssh-add, and check it is registered with ${host ?? "the host"}.`;
+}
+
+const REASON_LIMIT = 200;
+
+function reasonHint(reason: string): string {
+  return reason.length > REASON_LIMIT ? `${reason.slice(0, REASON_LIMIT).trimEnd()}…` : reason;
+}
+
 function networkCopy({ kind, verb, host, reason }: NetworkErrorInfo): Copy {
   switch (kind) {
     case "other":
       return { title: `git ${verb} failed`, hint: null, action: null };
     case "hostKeyUnverified":
       return { title: "Host key not trusted", hint: hostKeyHint(host), action: null };
+    case "sshAuthFailed":
+      return { title: "SSH key was refused", hint: sshAuthHint(host), action: null };
     case "remoteRejected":
       return {
         title: "The remote rejected the push",
-        hint: reason ?? "See Details for the remote's message.",
+        hint: reason === null ? "See Details for the remote's message." : reasonHint(reason),
         action: null,
       };
     default:
