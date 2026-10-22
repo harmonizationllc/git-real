@@ -120,14 +120,19 @@ with a port, and is validated the same strict way as `remote/host.rs`.
   requests read/write, issues read.
 - **GitLab:** a PAT with the `api` scope, sent as `Authorization: Bearer`
   (`read_api` is enough until 13b's create MR).
-- **Bitbucket:** an Atlassian **API token** plus the account **email**,
-  sent as Basic auth. Bitbucket app passwords are deprecated, so they are
-  not offered. *The builder confirms the current Bitbucket API-token auth
-  scheme, for both the REST API and git over HTTPS, against Atlassian's
-  docs before 13a's tests are written, and records it in the plan.*
+- **Bitbucket:** an Atlassian **API token** (scoped; app passwords stopped
+  working on 2026-06-09 and are not offered), sent as
+  `Authorization: Bearer`. Confirmed against Atlassian's "Using API
+  tokens" page on 2026-10-22: the REST API accepts Bearer with the token
+  alone (Basic with `email:token` also works but needs the email), and git
+  over HTTPS uses the static username `x-bitbucket-api-token-auth` with
+  the token as the password. The connect form names the scopes:
+  `read:repository:bitbucket`, `write:repository:bitbucket`,
+  `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`,
+  `read:issue:bitbucket`, `read:user:bitbucket`.
 
-The connect dialog has a provider picker, an optional custom host, the
-token (a password field), plus an email field for Bitbucket only. It also
+The connect dialog has a provider picker, an optional custom host, and the
+token (a password field); no email is needed for any provider. It also
 has a "Create a token" link that opens the provider's token page in the
 browser. On submit, the backend calls the provider's "current user"
 endpoint. Only on success does it store the token and the account and
@@ -194,13 +199,6 @@ the username differs, so no orphaned secret is left behind.
 - **Front end**: `src/features/hosting/`, with typed wrappers in
   `src/lib/ipc/commands.ts` as usual.
 
-**Bitbucket gate (call).** 13a's first task is a short research step. It
-confirms the Bitbucket API-token scheme (§3.3) for both the REST API and
-git over HTTPS, and records the result in the plan. If it can't be
-confirmed, Bitbucket drops out of 13a: GitHub and GitLab ship, and
-Bitbucket becomes a follow-up slice inside GR-13 with no change to the
-shared design.
-
 `serde_json` moves from a dev-dependency to a dependency of
 `git-real-core`. New dependencies: `ureq` (core) and `keyring` (app). The
 architect validates file placement before any of these files are created
@@ -245,7 +243,7 @@ PRs live) is intentionally not handled in GR-13: the panel shows
 | Command | Slice |
 |---|---|
 | `hosting_list_accounts() -> Account[]` | a |
-| `hosting_connect(provider, host?, email?, token) -> Account` | a |
+| `hosting_connect(provider, host?, token) -> Account` | a |
 | `hosting_disconnect(account_id)` | a |
 | `hosting_repo_context(repo_id) -> { repo: RepoRef, account: Account? } \| null` | a |
 | `hosting_list_pull_requests(repo_id) -> PullRequest[]` | a |
@@ -396,8 +394,8 @@ preference.
    instead of prompting after a failure. That makes private HTTPS clone
    from the repo browser work, and it partly addresses GR-12's "clone has
    no credential retry" follow-up. The git username per provider is
-   `x-access-token` for GitHub and `oauth2` for GitLab. For Bitbucket it
-   is whatever §3.3's confirmed scheme says. GR-12's caveat (a pre-push
+   `x-access-token` for GitHub, `oauth2` for GitLab and
+   `x-bitbucket-api-token-auth` for Bitbucket (§3.3). GR-12's caveat (a pre-push
    hook can read `GR_TOKEN`) applies here too, and the slice's plan
    records it. GR-12's `git credential approve` step is skipped for
    account tokens, so they aren't copied into the user's own helper.
