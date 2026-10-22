@@ -43,7 +43,7 @@ Bitbucket, with an account connected, the user can:
 
 ### Non-goals
 
-- **OAuth sign-in.** The ticket allows "OAuth *or* personal access token".
+- **OAuth sign-in.** The ticket allows "OAuth _or_ personal access token".
   GR-13 uses tokens only **(call)**. OAuth needs an OAuth app registered
   with each provider, under the user's own accounts. Bitbucket Cloud also
   has no device flow, and a desktop app can't keep a client secret. The
@@ -77,11 +77,11 @@ The ticket is too big for one review cycle, so it ships in three slices,
 the same way GR-10 and GR-11 did. Each slice has its own plan and gate,
 and merges on its own **(call)**.
 
-| Slice | Contents | ACs |
-|---|---|---|
+| Slice   | Contents                                                                                                                                                                         | ACs        |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | **13a** | Accounts dialog, keychain, provider detection, HTTP layer for all three providers, **PR list** + open in browser, **PR checkout**, connected accounts feed git HTTPS auth (§6.3) | 1, 2, 3, 5 |
-| **13b** | **Create PR** (with publish-first), **issue list**, **link issue** in the commit editor | 4, 6 |
-| **13c** | Clone dialog **repo browser** (clone reuses 13a's account-token git auth) | 7 |
+| **13b** | **Create PR** (with publish-first), **issue list**, **link issue** in the commit editor                                                                                          | 4, 6       |
+| **13c** | Clone dialog **repo browser** (clone reuses 13a's account-token git auth)                                                                                                        | 7          |
 
 13a carries all the shared infrastructure, so 13b and 13c are mostly UI
 plus a few API calls each.
@@ -104,11 +104,11 @@ The token is stored in the OS keychain under service `git-real` and user
 
 ### 3.2 Hosts and API bases
 
-| Provider | Default host | API base | Custom host allowed |
-|---|---|---|---|
-| GitHub | github.com | `https://api.github.com` | yes → `https://<host>/api/v3` (GHE) |
-| GitLab | gitlab.com | `https://gitlab.com/api/v4` | yes → `https://<host>/api/v4` |
-| Bitbucket | bitbucket.org | `https://api.bitbucket.org/2.0` | no (Cloud only) |
+| Provider  | Default host  | API base                        | Custom host allowed                 |
+| --------- | ------------- | ------------------------------- | ----------------------------------- |
+| GitHub    | github.com    | `https://api.github.com`        | yes → `https://<host>/api/v3` (GHE) |
+| GitLab    | gitlab.com    | `https://gitlab.com/api/v4`     | yes → `https://<host>/api/v4`       |
+| Bitbucket | bitbucket.org | `https://api.bitbucket.org/2.0` | no (Cloud only)                     |
 
 Only HTTPS is allowed. A custom host must be a bare host name, optionally
 with a port, and is validated the same strict way as `remote/host.rs`.
@@ -240,17 +240,17 @@ PRs live) is intentionally not handled in GR-13: the panel shows
 
 ### 4.4 Commands
 
-| Command | Slice |
-|---|---|
-| `hosting_list_accounts() -> Account[]` | a |
-| `hosting_connect(provider, host?, token) -> Account` | a |
-| `hosting_disconnect(account_id)` | a |
-| `hosting_repo_context(repo_id) -> { repo: RepoRef, account: Account? } \| null` | a |
-| `hosting_list_pull_requests(repo_id) -> PullRequest[]` | a |
-| `hosting_checkout_pull_request(repo_id, number) -> CheckoutResult` | a |
-| `hosting_create_pull_request(repo_id, NewPullRequest) -> PullRequest` | b |
-| `hosting_list_issues(repo_id, query?) -> Issue[]` | b |
-| `hosting_list_my_repos(account_id, query?, page) -> { repos: HostedRepo[], next_page? }` | c |
+| Command                                                                                  | Slice |
+| ---------------------------------------------------------------------------------------- | ----- |
+| `hosting_list_accounts() -> Account[]`                                                   | a     |
+| `hosting_connect(provider, host?, token) -> Account`                                     | a     |
+| `hosting_disconnect(account_id)`                                                         | a     |
+| `hosting_repo_context(repo_id) -> { repo: RepoRef, account: Account? } \| null`          | a     |
+| `hosting_list_pull_requests(repo_id) -> PullRequest[]`                                   | a     |
+| `hosting_checkout_pull_request(repo_id, number) -> CheckoutResult`                       | a     |
+| `hosting_create_pull_request(repo_id, NewPullRequest) -> PullRequest`                    | b     |
+| `hosting_list_issues(repo_id, query?) -> Issue[]`                                        | b     |
+| `hosting_list_my_repos(account_id, query?, page) -> { repos: HostedRepo[], next_page? }` | c     |
 
 Lists fetch the first 50 open items, sorted by last update **(call)**. A
 "Show more" control pages further. `PullRequest` carries the number,
@@ -390,7 +390,7 @@ preference.
    **(call)**, because 13a's PR checkout needs it.) When a git network
    operation (clone, fetch, pull, push, PR checkout) targets an HTTPS URL
    whose host matches a connected account, the backend supplies that
-   account's token through GR-12's inline-helper path on the *first* try,
+   account's token through GR-12's inline-helper path on the _first_ try,
    instead of prompting after a failure. That makes private HTTPS clone
    from the repo browser work, and it partly addresses GR-12's "clone has
    no credential retry" follow-up. The git username per provider is
