@@ -480,7 +480,10 @@ describe("branch commands", () => {
     const calls = mockWith(null);
     await deleteRemoteBranch(3, "origin", "topic");
     expect(calls).toEqual([
-      { cmd: "delete_remote_branch", args: { id: 3, remote: "origin", name: "topic" } },
+      {
+        cmd: "delete_remote_branch",
+        args: { id: 3, remote: "origin", name: "topic", credentials: null },
+      },
     ]);
   });
 
@@ -942,14 +945,19 @@ describe("tag command wrappers", () => {
   it("pushTag sends push_tag with id, remote and name", async () => {
     const calls = mockWith(null);
     await pushTag(2, "origin", "v1");
-    expect(calls).toEqual([{ cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1" } }]);
+    expect(calls).toEqual([
+      { cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1", credentials: null } },
+    ]);
   });
 
   it("deleteRemoteTag sends delete_remote_tag with id, remote and name", async () => {
     const calls = mockWith(null);
     await deleteRemoteTag(2, "origin", "v1");
     expect(calls).toEqual([
-      { cmd: "delete_remote_tag", args: { id: 2, remote: "origin", name: "v1" } },
+      {
+        cmd: "delete_remote_tag",
+        args: { id: 2, remote: "origin", name: "v1", credentials: null },
+      },
     ]);
   });
 
