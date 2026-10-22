@@ -238,9 +238,8 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
       <div className={styles.backdrop} onClick={onBackdropClick}>
         <div
           ref={dialogRef}
-          // Announced as the dialog once it has content; until then the status speaks for it.
-          role={waiting && !loadFailed ? undefined : "dialog"}
-          aria-modal={waiting && !loadFailed ? undefined : "true"}
+          role="dialog"
+          aria-modal="true"
           aria-labelledby={titleId}
           className={styles.dialog}
           tabIndex={-1}

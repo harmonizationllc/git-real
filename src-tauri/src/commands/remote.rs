@@ -64,9 +64,10 @@ pub fn push_inner(
     id: RepoId,
     target: &PushTarget,
     force: bool,
+    expected_branch: &str,
     credentials: Option<&Credentials>,
 ) -> Result<(), AppError> {
-    let push = with_session(reg, id, |s| s.prepare_push(target, force))?;
+    let push = with_session(reg, id, |s| s.prepare_push(target, force, expected_branch))?;
     push.run(credentials).map_err(AppError::from)
 }
 
@@ -137,11 +138,22 @@ pub async fn push(
     id: RepoId,
     target: PushTarget,
     force: bool,
+    expected_branch: String,
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || push_inner(&reg, id, &target, force, credentials.as_ref())).await
+    run_blocking(move || {
+        push_inner(
+            &reg,
+            id,
+            &target,
+            force,
+            &expected_branch,
+            credentials.as_ref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]

@@ -86,17 +86,21 @@ export function useSyncActions(repoId: RepoId): SyncActions {
 
   const push = () => {
     if (gates.push !== null) return;
-    void start("push", (c) => pushBranch(repoId, { kind: "upstream" }, false, c)).then((result) => {
-      if (result.status === "failed" && result.error.kind === "noUpstream") {
-        setPublishError(null);
-        setPublishTo({ remotes: remoteNames, branch: branch as string });
-      } else report(result);
-    });
+    const local = branch as string;
+    void start("push", (c) => pushBranch(repoId, { kind: "upstream" }, false, local, c)).then(
+      (result) => {
+        if (result.status === "failed" && result.error.kind === "noUpstream") {
+          setPublishError(null);
+          setPublishTo({ remotes: remoteNames, branch: local });
+        } else report(result);
+      },
+    );
   };
 
   const publish = (remote: string, name: string) => {
+    const local = branch as string;
     void start("push", (c) =>
-      pushBranch(repoId, { kind: "setUpstream", remote, branch: name }, false, c),
+      pushBranch(repoId, { kind: "setUpstream", remote, branch: name }, false, local, c),
     ).then((result) => {
       if (result.status === "failed" && DIALOG_ERRORS.has(result.error.kind)) {
         setPublishError(result.error);
@@ -114,10 +118,14 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   };
 
   const confirmForcePush = () => {
-    void start("push", (c) => pushBranch(repoId, { kind: "upstream" }, true, c)).then((result) => {
-      setForcePush(null);
-      report(result);
-    });
+    // The branch the user confirmed, captured at request time; every retry pushes that branch.
+    const local = (forcePush as NonNullable<typeof forcePush>).local;
+    void start("push", (c) => pushBranch(repoId, { kind: "upstream" }, true, local, c)).then(
+      (result) => {
+        setForcePush(null);
+        report(result);
+      },
+    );
   };
 
   return {

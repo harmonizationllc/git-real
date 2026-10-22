@@ -17,6 +17,8 @@ pub struct Push {
     git: PathBuf,
     workdir: PathBuf,
     remote: String,
+    /// The local branch being pushed, so the pushed commit is that branch's even if HEAD moves.
+    local: String,
     /// The branch on the remote.
     branch: String,
     /// `refs/heads/<branch>:<oid>`, `<oid>` empty when there was no tracking ref.
@@ -43,13 +45,13 @@ impl Push {
         self.urls.iter().any(|u| is_http(u))
     }
 
-    /// `git push [-u] [--force-with-lease=<lease>] <remote> HEAD:refs/heads/<branch>`.
+    /// `git push [-u] [--force-with-lease=<lease>] <remote> refs/heads/<local>:refs/heads/<branch>`.
     pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError> {
         let lease = self
             .lease
             .as_ref()
             .map(|l| format!("--force-with-lease={l}"));
-        let refspec = format!("HEAD:refs/heads/{}", self.branch);
+        let refspec = format!("refs/heads/{}:refs/heads/{}", self.local, self.branch);
         let mut args = vec!["push"];
         if self.set_upstream {
             args.push("-u");
@@ -64,9 +66,18 @@ impl Push {
 
 impl RepoSession {
     /// Validates a push of HEAD's branch to `target`. With `force`, the lease
-    /// expects the remote-tracking ref as it is now.
-    pub fn prepare_push(&self, target: &PushTarget, force: bool) -> Result<Push, GitError> {
+    /// expects the remote-tracking ref as it is now. `OperationInProgress` when
+    /// HEAD is not on `expected_branch`, the branch the caller saw and confirmed.
+    pub fn prepare_push(
+        &self,
+        target: &PushTarget,
+        force: bool,
+        expected_branch: &str,
+    ) -> Result<Push, GitError> {
         let local = self.head_branch()?;
+        if local != expected_branch {
+            return Err(GitError::OperationInProgress);
+        }
         let (remote, branch, tracking_ref, set_upstream) = match target {
             PushTarget::Upstream => {
                 let up = self.upstream_of(&local)?.ok_or(GitError::NoUpstream)?;
@@ -101,6 +112,7 @@ impl RepoSession {
             git,
             workdir: workdir.to_path_buf(),
             remote,
+            local,
             branch,
             lease,
             set_upstream,

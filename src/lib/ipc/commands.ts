@@ -393,13 +393,15 @@ export function pull(
   return invoke<OperationOutcome>("pull", { id, mode, credentials });
 }
 
+/** Pushes `expectedBranch`, which must still be HEAD's branch, to `target`. */
 export function push(
   id: RepoId,
   target: PushTarget,
   force: boolean,
+  expectedBranch: string,
   credentials: Credentials | null = null,
 ): Promise<void> {
-  return invoke<void>("push", { id, target, force, credentials });
+  return invoke<void>("push", { id, target, force, expectedBranch, credentials });
 }
 
 export function listRemotes(id: RepoId): Promise<RemoteInfo[]> {
