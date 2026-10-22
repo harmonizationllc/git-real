@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
-use git_real_core::TagList;
+use git_real_core::{Credentials, TagList};
 use tauri::State;
 
+use super::remote::{CredentialsArg, credentials_from_arg};
 use super::{run_blocking, with_session};
 use crate::error::AppError;
 use crate::state::{RepoId, RepoRegistry};
@@ -35,9 +36,10 @@ pub fn push_tag_inner(
     id: RepoId,
     remote: &str,
     name: &str,
+    credentials: Option<&Credentials>,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_tag_push(remote, name))?;
-    push.run(None).map_err(AppError::from)
+    push.run(credentials).map_err(AppError::from)
 }
 
 /// As [`push_tag_inner`], for `git push --delete`.
@@ -46,9 +48,10 @@ pub fn delete_remote_tag_inner(
     id: RepoId,
     remote: &str,
     name: &str,
+    credentials: Option<&Credentials>,
 ) -> Result<(), AppError> {
     let delete = with_session(reg, id, |s| s.prepare_remote_tag_delete(remote, name))?;
-    delete.run(None).map_err(AppError::from)
+    delete.run(credentials).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -85,9 +88,11 @@ pub async fn push_tag(
     id: RepoId,
     remote: String,
     name: String,
+    credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
+    let credentials = credentials_from_arg(credentials)?;
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || push_tag_inner(&reg, id, &remote, &name)).await
+    run_blocking(move || push_tag_inner(&reg, id, &remote, &name, credentials.as_ref())).await
 }
 
 #[tauri::command]
@@ -96,7 +101,10 @@ pub async fn delete_remote_tag(
     id: RepoId,
     remote: String,
     name: String,
+    credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
+    let credentials = credentials_from_arg(credentials)?;
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || delete_remote_tag_inner(&reg, id, &remote, &name)).await
+    run_blocking(move || delete_remote_tag_inner(&reg, id, &remote, &name, credentials.as_ref()))
+        .await
 }

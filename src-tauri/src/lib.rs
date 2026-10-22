@@ -86,6 +86,14 @@ pub fn run() {
             commands::tags::delete_tag,
             commands::tags::push_tag,
             commands::tags::delete_remote_tag,
+            commands::remote::fetch,
+            commands::remote::pull_default_mode,
+            commands::remote::pull,
+            commands::remote::push,
+            commands::remote::list_remotes,
+            commands::remote::add_remote,
+            commands::remote::update_remote,
+            commands::remote::remove_remote,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

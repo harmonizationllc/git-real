@@ -43,6 +43,10 @@ export const queryKeys = {
   stashes: (id: RepoId) => ["repo", id, "stashes"] as const,
   /** The tag list; under the repo prefix so a repo change refreshes it. */
   tags: (id: RepoId) => ["repo", id, "tags"] as const,
+  /** Configured remotes; under the repo prefix so a repo change refreshes them. */
+  remotes: (id: RepoId) => ["repo", id, "remotes"] as const,
+  /** The default pull mode (config); under the repo prefix. */
+  pullMode: (id: RepoId) => ["repo", id, "pullMode"] as const,
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
   rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
 };
@@ -53,4 +57,6 @@ export const mutationKeys = {
   stash: (id: RepoId) => ["stash", id] as const,
   /** Every tag action of a repo: one key, so the panel and the create dialogs share one busy state. */
   tag: (id: RepoId) => ["tag", id] as const,
+  /** Every network action of a repo (fetch, pull, push, tag and branch pushes): one key, so the toolbar sees any of them running. */
+  network: (id: RepoId) => ["network", id] as const,
 };

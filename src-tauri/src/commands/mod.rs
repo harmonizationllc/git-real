@@ -5,6 +5,7 @@ pub mod history;
 pub mod log;
 pub mod merge;
 pub mod refs;
+pub mod remote;
 pub mod repo;
 pub mod stash;
 pub mod tags;
