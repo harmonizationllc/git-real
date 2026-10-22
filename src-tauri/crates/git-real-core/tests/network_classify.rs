@@ -5,6 +5,7 @@
 use std::ffi::OsStr;
 use std::process::Command;
 
+use git_real_core::hosting::Token;
 use git_real_core::remote::auth::{self, Credentials, HELPER, origin_of};
 use git_real_core::remote::classify::{auth_origin, classify, rejection_reason};
 use git_real_core::{GitError, NetworkErrorKind as K};
@@ -512,4 +513,21 @@ fn rejection_reason_handles_crlf_line_endings() {
 fn remote_rejected_outranks_a_non_fast_forward_hint_on_another_ref() {
     let text = " ! [rejected] a -> a (fetch first)\n ! [remote rejected] b -> b (hook declined)\n";
     assert_eq!(classify(text), K::RemoteRejected);
+}
+
+#[test]
+fn account_credentials_validate_like_typed_ones_and_do_not_approve() {
+    let t = Token::new(TOKEN).unwrap();
+    let c = Credentials::account("https://github.com", "x-access-token", &t).unwrap();
+    assert!(!c.approves());
+    assert!(
+        Credentials::new("https://github.com", "me", TOKEN)
+            .unwrap()
+            .approves()
+    );
+    assert!(matches!(
+        Credentials::account("ssh://github.com", "x", &t),
+        Err(GitError::InvalidCredentials)
+    ));
+    assert!(!format!("{c:?}").contains(TOKEN));
 }

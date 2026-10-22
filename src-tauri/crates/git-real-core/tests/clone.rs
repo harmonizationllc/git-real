@@ -4,6 +4,7 @@ use common::git_available;
 
 use std::path::Path;
 
+use git_real_core::remote::auth::{Credentials, HELPER};
 use git_real_core::remote::clone;
 use git_real_core::{GitError, Progress, ProgressPhase, ProgressSink, RepoSession};
 
@@ -36,7 +37,7 @@ fn clone_local_bare_repo_reports_progress_and_opens() {
     let dest = work.path().join("dest");
     let mut sink = RecordingSink(Vec::new());
 
-    let path = clone::clone(&url, &dest, &mut sink).expect("clone should succeed");
+    let path = clone::clone(&url, &dest, None, &mut sink).expect("clone should succeed");
 
     assert!(RepoSession::open(&path).is_ok(), "cloned repo should open");
     assert!(!sink.0.is_empty(), "sink should record progress");
@@ -60,7 +61,8 @@ fn clone_nonexistent_url_is_clone_failed() {
     let dest = work.path().join("dest");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone("file:///nonexistent/repo", &dest, &mut sink).expect_err("should fail");
+    let err =
+        clone::clone("file:///nonexistent/repo", &dest, None, &mut sink).expect_err("should fail");
 
     match err {
         GitError::CloneFailed { stderr, .. } => assert!(!stderr.is_empty()),
@@ -80,7 +82,7 @@ fn clone_into_non_empty_dest_fails() {
     std::fs::write(dest.join("keep.txt"), "keep").unwrap();
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone(&url, &dest, &mut sink).expect_err("should fail");
+    let err = clone::clone(&url, &dest, None, &mut sink).expect_err("should fail");
 
     assert!(matches!(err, GitError::CloneFailed { .. }));
     assert!(Path::new(&dest.join("keep.txt")).exists());
@@ -95,7 +97,7 @@ fn clone_with_nonexistent_git_is_io_error() {
     let dest = work.path().join("dest");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone_with(&missing_git, "file:///irrelevant", &dest, &mut sink)
+    let err = clone::clone_with(&missing_git, "file:///irrelevant", &dest, None, &mut sink)
         .expect_err("should fail");
 
     assert!(matches!(err, GitError::Io(_)));
@@ -112,7 +114,8 @@ fn clone_nonexistent_url_reports_nonzero_exit_code() {
     let dest = work.path().join("dest");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone("file:///nonexistent/repo", &dest, &mut sink).expect_err("should fail");
+    let err =
+        clone::clone("file:///nonexistent/repo", &dest, None, &mut sink).expect_err("should fail");
 
     match err {
         GitError::CloneFailed { code, stderr } => {
@@ -132,7 +135,7 @@ fn clone_url_starting_with_dashes_is_not_parsed_as_option() {
     let dest = work.path().join("dest");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone("--upload-pack=false", &dest, &mut sink).expect_err("should fail");
+    let err = clone::clone("--upload-pack=false", &dest, None, &mut sink).expect_err("should fail");
 
     match err {
         GitError::CloneFailed { stderr, .. } => {
@@ -153,7 +156,7 @@ fn clone_into_existing_empty_dest_succeeds_and_returns_canonical_path() {
     std::fs::create_dir(&dest).unwrap();
     let mut sink = RecordingSink(Vec::new());
 
-    let path = clone::clone(&url, &dest, &mut sink).expect("clone should succeed");
+    let path = clone::clone(&url, &dest, None, &mut sink).expect("clone should succeed");
 
     assert_eq!(path, dest.canonicalize().unwrap());
     assert!(path.join("README.md").exists());
@@ -168,7 +171,7 @@ fn clone_reports_only_non_empty_parsed_progress() {
     let work = tempfile::tempdir().unwrap();
     let mut sink = RecordingSink(Vec::new());
 
-    clone::clone(&url, &work.path().join("dest"), &mut sink).expect("clone should succeed");
+    clone::clone(&url, &work.path().join("dest"), None, &mut sink).expect("clone should succeed");
 
     assert!(sink.0.iter().all(|p| !p.message.is_empty()));
     assert!(
@@ -198,8 +201,14 @@ exit 0"#,
     );
     let mut sink = RecordingSink(Vec::new());
 
-    clone::clone_with(&git, "https://example.invalid/r.git", &dest, &mut sink)
-        .expect("fake clone should succeed");
+    clone::clone_with(
+        &git,
+        "https://example.invalid/r.git",
+        &dest,
+        None,
+        &mut sink,
+    )
+    .expect("fake clone should succeed");
 
     let text = std::fs::read_to_string(&log).unwrap();
     let expected_args = format!(
@@ -226,7 +235,7 @@ printf 'Receiving objects: 100%% (2/2), done.' >&2"#,
     );
     let mut sink = RecordingSink(Vec::new());
 
-    clone::clone_with(&git, "u", &dest, &mut sink).expect("fake clone should succeed");
+    clone::clone_with(&git, "u", &dest, None, &mut sink).expect("fake clone should succeed");
 
     let seen: Vec<_> = sink.0.iter().map(|p| (p.phase, p.percent)).collect();
     assert_eq!(
@@ -253,7 +262,7 @@ printf 'ects:  45%% (9/20)\r' >&2"#,
     );
     let mut sink = RecordingSink(Vec::new());
 
-    clone::clone_with(&git, "u", &dest, &mut sink).expect("fake clone should succeed");
+    clone::clone_with(&git, "u", &dest, None, &mut sink).expect("fake clone should succeed");
 
     assert_eq!(sink.0.len(), 1, "got {:?}", sink.0);
     assert_eq!(sink.0[0].phase, ProgressPhase::Receiving);
@@ -271,7 +280,7 @@ fn clone_with_failure_carries_exit_code_and_full_stderr() {
     );
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone_with(&git, "u", &dest, &mut sink).expect_err("should fail");
+    let err = clone::clone_with(&git, "u", &dest, None, &mut sink).expect_err("should fail");
 
     match err {
         GitError::CloneFailed { code, stderr } => {
@@ -295,7 +304,7 @@ fn clone_with_signal_killed_child_has_no_exit_code() {
     let git = common::fake_git(work.path(), "kill -9 $$");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone_with(&git, "u", &dest, &mut sink).expect_err("should fail");
+    let err = clone::clone_with(&git, "u", &dest, None, &mut sink).expect_err("should fail");
 
     assert!(
         matches!(err, GitError::CloneFailed { code: None, .. }),
@@ -311,7 +320,7 @@ fn clone_with_success_but_missing_dest_is_io_error() {
     let git = common::fake_git(work.path(), "exit 0");
     let mut sink = RecordingSink(Vec::new());
 
-    let err = clone::clone_with(&git, "u", &dest, &mut sink).expect_err("should fail");
+    let err = clone::clone_with(&git, "u", &dest, None, &mut sink).expect_err("should fail");
 
     assert!(matches!(err, GitError::Io(_)), "{err:?}");
 }
@@ -332,7 +341,55 @@ done"#,
     );
     let mut sink = RecordingSink(Vec::new());
 
-    clone::clone_with(&git, "u", &dest, &mut sink).expect("fake clone should succeed");
+    clone::clone_with(&git, "u", &dest, None, &mut sink).expect("fake clone should succeed");
 
     assert_eq!(sink.0.len(), 3000);
+}
+
+#[cfg(unix)]
+#[test]
+fn clone_with_credentials_puts_the_helper_before_clone_and_the_token_in_the_env() {
+    const TOKEN: &str = "TOPSECRET-123";
+    let work = tempfile::tempdir().unwrap();
+    let dest = work.path().join("dest");
+    let argv = work.path().join("argv.txt");
+    let token = work.path().join("token.txt");
+    let git = common::fake_git(
+        work.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{argv}'\nprintf '%s' \"$GR_TOKEN\" > '{token}'\nexit 1",
+            argv = argv.display(),
+            token = token.display()
+        ),
+    );
+    let creds = Credentials::new("https://example.test", "me", TOKEN).unwrap();
+    let mut sink = RecordingSink(Vec::new());
+
+    let _ = clone::clone_with(
+        &git,
+        "https://example.test/x.git",
+        &dest,
+        Some(&creds),
+        &mut sink,
+    );
+
+    let text = std::fs::read_to_string(&argv).unwrap();
+    let got: Vec<&str> = text.lines().collect();
+    let dest_text = dest.display().to_string();
+    let helper_key = "credential.https://example.test.helper=";
+    let scoped = format!("{helper_key}{HELPER}");
+    let want = [
+        "-c",
+        helper_key,
+        "-c",
+        scoped.as_str(),
+        "clone",
+        "--progress",
+        "--",
+        "https://example.test/x.git",
+        dest_text.as_str(),
+    ];
+    assert_eq!(got, want);
+    assert_eq!(std::fs::read_to_string(&token).unwrap(), TOKEN);
+    assert!(!text.contains(TOKEN));
 }
