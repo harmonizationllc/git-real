@@ -421,7 +421,10 @@ describe("useSyncActions force push", () => {
     act(() => result.current.requestForcePush());
     await act(async () => result.current.confirmForcePush());
     await waitFor(() => expect(result.current.forcePush).toBeNull());
-    expect(result.current.message?.title).toBe("HEAD moved to another branch");
+    expect(result.current.message).toMatchObject({
+      title: "Another operation is in progress",
+      hint: "Finish or abort it, then try again.",
+    });
   });
 
   it("should keep the confirmation open while the push runs", async () => {

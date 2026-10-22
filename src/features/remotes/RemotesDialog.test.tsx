@@ -843,11 +843,11 @@ describe("RemotesDialog busy state", () => {
 
   it("Close, Edit and Remove are disabled during fetch after adding", async () => {
     let resolve!: () => void;
-    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    vi.mocked(fetchRemote).mockReturnValue(new Promise<void>((r) => (resolve = r)));
     const view = await renderList();
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
-    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalled());
     await screen.findByRole("list", { name: "Remotes" });
     expect(button("Close")).toBeDisabled();
     expect(button("Edit origin")).toBeDisabled();
@@ -857,11 +857,11 @@ describe("RemotesDialog busy state", () => {
 
   it("Escape does not close the dialog during fetch after adding", async () => {
     let resolve!: () => void;
-    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    vi.mocked(fetchRemote).mockReturnValue(new Promise<void>((r) => (resolve = r)));
     const view = await renderList();
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
-    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalled());
     await view.user.keyboard("{Escape}");
     expect(view.props.onClose).not.toHaveBeenCalled();
     await act(async () => resolve());
@@ -869,11 +869,11 @@ describe("RemotesDialog busy state", () => {
 
   it("the backdrop does not close the dialog during fetch after adding", async () => {
     let resolve!: () => void;
-    vi.mocked(fetchAll).mockReturnValue(new Promise<void>((r) => (resolve = r)));
+    vi.mocked(fetchRemote).mockReturnValue(new Promise<void>((r) => (resolve = r)));
     const view = await renderList();
     await fillAdd(view, "up", "/srv/up.git");
     await view.user.click(addButton());
-    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+    await waitFor(() => expect(fetchRemote).toHaveBeenCalled());
     await view.user.click(
       screen.getByRole("dialog", { name: "Remotes" }).parentElement as HTMLElement,
     );

@@ -456,6 +456,7 @@ exit 128"#,
             code,
             stdout,
             stderr,
+            ..
         } => {
             assert_eq!(
                 (verb, kind, https, origin.as_deref(), code),
