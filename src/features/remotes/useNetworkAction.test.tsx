@@ -204,6 +204,29 @@ describe("useNetworkAction invalidation", () => {
     ).toHaveLength(2);
   });
 
+  it("should invalidate the repo's pull requests after a successful attempt", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.run(vi.fn<Action>().mockResolvedValue("x")));
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["hosting", "pullRequests", 1] });
+  });
+
+  it("should invalidate the repo's pull requests after a failed attempt", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() =>
+      result.current.run(vi.fn<Action>().mockRejectedValue(networkError("hostUnreachable"))),
+    );
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["hosting", "pullRequests", 1] });
+  });
+
+  it("should not invalidate another repo's pull requests", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.run(vi.fn<Action>().mockResolvedValue("x")));
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["hosting", "pullRequests", 2] });
+  });
+
   it("should not invalidate another repo", async () => {
     const { result, queryClient } = renderHookWithProviders(() => useNetworkAction(1));
     const spy = vi.spyOn(queryClient, "invalidateQueries");

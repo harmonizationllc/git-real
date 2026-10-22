@@ -14,6 +14,8 @@ import {
   getOperationState,
   getStatus,
   getStashFiles,
+  hostingListPullRequests,
+  hostingRepoContext,
   listBranches,
   listRemotes,
   listStashes,
@@ -32,6 +34,7 @@ import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
+import { repoContext } from "../test/hostingFixtures";
 import { networkError, remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
@@ -75,6 +78,8 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getOperationState: vi.fn(),
   getStatus: vi.fn(),
   getStashFiles: vi.fn(),
+  hostingListPullRequests: vi.fn(),
+  hostingRepoContext: vi.fn(),
   listBranches: vi.fn(),
   listRemotes: vi.fn(),
   listStashes: vi.fn(),
@@ -141,6 +146,8 @@ beforeEach(() => {
     refsFilter: {},
   });
   vi.mocked(listStashes).mockResolvedValue([]);
+  vi.mocked(hostingRepoContext).mockResolvedValue(null);
+  vi.mocked(hostingListPullRequests).mockResolvedValue([]);
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
   vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
@@ -1225,6 +1232,37 @@ describe("RepoPane tags", () => {
     expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
     expect(screen.queryByRole("heading", { name: /^Stashes/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Tags/ })).toBeNull();
+  });
+});
+
+// Contract (GR-13a): a Pull requests section follows Tags when origin is on a hosting provider.
+describe("RepoPane pull requests", () => {
+  it("should render the Pull requests section after the Tags panel", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const tags = await screen.findByRole("button", { name: "Tags (0)" });
+    const pulls = await screen.findByRole("region", { name: "Pull requests" });
+    expect(follows(tags, pulls)).toBe(true);
+  });
+
+  it("should load the hosting context for the tab's repo id", async () => {
+    renderWithProviders(<RepoPane tab={tab(7)} />);
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalledWith(7));
+  });
+
+  it("should render no Pull requests section when origin is not hosted", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Tags (0)" });
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: /^Pull requests/ })).toBeNull();
+  });
+
+  it("should replace the Pull requests section with file history while history is open", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    useWorkspace.setState({ historyPath: { 1: "src/a.ts" } });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "File history" });
+    expect(screen.queryByRole("region", { name: /^Pull requests/ })).toBeNull();
   });
 });
 
