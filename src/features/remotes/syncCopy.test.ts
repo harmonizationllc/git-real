@@ -109,8 +109,8 @@ describe("syncGates", () => {
 });
 
 // Contract (W2): while a merge, rebase, cherry-pick or revert is in progress, pull, push and force
-// push are gated with "Finish or abort the <operation> first"; fetch stays enabled. The check
-// follows loading and no-remotes and precedes HEAD, upstream and busy. The operation is the
+// push are gated with "Finish or abort the <operation> first" (the noun from operationNoun());
+// fetch stays enabled. Order: loading, no remotes, busy, operation, HEAD, upstream. The operation is the
 // optional fifth argument; undefined (still loading) and kind "none" gate nothing.
 describe("syncGates during an in-progress operation", () => {
   const merge: OperationState = {
@@ -184,13 +184,10 @@ describe("syncGates during an in-progress operation", () => {
     expect(syncGates(branch, null, 1, false, merge)).toEqual(blocked("merge"));
   });
 
-  it("should name the operation before the busy gate for pull, push and force push", () => {
-    const gates = syncGates(branch, tracked, 1, true, merge);
-    expect([gates.pull, gates.push, gates.forcePush]).toEqual([
-      "Finish or abort the merge first",
-      "Finish or abort the merge first",
-      "Finish or abort the merge first",
-    ]);
+  it("should let the busy gate win over the operation gate for every button", () => {
+    expect(syncGates(branch, tracked, 1, true, merge)).toEqual(
+      all("Another network operation is running"),
+    );
   });
 
   // A rebase stops on a detached HEAD, so naming the operation must win over the detached copy.

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use git_real_core::{GitError, NetworkErrorKind};
+use git_real_core::{GitError, NetworkDetail, NetworkErrorKind};
 use git_real_lib::error::{AppError, AppErrorKind, NetworkInfo};
 use serde_json::json;
 
@@ -488,8 +488,7 @@ fn network_failed(code: Option<i32>, stdout: &str, stderr: &str) -> AppError {
         kind: NetworkErrorKind::Other,
         https: false,
         origin: None,
-        host: None,
-        reason: None,
+        detail: Box::default(),
         code,
         stdout: stdout.into(),
         stderr: stderr.into(),
@@ -849,8 +848,7 @@ fn network_failed_carries_the_network_payload() {
         kind: NetworkErrorKind::HttpsAuthRequired,
         https: true,
         origin: Some("https://github.com".into()),
-        host: None,
-        reason: None,
+        detail: Box::default(),
         code: Some(128),
         stdout: String::new(),
         stderr: stderr.into(),
@@ -886,8 +884,10 @@ fn network_failed_carries_the_host_and_reason_into_the_network_payload() {
         kind: NetworkErrorKind::RemoteRejected,
         https: true,
         origin: None,
-        host: Some("github.com".into()),
-        reason: Some("GH007: private email".into()),
+        detail: Box::new(NetworkDetail {
+            host: Some("github.com".into()),
+            reason: Some("GH007: private email".into()),
+        }),
         code: Some(1),
         stdout: String::new(),
         stderr: "remote: error: GH007: private email\n".into(),

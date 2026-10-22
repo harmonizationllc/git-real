@@ -585,9 +585,7 @@ fn set_origin_url(path: &Path, url: &str) {
 
 fn network_failed(err: GitError) -> (NetworkErrorKind, Option<String>, Option<String>) {
     match err {
-        GitError::NetworkFailed {
-            kind, host, reason, ..
-        } => (kind, host, reason),
+        GitError::NetworkFailed { kind, detail, .. } => (kind, detail.host, detail.reason),
         other => panic!("expected NetworkFailed, got {other:?}"),
     }
 }

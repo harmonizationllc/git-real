@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppError } from "../../lib/ipc";
-import { remoteFieldError, removeRemoteCopy } from "./remoteCopy";
+import { remoteFieldError, removeRemoteCopy, tokenHint } from "./remoteCopy";
 
 const err = (kind: AppError["kind"]): AppError => ({ kind, message: "raw" });
 const input = (over: Partial<{ name: string; url: string; pushUrl: string | null }> = {}) => ({
@@ -80,5 +80,30 @@ describe("remoteFieldError", () => {
     expect(remoteFieldError(err("remoteExists"), input({ name: "renamed" }))?.text).toBe(
       "A remote named renamed already exists.",
     );
+  });
+});
+
+// Contract (W6): the sign-in dialog's token hint, keyed off the host with any :port removed.
+describe("tokenHint", () => {
+  const GITHUB = "GitHub needs a personal access token, not your account password.";
+  const GENERIC = "Many hosts need a personal access token instead of your password.";
+
+  it.each(["github.com", "www.github.com", "GitHub.com", "WWW.GITHUB.COM", "github.com:443"])(
+    "should give the GitHub note for %s",
+    (host) => {
+      expect(tokenHint(host)).toBe(GITHUB);
+    },
+  );
+
+  it.each([
+    "gitlab.com",
+    "git.example.org",
+    "127.0.0.1:8080",
+    "notgithub.com",
+    "github.com.evil.test",
+    "gist.github.com",
+    "",
+  ])("should give the generic note for %s", (host) => {
+    expect(tokenHint(host)).toBe(GENERIC);
   });
 });
