@@ -14,7 +14,7 @@ use git_real_lib::commands::hosting::{
     hosting_checkout_pull_request_inner, hosting_connect_inner, hosting_disconnect_inner,
     hosting_list_accounts_inner, hosting_list_pull_requests_inner, hosting_repo_context_inner,
 };
-use git_real_lib::commands::remote::{NetworkAuth, fetch_inner};
+use git_real_lib::commands::remote::{NetworkAuth, fetch_inner, list_remotes_inner};
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::hosting_store::HostingStore;
 use git_real_lib::state::{RepoId, RepoRegistry};
@@ -378,17 +378,14 @@ fn repo_context_detects_the_hosted_repository_behind_origin() {
     );
 }
 
-// Detection reads the raw configured URL; only fetch applies insteadOf.
+// Detection reads the raw configured URL (what `list_remotes` reports); only fetch applies
+// insteadOf. git2's `Remote::url()` already applies it, so it is not the source of truth.
 #[test]
 fn repo_context_reads_the_raw_origin_url_not_the_rewritten_one() {
     let fx = hosted();
-    let rewritten = Repository::open(&fx.path)
-        .unwrap()
-        .find_remote("origin")
-        .unwrap()
-        .url()
-        .map(str::to_owned);
-    assert_eq!(rewritten.as_deref(), Some(ORIGIN_URL));
+    let remotes = list_remotes_inner(&fx.reg, fx.id).unwrap();
+    let origin = remotes.iter().find(|r| r.name == "origin").unwrap();
+    assert_eq!(origin.fetch_url, ORIGIN_URL);
 }
 
 #[test]
