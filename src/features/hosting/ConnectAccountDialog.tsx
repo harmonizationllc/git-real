@@ -18,8 +18,9 @@ import { useAccountActions } from "./useAccountActions";
 export interface ConnectAccountDialogProps {
   /** Starts the form on this provider and host (a reconnect, or the panel's Connect…). */
   preset?: AccountsPreset;
-  /** The connected accounts, to confirm before replacing the one on the same host. */
-  accounts: HostingAccount[];
+  /** The connected accounts, to confirm before replacing the one on the same host; undefined
+   * while they load, which holds Connect back. */
+  accounts: HostingAccount[] | undefined;
   onDone(account: HostingAccount): void;
   onCancel(): void;
 }
@@ -76,7 +77,10 @@ export function ConnectAccountDialog({
   // A disabled submit button blocks implicit submission, so an empty or pending form never gets here.
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const existing = accounts.find((a) => a.provider === provider && a.host === resolvedHost);
+    // Connect is disabled until the accounts have loaded.
+    const existing = (accounts as HostingAccount[]).find(
+      (a) => a.provider === provider && a.host === resolvedHost,
+    );
     if (existing === undefined) void send();
     else setReplacing(existing);
   };
@@ -171,7 +175,7 @@ export function ConnectAccountDialog({
               <button type="button" disabled={pending} onClick={onCancel}>
                 Cancel
               </button>
-              <button type="submit" disabled={pending || token === ""}>
+              <button type="submit" disabled={pending || token === "" || accounts === undefined}>
                 {pending ? "Connecting…" : "Connect"}
               </button>
             </div>

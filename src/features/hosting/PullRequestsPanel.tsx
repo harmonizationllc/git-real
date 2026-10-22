@@ -82,7 +82,8 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
         </button>
       </div>
     );
-  } else if (list.error !== null) {
+  } else if (list.error !== null && prs === undefined) {
+    // Nothing loaded yet: the error stands in for the list. A failed Show more keeps the list.
     body = <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />;
   } else if (prs === undefined) {
     body = <p role="status">Loading pull requests…</p>;
@@ -101,6 +102,9 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
             />
           ))}
         </ul>
+        {list.error !== null && (
+          <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
+        )}
         {list.hasMore && (
           <button
             type="button"
@@ -151,11 +155,10 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
           ↻
         </button>
       </div>
-      {actions.status !== null && (
-        <p role="status" className={styles.status}>
-          {actions.status}
-        </p>
-      )}
+      {/* Always mounted, so screen readers announce the status when it appears. */}
+      <p role="status" className={styles.status}>
+        {actions.status}
+      </p>
       {actions.error !== null && (
         <NetworkError
           message={hostingMessage(actions.error, provider)}

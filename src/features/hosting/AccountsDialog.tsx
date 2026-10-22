@@ -169,7 +169,7 @@ function AccountsDialogBody({ onClose, preset }: { onClose(): void; preset?: Acc
       {view.kind === "connect" && (
         <ConnectAccountDialog
           preset={view.preset}
-          accounts={accounts ?? []}
+          accounts={accounts}
           onDone={() => setView({ kind: "list" })}
           onCancel={() => setView({ kind: "list" })}
         />

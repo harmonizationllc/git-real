@@ -82,3 +82,7 @@
   margin: 4px 16px;
   color: var(--color-text-muted);
 }
+
+.status:empty {
+  margin: 0;
+}
