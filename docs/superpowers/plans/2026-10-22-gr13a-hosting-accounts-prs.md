@@ -1192,7 +1192,7 @@ git commit -m "feat(app): GR-13a hosting accounts, keychain, commands and accoun
 
 **Interfaces:**
 
-- Consumes: Task 2's wrappers, types, kinds and keys; `useNetworkAction(repoId)` (`run`, `pending`, `prompt`), `CredentialDialog`, `NetworkError`, `networkMessage`, `ConfirmDialog`, `ContextMenu` / `MenuItem`, `useRestoreFocus`, `copyText`, `toAppError`, `useLayoutPrefs`, the TagsPanel section CSS (`root`, `header`, `heading`, `toggle`, `empty`, `list`), `RepoError`.
+- Consumes: Task 2's wrappers, types, kinds and keys; `useNetworkAction(repoId)` (`run`, `pending`, `prompt`), `CredentialDialog`, `NetworkError`, `networkMessage`, `ConfirmDialog`, `ContextMenu` / `MenuItem`, `useRestoreFocus`, `copyText`, `toAppError`, `useLayoutPrefs`, `RepoError`. `PullRequestsPanel.module.css` **mirrors** the TagsPanel section rules (`root`, `header`, `heading`, `toggle`, `empty`, `list`) as StashesPanel.module.css does; no feature imports another feature's CSS module.
 - Produces:
 
 ```ts
@@ -1254,7 +1254,7 @@ export function usePrActions(repoId: RepoId): {
   /** Set when checkout answered needsReset; the panel confirms, then calls checkout(pr, true). */
   resetRequest: ResetRequest | null;
   clearResetRequest(): void;
-  status: string | null; // "Checked out ‹branch›."
+  status: string | null; // "Checked out ‹branch›." — built from outcome.branch (a fork PR lands on pr/<n>), never pr.sourceBranch
   error: AppError | null;
   clearError(): void;
   pending: boolean;
@@ -1313,7 +1313,7 @@ export const pullRequests = (n: number, start = 100): PullRequest[];
 - `useAccountActions.test.tsx`: `connect` resolves `{ account }` and calls `hostingConnect("github", null, "t")`; a rejection resolves `{ error }` with the `AppError`; after it settles, `queryClient.getMutationCache().getAll()` contains no mutation whose variables or state hold `"t"` (`JSON.stringify` of the cache does not include the token); success and failure both call `invalidateHosting`; `disconnect` resolves `null` / the error; `pending` is true while either runs.
 - `useRepoContext.test.tsx`: key `["repo", 1, "hostingContext"]`; `null` passes through; errors map through `toAppError`; a `["repo", 1]` invalidation refetches it.
 - `usePullRequests.test.tsx`: not called while `enabled` is false; page 1 on enable; `hasMore` is true when the last page has 50 items and `loadMore` requests page 2 and appends it; `hasMore` false for a page under 50; `refetch` re-requests; errors map through `toAppError`; **`does not refetch when the repo prefix is invalidated`** (invalidate `queryKeys.repo(1)`, assert `hostingListPullRequests` was called once); no refetch on window focus.
-- `usePrActions.test.tsx`: `checkout(pr)` runs through `useNetworkAction` and calls `hostingCheckoutPullRequest(1, 7, false, null)`, then sets `status` `Checked out feature-7.`; `needsReset` sets `resetRequest { pr, branch: "pr/7" }` and no status; `checkout(pr, true)` sends `reset: true` and clears `resetRequest`; a `networkFailed` with `httpsAuthRequired` and an origin raises `prompt`, and submitting retries with the typed credentials; a failure sets `error`; a cancelled prompt sets nothing; `open(pr)` calls `openExternal(pr.webUrl)` and a rejection becomes `error`; `copyLink` calls `copyText(pr.webUrl)` and a rejection becomes `error`; `clearError` and `clearResetRequest` reset.
+- `usePrActions.test.tsx`: `checkout(pr)` runs through `useNetworkAction` and calls `hostingCheckoutPullRequest(1, 7, false, null)`, then sets `status` `Checked out feature-7.` (from the outcome's `branch`); a fork outcome `{ kind: "checkedOut", branch: "pr/7" }` gives `Checked out pr/7.`; `needsReset` sets `resetRequest { pr, branch: "pr/7" }` and no status; `checkout(pr, true)` sends `reset: true` and clears `resetRequest`; a `networkFailed` with `httpsAuthRequired` and an origin raises `prompt`, and submitting retries with the typed credentials; a failure sets `error`; a cancelled prompt sets nothing; `open(pr)` calls `openExternal(pr.webUrl)` and a rejection becomes `error`; `copyLink` calls `copyText(pr.webUrl)` and a rejection becomes `error`; `clearError` and `clearResetRequest` reset.
 - `useNetworkAction.test.tsx` (extend): a settled attempt invalidates `["hosting", "pullRequests", 1]` as well as `["repo", 1]`.
 - `layoutPrefs.test.ts` (extend): `pullRequestsCollapsed` defaults to false, toggles, and is persisted.
 
@@ -1372,7 +1372,7 @@ Run: `npm test`. Expected: failures for the missing modules and the unmet assert
 - `usePrActions`: `useNetworkAction(repoId).run((c) => hostingCheckoutPullRequest(repoId, pr.number, reset, c))`, then handle the outcome; `open` / `copyLink` catch into `error`.
 - `PullRequestsPanel`: `useRepoContext`; returns `null` unless the context is non-null. Copy the `TagsPanel` structure: heading toggle, Refresh button in the header, body states in the order no account → reconnect → error → loading → empty → list (+ `Show more`), `ContextMenu` with `fallbackFocus` on the heading, `ConfirmDialog` for the reset, status line `role="status"`, `AccountsDialog` with the preset, and `CredentialDialog` last. `enabled` for the list query = expanded and the account is present and not `needsReconnect`.
 - `PullRequestRow`: the `TagRow` shape (an `li` around a `button` with no `onClick`, the Shift+F10 / ContextMenu handler) plus a sibling open button with the `↗` glyph, the draft and CI badges.
-- `AccountsDialog`, `ConnectAccountDialog`: the `CredentialDialog` / `RemotesDialog` modal pattern (backdrop, `role="dialog"`, `aria-modal`, `tabIndex={-1}` box, `useRestoreFocus`, Escape). The connect form keeps the token in component state only and clears it in the submit handler before awaiting `connect`.
+- `AccountsDialog`, `ConnectAccountDialog`: the `CredentialDialog` / `RemotesDialog` modal pattern (backdrop, `role="dialog"`, `aria-modal`, `tabIndex={-1}` box, `useRestoreFocus`, Escape). Nested dialogs follow RemotesDialog.tsx: the AccountsDialog box stays mounted and becomes `inert` while ConnectAccountDialog, the Disconnect ConfirmDialog or the Replace ConfirmDialog is open, and those render as siblings **after** the box, never inside it (Escape on the inner dialog must not close the outer one; the mounted box keeps the `Connect account…` button for focus restoration). PullRequestsPanel calls every hook before its `return null`; the row button without onClick gets a `title` so it does not announce as a dead control. The connect form keeps the token in component state only and clears it in the submit handler before awaiting `connect`.
 - `layoutPrefs`, `useNetworkAction`, `RepoPane`, `StartScreen`: the one-line changes listed under Files.
 
 - [ ] **Step 6: Run the full front-end gate**
