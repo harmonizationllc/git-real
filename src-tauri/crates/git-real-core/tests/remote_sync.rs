@@ -343,6 +343,53 @@ fn an_upstream_on_the_local_repository_is_no_upstream() {
     ));
 }
 
+// Architect R1: an upstream whose remote is not configured is RemoteNotFound,
+// not NoUpstream.
+#[test]
+fn an_upstream_on_a_remote_that_is_not_configured_is_remote_not_found() {
+    let (_d, path, _s) = plain();
+    let head = common::head_branch_name(&path);
+    let mut config = Repository::open(&path).unwrap().config().unwrap();
+    config
+        .set_str(&format!("branch.{head}.remote"), "gone")
+        .unwrap();
+    config
+        .set_str(
+            &format!("branch.{head}.merge"),
+            &format!("refs/heads/{head}"),
+        )
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    assert!(matches!(session.prepare_pull(), Err(GitError::RemoteNotFound(r)) if r == "gone"));
+    assert!(matches!(
+        session.prepare_push(&PushTarget::Upstream, false),
+        Err(GitError::RemoteNotFound(r)) if r == "gone"
+    ));
+}
+
+// Architect advisory: checkout is not gated by the network mutation, so HEAD
+// can move between prepare/fetch and integrate. The pull must not merge the
+// upstream into whatever branch is now checked out.
+#[test]
+fn integrate_pull_refuses_when_head_left_the_prepared_branch() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    fx.push_from_other("b.txt", "b\n");
+    let pull = fx.session.prepare_pull().unwrap();
+    pull.fetch(None).unwrap();
+    fx.session
+        .create_and_checkout_branch("topic", None)
+        .unwrap();
+    let topic_before = fx.head_oid();
+    for mode in [PullMode::Merge, PullMode::Rebase] {
+        let err = fx.session.integrate_pull(&pull, mode).unwrap_err();
+        assert!(matches!(err, GitError::OperationInProgress), "{err:?}");
+    }
+    assert_eq!(fx.head_oid(), topic_before);
+}
+
 #[test]
 fn prepare_pull_during_a_merge_is_operation_in_progress() {
     let (_d, path, _s) = plain();

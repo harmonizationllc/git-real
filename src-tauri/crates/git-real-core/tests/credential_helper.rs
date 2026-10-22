@@ -18,7 +18,9 @@ fn fill(creds: &Credentials, extra: &[&str], url: &str) -> Output {
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path())
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", home.path().join("none"));
+        .env("GIT_CONFIG_GLOBAL", home.path().join("none"))
+        .env_remove("GIT_ASKPASS")
+        .env_remove("SSH_ASKPASS");
     for c in extra {
         cmd.arg("-c").arg(c);
     }

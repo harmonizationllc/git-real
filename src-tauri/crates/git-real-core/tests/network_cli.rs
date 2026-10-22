@@ -260,6 +260,26 @@ fn a_successful_run_with_credentials_approves_only_urls_on_the_credentials_origi
     assert!(!approve_argv.contains(TOKEN));
 }
 
+// Architect: git matches hosts case-insensitively, so approve must too.
+#[test]
+fn approve_matches_the_origin_host_case_insensitively() {
+    let (_d, _b, path, _h) = fixture();
+    Repository::open(&path)
+        .unwrap()
+        .remote_set_url("origin", "https://example.test/Me/x.git")
+        .unwrap();
+    let mixed = Credentials::new("https://Example.TEST", "me", TOKEN).unwrap();
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(Some(&mixed))
+        .unwrap();
+    assert_eq!(
+        read(&path, "approve-stdin.txt").unwrap(),
+        approved("https://example.test/Me/x.git")
+    );
+}
+
 #[test]
 fn a_failed_run_never_approves() {
     let (_d, _b, path, _h) = fixture();

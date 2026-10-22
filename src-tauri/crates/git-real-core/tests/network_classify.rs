@@ -258,6 +258,30 @@ fn apply_scopes_the_helper_and_puts_secrets_only_in_the_environment() {
     );
 }
 
+// Architect R2: a user-set GIT_TRACE_CURL must not copy the Authorization
+// header (the token in base64) into stderr and from there into an AppError.
+#[test]
+fn apply_pins_trace_redaction_when_credentials_are_present() {
+    let c = Credentials::new("https://github.com", "me", TOKEN).unwrap();
+    let mut cmd = Command::new("git");
+    auth::apply(&mut cmd, Some(&c));
+    let envs: Vec<_> = cmd.get_envs().collect();
+    assert!(
+        envs.contains(&(OsStr::new("GIT_TRACE_REDACT"), Some(OsStr::new("1")))),
+        "{envs:?}"
+    );
+}
+
+#[test]
+fn apply_without_credentials_does_not_set_trace_redaction() {
+    let mut cmd = Command::new("git");
+    auth::apply(&mut cmd, None);
+    assert!(
+        cmd.get_envs()
+            .all(|(k, _)| k != OsStr::new("GIT_TRACE_REDACT"))
+    );
+}
+
 #[test]
 fn apply_without_credentials_adds_nothing() {
     let mut cmd = Command::new("git");
