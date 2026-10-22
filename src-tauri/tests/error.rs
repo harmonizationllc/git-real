@@ -1023,3 +1023,44 @@ fn hosting_errors_map_to_their_kinds_with_display_messages() {
         serde_json::json!({ "kind": "noHostingAccount", "message": "no account is connected for this repository's host" })
     );
 }
+
+// The wire strings are what the front end's `KINDS` list matches on.
+#[test]
+fn hosting_kinds_serialize_camel_case() {
+    let cases = [
+        (AppErrorKind::HostingAuth, "hostingAuth"),
+        (AppErrorKind::HostingNotFound, "hostingNotFound"),
+        (AppErrorKind::HostingRateLimited, "hostingRateLimited"),
+        (AppErrorKind::HostingRejected, "hostingRejected"),
+        (AppErrorKind::HostingUnreachable, "hostingUnreachable"),
+        (AppErrorKind::KeychainUnavailable, "keychainUnavailable"),
+        (AppErrorKind::NoHostingAccount, "noHostingAccount"),
+        (AppErrorKind::InvalidHostingHost, "invalidHostingHost"),
+        (AppErrorKind::InvalidToken, "invalidToken"),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
+    }
+}
+
+// A provider message that quoted the token was redacted in core; the app layer must pass it
+// through untouched and never add the rate-limit reset or anything else to the payload.
+#[test]
+fn hosting_error_payload_has_only_kind_and_message() {
+    let rate = serde_json::to_value(AppError::from(GitError::HostingRateLimited {
+        reset_epoch: Some(1_792_497_600),
+    }))
+    .unwrap();
+    assert_eq!(
+        rate,
+        json!({ "kind": "hostingRateLimited", "message": "the provider's API rate limit was reached" })
+    );
+    let auth = serde_json::to_value(AppError::from(GitError::HostingAuth {
+        message: "token *** lacks scope".into(),
+    }))
+    .unwrap();
+    assert_eq!(
+        auth,
+        json!({ "kind": "hostingAuth", "message": "the provider rejected the token: token *** lacks scope" })
+    );
+}

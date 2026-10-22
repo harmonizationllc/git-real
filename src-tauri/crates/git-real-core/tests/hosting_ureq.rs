@@ -150,7 +150,7 @@ fn a_non_utf8_body_keeps_its_status() {
 
 // The token goes to its own host; a redirect inside the same origin keeps it.
 #[test]
-fn a_redirect_to_the_same_host_keeps_the_authorization_header() {
+fn a_same_host_redirect_keeps_the_authorization_header() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
