@@ -50,11 +50,11 @@ fn url_host(url: &str) -> Option<String> {
     valid(host)
 }
 
-fn is_drive_path(url: &str) -> bool {
+pub(crate) fn is_drive_path(url: &str) -> bool {
     matches!(url.as_bytes(), [l, b':', b'\\' | b'/', ..] if l.is_ascii_alphabetic())
 }
 
-fn strip_user(authority: &str) -> &str {
+pub(crate) fn strip_user(authority: &str) -> &str {
     authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host)
@@ -73,7 +73,7 @@ fn strip_port(host: &str) -> &str {
 
 /// A DNS-style name (`[A-Za-z0-9.-]+`, not starting with `-`) or an IPv6 literal of hex digits
 /// and colons.
-fn valid(host: &str) -> Option<String> {
+pub(crate) fn valid(host: &str) -> Option<String> {
     let name = host
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');

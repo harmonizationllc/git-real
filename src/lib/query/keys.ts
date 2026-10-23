@@ -49,6 +49,12 @@ export const queryKeys = {
   pullMode: (id: RepoId) => ["repo", id, "pullMode"] as const,
   fastForward: (id: RepoId, branch: string) => ["repo", id, "fastForward", branch] as const,
   rebasePlan: (id: RepoId, base: string) => ["repo", id, "rebasePlan", base] as const,
+  /** Connected hosting accounts; global, not per repo. */
+  hostingAccounts: ["hosting", "accounts"] as const,
+  /** The hosted repository behind `origin`; under the repo prefix so a remote edit refreshes it. */
+  hostingContext: (id: RepoId) => ["repo", id, "hostingContext"] as const,
+  /** Open pull requests; outside the repo prefix so a watcher event never calls the provider API. */
+  pullRequests: (id: RepoId) => ["hosting", "pullRequests", id] as const,
 };
 
 /** Mutation keys; separate from query keys, so repo invalidation never touches them. */
@@ -61,4 +67,6 @@ export const mutationKeys = {
   network: (id: RepoId) => ["network", id] as const,
   /** Remote config edits of a repo (add, update, remove); they never touch the network. */
   remote: (id: RepoId) => ["remote", id] as const,
+  /** Connecting or disconnecting a hosting account. */
+  hostingAccount: ["hostingAccount"] as const,
 };

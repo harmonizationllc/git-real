@@ -535,3 +535,73 @@ pub fn git_available_with(found: bool, opt_out: Option<&str>) -> bool {
     }
     panic!("git not on PATH: install git, or set {SKIP_GIT_TESTS_ENV}=1 to skip the git CLI tests");
 }
+
+/// A scripted `Transport`: answers each `send` with the next queued response and records
+/// every request (method, url, headers, body). An empty queue panics with
+/// "unexpected request <url>".
+pub struct FakeTransport {
+    pub replies: std::sync::Mutex<
+        std::collections::VecDeque<
+            Result<git_real_core::hosting::Response, git_real_core::GitError>,
+        >,
+    >,
+    pub seen: std::sync::Mutex<Vec<git_real_core::hosting::Request>>,
+}
+
+impl FakeTransport {
+    /// An empty queue.
+    pub fn new() -> Self {
+        FakeTransport {
+            replies: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Queues a response with no headers.
+    pub fn reply(self, status: u16, body: &str) -> Self {
+        self.reply_with(status, &[], body)
+    }
+
+    /// Queues a response with the given headers (names are stored lower-cased).
+    pub fn reply_with(self, status: u16, headers: &[(&str, &str)], body: &str) -> Self {
+        self.replies.lock().expect("replies lock").push_back(Ok(
+            git_real_core::hosting::Response {
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_ascii_lowercase(), (*v).to_owned()))
+                    .collect(),
+                body: body.to_owned(),
+            },
+        ));
+        self
+    }
+
+    /// Queues a transport failure.
+    pub fn fail(self, error: git_real_core::GitError) -> Self {
+        self.replies
+            .lock()
+            .expect("replies lock")
+            .push_back(Err(error));
+        self
+    }
+
+    /// Every request sent so far, oldest first.
+    pub fn requests(&self) -> Vec<git_real_core::hosting::Request> {
+        self.seen.lock().expect("seen lock").clone()
+    }
+}
+
+impl git_real_core::hosting::Transport for FakeTransport {
+    fn send(
+        &self,
+        req: &git_real_core::hosting::Request,
+    ) -> Result<git_real_core::hosting::Response, git_real_core::GitError> {
+        self.seen.lock().expect("seen lock").push(req.clone());
+        self.replies
+            .lock()
+            .expect("replies lock")
+            .pop_front()
+            .unwrap_or_else(|| panic!("unexpected request {}", req.url))
+    }
+}

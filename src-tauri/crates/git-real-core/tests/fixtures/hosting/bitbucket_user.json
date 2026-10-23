@@ -1,0 +1,5 @@
+{
+  "username": "octo",
+  "display_name": "Octo Cat",
+  "links": { "avatar": { "href": "https://avatar.example/a.png" } }
+}

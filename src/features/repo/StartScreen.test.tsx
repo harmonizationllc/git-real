@@ -1,6 +1,13 @@
 import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { initRepo, listRecent, openRepo, pickFolder, removeRecent } from "../../lib/ipc";
+import {
+  hostingListAccounts,
+  initRepo,
+  listRecent,
+  openRepo,
+  pickFolder,
+  removeRecent,
+} from "../../lib/ipc";
 import type { OpenedRepo, RecentEntry } from "../../lib/ipc";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -13,6 +20,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   listRecent: vi.fn(),
   removeRecent: vi.fn(),
   pickFolder: vi.fn(),
+  hostingListAccounts: vi.fn(),
 }));
 
 const entry = (name: string, path = `/home/u/${name}`): RecentEntry => ({
@@ -34,6 +42,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   vi.mocked(listRecent).mockResolvedValue([]);
+  vi.mocked(hostingListAccounts).mockResolvedValue([]);
 });
 
 // Contract: static structure of the start screen.
@@ -234,5 +243,47 @@ describe("StartScreen init failure", () => {
     await user.click(screen.getByRole("button", openBtn));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(useRepoTabs.getState().tabs).toHaveLength(1);
+  });
+});
+
+// Contract (GR-13a): the start screen opens the Hosting accounts dialog from a button after Initialize repository.
+describe("StartScreen hosting accounts", () => {
+  const hostingBtn = { name: "Hosting accounts…" };
+
+  it("should render a Hosting accounts… button after Initialize repository", async () => {
+    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const init = screen.getByRole("button", initBtn);
+    const hosting = screen.getByRole("button", hostingBtn);
+    expect(init.compareDocumentPosition(hosting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await screen.findByText(EMPTY);
+  });
+
+  it("should open the Hosting accounts dialog when the button is clicked", async () => {
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", hostingBtn));
+    expect(await screen.findByRole("dialog", { name: "Hosting accounts" })).toBeInTheDocument();
+    expect(await screen.findByText("No accounts connected")).toBeInTheDocument();
+  });
+
+  it("should show no dialog before the button is clicked", async () => {
+    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await screen.findByText(EMPTY);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should close the dialog and return focus to the button on Close", async () => {
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", hostingBtn));
+    await user.click(await screen.findByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", hostingBtn)).toHaveFocus();
+  });
+
+  it("should close the dialog and return focus to the button on Escape", async () => {
+    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", hostingBtn));
+    await screen.findByRole("dialog", { name: "Hosting accounts" });
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", hostingBtn)).toHaveFocus();
   });
 });

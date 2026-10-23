@@ -1,0 +1,31 @@
+[
+  {
+    "number": 12,
+    "title": "Add login",
+    "user": { "login": "alice" },
+    "draft": false,
+    "updated_at": "2026-10-20T12:00:00Z",
+    "html_url": "https://github.com/gorlox/test-repo/pull/12",
+    "head": {
+      "ref": "feature/login",
+      "repo": {
+        "full_name": "gorlox/test-repo",
+        "clone_url": "https://github.com/gorlox/test-repo.git"
+      }
+    },
+    "base": { "ref": "main", "repo": { "full_name": "gorlox/test-repo" } }
+  },
+  {
+    "number": 9,
+    "title": "Fix typo",
+    "user": { "login": "bob" },
+    "draft": true,
+    "updated_at": "2026-10-19T08:30:15Z",
+    "html_url": "https://github.com/gorlox/test-repo/pull/9",
+    "head": {
+      "ref": "main",
+      "repo": { "full_name": "bob/test-repo", "clone_url": "https://github.com/bob/test-repo.git" }
+    },
+    "base": { "ref": "main", "repo": { "full_name": "gorlox/test-repo" } }
+  }
+]

@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { pickFolder } from "../../lib/ipc";
+import { AccountsDialog } from "../hosting/AccountsDialog";
 import { RecentList } from "./RecentList";
 import { RepoError } from "./RepoError";
 import styles from "./StartScreen.module.css";
@@ -10,6 +11,7 @@ export function StartScreen({ onClone }: { onClone(): void }) {
   const headingId = useId();
   const { recents, isLoading, remove } = useRecentRepos();
   const { open, init, error, errorPath, clearError } = useOpenRepo();
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   const pickThen = async (title: string, action: (path: string) => Promise<void>) => {
     const path = await pickFolder(title);
@@ -31,6 +33,9 @@ export function StartScreen({ onClone }: { onClone(): void }) {
         <button type="button" onClick={() => pickThen("Initialize repository", init)}>
           Initialize repository
         </button>
+        <button type="button" onClick={() => setAccountsOpen(true)}>
+          Hosting accounts…
+        </button>
       </div>
       {error !== null && (
         <RepoError error={error} path={errorPath} onInitHere={init} onDismiss={clearError} />
@@ -41,6 +46,7 @@ export function StartScreen({ onClone }: { onClone(): void }) {
       ) : (
         <RecentList recents={recents} onOpen={open} onRemove={remove} />
       )}
+      <AccountsDialog open={accountsOpen} onClose={() => setAccountsOpen(false)} />
     </section>
   );
 }

@@ -9,6 +9,7 @@ use git_real_lib::commands::refs::{
     checkout_branch_inner, checkout_remote_branch_inner, create_branch_inner, delete_branch_inner,
     delete_remote_branch_inner, list_branches_inner, rename_branch_inner,
 };
+use git_real_lib::commands::remote::NetworkAuth;
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::state::{RepoId, RepoRegistry};
 use git2::{BranchType, Repository};
@@ -299,7 +300,14 @@ fn delete_remote_branch_inner_deletes_on_the_bare_remote() {
         return;
     }
     let (_d, _b, _p, bare, reg, id) = remote_fixture();
-    delete_remote_branch_inner(&reg, id, "origin", "feature", None).unwrap();
+    delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "feature",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     let still_there = Repository::open_bare(&bare)
         .unwrap()
         .find_branch("feature", BranchType::Local)
@@ -313,7 +321,14 @@ fn delete_remote_branch_inner_removes_the_branch_from_the_listing() {
         return;
     }
     let (_d, _b, _p, _bare, reg, id) = remote_fixture();
-    delete_remote_branch_inner(&reg, id, "origin", "feature", None).unwrap();
+    delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "feature",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     let list = list_branches_inner(&reg, id).unwrap();
     assert!(
         list.remotes
@@ -326,14 +341,28 @@ fn delete_remote_branch_inner_removes_the_branch_from_the_listing() {
 #[test]
 fn delete_remote_branch_inner_maps_unknown_remote() {
     let (_d, _b, _p, _bare, reg, id) = remote_fixture();
-    let err = delete_remote_branch_inner(&reg, id, "nope", "feature", None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        id,
+        "nope",
+        "feature",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
 }
 
 #[test]
 fn delete_remote_branch_inner_maps_unknown_remote_branch() {
     let (_d, _b, _p, _bare, reg, id) = remote_fixture();
-    let err = delete_remote_branch_inner(&reg, id, "origin", "nope", None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "nope",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::BranchNotFound);
 }
 
@@ -349,7 +378,14 @@ fn delete_remote_branch_inner_maps_push_rejection_to_network_failed() {
         .unwrap()
         .delete()
         .unwrap();
-    let err = delete_remote_branch_inner(&reg, id, "origin", "feature", None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "feature",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(err.network.unwrap().verb, "push");
     assert!(!err.message.is_empty());
@@ -394,7 +430,15 @@ fn delete_remote_branch_inner_does_not_hold_the_session_lock_during_the_push() {
     }
 
     let result = std::thread::scope(|scope| {
-        let push = scope.spawn(|| delete_remote_branch_inner(&reg, id, "origin", "feature", None));
+        let push = scope.spawn(|| {
+            delete_remote_branch_inner(
+                &reg,
+                id,
+                "origin",
+                "feature",
+                NetworkAuth::Accounts(common::empty_store()),
+            )
+        });
         let deadline = Instant::now() + Duration::from_secs(10);
         while !started.exists() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(20));
@@ -454,7 +498,14 @@ fn checkout_remote_branch_inner_maps_unknown_repo() {
 #[test]
 fn delete_remote_branch_inner_maps_unknown_repo() {
     let reg = RepoRegistry::default();
-    let err = delete_remote_branch_inner(&reg, MISSING_ID, "origin", "a", None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        MISSING_ID,
+        "origin",
+        "a",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
 
@@ -559,7 +610,14 @@ fn checkout_remote_branch_inner_maps_git_refusal_to_checkout_failed() {
 #[test]
 fn delete_remote_branch_inner_maps_an_invalid_name() {
     let (_d, _b, _p, _bare, reg, id) = remote_fixture();
-    let err = delete_remote_branch_inner(&reg, id, "origin", "--all", None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "--all",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
 }
 
@@ -569,7 +627,14 @@ fn delete_remote_branch_inner_keeps_the_local_branch_of_the_same_name() {
         return;
     }
     let (_d, _b, path, bare, reg, id) = remote_fixture();
-    delete_remote_branch_inner(&reg, id, "origin", "feature", None).unwrap();
+    delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "feature",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert!(local_exists(&path, "feature"));
     assert!(
         Repository::open_bare(&bare)
@@ -594,7 +659,14 @@ fn remote_branch_commands_reject_a_remote_whose_name_starts_with_a_dash() {
             .fetch(&["+refs/heads/*:refs/remotes/-x/*"], None, None)
             .unwrap();
     }
-    let err = delete_remote_branch_inner(&reg, id, "-x", &head, None).unwrap_err();
+    let err = delete_remote_branch_inner(
+        &reg,
+        id,
+        "-x",
+        &head,
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
     let err = checkout_remote_branch_inner(&reg, id, "-x", &head).unwrap_err();
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);

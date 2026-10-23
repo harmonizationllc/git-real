@@ -54,6 +54,15 @@ pub enum AppErrorKind {
     InvalidRemoteUrl,
     RemoteExists,
     InvalidCredentials,
+    HostingAuth,
+    HostingNotFound,
+    HostingRateLimited,
+    HostingRejected,
+    HostingUnreachable,
+    KeychainUnavailable,
+    NoHostingAccount,
+    InvalidHostingHost,
+    InvalidToken,
 }
 
 /// What the UI needs to act on a network failure; stderr stays in `message`.
@@ -139,6 +148,15 @@ impl From<GitError> for AppError {
             GitError::InvalidRemoteUrl(_) => AppErrorKind::InvalidRemoteUrl,
             GitError::RemoteExists(_) => AppErrorKind::RemoteExists,
             GitError::InvalidCredentials => AppErrorKind::InvalidCredentials,
+            GitError::HostingAuth { .. } => AppErrorKind::HostingAuth,
+            GitError::HostingNotFound => AppErrorKind::HostingNotFound,
+            GitError::HostingRateLimited { .. } => AppErrorKind::HostingRateLimited,
+            GitError::HostingRejected { .. } => AppErrorKind::HostingRejected,
+            GitError::HostingUnreachable { .. } => AppErrorKind::HostingUnreachable,
+            GitError::KeychainUnavailable(_) => AppErrorKind::KeychainUnavailable,
+            GitError::NoHostingAccount => AppErrorKind::NoHostingAccount,
+            GitError::InvalidHostingHost(_) => AppErrorKind::InvalidHostingHost,
+            GitError::InvalidToken => AppErrorKind::InvalidToken,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

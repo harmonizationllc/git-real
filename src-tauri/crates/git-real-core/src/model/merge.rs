@@ -63,6 +63,21 @@ pub enum OperationOutcome {
     Stopped,
 }
 
+/// How checking out a pull request's head left the repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum CheckoutPrOutcome {
+    /// HEAD is on `branch`, which contains the pull request's head.
+    CheckedOut { branch: String },
+    /// `branch` has commits the head does not contain; nothing changed. Checking out
+    /// again with `reset` moves it.
+    NeedsReset { branch: String },
+}
+
 /// One line of an interactive rebase todo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

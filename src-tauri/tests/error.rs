@@ -951,3 +951,116 @@ fn remote_error_messages_use_the_core_display_text() {
         "the credentials must name an http(s) origin and contain no line breaks"
     );
 }
+
+// GR-13a: the nine hosting kinds map one-to-one with their Display text and no network detail.
+#[test]
+fn hosting_errors_map_to_their_kinds_with_display_messages() {
+    let cases = [
+        (
+            GitError::HostingAuth {
+                message: "Bad credentials".into(),
+            },
+            AppErrorKind::HostingAuth,
+            "the provider rejected the token: Bad credentials",
+        ),
+        (
+            GitError::HostingNotFound,
+            AppErrorKind::HostingNotFound,
+            "the repository was not found, or this account cannot see it",
+        ),
+        (
+            GitError::HostingRateLimited {
+                reset_epoch: Some(1),
+            },
+            AppErrorKind::HostingRateLimited,
+            "the provider's API rate limit was reached",
+        ),
+        (
+            GitError::HostingRejected {
+                message: "exists".into(),
+            },
+            AppErrorKind::HostingRejected,
+            "the provider refused the request: exists",
+        ),
+        (
+            GitError::HostingUnreachable {
+                message: "HTTP 502".into(),
+            },
+            AppErrorKind::HostingUnreachable,
+            "could not reach the provider: HTTP 502",
+        ),
+        (
+            GitError::KeychainUnavailable("no dbus".into()),
+            AppErrorKind::KeychainUnavailable,
+            "the system keychain is unavailable: no dbus",
+        ),
+        (
+            GitError::NoHostingAccount,
+            AppErrorKind::NoHostingAccount,
+            "no account is connected for this repository's host",
+        ),
+        (
+            GitError::InvalidHostingHost("a b".into()),
+            AppErrorKind::InvalidHostingHost,
+            "\"a b\" is not a valid host name",
+        ),
+        (
+            GitError::InvalidToken,
+            AppErrorKind::InvalidToken,
+            "the token is empty, longer than 4096 bytes, or contains a line break",
+        ),
+    ];
+    for (err, kind, message) in cases {
+        let app = AppError::from(err);
+        assert_eq!(
+            (app.kind, app.message.as_str(), app.network.is_none()),
+            (kind, message, true)
+        );
+    }
+    let json = serde_json::to_value(AppError::from(GitError::NoHostingAccount)).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({ "kind": "noHostingAccount", "message": "no account is connected for this repository's host" })
+    );
+}
+
+// The wire strings are what the front end's `KINDS` list matches on.
+#[test]
+fn hosting_kinds_serialize_camel_case() {
+    let cases = [
+        (AppErrorKind::HostingAuth, "hostingAuth"),
+        (AppErrorKind::HostingNotFound, "hostingNotFound"),
+        (AppErrorKind::HostingRateLimited, "hostingRateLimited"),
+        (AppErrorKind::HostingRejected, "hostingRejected"),
+        (AppErrorKind::HostingUnreachable, "hostingUnreachable"),
+        (AppErrorKind::KeychainUnavailable, "keychainUnavailable"),
+        (AppErrorKind::NoHostingAccount, "noHostingAccount"),
+        (AppErrorKind::InvalidHostingHost, "invalidHostingHost"),
+        (AppErrorKind::InvalidToken, "invalidToken"),
+    ];
+    for (kind, expected) in cases {
+        assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));
+    }
+}
+
+// A provider message that quoted the token was redacted in core; the app layer must pass it
+// through untouched and never add the rate-limit reset or anything else to the payload.
+#[test]
+fn hosting_error_payload_has_only_kind_and_message() {
+    let rate = serde_json::to_value(AppError::from(GitError::HostingRateLimited {
+        reset_epoch: Some(1_792_497_600),
+    }))
+    .unwrap();
+    assert_eq!(
+        rate,
+        json!({ "kind": "hostingRateLimited", "message": "the provider's API rate limit was reached" })
+    );
+    let auth = serde_json::to_value(AppError::from(GitError::HostingAuth {
+        message: "token *** lacks scope".into(),
+    }))
+    .unwrap();
+    assert_eq!(
+        auth,
+        json!({ "kind": "hostingAuth", "message": "the provider rejected the token: token *** lacks scope" })
+    );
+}

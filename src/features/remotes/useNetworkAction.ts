@@ -59,7 +59,12 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
       attempt().catch((e: unknown) => {
         throw toAppError(e);
       }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.repo(repoId) }),
+    // Pull requests sit outside the repo prefix, so a push or publish refreshes them here.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.repo(repoId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.pullRequests(repoId) }),
+      ]),
   });
 
   const ask = (origin: string, rejected: boolean) =>

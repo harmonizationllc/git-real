@@ -3,7 +3,12 @@ import { REFS_DEFAULT, SIDEBAR_DEFAULT, useLayoutPrefs } from "./layoutPrefs";
 
 beforeEach(() => {
   localStorage.clear();
-  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
+  useLayoutPrefs.setState({
+    refsWidth: 240,
+    sidebarWidth: 320,
+    tagsCollapsed: true,
+    pullRequestsCollapsed: false,
+  });
 });
 
 afterEach(() => {
@@ -63,10 +68,11 @@ describe("useLayoutPrefs", () => {
     expect(useLayoutPrefs.persist.getOptions().name).toBe("git-real.layoutPrefs");
   });
 
-  it("should persist the widths and tagsCollapsed, not the setters", () => {
+  it("should persist the widths and both collapse flags, not the setters", () => {
     useLayoutPrefs.getState().setSidebarWidth(400);
     const raw = localStorage.getItem("git-real.layoutPrefs") as string;
     expect(Object.keys(JSON.parse(raw).state).sort()).toEqual([
+      "pullRequestsCollapsed",
       "refsWidth",
       "sidebarWidth",
       "tagsCollapsed",
@@ -193,5 +199,65 @@ describe("useLayoutPrefs tagsCollapsed", () => {
     useLayoutPrefs.setState({ refsWidth: 180, tagsCollapsed: false });
     useLayoutPrefs.getState().reset("refs");
     expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
+  });
+});
+
+// Contract (GR-13a): the Pull requests section starts expanded and the flag persists beside the widths.
+describe("useLayoutPrefs pullRequestsCollapsed", () => {
+  it("should start with pull requests expanded", () => {
+    expect(useLayoutPrefs.getInitialState().pullRequestsCollapsed).toBe(false);
+  });
+
+  it("should collapse when setPullRequestsCollapsed(true) is called", () => {
+    useLayoutPrefs.getState().setPullRequestsCollapsed(true);
+    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(true);
+  });
+
+  it("should expand again when setPullRequestsCollapsed(false) is called", () => {
+    useLayoutPrefs.getState().setPullRequestsCollapsed(true);
+    useLayoutPrefs.getState().setPullRequestsCollapsed(false);
+    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(false);
+  });
+
+  it("should leave tagsCollapsed and the widths alone when toggled", () => {
+    useLayoutPrefs.getState().setPullRequestsCollapsed(true);
+    expect(useLayoutPrefs.getState()).toMatchObject({
+      refsWidth: 240,
+      sidebarWidth: 320,
+      tagsCollapsed: true,
+    });
+  });
+
+  it("should store and persist the flag", () => {
+    useLayoutPrefs.getState().setPullRequestsCollapsed(true);
+    const raw = localStorage.getItem("git-real.layoutPrefs") as string;
+    expect(JSON.parse(raw).state.pullRequestsCollapsed).toBe(true);
+  });
+
+  it("should rehydrate a stored flag", async () => {
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({
+        state: { refsWidth: 200, sidebarWidth: 300, pullRequestsCollapsed: true },
+        version: 0,
+      }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(true);
+  });
+
+  it("should keep pull requests expanded when restoring a state saved before the flag existed", async () => {
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({ state: { refsWidth: 200, sidebarWidth: 300 }, version: 0 }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(false);
+  });
+
+  it("should leave pullRequestsCollapsed alone on reset", () => {
+    useLayoutPrefs.setState({ refsWidth: 180, pullRequestsCollapsed: true });
+    useLayoutPrefs.getState().reset("refs");
+    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(true);
   });
 });

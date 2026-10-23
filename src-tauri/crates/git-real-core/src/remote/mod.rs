@@ -10,6 +10,7 @@ pub mod classify;
 pub mod clone;
 pub mod fetch;
 pub mod host;
+pub mod pr_checkout;
 pub mod progress_parser;
 pub mod pull;
 pub mod push;
@@ -26,7 +27,8 @@ use auth::Credentials;
 
 /// Runs `git -C <workdir> [credential args] <args...>` for a network
 /// operation. A non-zero exit is `NetworkFailed`; after a successful run with
-/// credentials, each of `urls` on the credentials' origin is approved.
+/// credentials that [`Credentials::approves`], each of `urls` on their origin is
+/// approved.
 pub(crate) fn run_network(
     git: &Path,
     workdir: &Path,
@@ -41,7 +43,7 @@ pub(crate) fn run_network(
     cmd.args(args);
     let output = git_cli::capture(&mut cmd)?;
     if output.status.success() {
-        if let Some(c) = creds {
+        if let Some(c) = creds.filter(|c| c.approves()) {
             for url in urls.iter().filter(|u| c.covers(u)) {
                 auth::approve(git, workdir, url, c);
             }

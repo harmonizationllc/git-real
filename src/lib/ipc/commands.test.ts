@@ -38,6 +38,12 @@ import {
   getLogSummary,
   getStashFiles,
   getStatus,
+  hostingCheckoutPullRequest,
+  hostingConnect,
+  hostingDisconnect,
+  hostingListAccounts,
+  hostingListPullRequests,
+  hostingRepoContext,
   initRepo,
   listBranches,
   listRemotes,
@@ -83,11 +89,14 @@ import type {
   CommitDetail,
   FileDiff,
   GitCliInfo,
+  HostingAccount,
   LocalBranch,
   LogPage,
   LogSummary,
   OpenedRepo,
+  PullRequest,
   RecentEntry,
+  RepoContext,
   StashEntry,
   StashFiles,
   TagList,
@@ -1164,6 +1173,135 @@ describe("remote command wrappers", () => {
     ["addRemote", () => addRemote(1, "o", "/f", null)],
     ["updateRemote", () => updateRemote(1, "o", "o", "/f", null)],
     ["removeRemote", () => removeRemote(1, "o")],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing(failure);
+    await expect(call()).rejects.toEqual(failure);
+  });
+});
+
+// Contract: the six GR-13a hosting wrappers invoke the pinned command with every key, null included.
+describe("hosting command wrappers", () => {
+  const account: HostingAccount = {
+    id: "github:github.com:octo",
+    provider: "github",
+    host: "github.com",
+    username: "octo",
+    displayName: null,
+    avatarUrl: null,
+    needsReconnect: false,
+  };
+  const pr: PullRequest = {
+    number: 7,
+    title: "t",
+    author: "bob",
+    sourceBranch: "b",
+    targetBranch: "main",
+    fromFork: false,
+    forkCloneUrl: null,
+    draft: false,
+    ciState: "none",
+    updatedAt: 1700000000,
+    webUrl: "https://github.com/o/r/pull/7",
+  };
+
+  it("hostingListAccounts sends hosting_list_accounts with no args and returns the accounts", async () => {
+    const calls = mockWith([account]);
+    const result = await hostingListAccounts();
+    expect(calls).toEqual([{ cmd: "hosting_list_accounts", args: {} }]);
+    expect(result).toEqual([account]);
+  });
+
+  it("hostingConnect sends provider, host and token", async () => {
+    const calls = mockWith(account);
+    await hostingConnect("gitlab", null, "t");
+    expect(calls).toEqual([
+      { cmd: "hosting_connect", args: { provider: "gitlab", host: null, token: "t" } },
+    ]);
+  });
+
+  it("hostingConnect sends a custom host", async () => {
+    const calls = mockWith(account);
+    await hostingConnect("github", "ghe.corp:8443", "t");
+    expect(calls[0]?.args).toEqual({ provider: "github", host: "ghe.corp:8443", token: "t" });
+  });
+
+  it("hostingConnect resolves to the account", async () => {
+    mockWith(account);
+    await expect(hostingConnect("github", null, "t")).resolves.toEqual(account);
+  });
+
+  it("hostingDisconnect sends accountId", async () => {
+    const calls = mockWith(null);
+    await hostingDisconnect("github:github.com:octo");
+    expect(calls).toEqual([
+      { cmd: "hosting_disconnect", args: { accountId: "github:github.com:octo" } },
+    ]);
+  });
+
+  it("hostingRepoContext sends id and returns the context", async () => {
+    const ctx: RepoContext = {
+      repo: { provider: "github", host: "github.com", namespace: "o", name: "r" },
+      account: null,
+    };
+    const calls = mockWith(ctx);
+    const result = await hostingRepoContext(1);
+    expect(calls).toEqual([{ cmd: "hosting_repo_context", args: { id: 1 } }]);
+    expect(result).toEqual(ctx);
+  });
+
+  it("hostingRepoContext resolves to null for a repo that is not hosted", async () => {
+    mockWith(null);
+    await expect(hostingRepoContext(1)).resolves.toBeNull();
+  });
+
+  it("hostingListPullRequests sends id and page and returns the pull requests", async () => {
+    const calls = mockWith([pr]);
+    const result = await hostingListPullRequests(1, 2);
+    expect(calls).toEqual([{ cmd: "hosting_list_pull_requests", args: { id: 1, page: 2 } }]);
+    expect(result).toEqual([pr]);
+  });
+
+  it("hostingCheckoutPullRequest sends credentials as null by default", async () => {
+    const calls = mockWith({ kind: "checkedOut", branch: "pr/7" });
+    await hostingCheckoutPullRequest(1, 7, false);
+    expect(calls).toEqual([
+      {
+        cmd: "hosting_checkout_pull_request",
+        args: { id: 1, number: 7, reset: false, credentials: null },
+      },
+    ]);
+  });
+
+  it("hostingCheckoutPullRequest sends typed credentials", async () => {
+    const creds: Credentials = { origin: "https://github.com", username: "me", token: "t" };
+    const calls = mockWith({ kind: "checkedOut", branch: "pr/7" });
+    await hostingCheckoutPullRequest(1, 7, true, creds);
+    expect(calls[0]?.args).toEqual({ id: 1, number: 7, reset: true, credentials: creds });
+  });
+
+  it("hostingCheckoutPullRequest sends credentials as null when passed null", async () => {
+    const calls = mockWith({ kind: "needsReset", branch: "pr/7" });
+    await hostingCheckoutPullRequest(1, 7, false, null);
+    expect(calls[0]?.args).toEqual({ id: 1, number: 7, reset: false, credentials: null });
+  });
+
+  it("hostingCheckoutPullRequest resolves to the outcome", async () => {
+    mockWith({ kind: "needsReset", branch: "pr/7" });
+    await expect(hostingCheckoutPullRequest(1, 7, false)).resolves.toEqual({
+      kind: "needsReset",
+      branch: "pr/7",
+    });
+  });
+
+  const failure = { kind: "hostingAuth", message: "The provider rejected the token." };
+
+  it.each([
+    ["hostingListAccounts", () => hostingListAccounts()],
+    ["hostingConnect", () => hostingConnect("github", null, "t")],
+    ["hostingDisconnect", () => hostingDisconnect("x")],
+    ["hostingRepoContext", () => hostingRepoContext(1)],
+    ["hostingListPullRequests", () => hostingListPullRequests(1, 1)],
+    ["hostingCheckoutPullRequest", () => hostingCheckoutPullRequest(1, 7, false)],
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing(failure);
     await expect(call()).rejects.toEqual(failure);

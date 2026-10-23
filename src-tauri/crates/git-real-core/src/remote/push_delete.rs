@@ -20,6 +20,11 @@ pub struct PushDelete {
 }
 
 impl PushDelete {
+    /// The URLs this operation talks to, in the order git uses them.
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
     pub(crate) fn new(
         git: PathBuf,
         workdir: PathBuf,

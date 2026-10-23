@@ -2,6 +2,7 @@
 
 pub mod commit;
 pub mod history;
+pub mod hosting;
 pub mod log;
 pub mod merge;
 pub mod refs;

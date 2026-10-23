@@ -47,6 +47,15 @@ const KINDS: Record<AppErrorKind, true> = {
   invalidRemoteUrl: true,
   remoteExists: true,
   invalidCredentials: true,
+  hostingAuth: true,
+  hostingNotFound: true,
+  hostingRateLimited: true,
+  hostingRejected: true,
+  hostingUnreachable: true,
+  keychainUnavailable: true,
+  noHostingAccount: true,
+  invalidHostingHost: true,
+  invalidToken: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

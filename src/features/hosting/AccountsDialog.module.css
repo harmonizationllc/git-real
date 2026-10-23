@@ -1,0 +1,79 @@
+.backdrop {
+  composes: backdrop from "../../components/PromptDialog.module.css";
+}
+
+.dialog {
+  composes: dialog from "../../components/PromptDialog.module.css";
+}
+
+.title {
+  composes: title from "../../components/PromptDialog.module.css";
+}
+
+.actions {
+  composes: actions from "../../components/PromptDialog.module.css";
+}
+
+.error {
+  composes: error from "../../components/PromptDialog.module.css";
+}
+
+.empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
+.info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.warning {
+  color: var(--color-warning);
+}
+
+.rowActions {
+  display: flex;
+  gap: 8px;
+}

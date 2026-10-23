@@ -247,8 +247,14 @@ fn env_probe_child() {
     match role.as_str() {
         "clone" => {
             let dest = out.join("dest");
-            clone::clone_with(&git, "https://example.invalid/r.git", &dest, &mut NullSink)
-                .expect("fake clone succeeds");
+            clone::clone_with(
+                &git,
+                "https://example.invalid/r.git",
+                &dest,
+                None,
+                &mut NullSink,
+            )
+            .expect("fake clone succeeds");
         }
         "commit" => git_commit::run(&git, out, "S\n", false).expect("fake commit succeeds"),
         other => panic!("unknown role {other}"),

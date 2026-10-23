@@ -80,7 +80,16 @@ export type AppErrorKind =
   | "invalidRemoteName"
   | "invalidRemoteUrl"
   | "remoteExists"
-  | "invalidCredentials";
+  | "invalidCredentials"
+  | "hostingAuth"
+  | "hostingNotFound"
+  | "hostingRateLimited"
+  | "hostingRejected"
+  | "hostingUnreachable"
+  | "keychainUnavailable"
+  | "noHostingAccount"
+  | "invalidHostingHost"
+  | "invalidToken";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -443,3 +452,52 @@ export interface RemoteInfo {
 export type ConflictSide = "ours" | "theirs";
 
 export type FastForwardCheck = "possible" | "upToDate" | "diverged";
+
+export type HostingProvider = "github" | "gitlab" | "bitbucket";
+
+/** A connected account; its token stays in the system keychain and never reaches the webview. */
+export interface HostingAccount {
+  /** `<provider>:<host>:<username>`. */
+  id: string;
+  provider: HostingProvider;
+  host: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  /** The provider rejected the token; reconnecting clears it. */
+  needsReconnect: boolean;
+}
+
+export interface HostingRepoRef {
+  provider: HostingProvider;
+  host: string;
+  /** GitLab namespaces may hold several `/`-separated groups. */
+  namespace: string;
+  name: string;
+}
+
+/** The hosted repository behind `origin` and the account connected for its host. */
+export interface RepoContext {
+  repo: HostingRepoRef;
+  account: HostingAccount | null;
+}
+
+export type CiState = "passing" | "failing" | "pending" | "none";
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  author: string;
+  sourceBranch: string;
+  targetBranch: string;
+  fromFork: boolean;
+  forkCloneUrl: string | null;
+  draft: boolean;
+  ciState: CiState;
+  /** Epoch seconds. */
+  updatedAt: number;
+  webUrl: string;
+}
+
+export type CheckoutPrOutcome =
+  { kind: "checkedOut"; branch: string } | { kind: "needsReset"; branch: string };

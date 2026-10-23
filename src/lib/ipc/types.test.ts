@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import type {
   AppError,
   AppErrorKind,
+  CheckoutPrOutcome,
+  CiState,
   Credentials,
+  HostingAccount,
+  HostingProvider,
+  HostingRepoRef,
+  PullRequest,
+  RepoContext,
   NetworkErrorInfo,
   NetworkErrorKind,
   PullMode,
@@ -543,5 +550,75 @@ describe("remote DTO shapes", () => {
       2,
       ["fetchUrl", "name", "pushUrl"],
     ]);
+  });
+});
+
+// Contract: the GR-13a hosting wire types have the pinned shapes.
+describe("hosting types", () => {
+  const account: HostingAccount = {
+    id: "github:github.com:octo",
+    provider: "github",
+    host: "github.com",
+    username: "octo",
+    displayName: "Octo",
+    avatarUrl: null,
+    needsReconnect: true,
+  };
+
+  it("should accept a HostingAccount with every key", () => {
+    expect(Object.keys(account).sort()).toEqual([
+      "avatarUrl",
+      "displayName",
+      "host",
+      "id",
+      "needsReconnect",
+      "provider",
+      "username",
+    ]);
+  });
+
+  it("should accept all three HostingProvider values", () => {
+    const providers: HostingProvider[] = ["github", "gitlab", "bitbucket"];
+    expect(providers).toHaveLength(3);
+  });
+
+  it("should accept a RepoContext with and without an account", () => {
+    const repo: HostingRepoRef = {
+      provider: "gitlab",
+      host: "gitlab.com",
+      namespace: "g/sub",
+      name: "p",
+    };
+    const contexts: RepoContext[] = [
+      { repo, account },
+      { repo, account: null },
+    ];
+    expect(contexts.map((c) => c.account === null)).toEqual([false, true]);
+  });
+
+  it("should accept a PullRequest and every CiState", () => {
+    const states: CiState[] = ["passing", "failing", "pending", "none"];
+    const pr: PullRequest = {
+      number: 7,
+      title: "t",
+      author: "bob",
+      sourceBranch: "b",
+      targetBranch: "main",
+      fromFork: true,
+      forkCloneUrl: "https://github.com/bob/r.git",
+      draft: true,
+      ciState: states[0] ?? "none",
+      updatedAt: 1700000000,
+      webUrl: "https://github.com/o/r/pull/7",
+    };
+    expect([states.length, pr.ciState]).toEqual([4, "passing"]);
+  });
+
+  it("should accept both CheckoutPrOutcome arms", () => {
+    const outcomes: CheckoutPrOutcome[] = [
+      { kind: "checkedOut", branch: "pr/7" },
+      { kind: "needsReset", branch: "pr/7" },
+    ];
+    expect(outcomes.map((o) => o.kind)).toEqual(["checkedOut", "needsReset"]);
   });
 });

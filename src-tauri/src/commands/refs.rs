@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 
-use git_real_core::{BranchList, Credentials, LocalBranch};
+use git_real_core::{BranchList, LocalBranch};
 use tauri::State;
 
-use super::remote::{CredentialsArg, credentials_from_arg};
+use super::remote::{CredentialsArg, NetworkAuth, credentials_from_arg};
 use super::{run_blocking, with_session};
 use crate::error::AppError;
+use crate::hosting_store::HostingStore;
 use crate::state::{RepoId, RepoRegistry};
 
 pub fn list_branches_inner(reg: &RepoRegistry, id: RepoId) -> Result<BranchList, AppError> {
@@ -70,10 +71,11 @@ pub fn delete_remote_branch_inner(
     id: RepoId,
     remote: &str,
     name: &str,
-    credentials: Option<&Credentials>,
+    auth: NetworkAuth<'_>,
 ) -> Result<(), AppError> {
     let push = with_session(reg, id, |s| s.prepare_remote_delete(remote, name))?;
-    push.run(credentials).map_err(AppError::from)
+    push.run(auth.resolve(push.urls()).as_ref())
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -145,13 +147,17 @@ pub async fn checkout_remote_branch(
 #[tauri::command]
 pub async fn delete_remote_branch(
     reg: State<'_, Arc<RepoRegistry>>,
+    hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     remote: String,
     name: String,
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
-    let reg = Arc::clone(reg.inner());
-    run_blocking(move || delete_remote_branch_inner(&reg, id, &remote, &name, credentials.as_ref()))
-        .await
+    let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
+    run_blocking(move || {
+        let auth = NetworkAuth::new(credentials.as_ref(), &hosting);
+        delete_remote_branch_inner(&reg, id, &remote, &name, auth)
+    })
+    .await
 }

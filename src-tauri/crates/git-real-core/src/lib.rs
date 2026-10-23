@@ -18,6 +18,7 @@ pub mod error;
 pub mod git_cli;
 mod git_ops;
 pub mod history;
+pub mod hosting;
 pub mod ignore;
 pub mod index_ops;
 pub mod log;
@@ -32,6 +33,7 @@ pub mod repo;
 mod revision;
 pub mod stash;
 pub mod status;
+pub mod token;
 
 pub use error::GitError;
 pub use ignore::gitignore_pattern;

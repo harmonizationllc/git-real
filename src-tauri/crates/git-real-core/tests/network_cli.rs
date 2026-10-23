@@ -13,6 +13,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use git_real_core::hosting::Token;
 use git_real_core::remote::auth::{Credentials, HELPER};
 use git_real_core::{GitError, NetworkErrorKind, PushTarget, RepoSession};
 use git2::Repository;
@@ -945,5 +946,103 @@ fn a_failure_that_is_not_remote_rejected_has_no_reason() {
     assert_eq!(
         network_failed(err),
         (NetworkErrorKind::PushRejectedNonFastForward, None, None)
+    );
+}
+
+// ---------- GR-13a: ref fetch, account credentials, urls ----------
+
+#[test]
+fn ref_fetch_argv_is_fetch_no_tags_source_refspec() {
+    let (_d, _b, path, _h) = fixture();
+    let session = session(&path);
+    session
+        .prepare_ref_fetch("origin", "refs/pull/7/head")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    let mut want = auth_args("https://example.test");
+    want.extend(["fetch", "--no-tags", "origin", "refs/pull/7/head"].map(str::to_owned));
+    assert_eq!(after_workdir(&path), want);
+
+    let fork = "https://example.test/bob/x.git";
+    session
+        .prepare_ref_fetch(fork, "refs/heads/fix")
+        .unwrap()
+        .run(Some(&creds()))
+        .unwrap();
+    let mut want = auth_args("https://example.test");
+    want.extend(["fetch", "--no-tags", fork, "refs/heads/fix"].map(str::to_owned));
+    assert_eq!(after_workdir(&path), want);
+}
+
+#[test]
+fn account_credentials_are_never_approved() {
+    let (_d, _b, path, _h) = fixture();
+    let account = Credentials::account(
+        "https://example.test",
+        "x-access-token",
+        &Token::new(TOKEN).unwrap(),
+    )
+    .unwrap();
+
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run(Some(&account))
+        .unwrap();
+
+    assert_eq!(
+        read(&path, "env.txt").unwrap(),
+        format!("x-access-token\n{TOKEN}\n")
+    );
+    assert_eq!(read(&path, "approve-stdin.txt"), None);
+}
+
+#[test]
+fn fetch_and_push_report_the_urls_they_use() {
+    let (_d, _b, path, head) = fixture();
+    let oid = Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    common::tag_lightweight(&path, "v1", oid);
+    let session = session(&path);
+    let want = vec![URL.to_owned()];
+
+    assert_eq!(session.prepare_fetch().unwrap().urls().to_vec(), want);
+    assert_eq!(session.prepare_pull().unwrap().urls().to_vec(), want);
+    assert_eq!(
+        session
+            .prepare_push(&PushTarget::Upstream, false, &head)
+            .unwrap()
+            .urls()
+            .to_vec(),
+        want
+    );
+    assert_eq!(
+        session
+            .prepare_tag_push("origin", "v1")
+            .unwrap()
+            .urls()
+            .to_vec(),
+        want
+    );
+    assert_eq!(
+        session
+            .prepare_remote_tag_delete("origin", "v1")
+            .unwrap()
+            .urls()
+            .to_vec(),
+        want
+    );
+    assert_eq!(
+        session
+            .prepare_remote_delete("origin", &head)
+            .unwrap()
+            .urls()
+            .to_vec(),
+        want
     );
 }

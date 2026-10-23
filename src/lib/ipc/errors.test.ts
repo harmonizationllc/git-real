@@ -245,3 +245,24 @@ describe("isAppError remote kinds", () => {
     expect(toAppError(e)).toBe(e);
   });
 });
+
+// Contract: the nine GR-13a hosting kinds are recognised by the guard.
+describe("isAppError hosting kinds", () => {
+  it.each([
+    "hostingAuth",
+    "hostingNotFound",
+    "hostingRateLimited",
+    "hostingRejected",
+    "hostingUnreachable",
+    "keychainUnavailable",
+    "noHostingAccount",
+    "invalidHostingHost",
+    "invalidToken",
+  ] as const)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it("isAppError still rejects the network kind that GR-13a does not add", () => {
+    expect(isAppError({ kind: "network", message: "m" })).toBe(false);
+  });
+});

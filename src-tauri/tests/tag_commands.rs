@@ -3,6 +3,7 @@
 mod common;
 
 use git_real_core::{RepoSession, TagEntry, TagList};
+use git_real_lib::commands::remote::NetworkAuth;
 use git_real_lib::commands::tags::{
     create_tag_inner, delete_remote_tag_inner, delete_tag_inner, list_tags_inner, push_tag_inner,
 };
@@ -111,21 +112,42 @@ fn push_tag_and_delete_remote_tag_inner_round_trip() {
     let (_bd, bare) = common::temp_bare_clone(&path);
     common::add_remote_and_fetch(&path, &bare);
     create_tag_inner(&reg, id, "v1", &head, None).unwrap();
-    push_tag_inner(&reg, id, "origin", "v1", None).unwrap();
+    push_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert!(
         Repository::open_bare(&bare)
             .unwrap()
             .find_reference("refs/tags/v1")
             .is_ok()
     );
-    delete_remote_tag_inner(&reg, id, "origin", "v1", None).unwrap();
+    delete_remote_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert!(
         Repository::open_bare(&bare)
             .unwrap()
             .find_reference("refs/tags/v1")
             .is_err()
     );
-    let err = delete_remote_tag_inner(&reg, id, "origin", "v1", None).unwrap_err();
+    let err = delete_remote_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(err.network.unwrap().verb, "push");
     assert!(
@@ -141,27 +163,51 @@ fn push_commands_map_remote_and_tag_errors() {
     let (_bd, bare) = common::temp_bare_clone(&path);
     common::add_remote_and_fetch(&path, &bare);
     assert_eq!(
-        push_tag_inner(&reg, id, "nope", "v1", None)
-            .unwrap_err()
-            .kind,
+        push_tag_inner(
+            &reg,
+            id,
+            "nope",
+            "v1",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::RemoteNotFound
     );
     assert_eq!(
-        push_tag_inner(&reg, id, "origin", "ghost", None)
-            .unwrap_err()
-            .kind,
+        push_tag_inner(
+            &reg,
+            id,
+            "origin",
+            "ghost",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::TagNotFound
     );
     assert_eq!(
-        delete_remote_tag_inner(&reg, id, "-x", "v1", None)
-            .unwrap_err()
-            .kind,
+        delete_remote_tag_inner(
+            &reg,
+            id,
+            "-x",
+            "v1",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::RemoteNotFound
     );
     assert_eq!(
-        delete_remote_tag_inner(&reg, id, "origin", "ghost", None)
-            .unwrap_err()
-            .kind,
+        delete_remote_tag_inner(
+            &reg,
+            id,
+            "origin",
+            "ghost",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::TagNotFound
     );
 }
@@ -185,15 +231,27 @@ fn tag_commands_report_unknown_repo() {
         AppErrorKind::UnknownRepo
     );
     assert_eq!(
-        push_tag_inner(&reg, MISSING_ID, "origin", "v1", None)
-            .unwrap_err()
-            .kind,
+        push_tag_inner(
+            &reg,
+            MISSING_ID,
+            "origin",
+            "v1",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::UnknownRepo
     );
     assert_eq!(
-        delete_remote_tag_inner(&reg, MISSING_ID, "origin", "v1", None)
-            .unwrap_err()
-            .kind,
+        delete_remote_tag_inner(
+            &reg,
+            MISSING_ID,
+            "origin",
+            "v1",
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::UnknownRepo
     );
 }

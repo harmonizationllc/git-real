@@ -119,6 +119,25 @@ pub enum GitError {
         stdout: String,
         stderr: String,
     },
+    #[error("the provider rejected the token: {message}")]
+    HostingAuth { message: String },
+    #[error("the repository was not found, or this account cannot see it")]
+    HostingNotFound,
+    /// `reset_epoch` is when the limit resets (epoch seconds), when the provider says.
+    #[error("the provider's API rate limit was reached")]
+    HostingRateLimited { reset_epoch: Option<u64> },
+    #[error("the provider refused the request: {message}")]
+    HostingRejected { message: String },
+    #[error("could not reach the provider: {message}")]
+    HostingUnreachable { message: String },
+    #[error("the system keychain is unavailable: {0}")]
+    KeychainUnavailable(String),
+    #[error("no account is connected for this repository's host")]
+    NoHostingAccount,
+    #[error("{0:?} is not a valid host name")]
+    InvalidHostingHost(String),
+    #[error("the token is empty, longer than 4096 bytes, or contains a line break")]
+    InvalidToken,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
