@@ -377,6 +377,14 @@ pub fn no_accounts() -> (TempDir, HostingStore) {
     (dir, store)
 }
 
+/// A leaked, empty `HostingStore` for tests that need a `NetworkAuth::Accounts` borrow with no
+/// accounts (so `resolve` yields `None`) without threading a `TempDir` through the test.
+pub fn empty_store() -> &'static HostingStore {
+    let (dir, store) = no_accounts();
+    std::mem::forget(dir);
+    Box::leak(Box::new(store))
+}
+
 /// A GitHub account on `github.com` for `username`, with no display name or avatar.
 pub fn github_account(username: &str) -> Account {
     Account::new(

@@ -395,7 +395,7 @@ fn clone_inner_opens_result() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap();
@@ -420,7 +420,7 @@ fn clone_inner_reports_progress_to_sink() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap();
@@ -445,7 +445,7 @@ fn clone_inner_registers_session_and_touches_recent() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap();
@@ -469,7 +469,7 @@ fn clone_inner_failure_kind() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap_err();
@@ -492,7 +492,7 @@ fn clone_inner_failure_message_is_reduced_to_fatal_line() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap_err();
@@ -515,7 +515,7 @@ fn clone_inner_failure_message_omits_progress_noise() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap_err();
@@ -538,7 +538,7 @@ fn clone_inner_failure_registers_and_touches_nothing() {
         &recent,
         "file:///nonexistent/repo",
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     );
 
@@ -564,7 +564,7 @@ fn clone_inner_into_non_empty_dest_fails() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     )
     .unwrap_err();
@@ -591,7 +591,7 @@ fn clone_inner_into_non_empty_dest_leaves_existing_file_untouched() {
         &recent,
         &common::file_url(&bare),
         path_str(&dest),
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
         &mut sink,
     );
 

@@ -987,8 +987,9 @@ fn network_auth_explicit_resolves_the_typed_credentials_whatever_the_urls() {
 }
 
 #[test]
-fn network_auth_none_resolves_nothing() {
-    assert!(NetworkAuth::None.resolve(&urls()).is_none());
+fn network_auth_accounts_over_an_empty_store_resolves_nothing() {
+    let (_dir, store, _tokens) = hosting_store();
+    assert!(NetworkAuth::Accounts(&store).resolve(&urls()).is_none());
 }
 
 // Review Focus 5: a locked keychain must not stop a fetch for a host with an account.

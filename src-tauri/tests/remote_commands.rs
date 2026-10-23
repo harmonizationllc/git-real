@@ -106,7 +106,7 @@ fn fetch_inner_updates_the_tracking_refs() {
     let fx = fx();
     let theirs = push_from_other(&fx, "b.txt", "b\n");
     let (reg, id) = registered(&fx.path);
-    fetch_inner(&reg, id, NetworkAuth::None).unwrap();
+    fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap();
     assert_eq!(
         tip(&fx.path, &format!("refs/remotes/origin/{}", fx.head)),
         theirs
@@ -117,7 +117,7 @@ fn fetch_inner_updates_the_tracking_refs() {
 fn fetch_inner_without_remotes_is_no_remotes() {
     let (_d, path) = common::temp_repo_with_commit();
     let (reg, id) = registered(&path);
-    let err = fetch_inner(&reg, id, NetworkAuth::None).unwrap_err();
+    let err = fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap_err();
     assert_eq!((err.kind, err.network), (AppErrorKind::NoRemotes, None));
 }
 
@@ -151,7 +151,13 @@ fn pull_inner_fast_forwards_to_the_upstream() {
     let theirs = push_from_other(&fx, "b.txt", "b\n");
     let (reg, id) = registered(&fx.path);
     assert_eq!(
-        pull_inner(&reg, id, PullMode::Merge, NetworkAuth::None).unwrap(),
+        pull_inner(
+            &reg,
+            id,
+            PullMode::Merge,
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap(),
         OperationOutcome::Completed
     );
     assert_eq!(tip(&fx.path, "HEAD"), theirs);
@@ -167,7 +173,13 @@ fn pull_inner_rebase_mode_replays_local_commits() {
     common::commit_file(&fx.path, "c.txt", "c\n", "ours");
     let (reg, id) = registered(&fx.path);
     assert_eq!(
-        pull_inner(&reg, id, PullMode::Rebase, NetworkAuth::None).unwrap(),
+        pull_inner(
+            &reg,
+            id,
+            PullMode::Rebase,
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap(),
         OperationOutcome::Completed
     );
     assert_eq!(tip(&fx.path, "HEAD~1"), theirs);
@@ -182,7 +194,13 @@ fn pull_inner_reports_conflicts_for_the_banner() {
     push_from_other(&fx, "README.md", "theirs\n");
     common::commit_file(&fx.path, "README.md", "ours\n", "ours");
     let (reg, id) = registered(&fx.path);
-    let outcome = pull_inner(&reg, id, PullMode::Merge, NetworkAuth::None).unwrap();
+    let outcome = pull_inner(
+        &reg,
+        id,
+        PullMode::Merge,
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert_eq!(serde_json::to_value(outcome).unwrap(), json!("conflicts"));
 }
 
@@ -192,9 +210,14 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
     let head = common::head_branch_name(&path);
     let (reg, id) = registered(&path);
     assert_eq!(
-        pull_inner(&reg, id, PullMode::Merge, NetworkAuth::None)
-            .unwrap_err()
-            .kind,
+        pull_inner(
+            &reg,
+            id,
+            PullMode::Merge,
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::NoUpstream
     );
     assert_eq!(
@@ -204,7 +227,7 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
             &PushTarget::Upstream,
             false,
             &head,
-            NetworkAuth::None
+            NetworkAuth::Accounts(common::empty_store())
         )
         .unwrap_err()
         .kind,
@@ -214,9 +237,14 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
     repo.set_head_detached(repo.head().unwrap().target().unwrap())
         .unwrap();
     assert_eq!(
-        pull_inner(&reg, id, PullMode::Merge, NetworkAuth::None)
-            .unwrap_err()
-            .kind,
+        pull_inner(
+            &reg,
+            id,
+            PullMode::Merge,
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::DetachedHead
     );
     assert_eq!(
@@ -226,7 +254,7 @@ fn pull_and_push_inner_map_head_and_upstream_errors() {
             &PushTarget::Upstream,
             false,
             &head,
-            NetworkAuth::None
+            NetworkAuth::Accounts(common::empty_store())
         )
         .unwrap_err()
         .kind,
@@ -248,7 +276,7 @@ fn push_inner_pushes_to_the_upstream_and_publishes_a_new_branch() {
         &PushTarget::Upstream,
         false,
         &fx.head,
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap();
     assert_eq!(tip(&fx.bare, &format!("refs/heads/{}", fx.head)), ours);
@@ -256,7 +284,15 @@ fn push_inner_pushes_to_the_upstream_and_publishes_a_new_branch() {
         json!({ "kind": "setUpstream", "remote": "origin", "branch": "pub" }),
     )
     .unwrap();
-    push_inner(&reg, id, &target, false, &fx.head, NetworkAuth::None).unwrap();
+    push_inner(
+        &reg,
+        id,
+        &target,
+        false,
+        &fx.head,
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert_eq!(tip(&fx.bare, "refs/heads/pub"), ours);
 }
 
@@ -275,7 +311,7 @@ fn push_inner_is_operation_in_progress_when_head_is_not_the_expected_branch() {
         &PushTarget::Upstream,
         true,
         "not-the-head",
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::OperationInProgress);
@@ -297,7 +333,7 @@ fn a_rejected_push_maps_to_network_failed_with_its_payload() {
         &PushTarget::Upstream,
         false,
         &fx.head,
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
@@ -335,7 +371,7 @@ fn a_force_push_over_an_unseen_remote_update_is_lease_stale() {
         &PushTarget::Upstream,
         true,
         &fx.head,
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap_err();
     assert_eq!(
@@ -398,10 +434,31 @@ fn tag_and_remote_branch_pushes_take_credentials_and_map_network_failures() {
         &["push", "-q", "origin", "HEAD:refs/heads/gone-soon"],
     );
     let (reg, id) = registered(&fx.path);
-    fetch_inner(&reg, id, NetworkAuth::None).unwrap();
-    push_tag_inner(&reg, id, "origin", "v1", NetworkAuth::None).unwrap();
-    delete_remote_tag_inner(&reg, id, "origin", "v1", NetworkAuth::None).unwrap();
-    let err = delete_remote_tag_inner(&reg, id, "origin", "v1", NetworkAuth::None).unwrap_err();
+    fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap();
+    push_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
+    delete_remote_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
+    let err = delete_remote_tag_inner(
+        &reg,
+        id,
+        "origin",
+        "v1",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(
         err.network.map(|n| (n.verb, n.kind)),
@@ -412,7 +469,14 @@ fn tag_and_remote_branch_pushes_take_credentials_and_map_network_failures() {
         "{}",
         err.message
     );
-    delete_remote_branch_inner(&reg, id, "origin", "gone-soon", NetworkAuth::None).unwrap();
+    delete_remote_branch_inner(
+        &reg,
+        id,
+        "origin",
+        "gone-soon",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert!(
         Repository::open_bare(&fx.bare)
             .unwrap()
@@ -500,9 +564,16 @@ fn remote_commands_map_the_new_kinds() {
         branch: "b".into(),
     };
     assert_eq!(
-        push_inner(&reg, id, &set_upstream, false, &head, NetworkAuth::None)
-            .unwrap_err()
-            .kind,
+        push_inner(
+            &reg,
+            id,
+            &set_upstream,
+            false,
+            &head,
+            NetworkAuth::Accounts(common::empty_store())
+        )
+        .unwrap_err()
+        .kind,
         AppErrorKind::RemoteNotFound
     );
 }
@@ -523,7 +594,13 @@ fn fetch_remote_inner_fetches_only_the_named_remote() {
     let before = tip(&fx.path, &format!("refs/remotes/origin/{}", fx.head));
     push_from_other(&fx, "b.txt", "b\n");
     let (reg, id) = registered(&fx.path);
-    fetch_remote_inner(&reg, id, "mirror", NetworkAuth::None).unwrap();
+    fetch_remote_inner(
+        &reg,
+        id,
+        "mirror",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap();
     assert_eq!(
         tip(&fx.path, &format!("refs/remotes/mirror/{}", fx.head)),
         before
@@ -538,7 +615,13 @@ fn fetch_remote_inner_fetches_only_the_named_remote() {
 fn fetch_remote_inner_of_an_unknown_remote_is_remote_not_found() {
     let (_d, path) = common::temp_repo_with_commit();
     let (reg, id) = registered(&path);
-    let err = fetch_remote_inner(&reg, id, "nope", NetworkAuth::None).unwrap_err();
+    let err = fetch_remote_inner(
+        &reg,
+        id,
+        "nope",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(
         (err.kind, err.network),
         (AppErrorKind::RemoteNotFound, None)
@@ -549,7 +632,13 @@ fn fetch_remote_inner_of_an_unknown_remote_is_remote_not_found() {
 fn fetch_remote_inner_with_a_leading_dash_is_remote_not_found() {
     let fx = fx();
     let (reg, id) = registered(&fx.path);
-    let err = fetch_remote_inner(&reg, id, "--all", NetworkAuth::None).unwrap_err();
+    let err = fetch_remote_inner(
+        &reg,
+        id,
+        "--all",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
 }
 
@@ -564,7 +653,13 @@ fn fetch_remote_inner_failure_maps_to_network_failed_with_the_fetch_verb() {
         .remote("gone", "/nonexistent/gone.git")
         .unwrap();
     let (reg, id) = registered(&fx.path);
-    let err = fetch_remote_inner(&reg, id, "gone", NetworkAuth::None).unwrap_err();
+    let err = fetch_remote_inner(
+        &reg,
+        id,
+        "gone",
+        NetworkAuth::Accounts(common::empty_store()),
+    )
+    .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
     assert_eq!(
         err.network.map(|n| (n.verb, n.kind)),
@@ -622,7 +717,7 @@ fn a_push_declined_by_a_hook_is_remote_rejected_with_the_hooks_error_text_as_the
         &PushTarget::Upstream,
         false,
         &fx.head,
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NetworkFailed);
@@ -655,7 +750,7 @@ fn a_push_declined_without_an_error_line_uses_the_parenthesised_reason_and_seria
         &PushTarget::Upstream,
         false,
         &fx.head,
-        NetworkAuth::None,
+        NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap_err();
     let value = serde_json::to_value(&err).unwrap();
@@ -676,23 +771,37 @@ fn a_push_declined_without_an_error_line_uses_the_parenthesised_reason_and_seria
 fn remote_commands_report_unknown_repo() {
     let reg = RepoRegistry::default();
     let kinds = [
-        fetch_inner(&reg, MISSING_ID, NetworkAuth::None)
-            .unwrap_err()
-            .kind,
-        fetch_remote_inner(&reg, MISSING_ID, "origin", NetworkAuth::None)
-            .unwrap_err()
-            .kind,
+        fetch_inner(
+            &reg,
+            MISSING_ID,
+            NetworkAuth::Accounts(common::empty_store()),
+        )
+        .unwrap_err()
+        .kind,
+        fetch_remote_inner(
+            &reg,
+            MISSING_ID,
+            "origin",
+            NetworkAuth::Accounts(common::empty_store()),
+        )
+        .unwrap_err()
+        .kind,
         pull_default_mode_inner(&reg, MISSING_ID).unwrap_err().kind,
-        pull_inner(&reg, MISSING_ID, PullMode::Merge, NetworkAuth::None)
-            .unwrap_err()
-            .kind,
+        pull_inner(
+            &reg,
+            MISSING_ID,
+            PullMode::Merge,
+            NetworkAuth::Accounts(common::empty_store()),
+        )
+        .unwrap_err()
+        .kind,
         push_inner(
             &reg,
             MISSING_ID,
             &PushTarget::Upstream,
             false,
             "main",
-            NetworkAuth::None,
+            NetworkAuth::Accounts(common::empty_store()),
         )
         .unwrap_err()
         .kind,

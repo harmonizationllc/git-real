@@ -204,3 +204,135 @@ fn long_provider_messages_are_cut_to_200_chars() {
     assert_eq!(message.chars().count(), 201);
     assert!(message.ends_with('…'));
 }
+
+// Item 1: `Token` lives in the neutral `token` module; `hosting::Token` is a re-export.
+mod neutral_token {
+    use git_real_core::GitError;
+    use git_real_core::token::Token;
+
+    #[test]
+    fn token_module_round_trips_a_valid_token() {
+        assert_eq!(Token::new("ghp_abc").unwrap().expose_secret(), "ghp_abc");
+    }
+
+    #[test]
+    fn token_module_accepts_exactly_4096_bytes() {
+        assert_eq!(
+            Token::new(&"a".repeat(4096)).unwrap().expose_secret().len(),
+            4096
+        );
+    }
+
+    #[test]
+    fn token_module_rejects_empty_token() {
+        assert!(matches!(Token::new(""), Err(GitError::InvalidToken)));
+    }
+
+    #[test]
+    fn token_module_rejects_more_than_4096_bytes() {
+        assert!(matches!(
+            Token::new(&"a".repeat(4097)),
+            Err(GitError::InvalidToken)
+        ));
+    }
+
+    #[test]
+    fn token_module_rejects_line_feed() {
+        assert!(matches!(Token::new("a\nb"), Err(GitError::InvalidToken)));
+    }
+
+    #[test]
+    fn token_module_rejects_carriage_return() {
+        assert!(matches!(Token::new("a\rb"), Err(GitError::InvalidToken)));
+    }
+
+    #[test]
+    fn token_module_rejects_nul() {
+        assert!(matches!(Token::new("a\0b"), Err(GitError::InvalidToken)));
+    }
+
+    #[test]
+    fn token_module_debug_is_redacted() {
+        assert_eq!(
+            format!("{:?}", Token::new("ghp_SECRET").unwrap()),
+            r#"Token("***")"#
+        );
+    }
+
+    #[test]
+    fn hosting_token_is_the_same_type_as_the_token_module_token() {
+        assert_eq!(
+            std::any::TypeId::of::<git_real_core::token::Token>(),
+            std::any::TypeId::of::<git_real_core::hosting::Token>()
+        );
+    }
+}
+
+// Item 4: `post_json` builds an authenticated JSON POST request.
+mod post_json_builder {
+    use git_real_core::hosting::http::post_json;
+    use git_real_core::hosting::{Method, Request, Token};
+
+    const SECRET: &str = "ghp_TOPSECRET123";
+    const URL: &str = "https://api.github.com/repos/o/r/pulls";
+
+    fn body() -> serde_json::Value {
+        serde_json::json!({"title": "t", "head": "h", "base": "b"})
+    }
+    fn built() -> Request {
+        post_json(URL.to_owned(), &Token::new(SECRET).unwrap(), &body())
+    }
+    fn header_values(req: &Request, name: &str) -> Vec<String> {
+        req.headers
+            .iter()
+            .filter(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    #[test]
+    fn should_use_post_when_building_a_json_request() {
+        assert_eq!(built().method, Method::Post);
+    }
+
+    #[test]
+    fn should_pass_the_url_through_unchanged() {
+        assert_eq!(built().url, URL);
+    }
+
+    #[test]
+    fn should_send_one_bearer_authorization_header() {
+        assert_eq!(
+            header_values(&built(), "Authorization"),
+            vec![format!("Bearer {SECRET}")]
+        );
+    }
+
+    #[test]
+    fn should_send_one_json_accept_header() {
+        assert_eq!(
+            header_values(&built(), "Accept"),
+            vec!["application/json".to_owned()]
+        );
+    }
+
+    #[test]
+    fn should_send_one_json_content_type_header() {
+        assert_eq!(
+            header_values(&built(), "Content-Type"),
+            vec!["application/json".to_owned()]
+        );
+    }
+
+    #[test]
+    fn should_serialize_the_body_with_to_string() {
+        assert_eq!(built().body, Some(body().to_string()));
+    }
+
+    #[test]
+    fn should_redact_the_token_in_debug_output() {
+        let dbg = format!("{:?}", built());
+        assert!(!dbg.contains(SECRET), "{dbg}");
+        assert!(dbg.contains("***"), "{dbg}");
+    }
+}
