@@ -377,12 +377,17 @@ pub fn no_accounts() -> (TempDir, HostingStore) {
     (dir, store)
 }
 
-/// A leaked, empty `HostingStore` for tests that need a `NetworkAuth::Accounts` borrow with no
-/// accounts (so `resolve` yields `None`) without threading a `TempDir` through the test.
+/// A shared, empty `HostingStore` for tests that need a `NetworkAuth::Accounts` borrow with no
+/// accounts (so `resolve` yields `None`). Its file path does not exist and is never written, so
+/// nothing is created on disk. Do not add accounts to it: it is shared by the whole test binary.
 pub fn empty_store() -> &'static HostingStore {
-    let (dir, store) = no_accounts();
-    std::mem::forget(dir);
-    Box::leak(Box::new(store))
+    static STORE: std::sync::OnceLock<HostingStore> = std::sync::OnceLock::new();
+    STORE.get_or_init(|| {
+        HostingStore::load(
+            PathBuf::from("/nonexistent/git-real-empty-store/hosting_accounts.json"),
+            Box::new(MemoryTokenStore::default()),
+        )
+    })
 }
 
 /// A GitHub account on `github.com` for `username`, with no display name or avatar.

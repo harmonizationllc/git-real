@@ -110,6 +110,20 @@ fn the_github_request_carries_bearer_accept_and_api_version() {
 }
 
 #[test]
+fn an_accept_among_extra_headers_replaces_the_default_accept() {
+    let t = FakeTransport::new().reply(200, include_str!("fixtures/hosting/github_user.json"));
+    user(&t).unwrap();
+    let accepts: Vec<String> = t.requests()[0]
+        .headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case("accept"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    // exactly one, and it is the provider's, not the default application/json
+    assert_eq!(accepts, ["application/vnd.github+json"]);
+}
+
+#[test]
 fn statuses_map_to_hosting_errors() {
     let auth =
         user(&FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#)).unwrap_err();
@@ -224,6 +238,16 @@ mod neutral_token {
     }
 
     #[test]
+    fn token_module_limit_counts_bytes_not_chars() {
+        // 2049 two-byte chars are 4098 bytes: over the limit although under 4096 chars.
+        assert!(matches!(
+            Token::new(&"é".repeat(2049)),
+            Err(GitError::InvalidToken)
+        ));
+        assert!(Token::new(&"é".repeat(2048)).is_ok());
+    }
+
+    #[test]
     fn token_module_rejects_empty_token() {
         assert!(matches!(Token::new(""), Err(GitError::InvalidToken)));
     }
@@ -322,6 +346,12 @@ mod post_json_builder {
             header_values(&built(), "Content-Type"),
             vec!["application/json".to_owned()]
         );
+    }
+
+    #[test]
+    fn should_order_headers_authorization_accept_content_type() {
+        let names: Vec<String> = built().headers.into_iter().map(|(k, _)| k).collect();
+        assert_eq!(names, ["Authorization", "Accept", "Content-Type"]);
     }
 
     #[test]
