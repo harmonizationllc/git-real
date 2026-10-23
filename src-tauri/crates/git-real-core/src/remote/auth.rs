@@ -15,7 +15,7 @@ use serde::Deserialize;
 
 use crate::error::GitError;
 use crate::git_cli;
-use crate::hosting::Token;
+use crate::token::Token;
 
 /// The inline helper. `printf '%s\n'`, not `echo`: dash's `echo` expands
 /// backslash escapes and would corrupt a token. Only `get` is answered.

@@ -3,10 +3,11 @@
 
 use serde::Deserialize;
 
-use super::http::{Token, Transport, get, parse_timestamp, percent_encode, send_json, unexpected};
+use super::http::{Transport, get, parse_timestamp, percent_encode, send_json, unexpected};
 use super::model::{CiState, PullRequest, UserInfo};
 use super::provider::{Provider, RepoRef, is_plain_segment};
 use crate::error::GitError;
+use crate::token::Token;
 
 #[derive(Deserialize)]
 struct WireUser {

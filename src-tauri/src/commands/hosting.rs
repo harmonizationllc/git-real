@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use git_real_core::hosting::provider::{detect, validate_host};
-use git_real_core::hosting::ureq_transport::UreqTransport;
 use git_real_core::hosting::{
     self, Account, CheckoutPlan, CheckoutPrOutcome, Provider, PullRequest, RepoContext, RepoRef,
     Token, Transport,
@@ -143,7 +142,7 @@ pub async fn hosting_list_accounts(
 #[tauri::command]
 pub async fn hosting_connect(
     hosting: State<'_, Arc<HostingStore>>,
-    transport: State<'_, Arc<UreqTransport>>,
+    transport: State<'_, Arc<dyn Transport>>,
     provider: Provider,
     host: Option<String>,
     token: String,
@@ -178,7 +177,7 @@ pub async fn hosting_repo_context(
 pub async fn hosting_list_pull_requests(
     reg: State<'_, Arc<RepoRegistry>>,
     hosting: State<'_, Arc<HostingStore>>,
-    transport: State<'_, Arc<UreqTransport>>,
+    transport: State<'_, Arc<dyn Transport>>,
     id: RepoId,
     page: u32,
 ) -> Result<Vec<PullRequest>, AppError> {
@@ -192,7 +191,7 @@ pub async fn hosting_list_pull_requests(
 pub async fn hosting_checkout_pull_request(
     reg: State<'_, Arc<RepoRegistry>>,
     hosting: State<'_, Arc<HostingStore>>,
-    transport: State<'_, Arc<UreqTransport>>,
+    transport: State<'_, Arc<dyn Transport>>,
     id: RepoId,
     number: u64,
     reset: bool,

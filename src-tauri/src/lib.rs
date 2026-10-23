@@ -8,6 +8,7 @@ pub mod watcher;
 
 use std::sync::Arc;
 
+use git_real_core::hosting::Transport;
 use git_real_core::hosting::ureq_transport::UreqTransport;
 use tauri::Manager;
 
@@ -17,13 +18,14 @@ use crate::state::{RepoRegistry, WatcherRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let transport: Arc<dyn Transport> = Arc::new(UreqTransport::new());
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(Arc::new(RepoRegistry::default()))
         .manage(Arc::new(WatcherRegistry::default()))
-        .manage(Arc::new(UreqTransport::new()))
+        .manage(transport)
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(Arc::new(RecentStore::load(dir.join("recent-repos.json"))));

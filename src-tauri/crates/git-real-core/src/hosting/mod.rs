@@ -14,7 +14,8 @@ pub mod provider;
 pub mod ureq_transport;
 
 pub use crate::model::CheckoutPrOutcome;
-pub use http::{Method, Request, Response, Token, Transport};
+pub use crate::token::Token;
+pub use http::{Method, Request, Response, Transport};
 pub use model::{Account, CiState, PullRequest, RepoContext, UserInfo};
 pub use provider::{Provider, RepoRef};
 

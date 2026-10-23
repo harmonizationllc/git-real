@@ -37,11 +37,9 @@ pub fn credentials_from_arg(arg: Option<CredentialsArg>) -> Result<Option<Creden
         .map_err(AppError::from)
 }
 
-/// How a network operation authenticates. Never glob-import its variants: `None` would shadow
-/// `Option::None`.
+/// How a network operation authenticates.
 #[derive(Clone, Copy)]
 pub enum NetworkAuth<'a> {
-    None,
     Explicit(&'a Credentials),
     Accounts(&'a HostingStore),
 }
@@ -55,7 +53,6 @@ impl<'a> NetworkAuth<'a> {
     /// The credentials to run with once the operation's `urls` are known.
     pub fn resolve(&self, urls: &[String]) -> Option<Credentials> {
         match self {
-            Self::None => None,
             Self::Explicit(c) => Some((*c).clone()),
             Self::Accounts(store) => store.credentials_for(urls),
         }

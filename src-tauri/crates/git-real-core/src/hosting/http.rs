@@ -1,4 +1,4 @@
-//! The HTTP seam of the hosting domain: tokens, requests and responses, the [`Transport`]
+//! The HTTP seam of the hosting domain: requests and responses, the [`Transport`]
 //! port, and the mapping of a provider's status and body to a result (spec §4.2).
 //!
 //! A token never reaches a `Debug` text or an error: [`Token`] and [`Request`] redact it, and
@@ -11,35 +11,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::GitError;
+use crate::token::Token;
 
-const MAX_TOKEN_BYTES: usize = 4096;
 const MAX_MESSAGE_CHARS: usize = 200;
-
-/// A personal access token. No `Display`, no serde: it leaves only through
-/// [`Token::expose_secret`].
-#[derive(Clone)]
-pub struct Token(String);
-
-impl Token {
-    /// `InvalidToken` unless `s` is non-empty, at most 4096 bytes, and free of line breaks
-    /// and NUL.
-    pub fn new(s: &str) -> Result<Self, GitError> {
-        if s.is_empty() || s.len() > MAX_TOKEN_BYTES || s.contains(['\n', '\r', '\0']) {
-            return Err(GitError::InvalidToken);
-        }
-        Ok(Self(s.to_owned()))
-    }
-
-    pub fn expose_secret(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Token").field(&"***").finish()
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -174,10 +148,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 /// A GET with `Authorization: Bearer <token>` and `Accept: application/json`; `extra` headers
 /// are added after, and an `accept` among them replaces the default.
 pub(crate) fn get(url: String, token: &Token, extra: &[(&str, &str)]) -> Request {
-    let mut headers = vec![(
-        "Authorization".to_owned(),
-        format!("Bearer {}", token.expose_secret()),
-    )];
+    let mut headers = vec![authorization(token)];
     if !extra.iter().any(|(k, _)| k.eq_ignore_ascii_case("accept")) {
         headers.push(("Accept".to_owned(), "application/json".to_owned()));
     }
@@ -192,6 +163,29 @@ pub(crate) fn get(url: String, token: &Token, extra: &[(&str, &str)]) -> Request
         headers,
         body: None,
     }
+}
+
+/// A POST of `body` as JSON, with `Authorization: Bearer <token>`, `Accept: application/json`
+/// and `Content-Type: application/json`.
+pub fn post_json(url: String, token: &Token, body: &Value) -> Request {
+    Request {
+        method: Method::Post,
+        url,
+        headers: vec![
+            authorization(token),
+            ("Accept".to_owned(), "application/json".to_owned()),
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+        ],
+        body: Some(body.to_string()),
+    }
+}
+
+/// The `Authorization: Bearer <token>` header.
+fn authorization(token: &Token) -> (String, String) {
+    (
+        "Authorization".to_owned(),
+        format!("Bearer {}", token.expose_secret()),
+    )
 }
 
 /// Sends `req` and parses a 2xx body as `T`; any other status becomes the matching hosting
