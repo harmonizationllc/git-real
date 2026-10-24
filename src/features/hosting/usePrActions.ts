@@ -32,22 +32,19 @@ export function usePrActions(repoId: RepoId): UsePrActions {
   const network = useNetworkAction(repoId);
   const [resetRequest, setResetRequest] = useState<ResetRequest | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const links = useLinkActions();
-  const [checkoutError, setCheckoutError] = useState<AppError | null>(null);
-  const clearError = () => {
-    setCheckoutError(null);
-    links.clearError();
-  };
+  // One error slot: a failed checkout, open or copy replaces it, so the newest error wins.
+  const [error, setError] = useState<AppError | null>(null);
+  const links = useLinkActions(setError);
 
   // Checkout fetches, so it goes through the network gate, which also refreshes the list.
   const checkout = async (pr: PullRequest, reset = false) => {
     setResetRequest(null);
     setStatus(null);
-    clearError();
+    setError(null);
     const result = await network.run((c) =>
       hostingCheckoutPullRequest(repoId, pr.number, reset, c),
     );
-    if (result.status === "failed") setCheckoutError(result.error);
+    if (result.status === "failed") setError(result.error);
     else if (result.status === "ok") {
       const outcome = result.value;
       // The outcome names the branch it landed on: a fork pull request lands on pr/<n>.
@@ -63,9 +60,8 @@ export function usePrActions(repoId: RepoId): UsePrActions {
     resetRequest,
     clearResetRequest: () => setResetRequest(null),
     status,
-    // A checkout failure and a failed open or copy share the one error slot.
-    error: checkoutError ?? links.error,
-    clearError,
+    error,
+    clearError: () => setError(null),
     pending: network.pending,
     prompt: network.prompt,
   };

@@ -10,10 +10,13 @@ export interface UseLinkActions {
   clearError(): void;
 }
 
-/** Opens or copies a provider URL; a failure lands in `error`. */
-export function useLinkActions(): UseLinkActions {
+/**
+ * Opens or copies a provider URL. A failure lands in `error`, or goes to `onError` when given
+ * (then `error` stays null), so a caller can keep one error slot of its own.
+ */
+export function useLinkActions(onError?: (e: AppError) => void): UseLinkActions {
   const [error, setError] = useState<AppError | null>(null);
-  const fail = (e: unknown) => setError(toAppError(e));
+  const fail = (e: unknown) => (onError ?? setError)(toAppError(e));
 
   return {
     open: (url) => void openExternal(url).catch(fail),
