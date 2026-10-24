@@ -104,6 +104,33 @@ fn several_commits_ahead_humanize_the_branch_name() {
     );
 }
 
+// One commit whose message is empty has no subject to use, so the branch name speaks.
+#[test]
+fn a_single_commit_with_an_empty_message_uses_the_humanized_branch_name() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, head) = fx();
+    on_branch(&path, "feature/add-login");
+    {
+        let repo = Repository::open(&path).unwrap();
+        let sig = Signature::now("Test User", "test@example.com").unwrap();
+        let tree = repo.head().unwrap().peel_to_tree().unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "", &tree, &[&parent])
+            .unwrap();
+    }
+
+    assert_eq!(
+        draft(&path, &head).unwrap(),
+        PullRequestDraft {
+            title: "Add login".into(),
+            body: String::new(),
+            ahead: 1
+        }
+    );
+}
+
 #[test]
 fn no_commits_ahead_is_ahead_zero_with_the_humanized_name() {
     if !common::git_available() {

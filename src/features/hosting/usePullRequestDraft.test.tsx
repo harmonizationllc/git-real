@@ -25,6 +25,12 @@ describe("usePullRequestDraft", () => {
     expect([result.current.draft, result.current.settled]).toEqual([undefined, false]);
   });
 
+  it("should create no cache entry while the target is null", async () => {
+    const { queryClient } = renderHookWithProviders(() => usePullRequestDraft(1, null));
+    await act(() => Promise.resolve());
+    expect(queryClient.getQueryCache().findAll({ queryKey: ["repo", 1, "prDraft"] })).toEqual([]);
+  });
+
   it("should request the draft for the repo and target once", async () => {
     renderHookWithProviders(() => usePullRequestDraft(3, "develop"));
     await waitFor(() =>

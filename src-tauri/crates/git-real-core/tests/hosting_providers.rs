@@ -596,6 +596,21 @@ fn an_all_whitespace_issue_query_sends_the_no_query_url() {
     }
 }
 
+// A Bitbucket query that is only quotes and backslashes is empty once they are stripped, so
+// it sends the plain filter rather than `title ~ ""`.
+#[test]
+fn bitbucket_a_query_of_only_quotes_sends_the_plain_filter() {
+    let t = FakeTransport::new().reply(200, r#"{"values":[]}"#);
+
+    hosting::list_issues(&t, &bb(), &tok(), "\"\\\"", 1).unwrap();
+
+    let url = t.requests()[0].url.clone();
+    assert!(
+        url.ends_with(&format!("&q={}", enc(r#"(state="new" OR state="open")"#))),
+        "{url}"
+    );
+}
+
 #[test]
 fn an_issue_list_missing_a_required_field_is_an_unexpected_response() {
     for (r, body, host) in [

@@ -142,6 +142,38 @@ describe("CreatePullRequestDialog loading", () => {
   });
 });
 
+// Contract: a failed branch or remote read ends the loading with the error and a way out.
+describe("CreatePullRequestDialog load failures", () => {
+  it("should show the error and a Close button when the branch list fails to load", async () => {
+    vi.mocked(listBranches).mockRejectedValue(hostingError("revisionNotFound", "branches broke"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText("branches broke")).toBeInTheDocument();
+  });
+
+  it("should close from the Close button when the branch list fails to load", async () => {
+    vi.mocked(listBranches).mockRejectedValue(hostingError("revisionNotFound", "branches broke"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("branches broke");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should stop showing Loading… when the branch list fails to load", async () => {
+    vi.mocked(listBranches).mockRejectedValue(hostingError("revisionNotFound", "branches broke"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("branches broke");
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("should show the error and a Close button when the remote list fails to load", async () => {
+    vi.mocked(listRemotes).mockRejectedValue(hostingError("revisionNotFound", "remotes broke"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText("remotes broke")).toBeInTheDocument();
+    expect(within(dialog()).getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+});
+
 // Contract: Source is the HEAD branch; Target lists origin's other branches, default per provider.
 describe("CreatePullRequestDialog source and target", () => {
   it("should show the HEAD branch as the Source", async () => {

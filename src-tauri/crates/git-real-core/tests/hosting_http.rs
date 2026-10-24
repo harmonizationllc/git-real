@@ -404,3 +404,14 @@ fn an_array_message_with_a_non_string_entry_is_skipped() {
     let err = user(&FakeTransport::new().reply(409, r#"{"message":[]}"#)).unwrap_err();
     assert!(matches!(err, GitError::HostingRejected { ref message } if message == "HTTP 409"));
 }
+
+// A blank `errors[0].message` is no message: the top-level `message` is what the user reads.
+#[test]
+fn an_empty_errors_message_falls_back_to_message() {
+    let body = r#"{"message":"Validation Failed","errors":[{"message":""}]}"#;
+    let err = user(&FakeTransport::new().reply(422, body)).unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingRejected { ref message } if message == "Validation Failed"),
+        "{err:?}"
+    );
+}

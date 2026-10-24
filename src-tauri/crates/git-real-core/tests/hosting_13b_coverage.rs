@@ -836,3 +836,48 @@ fn nine_hundred_ninety_nine_commits_ahead_is_reported_exactly() {
 
     assert_eq!(draft(&path, &head).unwrap().ahead, 999);
 }
+
+// ------------------------------------------------------------------ new pull request checks
+
+fn valid_new_pr() -> NewPullRequest {
+    NewPullRequest {
+        title: "T".into(),
+        body: "B".into(),
+        source_branch: "feature/login".into(),
+        target_branch: "main".into(),
+    }
+}
+
+// The command layer validates before it pushes, so the check is a public function.
+#[test]
+fn validate_new_pull_request_checks_both_branch_names() {
+    assert!(hosting::validate_new_pull_request(&valid_new_pr()).is_ok());
+
+    let bad_source = NewPullRequest {
+        source_branch: "-x".into(),
+        ..valid_new_pr()
+    };
+    let err = hosting::validate_new_pull_request(&bad_source).unwrap_err();
+    assert!(
+        matches!(err, GitError::InvalidBranchName(ref s) if s == "-x"),
+        "{err:?}"
+    );
+
+    let bad_target = NewPullRequest {
+        target_branch: "a b".into(),
+        ..valid_new_pr()
+    };
+    let err = hosting::validate_new_pull_request(&bad_target).unwrap_err();
+    assert!(
+        matches!(err, GitError::InvalidBranchName(ref s) if s == "a b"),
+        "{err:?}"
+    );
+
+    // create_pull_request keeps refusing the same inputs before any request.
+    for new in [bad_source, bad_target] {
+        let t = FakeTransport::new();
+        let err = hosting::create_pull_request(&t, &gh(), &tok(), &new).unwrap_err();
+        assert!(matches!(err, GitError::InvalidBranchName(_)), "{err:?}");
+        assert!(t.requests().is_empty());
+    }
+}

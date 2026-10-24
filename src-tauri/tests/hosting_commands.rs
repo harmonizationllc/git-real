@@ -1580,3 +1580,25 @@ fn create_with_a_push_for_a_branch_that_is_not_checked_out_pushes_nothing() {
     assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), None);
     assert_eq!(ref_oid(&fx.bare, "refs/heads/other"), None);
 }
+
+// An invalid target is refused before the push, so nothing is published for a PR that cannot
+// be opened.
+#[test]
+fn create_with_an_invalid_target_pushes_nothing() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new();
+    let mut request = create_request(&fx, set_upstream_origin_feat());
+    request.pr.target_branch = "a b".to_owned();
+
+    let err = fx.create(&t, &request).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), None);
+    assert!(t.requests().is_empty());
+}
