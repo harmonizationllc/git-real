@@ -366,3 +366,41 @@ mod post_json_builder {
         assert!(dbg.contains("***"), "{dbg}");
     }
 }
+
+// GR-13b Review Focus 1: a rejection whose text is not a plain top-level `message` string
+// still surfaces the sentence the user has to read.
+#[test]
+fn github_validation_errors_surface_the_first_error_message() {
+    let body = r#"{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"A pull request already exists for o:feat."}]}"#;
+    let err = user(&FakeTransport::new().reply(422, body)).unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingRejected { ref message } if message == "A pull request already exists for o:feat.")
+    );
+}
+
+#[test]
+fn gitlab_array_messages_are_joined() {
+    let body = r#"{"message":["Another open merge request already exists for this source branch: !5","Title can't be blank"]}"#;
+    let err = user(&FakeTransport::new().reply(409, body)).unwrap_err();
+    assert!(matches!(err, GitError::HostingRejected { ref message }
+        if message == "Another open merge request already exists for this source branch: !5; Title can't be blank"));
+}
+
+#[test]
+fn an_errors_entry_without_a_message_falls_back_to_message() {
+    let body =
+        r#"{"message":"Validation Failed","errors":[{"code":"missing_field","field":"title"}]}"#;
+    let err = user(&FakeTransport::new().reply(422, body)).unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingRejected { ref message } if message == "Validation Failed")
+    );
+}
+
+#[test]
+fn an_array_message_with_a_non_string_entry_is_skipped() {
+    // ["a", 1] -> only the strings are joined; [] -> falls through to HTTP <status>.
+    let err = user(&FakeTransport::new().reply(409, r#"{"message":["a",1]}"#)).unwrap_err();
+    assert!(matches!(err, GitError::HostingRejected { ref message } if message == "a"));
+    let err = user(&FakeTransport::new().reply(409, r#"{"message":[]}"#)).unwrap_err();
+    assert!(matches!(err, GitError::HostingRejected { ref message } if message == "HTTP 409"));
+}

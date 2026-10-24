@@ -40,10 +40,14 @@ import {
   getStatus,
   hostingCheckoutPullRequest,
   hostingConnect,
+  hostingCreatePullRequest,
   hostingDisconnect,
   hostingListAccounts,
+  hostingListIssues,
   hostingListPullRequests,
+  hostingPullRequestDraft,
   hostingRepoContext,
+  hostingRepoInfo,
   initRepo,
   listBranches,
   listRemotes,
@@ -80,6 +84,7 @@ import {
 import { isAppError } from "./errors";
 import type {
   BranchList,
+  CreatePrRequest,
   Credentials,
   RemoteInfo,
   FastForwardCheck,
@@ -1302,6 +1307,123 @@ describe("hosting command wrappers", () => {
     ["hostingRepoContext", () => hostingRepoContext(1)],
     ["hostingListPullRequests", () => hostingListPullRequests(1, 1)],
     ["hostingCheckoutPullRequest", () => hostingCheckoutPullRequest(1, 7, false)],
+  ])("%s rejects with the backend AppError", async (_name, call) => {
+    mockThrowing(failure);
+    await expect(call()).rejects.toEqual(failure);
+  });
+});
+
+// Contract: the four GR-13b hosting wrappers invoke the pinned command with every key, null included.
+describe("GR-13b hosting command wrappers", () => {
+  const request: CreatePrRequest = {
+    branch: "feat",
+    push: { kind: "setUpstream", remote: "origin", branch: "feat" },
+    pr: { title: "T", body: "B", sourceBranch: "feat", targetBranch: "main" },
+  };
+  const pr: PullRequest = {
+    number: 21,
+    title: "T",
+    author: "octo",
+    sourceBranch: "feat",
+    targetBranch: "main",
+    fromFork: false,
+    forkCloneUrl: null,
+    draft: false,
+    ciState: "none",
+    updatedAt: 1700000000,
+    webUrl: "https://github.com/o/r/pull/21",
+  };
+
+  it("hostingRepoInfo sends id and returns the repository info", async () => {
+    const info = { defaultBranch: "main", issuesEnabled: true };
+    const calls = mockWith(info);
+    const result = await hostingRepoInfo(3);
+    expect(calls).toEqual([{ cmd: "hosting_repo_info", args: { id: 3 } }]);
+    expect(result).toEqual(info);
+  });
+
+  it("hostingRepoInfo resolves a null default branch", async () => {
+    mockWith({ defaultBranch: null, issuesEnabled: false });
+    await expect(hostingRepoInfo(3)).resolves.toEqual({
+      defaultBranch: null,
+      issuesEnabled: false,
+    });
+  });
+
+  it("hostingListIssues sends id, query and page and returns the issues", async () => {
+    const issue = {
+      number: 7,
+      title: "Login fails",
+      author: "alice",
+      labels: ["bug"],
+      updatedAt: 1700000000,
+      webUrl: "https://github.com/o/r/issues/7",
+    };
+    const calls = mockWith([issue]);
+    const result = await hostingListIssues(3, "crash", 2);
+    expect(calls).toEqual([
+      { cmd: "hosting_list_issues", args: { id: 3, query: "crash", page: 2 } },
+    ]);
+    expect(result).toEqual([issue]);
+  });
+
+  it("hostingListIssues sends an empty query as an empty string", async () => {
+    const calls = mockWith([]);
+    await hostingListIssues(3, "", 1);
+    expect(calls[0]?.args).toEqual({ id: 3, query: "", page: 1 });
+  });
+
+  it("hostingPullRequestDraft sends id and target and returns the draft", async () => {
+    const draft = { title: "Add thing", body: "Body", ahead: 1 };
+    const calls = mockWith(draft);
+    const result = await hostingPullRequestDraft(3, "main");
+    expect(calls).toEqual([{ cmd: "hosting_pull_request_draft", args: { id: 3, target: "main" } }]);
+    expect(result).toEqual(draft);
+  });
+
+  it("hostingCreatePullRequest sends credentials as null by default", async () => {
+    const calls = mockWith(pr);
+    await hostingCreatePullRequest(3, request);
+    expect(calls).toEqual([
+      {
+        cmd: "hosting_create_pull_request",
+        args: { id: 3, request, credentials: null },
+      },
+    ]);
+  });
+
+  it("hostingCreatePullRequest sends typed credentials", async () => {
+    const creds: Credentials = { origin: "https://github.com", username: "me", token: "t" };
+    const calls = mockWith(pr);
+    await hostingCreatePullRequest(3, request, creds);
+    expect(calls[0]?.args).toEqual({ id: 3, request, credentials: creds });
+  });
+
+  it("hostingCreatePullRequest sends credentials as null when passed null", async () => {
+    const calls = mockWith(pr);
+    await hostingCreatePullRequest(3, request, null);
+    expect(calls[0]?.args).toEqual({ id: 3, request, credentials: null });
+  });
+
+  it("hostingCreatePullRequest sends a null push through", async () => {
+    const calls = mockWith(pr);
+    const noPush: CreatePrRequest = { ...request, push: null };
+    await hostingCreatePullRequest(3, noPush);
+    expect(calls[0]?.args).toEqual({ id: 3, request: noPush, credentials: null });
+  });
+
+  it("hostingCreatePullRequest resolves to the pull request", async () => {
+    mockWith(pr);
+    await expect(hostingCreatePullRequest(3, request)).resolves.toEqual(pr);
+  });
+
+  const failure = { kind: "hostingRejected", message: "A pull request already exists." };
+
+  it.each([
+    ["hostingRepoInfo", () => hostingRepoInfo(3)],
+    ["hostingListIssues", () => hostingListIssues(3, "q", 1)],
+    ["hostingPullRequestDraft", () => hostingPullRequestDraft(3, "main")],
+    ["hostingCreatePullRequest", () => hostingCreatePullRequest(3, request)],
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing(failure);
     await expect(call()).rejects.toEqual(failure);

@@ -8,11 +8,15 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{FakeTransport, MemoryTokenStore, github_account, hosting_store, hosting_store_with};
-use git_real_core::hosting::{CheckoutPrOutcome, Provider, RepoRef, Token};
-use git_real_core::{Credentials, RepoSession};
+use git_real_core::hosting::{
+    CheckoutPrOutcome, HostedRepoInfo, Method, NewPullRequest, Provider, RepoRef, Token,
+};
+use git_real_core::{Credentials, PullRequestDraft, PushTarget, RepoSession};
 use git_real_lib::commands::hosting::{
-    hosting_checkout_pull_request_inner, hosting_connect_inner, hosting_disconnect_inner,
-    hosting_list_accounts_inner, hosting_list_pull_requests_inner, hosting_repo_context_inner,
+    CreatePrRequest, hosting_checkout_pull_request_inner, hosting_connect_inner,
+    hosting_create_pull_request_inner, hosting_disconnect_inner, hosting_list_accounts_inner,
+    hosting_list_issues_inner, hosting_list_pull_requests_inner, hosting_pull_request_draft_inner,
+    hosting_repo_context_inner, hosting_repo_info_inner,
 };
 use git_real_lib::commands::remote::{NetworkAuth, fetch_inner, list_remotes_inner};
 use git_real_lib::error::AppErrorKind;
@@ -1018,4 +1022,442 @@ fn fetch_with_account_auth_updates_tracking_refs_through_the_rewritten_url() {
     push_branch_to_bare(&fx.bare, "feature");
     fetch_inner(&fx.reg, fx.id, NetworkAuth::new(None, &fx.store)).unwrap();
     assert!(ref_oid(&fx.path, "refs/remotes/origin/feature").is_some());
+}
+
+// --- GR-13b: repository info, issues, PR draft, create pull request ---
+
+impl Hosted {
+    /// Switches to a new local branch `name` at the current HEAD.
+    fn start_branch(&self, name: &str) {
+        git(&self.path, &["switch", "-q", "-c", name]);
+    }
+
+    /// Commits one file on the checked-out branch and returns the new tip.
+    fn commit(&self, file: &str, message: &str) -> String {
+        common::commit_file(&self.path, file, "x\n", message).to_string()
+    }
+
+    fn create(
+        &self,
+        t: &FakeTransport,
+        request: &CreatePrRequest,
+    ) -> Result<git_real_core::hosting::PullRequest, git_real_lib::error::AppError> {
+        hosting_create_pull_request_inner(&self.reg, &self.store, t, self.id, request, None)
+    }
+}
+
+/// The Review Focus 1 body: GitHub's answer to a duplicate pull request.
+const DUPLICATE_PR: &str = r#"{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"A pull request already exists for o:feat."}]}"#;
+
+fn create_request(fx: &Hosted, push: Option<PushTarget>) -> CreatePrRequest {
+    CreatePrRequest {
+        branch: "feat".to_owned(),
+        push,
+        pr: NewPullRequest {
+            title: "T".to_owned(),
+            body: "B".to_owned(),
+            source_branch: "feat".to_owned(),
+            target_branch: fx.head.clone(),
+        },
+    }
+}
+
+fn set_upstream_origin_feat() -> Option<PushTarget> {
+    Some(PushTarget::SetUpstream {
+        remote: "origin".to_owned(),
+        branch: "feat".to_owned(),
+    })
+}
+
+// Repository info passes the provider's answer through.
+#[test]
+fn repo_info_passes_through_the_provider_answer() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(200, r#"{"default_branch":"main","has_issues":false}"#);
+
+    let info = hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id).unwrap();
+
+    assert_eq!(
+        info,
+        HostedRepoInfo {
+            default_branch: Some("main".to_owned()),
+            issues_enabled: false
+        }
+    );
+}
+
+#[test]
+fn repo_info_asks_the_detected_repository() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(200, r#"{"default_branch":"main"}"#);
+    hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id).unwrap();
+    assert_eq!(t.requests()[0].url, "https://api.github.com/repos/o/r");
+}
+
+#[test]
+fn repo_info_without_an_account_is_no_hosting_account() {
+    let fx = hosted();
+    let t = FakeTransport::new();
+    let err = hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::NoHostingAccount);
+}
+
+#[test]
+fn repo_info_without_an_account_calls_no_api() {
+    let fx = hosted();
+    let t = FakeTransport::new();
+    let _ = hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id);
+    assert!(t.requests().is_empty());
+}
+
+#[test]
+fn repo_info_of_an_unknown_repo_is_unknown_repo() {
+    let (_sd, store, _tokens) = hosting_store();
+    let err = hosting_repo_info_inner(
+        &RepoRegistry::default(),
+        &store,
+        &FakeTransport::new(),
+        MISSING_ID,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnknownRepo);
+}
+
+// Issues: the query and page reach the provider; a rejected token marks the account.
+#[test]
+fn list_issues_passes_the_query_and_page() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(200, r#"{"items":[]}"#);
+
+    let issues = hosting_list_issues_inner(&fx.reg, &fx.store, &t, fx.id, "crash", 3).unwrap();
+
+    assert!(issues.is_empty());
+    let url = &t.requests()[0].url;
+    assert!(
+        url.contains("q=repo%3Ao%2Fr%20is%3Aissue%20is%3Aopen%20crash") && url.ends_with("&page=3"),
+        "{url}"
+    );
+}
+
+#[test]
+fn list_issues_sends_page_zero_as_page_one() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(200, r#"{"items":[]}"#);
+    hosting_list_issues_inner(&fx.reg, &fx.store, &t, fx.id, "", 0).unwrap();
+    assert!(
+        t.requests()[0].url.ends_with("&page=1"),
+        "{}",
+        t.requests()[0].url
+    );
+}
+
+#[test]
+fn list_issues_without_an_account_is_no_hosting_account() {
+    let fx = hosted();
+    let t = FakeTransport::new();
+    let err = hosting_list_issues_inner(&fx.reg, &fx.store, &t, fx.id, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+#[test]
+fn list_issues_with_a_rejected_token_marks_the_account_for_reconnect() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+    let err = hosting_list_issues_inner(&fx.reg, &fx.store, &t, fx.id, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, fx.store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingAuth, true)
+    );
+}
+
+#[test]
+fn list_issues_of_an_unknown_repo_is_unknown_repo() {
+    let (_sd, store, _tokens) = hosting_store();
+    let err = hosting_list_issues_inner(
+        &RepoRegistry::default(),
+        &store,
+        &FakeTransport::new(),
+        MISSING_ID,
+        "",
+        1,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnknownRepo);
+}
+
+// The draft is a local git read: no transport, no account.
+#[test]
+fn pull_request_draft_reads_commits_ahead_of_origin() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.start_branch("feat");
+    fx.commit("thing.txt", "Add thing\n\nBody\n");
+
+    let draft = hosting_pull_request_draft_inner(&fx.reg, fx.id, &fx.head).unwrap();
+
+    assert_eq!(
+        draft,
+        PullRequestDraft {
+            title: "Add thing".to_owned(),
+            body: "Body".to_owned(),
+            ahead: 1
+        }
+    );
+}
+
+#[test]
+fn pull_request_draft_with_an_unknown_target_is_revision_not_found() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.start_branch("feat");
+    let err = hosting_pull_request_draft_inner(&fx.reg, fx.id, "nope").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::RevisionNotFound);
+}
+
+#[test]
+fn pull_request_draft_with_an_invalid_target_is_invalid_branch_name() {
+    let fx = hosted();
+    let err = hosting_pull_request_draft_inner(&fx.reg, fx.id, "-x").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::InvalidBranchName);
+}
+
+#[test]
+fn pull_request_draft_for_an_unknown_repo_is_unknown_repo() {
+    let err =
+        hosting_pull_request_draft_inner(&RepoRegistry::default(), MISSING_ID, "main").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnknownRepo);
+}
+
+// Create without a push: one POST to the provider, returning the converted pull request.
+#[test]
+fn create_without_a_push_posts_and_returns_the_pull_request() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    push_branch_to_bare(&fx.bare, "feat");
+    git(&fx.path, &["fetch", "-q", "origin"]);
+    let t = FakeTransport::new().reply(201, &github_pr(21, "feat", false));
+
+    let pr = fx.create(&t, &create_request(&fx, None)).unwrap();
+
+    assert_eq!(pr.number, 21);
+    let requests = t.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        (requests[0].method, requests[0].url.as_str()),
+        (Method::Post, "https://api.github.com/repos/o/r/pulls")
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(requests[0].body.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({"title":"T","body":"B","head":"feat","base":fx.head})
+    );
+}
+
+// Publish first: the branch lands on origin, becomes the upstream, then the provider is asked.
+#[test]
+fn create_with_publish_pushes_the_branch_first() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    let tip = fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new().reply(201, &github_pr(21, "feat", false));
+
+    fx.create(&t, &create_request(&fx, set_upstream_origin_feat()))
+        .unwrap();
+
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), Some(tip));
+    assert_eq!(t.requests().len(), 1);
+}
+
+#[test]
+fn create_with_publish_sets_the_upstream_to_origin() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new().reply(201, &github_pr(21, "feat", false));
+
+    fx.create(&t, &create_request(&fx, set_upstream_origin_feat()))
+        .unwrap();
+
+    let repo = Repository::open(&fx.path).unwrap();
+    let upstream = repo
+        .find_branch("feat", BranchType::Local)
+        .unwrap()
+        .upstream()
+        .unwrap()
+        .name()
+        .unwrap()
+        .map(str::to_owned);
+    assert_eq!(upstream.as_deref(), Some("origin/feat"));
+}
+
+#[test]
+fn create_with_push_ahead_pushes_to_the_upstream() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    fx.commit("one.txt", "one");
+    git(&fx.path, &["push", "-q", "-u", "origin", "feat"]);
+    let tip = fx.commit("two.txt", "two");
+    let t = FakeTransport::new().reply(201, &github_pr(21, "feat", false));
+
+    fx.create(&t, &create_request(&fx, Some(PushTarget::Upstream)))
+        .unwrap();
+
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), Some(tip));
+}
+
+// Review Focus 2: a failed push returns its error and the provider is never asked.
+#[test]
+fn create_with_a_failing_push_sends_no_provider_request() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new();
+    let request = create_request(
+        &fx,
+        Some(PushTarget::SetUpstream {
+            remote: "nope".to_owned(),
+            branch: "feat".to_owned(),
+        }),
+    );
+
+    let err = fx.create(&t, &request).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
+    assert!(t.requests().is_empty());
+}
+
+#[test]
+fn create_when_head_moved_is_operation_in_progress() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    let t = FakeTransport::new();
+    let request = CreatePrRequest {
+        branch: "other".to_owned(),
+        ..create_request(&fx, Some(PushTarget::Upstream))
+    };
+
+    let err = fx.create(&t, &request).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::OperationInProgress);
+    assert!(t.requests().is_empty());
+}
+
+// Review Focus 1: the user reads the provider's sentence, not "Validation Failed".
+#[test]
+fn create_rejection_passes_through() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(422, DUPLICATE_PR);
+
+    let err = fx.create(&t, &create_request(&fx, None)).unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::HostingRejected);
+    assert!(err.message.contains("already exists"), "{}", err.message);
+}
+
+#[test]
+fn create_with_a_rejected_token_marks_the_account_for_reconnect() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+    let err = fx.create(&t, &create_request(&fx, None)).unwrap_err();
+    assert_eq!(
+        (err.kind, fx.store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingAuth, true)
+    );
+}
+
+// The account check comes before the push: no account, nothing leaves the machine.
+#[test]
+fn create_without_an_account_is_no_hosting_account() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new();
+
+    let err = fx
+        .create(&t, &create_request(&fx, set_upstream_origin_feat()))
+        .unwrap_err();
+
+    assert_eq!(err.kind, AppErrorKind::NoHostingAccount);
+    assert!(t.requests().is_empty());
+}
+
+#[test]
+fn create_without_an_account_does_not_push() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let _ = fx.create(
+        &FakeTransport::new(),
+        &create_request(&fx, set_upstream_origin_feat()),
+    );
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), None);
+}
+
+#[test]
+fn create_of_an_unknown_repo_is_unknown_repo() {
+    let (_sd, store, _tokens) = hosting_store();
+    let request = CreatePrRequest {
+        branch: "feat".to_owned(),
+        push: None,
+        pr: NewPullRequest {
+            title: "T".to_owned(),
+            body: String::new(),
+            source_branch: "feat".to_owned(),
+            target_branch: "main".to_owned(),
+        },
+    };
+    let err = hosting_create_pull_request_inner(
+        &RepoRegistry::default(),
+        &store,
+        &FakeTransport::new(),
+        MISSING_ID,
+        &request,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }

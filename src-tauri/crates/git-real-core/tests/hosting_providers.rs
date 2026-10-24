@@ -6,7 +6,8 @@ mod common;
 use common::FakeTransport;
 use git_real_core::GitError;
 use git_real_core::hosting::{
-    self, CheckoutPlan, CiState, Provider as P, PullRequest, RepoRef, Token, UserInfo,
+    self, CheckoutPlan, CiState, HostedRepoInfo, Issue, Method, NewPullRequest, Provider as P,
+    PullRequest, RepoRef, Token, UserInfo,
 };
 
 macro_rules! fixture {
@@ -379,4 +380,398 @@ fn checkout_plans() {
         hosting::checkout_plan(P::GitHub, &pr(false, None, "-x")),
         Err(GitError::InvalidBranchName(_))
     ));
+}
+
+// --- GR-13b: repository info, issues, create pull request ---
+
+/// `percent_encode` of the hosting layer (it is crate-private): everything but `A-Za-z0-9-._~`
+/// becomes `%XX`, so the expectations below are computed from the documented rule.
+fn enc(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                char::from(b).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}
+
+fn header<'a>(req: &'a hosting::Request, name: &str) -> Vec<&'a str> {
+    req.headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+        .collect()
+}
+
+fn gh() -> RepoRef {
+    repo(P::GitHub, "github.com", "gorlox", "test-repo")
+}
+fn gl() -> RepoRef {
+    repo(P::GitLab, "gitlab.com", "group/sub", "proj")
+}
+fn bb() -> RepoRef {
+    repo(P::Bitbucket, "bitbucket.org", "ws", "repo")
+}
+
+fn info(r: &RepoRef, body: &str) -> Result<HostedRepoInfo, GitError> {
+    hosting::repo_info(&FakeTransport::new().reply(200, body), r, &tok())
+}
+
+// Repository info: the default branch and whether issues are on, per provider.
+#[test]
+fn repo_info_for_each_provider() {
+    let cases = [
+        (
+            gh(),
+            fixture!("github_repo.json"),
+            HostedRepoInfo {
+                default_branch: Some("main".into()),
+                issues_enabled: true,
+            },
+            "https://api.github.com/repos/gorlox/test-repo",
+        ),
+        (
+            gl(),
+            fixture!("gitlab_project.json"),
+            HostedRepoInfo {
+                default_branch: Some("develop".into()),
+                issues_enabled: false,
+            },
+            "https://gitlab.com/api/v4/projects/group%2Fsub%2Fproj",
+        ),
+        (
+            bb(),
+            fixture!("bitbucket_repo.json"),
+            HostedRepoInfo {
+                default_branch: Some("master".into()),
+                issues_enabled: false,
+            },
+            "https://api.bitbucket.org/2.0/repositories/ws/repo",
+        ),
+    ];
+    for (r, body, want, url) in cases {
+        let t = FakeTransport::new().reply(200, body);
+        assert_eq!(hosting::repo_info(&t, &r, &tok()).unwrap(), want, "{url}");
+        let req = &t.requests()[0];
+        assert_eq!((req.method, req.url.as_str()), (Method::Get, url));
+    }
+}
+
+#[test]
+fn repo_info_defaults() {
+    // GitHub: no default_branch is not a repository answer.
+    assert!(matches!(
+        info(&gh(), "{}").unwrap_err(),
+        GitError::HostingUnreachable { ref message } if message == "unexpected response from github.com"
+    ));
+    let got = |r: &RepoRef, body: &str| {
+        let i = info(r, body).unwrap();
+        (i.default_branch, i.issues_enabled)
+    };
+    assert_eq!(
+        got(&gh(), r#"{"default_branch":"main"}"#),
+        (Some("main".to_owned()), true)
+    );
+    assert_eq!(got(&gl(), r#"{"default_branch":null}"#), (None, true));
+    assert_eq!(
+        got(&gl(), r#"{"issues_access_level":"private"}"#),
+        (None, true)
+    );
+    assert_eq!(got(&gl(), r#"{"issues_enabled":false}"#), (None, false));
+    assert_eq!(got(&bb(), r#"{"mainbranch":null}"#), (None, true));
+    assert_eq!(got(&bb(), "{}"), (None, true));
+}
+
+// Issue lists: URL, JSON mapping, pull requests skipped on GitHub.
+#[test]
+fn github_lists_issues_from_search_and_skips_pull_requests() {
+    let t = FakeTransport::new().reply(200, fixture!("github_search_issues.json"));
+    let issues = hosting::list_issues(&t, &gh(), &tok(), "", 1).unwrap();
+    assert_eq!(issues.iter().map(|i| i.number).collect::<Vec<_>>(), [7, 5]);
+    assert_eq!(
+        issues[0],
+        Issue {
+            number: 7,
+            title: "Login fails".into(),
+            author: "alice".into(),
+            labels: vec!["bug".into(), "P1".into()],
+            updated_at: 1792497600,
+            web_url: "https://github.com/gorlox/test-repo/issues/7".into(),
+        }
+    );
+    let req = &t.requests()[0];
+    assert_eq!(
+        req.url,
+        "https://api.github.com/search/issues?q=repo%3Agorlox%2Ftest-repo%20is%3Aissue%20is%3Aopen&sort=updated&order=desc&per_page=50&page=1"
+    );
+    assert_eq!(header(req, "accept"), ["application/vnd.github+json"]);
+    assert_eq!(header(req, "x-github-api-version"), ["2022-11-28"]);
+}
+
+#[test]
+fn gitlab_lists_issues() {
+    let t = FakeTransport::new().reply(200, fixture!("gitlab_issues.json"));
+    let issues = hosting::list_issues(&t, &gl(), &tok(), "", 2).unwrap();
+    assert_eq!(
+        issues,
+        vec![Issue {
+            number: 11,
+            title: "Crash on start".into(),
+            author: "alice".into(),
+            labels: vec!["bug".into()],
+            updated_at: 1792497600,
+            web_url: "https://gitlab.com/group/sub/proj/-/issues/11".into(),
+        }]
+    );
+    assert_eq!(
+        t.requests()[0].url,
+        "https://gitlab.com/api/v4/projects/group%2Fsub%2Fproj/issues?state=opened&order_by=updated_at&sort=desc&per_page=50&page=2"
+    );
+}
+
+#[test]
+fn bitbucket_lists_issues_from_values() {
+    let t = FakeTransport::new().reply(200, fixture!("bitbucket_issues.json"));
+    let issues = hosting::list_issues(&t, &bb(), &tok(), "", 1).unwrap();
+    assert_eq!(issues.iter().map(|i| i.number).collect::<Vec<_>>(), [2, 1]);
+    assert_eq!(
+        (issues[0].labels.clone(), issues[0].author.as_str()),
+        (vec!["bug".to_owned()], "alice")
+    );
+    assert_eq!(
+        (issues[1].author.as_str(), issues[1].labels.is_empty()),
+        ("", true)
+    );
+    assert_eq!(
+        (issues[0].updated_at, issues[0].web_url.as_str()),
+        (1792497600, "https://bitbucket.org/ws/repo/issues/2")
+    );
+    assert_eq!(
+        t.requests()[0].url,
+        "https://api.bitbucket.org/2.0/repositories/ws/repo/issues?pagelen=50&page=1&sort=-updated_on&q=%28state%3D%22new%22%20OR%20state%3D%22open%22%29"
+    );
+}
+
+// Review Focus 3: a query with quotes, `#`, `&`, a backslash and spaces is percent-encoded on
+// every provider, and Bitbucket strips `"` and `\` so the `title ~ "..."` literal cannot close.
+#[test]
+fn issue_queries_are_percent_encoded_for_every_provider() {
+    let q = r#" login "fails" & #7 \"#;
+    let url = |r: &RepoRef, query: &str, body: &str| {
+        let t = FakeTransport::new().reply(200, body);
+        hosting::list_issues(&t, r, &tok(), query, 1).unwrap();
+        t.requests()[0].url.clone()
+    };
+
+    let github = url(&gh(), q, r#"{"items":[]}"#);
+    assert!(
+        github.starts_with("https://api.github.com/search/issues?q=repo%3Agorlox%2Ftest-repo%20is%3Aissue%20is%3Aopen%20login%20%22fails%22%20%26%20%237%20%5C&sort=updated"),
+        "{github}"
+    );
+    assert_eq!(
+        enc(r#"repo:gorlox/test-repo is:issue is:open login "fails" & #7 \"#),
+        "repo%3Agorlox%2Ftest-repo%20is%3Aissue%20is%3Aopen%20login%20%22fails%22%20%26%20%237%20%5C"
+    );
+
+    let gitlab = url(&gl(), q, "[]");
+    assert!(
+        gitlab.ends_with("&search=login%20%22fails%22%20%26%20%237%20%5C"),
+        "{gitlab}"
+    );
+
+    let bitbucket = url(&bb(), q, r#"{"values":[]}"#);
+    let filter = format!(
+        r#"(state="new" OR state="open") AND title ~ "{}""#,
+        "login fails & #7 "
+    );
+    assert!(
+        bitbucket.ends_with(&format!("&q={}", enc(&filter))),
+        "{bitbucket}"
+    );
+    assert!(!bitbucket.contains("%5C"), "{bitbucket}");
+}
+
+#[test]
+fn an_all_whitespace_issue_query_sends_the_no_query_url() {
+    for (r, body) in [
+        (gh(), r#"{"items":[]}"#),
+        (gl(), "[]"),
+        (bb(), r#"{"values":[]}"#),
+    ] {
+        let blank = FakeTransport::new().reply(200, body);
+        hosting::list_issues(&blank, &r, &tok(), " \t ", 1).unwrap();
+        let none = FakeTransport::new().reply(200, body);
+        hosting::list_issues(&none, &r, &tok(), "", 1).unwrap();
+        assert_eq!(blank.requests()[0].url, none.requests()[0].url, "{r:?}");
+    }
+}
+
+#[test]
+fn an_issue_list_missing_a_required_field_is_an_unexpected_response() {
+    for (r, body, host) in [
+        (gh(), r#"{"items":[{"number":1}]}"#, "github.com"),
+        (gl(), r#"[{"iid":1}]"#, "gitlab.com"),
+        (bb(), r#"{"values":[{"id":1}]}"#, "bitbucket.org"),
+    ] {
+        let err = hosting::list_issues(&FakeTransport::new().reply(200, body), &r, &tok(), "", 1)
+            .unwrap_err();
+        assert!(
+            matches!(err, GitError::HostingUnreachable { ref message } if *message == format!("unexpected response from {host}")),
+            "{host}: {err:?}"
+        );
+    }
+}
+
+// Create pull request: method, URL, headers and the exact JSON body per provider.
+fn new_pr() -> NewPullRequest {
+    NewPullRequest {
+        title: "Add login".into(),
+        body: "Why\n\nDetails".into(),
+        source_branch: "feature/login".into(),
+        target_branch: "main".into(),
+    }
+}
+
+fn body_json(req: &hosting::Request) -> serde_json::Value {
+    serde_json::from_str(req.body.as_deref().unwrap()).unwrap()
+}
+
+#[test]
+fn create_pull_request_for_each_provider() {
+    // GitHub
+    let t = FakeTransport::new().reply(201, &element(fixture!("github_pulls.json"), 0));
+    let created = hosting::create_pull_request(&t, &gh(), &tok(), &new_pr()).unwrap();
+    assert_eq!(created.number, 12);
+    let req = &t.requests()[0];
+    assert_eq!(
+        (req.method, req.url.as_str()),
+        (
+            Method::Post,
+            "https://api.github.com/repos/gorlox/test-repo/pulls"
+        )
+    );
+    assert_eq!(header(req, "content-type"), ["application/json"]);
+    assert_eq!(header(req, "accept"), ["application/vnd.github+json"]);
+    assert_eq!(header(req, "x-github-api-version"), ["2022-11-28"]);
+    assert_eq!(
+        body_json(req),
+        serde_json::json!({"title":"Add login","body":"Why\n\nDetails","head":"feature/login","base":"main"})
+    );
+
+    // GitLab
+    let t = FakeTransport::new().reply(201, &element(fixture!("gitlab_merge_requests.json"), 0));
+    let created = hosting::create_pull_request(&t, &gl(), &tok(), &new_pr()).unwrap();
+    assert_eq!(created.number, 5);
+    let req = &t.requests()[0];
+    assert_eq!(
+        (req.method, req.url.as_str()),
+        (
+            Method::Post,
+            "https://gitlab.com/api/v4/projects/group%2Fsub%2Fproj/merge_requests"
+        )
+    );
+    assert_eq!(header(req, "content-type"), ["application/json"]);
+    assert_eq!(
+        body_json(req),
+        serde_json::json!({"source_branch":"feature/login","target_branch":"main","title":"Add login","description":"Why\n\nDetails"})
+    );
+
+    // Bitbucket
+    let t = FakeTransport::new().reply(201, &element(fixture!("bitbucket_pullrequests.json"), 0));
+    let created = hosting::create_pull_request(&t, &bb(), &tok(), &new_pr()).unwrap();
+    assert_eq!(created.number, 3);
+    let req = &t.requests()[0];
+    assert_eq!(
+        (req.method, req.url.as_str()),
+        (
+            Method::Post,
+            "https://api.bitbucket.org/2.0/repositories/ws/repo/pullrequests"
+        )
+    );
+    assert_eq!(header(req, "content-type"), ["application/json"]);
+    assert_eq!(
+        body_json(req),
+        serde_json::json!({"title":"Add login","description":"Why\n\nDetails","source":{"branch":{"name":"feature/login"}},"destination":{"branch":{"name":"main"}}})
+    );
+}
+
+#[test]
+fn create_pull_request_refuses_bad_branch_names_before_any_request() {
+    let bad_source = NewPullRequest {
+        source_branch: "-x".into(),
+        ..new_pr()
+    };
+    let bad_target = NewPullRequest {
+        target_branch: "a b".into(),
+        ..new_pr()
+    };
+    for new in [bad_source, bad_target] {
+        let t = FakeTransport::new();
+        let err = hosting::create_pull_request(&t, &gh(), &tok(), &new).unwrap_err();
+        assert!(matches!(err, GitError::InvalidBranchName(_)), "{err:?}");
+        assert!(t.requests().is_empty());
+    }
+}
+
+#[test]
+fn create_pull_request_rejection_passes_through() {
+    let body = r#"{"message":"Validation Failed","errors":[{"resource":"PullRequest","code":"custom","message":"A pull request already exists for o:feat."}]}"#;
+    let err = hosting::create_pull_request(
+        &FakeTransport::new().reply(422, body),
+        &gh(),
+        &tok(),
+        &new_pr(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingRejected { ref message } if message == "A pull request already exists for o:feat.")
+    );
+}
+
+// Wire shapes: camelCase on the way out, and the create request on the way in.
+#[test]
+fn issue_and_repo_info_serialize_camel_case() {
+    assert_eq!(
+        serde_json::to_value(HostedRepoInfo {
+            default_branch: None,
+            issues_enabled: true
+        })
+        .unwrap(),
+        serde_json::json!({"defaultBranch":null,"issuesEnabled":true})
+    );
+    let issue = serde_json::to_value(Issue {
+        number: 1,
+        title: "t".into(),
+        author: "a".into(),
+        labels: vec![],
+        updated_at: 2,
+        web_url: "u".into(),
+    })
+    .unwrap();
+    let mut keys: Vec<&str> = issue
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["author", "labels", "number", "title", "updatedAt", "webUrl"]
+    );
+    assert_eq!(
+        serde_json::from_str::<NewPullRequest>(
+            r#"{"title":"t","body":"","sourceBranch":"s","targetBranch":"m"}"#
+        )
+        .unwrap(),
+        NewPullRequest {
+            title: "t".into(),
+            body: String::new(),
+            source_branch: "s".into(),
+            target_branch: "m".into(),
+        }
+    );
 }
