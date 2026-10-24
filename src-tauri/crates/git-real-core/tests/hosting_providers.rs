@@ -1215,9 +1215,16 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         ssh("ssh://git@h/p.git").as_deref(),
         Some("ssh://git@h/p.git")
     );
+    // An `ssh://` URL needs a host: an empty one is dropped, a port is fine.
+    assert_eq!(
+        ssh("ssh://git@h:22/p.git").as_deref(),
+        Some("ssh://git@h:22/p.git")
+    );
     for bad in [
         "git@h:p .git",
         "ftp://x",
+        "ssh://git@/p.git",
+        "ssh:///p.git",
         "-u@h:p.git",
         "u@-h:p.git",
         "ssh://-u@h/p.git",
@@ -1326,4 +1333,273 @@ fn my_repos_sends_a_bearer_token() {
     let t = FakeTransport::new().reply(200, "[]");
     hosting::list_my_repos(&t, &account(P::GitHub, "github.com"), &tok(), "", 1).unwrap();
     assert_eq!(header(&t.requests()[0], "authorization"), ["Bearer t0k"]);
+}
+
+// --- GR-13c coverage audit: edge cases of the sanitiser and the new call ---
+
+fn sanitize_https(url: &str) -> Option<String> {
+    HostedRepo {
+        full_name: "o/r".into(),
+        name: "r".into(),
+        owner: "o".into(),
+        description: None,
+        private: false,
+        updated_at: 0,
+        https_url: url.into(),
+        ssh_url: None,
+        web_url: "https://h/o/r".into(),
+    }
+    .sanitized()
+    .map(|r| r.https_url)
+}
+
+// The https rule is an exact `https://` prefix, then the shared host parser, then a non-empty path.
+#[test]
+fn https_clone_urls_keep_a_port_and_drop_odd_hosts_paths_and_schemes() {
+    for (input, want) in [
+        ("https://h:8443/p.git", "https://h:8443/p.git"),
+        ("https://u:pw@h:8443/p.git", "https://h:8443/p.git"),
+        ("https://u@v@h/p.git", "https://h/p.git"),
+        ("https://h/a/b/c.git", "https://h/a/b/c.git"),
+    ] {
+        assert_eq!(sanitize_https(input).as_deref(), Some(want), "{input:?}");
+    }
+    for bad in [
+        "https://h/",      // nothing after the host
+        "https://h",       // no path separator at all
+        "HTTPS://h/p.git", // scheme match is exact and case-sensitive
+        "Https://h/p.git",
+        "https://[::1]/p.git", // the host parser takes no IPv6 literals
+        "https://h:0/p.git",
+        "https://h:65536/p.git",
+        "https://h:/p.git",
+        "https://-h/p.git",
+        "https://.h/p.git",
+        "https://u@/p.git",
+        "https://ho st/p.git",
+        "https://h/p.git\u{85}", // NEL is a control character
+        "",
+    ] {
+        assert_eq!(sanitize_https(bad), None, "{bad:?}");
+    }
+}
+
+// Only an empty description is cleared; whitespace is kept as the provider sent it.
+#[test]
+fn a_whitespace_only_description_is_kept_and_only_an_empty_one_is_cleared() {
+    let mut r = HostedRepo {
+        full_name: "o/r".into(),
+        name: "r".into(),
+        owner: "o".into(),
+        description: Some("   ".into()),
+        private: false,
+        updated_at: 0,
+        https_url: "https://h/p.git".into(),
+        ssh_url: None,
+        web_url: "https://h/o/r".into(),
+    };
+    assert_eq!(
+        r.clone().sanitized().unwrap().description.as_deref(),
+        Some("   ")
+    );
+    r.description = Some(String::new());
+    assert_eq!(r.sanitized().unwrap().description, None);
+}
+
+// Sanitising keeps every other field untouched.
+#[test]
+fn sanitizing_changes_only_the_clone_urls_and_an_empty_description() {
+    let r = HostedRepo {
+        full_name: "o/r".into(),
+        name: "r".into(),
+        owner: "o".into(),
+        description: Some("d".into()),
+        private: true,
+        updated_at: 77,
+        https_url: "https://u@h/p.git".into(),
+        ssh_url: Some("git@h:p.git".into()),
+        web_url: "https://h/o/r".into(),
+    };
+    assert_eq!(
+        r.clone().sanitized().unwrap(),
+        HostedRepo {
+            https_url: "https://h/p.git".into(),
+            ..r
+        }
+    );
+}
+
+#[test]
+fn a_gitlab_internal_project_is_private_and_a_public_one_is_not() {
+    let row = |visibility: &str| {
+        format!(
+            r#"{{"path_with_namespace":"g/a","path":"a","namespace":{{"full_path":"g"}},"visibility":"{visibility}","last_activity_at":"2026-10-23T09:15:00.000Z","http_url_to_repo":"https://gitlab.com/g/a.git","web_url":"https://gitlab.com/g/a"}}"#
+        )
+    };
+    for (visibility, private) in [("internal", true), ("private", true), ("public", false)] {
+        let (got, _) = my_repos(
+            P::GitLab,
+            "gitlab.com",
+            "",
+            1,
+            &format!("[{}]", row(visibility)),
+        );
+        assert_eq!(got.unwrap()[0].private, private, "{visibility}");
+    }
+}
+
+#[test]
+fn a_bitbucket_repository_without_a_clone_list_is_an_unexpected_response() {
+    let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
+    assert!(
+        matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from bitbucket.org")
+    );
+}
+
+// A page keeps its good rows when one row has an unusable clone URL; an all-bad page is empty.
+#[test]
+fn rows_with_unusable_clone_urls_are_dropped_without_failing_the_page() {
+    let gh = |name: &str, url: &str| {
+        format!(
+            r#"{{"full_name":"o/{name}","name":"{name}","owner":{{"login":"o"}},"private":false,"updated_at":"2026-10-24T18:00:00Z","clone_url":"{url}","html_url":"https://github.com/o/{name}"}}"#
+        )
+    };
+    let body = format!(
+        "[{},{},{}]",
+        gh("a", "http://github.com/o/a.git"),
+        gh("b", "https://github.com/o/b.git"),
+        gh("c", "https://github.com/")
+    );
+    let (got, _) = my_repos(P::GitHub, "github.com", "", 1, &body);
+    assert_eq!(
+        got.unwrap()
+            .iter()
+            .map(|r| r.full_name.as_str())
+            .collect::<Vec<_>>(),
+        ["o/b"]
+    );
+    let (got, _) = my_repos(
+        P::GitHub,
+        "github.com",
+        "",
+        1,
+        &format!("[{}]", gh("a", "git://x/a")),
+    );
+    assert!(got.unwrap().is_empty());
+}
+
+// A bad timestamp fails the whole page (it is not a droppable row).
+#[test]
+fn a_repo_with_a_bad_timestamp_fails_the_page() {
+    let body = r#"[{"full_name":"o/r","name":"r","owner":{"login":"o"},"private":false,"updated_at":"yesterday","clone_url":"https://github.com/o/r.git","html_url":"https://github.com/o/r"}]"#;
+    let (got, _) = my_repos(P::GitHub, "github.com", "", 1, body);
+    assert!(
+        matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from github.com")
+    );
+}
+
+// A 403 with an exhausted quota (or a 429) is a rate limit on the new call, on every provider; a
+// plain 403 stays an auth error.
+#[test]
+fn my_repos_rate_limits_are_reported_on_every_provider() {
+    for (p, host) in [
+        (P::GitHub, "github.com"),
+        (P::GitLab, "gitlab.com"),
+        (P::Bitbucket, "bitbucket.org"),
+    ] {
+        let limited = FakeTransport::new().reply_with(
+            403,
+            &[
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", "1792900000"),
+            ],
+            "{}",
+        );
+        assert!(
+            matches!(
+                hosting::list_my_repos(&limited, &account(p, host), &tok(), "", 1).unwrap_err(),
+                GitError::HostingRateLimited {
+                    reset_epoch: Some(1792900000)
+                }
+            ),
+            "{host} 403"
+        );
+
+        let too_many = FakeTransport::new().reply(429, "");
+        assert!(
+            matches!(
+                hosting::list_my_repos(&too_many, &account(p, host), &tok(), "", 1).unwrap_err(),
+                GitError::HostingRateLimited { reset_epoch: None }
+            ),
+            "{host} 429"
+        );
+
+        let forbidden = FakeTransport::new().reply_with(
+            403,
+            &[("x-ratelimit-remaining", "12")],
+            r#"{"message":"no"}"#,
+        );
+        assert!(
+            matches!(
+                hosting::list_my_repos(&forbidden, &account(p, host), &tok(), "", 1).unwrap_err(),
+                GitError::HostingAuth { .. }
+            ),
+            "{host} 403 plain"
+        );
+    }
+}
+
+// The token travels only in the Authorization header, and an error body that echoes it is redacted.
+#[test]
+fn my_repos_never_puts_the_token_in_the_url_or_an_error() {
+    for (p, host, empty) in [
+        (P::GitHub, "github.com", "[]"),
+        (P::GitLab, "gitlab.com", "[]"),
+        (P::Bitbucket, "bitbucket.org", r#"{"values":[]}"#),
+    ] {
+        let t = FakeTransport::new().reply(200, empty);
+        hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap();
+        assert!(!t.requests()[0].url.contains("t0k"), "{host}");
+
+        for status in [401, 422] {
+            let t = FakeTransport::new().reply(status, r#"{"message":"bad token t0k here"}"#);
+            let err = hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap_err();
+            assert!(
+                !format!("{err:?}").contains("t0k"),
+                "{host} {status}: {err:?}"
+            );
+        }
+    }
+}
+
+// 404 and 5xx map like the other lists.
+#[test]
+fn my_repos_maps_not_found_and_server_errors() {
+    let t = FakeTransport::new().reply(404, "");
+    assert!(matches!(
+        hosting::list_my_repos(&t, &account(P::GitHub, "github.com"), &tok(), "", 1).unwrap_err(),
+        GitError::HostingNotFound
+    ));
+    let t = FakeTransport::new().reply(503, "");
+    assert!(matches!(
+        hosting::list_my_repos(&t, &account(P::GitLab, "gitlab.com"), &tok(), "", 1).unwrap_err(),
+        GitError::HostingUnreachable { ref message } if message == "HTTP 503"
+    ));
+}
+
+// A search-only qualifier mixed with real words keeps the words: `org:x repo:y git` -> `git`.
+#[test]
+fn github_search_drops_every_scope_qualifier_but_keeps_the_words() {
+    let (_, url) = my_repos(
+        P::GitHub,
+        "github.com",
+        "org:x repo:y git real",
+        1,
+        r#"{"items":[]}"#,
+    );
+    assert!(
+        url.contains(&format!("q={}", enc("git real in:name user:octo"))),
+        "{url}"
+    );
 }

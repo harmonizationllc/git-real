@@ -203,6 +203,28 @@ describe("usePagedQuery keyOf", () => {
   });
 });
 
+// Keys are compared as given: case matters and the string "1" is not the number 1.
+describe("usePagedQuery key identity", () => {
+  it("should treat keys that differ in case or type as distinct", async () => {
+    const rows = [{ k: "O/R" }, { k: "o/r" }, { k: "1" }, { k: 1 }, { k: "o/r" }, { k: 1 }];
+    const fetch = vi.fn<(page: number) => Promise<typeof rows>>().mockResolvedValue(rows);
+    const { result } = renderHookWithProviders(() =>
+      usePagedQuery(["test", "mixed"], fetch, true, (r: (typeof rows)[number]) => r.k),
+    );
+    await waitFor(() =>
+      expect(result.current.items?.map((r) => r.k)).toEqual(["O/R", "o/r", "1", 1]),
+    );
+  });
+
+  it("should not call keyOf or fetchPage while disabled", async () => {
+    const fetch = vi.fn<(page: number) => Promise<{ k: string }[]>>();
+    const keyOf = vi.fn((r: { k: string }) => r.k);
+    renderHookWithProviders(() => usePagedQuery(["test", "idle"], fetch, false, keyOf));
+    await act(() => Promise.resolve());
+    expect([fetch.mock.calls.length, keyOf.mock.calls.length]).toEqual([0, 0]);
+  });
+});
+
 // Contract: failures reach the caller as AppError; refetch asks again.
 describe("usePagedQuery errors and refetch", () => {
   it("should wrap a plain Error as an io error", async () => {

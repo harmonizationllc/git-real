@@ -1304,6 +1304,64 @@ fn store_account_returns_none_for_an_unknown_id() {
     assert!(store.account("github:github.com:other").is_none());
 }
 
+#[test]
+fn store_account_is_gone_after_a_disconnect() {
+    let (_dir, store) = connected_store();
+    hosting_disconnect_inner(&store, MY_ACCOUNT_ID).unwrap();
+    assert!(store.account(MY_ACCOUNT_ID).is_none());
+}
+
+#[test]
+fn list_my_repos_after_a_disconnect_is_no_hosting_account() {
+    let (_dir, store) = connected_store();
+    hosting_disconnect_inner(&store, MY_ACCOUNT_ID).unwrap();
+    let t = FakeTransport::new();
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+// The account is listed but its token is gone from the keychain: no request goes out.
+#[test]
+fn list_my_repos_without_a_stored_token_is_no_hosting_account() {
+    let (_dir, store, tokens) = hosting_store();
+    store
+        .connect(github_account("octo"), &Token::new(SECRET).unwrap())
+        .unwrap();
+    tokens.map.lock().unwrap().clear();
+    let t = FakeTransport::new();
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+#[test]
+fn list_my_repos_rate_limited_is_hosting_rate_limited_and_keeps_the_account_usable() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply_with(403, &[("x-ratelimit-remaining", "0")], "{}");
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingRateLimited, false)
+    );
+}
+
+// Decision D5: the command does not pre-check `needs_reconnect`; the UI gates, and a fresh token
+// may have been stored meanwhile.
+#[test]
+fn list_my_repos_still_asks_the_provider_for_an_account_flagged_for_reconnect() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(401, "{}").reply(200, "[]");
+    hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert!(store.accounts()[0].needs_reconnect);
+    let repos = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+    assert_eq!((repos.len(), t.requests().len()), (0, 2));
+}
+
 // The draft is a local git read: no transport, no account.
 #[test]
 fn pull_request_draft_reads_commits_ahead_of_origin() {
