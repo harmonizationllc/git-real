@@ -40,6 +40,16 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   const allowed = info?.issuesEnabled === true || (info === undefined && repoInfo.error !== null);
   const list = useIssues(repoId, debounced, allowed);
 
+  // Off while React tears the popover down, StrictMode's simulated unmount included. Declared
+  // before useRestoreFocus so its cleanup runs first, and the blur that the focus restore causes
+  // is not read as focus leaving.
+  const live = useRef(false);
+  useLayoutEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   // Before the focus effect, so it records the opener.
   useRestoreFocus();
   useLayoutEffect(() => {
@@ -83,6 +93,8 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   };
 
   const onInputKeyDown = (e: KeyboardEvent) => {
+    // A key that confirms an IME composition belongs to the composition, not to the list.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const step = STEPS[e.key];
     if (step === undefined) return;
     // The input would otherwise move its caret, and there is no form to submit.
@@ -96,7 +108,9 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   // Clicking an option does not take focus, so a null relatedTarget is not "focus left".
   const onBlur = (e: FocusEvent) => {
     const next = e.relatedTarget;
-    if (next !== null && !(rootRef.current as HTMLDivElement).contains(next)) onClose();
+    if (live.current && next !== null && !(rootRef.current as HTMLDivElement).contains(next)) {
+      onClose();
+    }
   };
 
   let body: React.ReactNode = null;

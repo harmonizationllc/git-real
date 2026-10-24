@@ -30,7 +30,8 @@ type Field = "subject" | "body";
 const isLinkChord = (e: React.KeyboardEvent): boolean =>
   (e.ctrlKey || e.metaKey) &&
   e.shiftKey &&
-  e.key.toLowerCase() === "i" &&
+  // The physical key too, so the chord works on non-Latin layouts.
+  (e.key.toLowerCase() === "i" || e.code === "KeyI") &&
   !e.nativeEvent.isComposing &&
   e.keyCode !== 229;
 
