@@ -499,5 +499,46 @@ export interface PullRequest {
   webUrl: string;
 }
 
+/** What the provider says about the hosted repository beyond its pull requests. */
+export interface HostedRepoInfo {
+  /** Null for an empty repository. */
+  defaultBranch: string | null;
+  /** False when the repository has its issue tracker turned off. */
+  issuesEnabled: boolean;
+}
+
+export interface Issue {
+  number: number;
+  title: string;
+  author: string;
+  labels: string[];
+  /** Epoch seconds. */
+  updatedAt: number;
+  webUrl: string;
+}
+
+/** A pull request to open: `sourceBranch` into `targetBranch`, both on the hosted repository. */
+export interface NewPullRequest {
+  title: string;
+  body: string;
+  sourceBranch: string;
+  targetBranch: string;
+}
+
+/** The prefill for a new pull request from the current branch. */
+export interface PullRequestDraft {
+  title: string;
+  body: string;
+  /** Commits on HEAD and not on `origin/<target>`, counted up to 1000. */
+  ahead: number;
+}
+
+/** `branch` is the branch HEAD must still be on; `push` runs first when set. */
+export interface CreatePrRequest {
+  branch: string;
+  push: PushTarget | null;
+  pr: NewPullRequest;
+}
+
 export type CheckoutPrOutcome =
   { kind: "checkedOut"; branch: string } | { kind: "needsReset"; branch: string };

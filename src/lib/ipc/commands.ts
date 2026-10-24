@@ -10,16 +10,19 @@ import type {
   CommitOutcome,
   Credentials,
   ConflictSide,
+  CreatePrRequest,
   DiffScope,
   DiffSide,
   FastForwardCheck,
   FileDiff,
   FileHistoryEntry,
   GitCliInfo,
+  HostedRepoInfo,
   HostingAccount,
   HostingProvider,
   HunkAction,
   HunkSelection,
+  Issue,
   LocalBranch,
   LogPage,
   LogSummary,
@@ -29,6 +32,7 @@ import type {
   OperationState,
   PullMode,
   PullRequest,
+  PullRequestDraft,
   PushTarget,
   RebaseCommit,
   RebaseStep,
@@ -485,4 +489,28 @@ export function hostingCheckoutPullRequest(
     reset,
     credentials,
   });
+}
+
+/** The default branch of the hosted repository and whether its issues are turned on. */
+export function hostingRepoInfo(id: RepoId): Promise<HostedRepoInfo> {
+  return invoke<HostedRepoInfo>("hosting_repo_info", { id });
+}
+
+/** One page (1-based, 50 per page) of open issues matching `query` (all when blank), newest update first. */
+export function hostingListIssues(id: RepoId, query: string, page: number): Promise<Issue[]> {
+  return invoke<Issue[]>("hosting_list_issues", { id, query, page });
+}
+
+/** Commits ahead of `origin/<target>` and the title and description prefill. */
+export function hostingPullRequestDraft(id: RepoId, target: string): Promise<PullRequestDraft> {
+  return invoke<PullRequestDraft>("hosting_pull_request_draft", { id, target });
+}
+
+/** Runs `request.push` when set, then opens the pull request. */
+export function hostingCreatePullRequest(
+  id: RepoId,
+  request: CreatePrRequest,
+  credentials: Credentials | null = null,
+): Promise<PullRequest> {
+  return invoke<PullRequest>("hosting_create_pull_request", { id, request, credentials });
 }

@@ -55,6 +55,12 @@ export const queryKeys = {
   hostingContext: (id: RepoId) => ["repo", id, "hostingContext"] as const,
   /** Open pull requests; outside the repo prefix so a watcher event never calls the provider API. */
   pullRequests: (id: RepoId) => ["hosting", "pullRequests", id] as const,
+  /** Default branch and issues switch; outside the repo prefix, it is a provider call. */
+  hostingRepoInfo: (id: RepoId) => ["hosting", "repoInfo", id] as const,
+  /** Open issues matching `query`; outside the repo prefix, like the pull requests. */
+  issues: (id: RepoId, query: string) => ["hosting", "issues", id, query] as const,
+  /** The pull request prefill; a git read, under the repo prefix. */
+  prDraft: (id: RepoId, target: string) => ["repo", id, "prDraft", target] as const,
 };
 
 /** Mutation keys; separate from query keys, so repo invalidation never touches them. */
