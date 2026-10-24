@@ -84,6 +84,14 @@ export function prCountLabel(count: number | null, more: boolean): string {
   return count === null ? "Pull requests" : `Pull requests (${count}${more ? "+" : ""})`;
 }
 
+/** The Issues heading; `more` adds a plus while further pages exist. */
+export function issueCountLabel(count: number | null, more: boolean): string {
+  return count === null ? "Issues" : `Issues (${count}${more ? "+" : ""})`;
+}
+
+/** The Issues panel and the issue picker when the repository's tracker is switched off. */
+export const ISSUES_OFF_TEXT = "Issues are turned off for this repository";
+
 /** The create dialog's notice when the branch is not on origin yet. */
 export const PUBLISH_FIRST_TEXT =
   "This branch isn't on the remote yet — it will be published first";

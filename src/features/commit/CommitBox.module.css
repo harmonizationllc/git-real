@@ -1,4 +1,6 @@
+/* Relative so the issue picker can open above the editor. */
 .root {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: column;

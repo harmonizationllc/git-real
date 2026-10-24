@@ -10,6 +10,7 @@ import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
 import { CreatePullRequestDialog } from "../features/hosting/CreatePullRequestDialog";
+import { IssuesPanel } from "../features/hosting/IssuesPanel";
 import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
 import { useRepoContext } from "../features/hosting/useRepoContext";
 import { RemotesDialog } from "../features/remotes/RemotesDialog";
@@ -170,6 +171,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
               <StashesPanel repoId={tab.id} />
               <TagsPanel repoId={tab.id} />
               <PullRequestsPanel repoId={tab.id} onCreatePullRequest={onCreatePullRequest} />
+              <IssuesPanel repoId={tab.id} />
             </>
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.
