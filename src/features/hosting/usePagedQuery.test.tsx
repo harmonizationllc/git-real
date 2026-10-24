@@ -16,7 +16,9 @@ const fetchPage = vi.fn<(page: number) => Promise<Item[]>>();
 const KEY = ["test", "paged"] as const;
 
 function render(enabled = true) {
-  return renderHookWithProviders(() => usePagedQuery<Item>(KEY, fetchPage, enabled));
+  return renderHookWithProviders(() =>
+    usePagedQuery<Item>(KEY, fetchPage, enabled, (i) => i.number),
+  );
 }
 
 beforeEach(() => {
@@ -153,6 +155,51 @@ describe("usePagedQuery dedupe", () => {
     ]);
     const { result } = render();
     await waitFor(() => expect(result.current.items?.map((i) => i.number)).toEqual([1, 9, 4]));
+  });
+});
+
+// Contract (GR-13c): the caller supplies the identity of an item; string keys dedupe like numbers.
+describe("usePagedQuery keyOf", () => {
+  interface Named {
+    fullName: string;
+    updated: number;
+  }
+
+  it("should dedupe by the given key function, keeping the first occurrence", async () => {
+    const named = vi.fn<(page: number) => Promise<Named[]>>();
+    named
+      .mockResolvedValueOnce([
+        ...Array.from({ length: 49 }, (_, i) => ({ fullName: `o/r${String(i)}`, updated: 1 })),
+        { fullName: "o/dup", updated: 1 },
+      ])
+      .mockResolvedValueOnce([
+        { fullName: "o/dup", updated: 2 },
+        { fullName: "o/new", updated: 2 },
+      ]);
+    const { result } = renderHookWithProviders(() =>
+      usePagedQuery<Named>(["test", "named"], named, true, (r) => r.fullName),
+    );
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.items).toHaveLength(51));
+    expect(result.current.items?.filter((r) => r.fullName === "o/dup")).toEqual([
+      { fullName: "o/dup", updated: 1 },
+    ]);
+    expect(result.current.items?.at(-1)).toEqual({ fullName: "o/new", updated: 2 });
+  });
+
+  it("should keep rows that share no key even when they lack a number", async () => {
+    const named = vi.fn<(page: number) => Promise<Named[]>>();
+    named.mockResolvedValue([
+      { fullName: "o/a", updated: 1 },
+      { fullName: "o/b", updated: 1 },
+    ]);
+    const { result } = renderHookWithProviders(() =>
+      usePagedQuery<Named>(["test", "named2"], named, true, (r) => r.fullName),
+    );
+    await waitFor(() =>
+      expect(result.current.items?.map((r) => r.fullName)).toEqual(["o/a", "o/b"]),
+    );
   });
 });
 
