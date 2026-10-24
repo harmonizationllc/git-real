@@ -9,7 +9,9 @@ import { OperationBanner } from "../features/merge/OperationBanner";
 import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
+import { CreatePullRequestDialog } from "../features/hosting/CreatePullRequestDialog";
 import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
+import { useRepoContext } from "../features/hosting/useRepoContext";
 import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { SyncMessage } from "../features/remotes/SyncMessage";
@@ -73,6 +75,14 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   if (remotes !== null && remotes.repoId !== tab.id) setRemotes(null);
   const remotesTarget = remotes !== null && remotes.repoId === tab.id ? remotes.target : null;
   const openRemotes = (target: RemotesTarget) => setRemotes({ repoId: tab.id, target });
+  // A pull request needs a usable account and a branch to open it from; the pane is keyed per tab,
+  // so the open dialog never carries over to another repo.
+  const [createPr, setCreatePr] = useState(false);
+  const { context } = useRepoContext(tab.id);
+  const account = context?.account ?? null;
+  const canCreatePr =
+    account !== null && !account.needsReconnect && branches?.head.kind === "branch";
+  const onCreatePullRequest = canCreatePr ? () => setCreatePr(true) : null;
 
   // The window handler is registered once; it reads the latest sync actions (and their gates).
   const syncRef = useRef(sync);
@@ -132,7 +142,11 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <p className={styles.path}>{path}</p>
         <div className={styles.syncRow}>
           <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
-          <SyncToolbar sync={sync} onOpenRemotes={openRemotes} />
+          <SyncToolbar
+            sync={sync}
+            onOpenRemotes={openRemotes}
+            onCreatePullRequest={onCreatePullRequest}
+          />
         </div>
         {/* Its own full-width row, so an error never changes the toolbar row's height. */}
         <SyncMessage sync={sync} onOpenRemotes={openRemotes} />
@@ -148,10 +162,14 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
             <>
-              <BranchesPanel repoId={tab.id} onOpenRemotes={openRemotes} />
+              <BranchesPanel
+                repoId={tab.id}
+                onOpenRemotes={openRemotes}
+                onCreatePullRequest={onCreatePullRequest}
+              />
               <StashesPanel repoId={tab.id} />
               <TagsPanel repoId={tab.id} />
-              <PullRequestsPanel repoId={tab.id} />
+              <PullRequestsPanel repoId={tab.id} onCreatePullRequest={onCreatePullRequest} />
             </>
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.
@@ -217,6 +235,14 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
           repoId={tab.id}
           target={remotesTarget}
           onClose={() => setRemotes(null)}
+          fallbackFocus={rootRef}
+        />
+      )}
+      {createPr && (
+        // The pane root takes focus on close when the opener is still disabled by the network gate.
+        <CreatePullRequestDialog
+          repoId={tab.id}
+          onClose={() => setCreatePr(false)}
           fallbackFocus={rootRef}
         />
       )}

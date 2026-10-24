@@ -9,6 +9,7 @@ import { useCommitDraft } from "../lib/store/commitDraft";
 import { useRepoTabs } from "../lib/store/repoTabs";
 import { useWorkspace } from "../lib/store/workspace";
 import styles from "./App.module.css";
+import { Toasts } from "../components/Toasts";
 import { RepoPane } from "./RepoPane";
 import { TabBar } from "./TabBar";
 
@@ -44,6 +45,7 @@ export default function App(): React.JSX.Element {
           )}
         </main>
         <CloneDialog open={cloneOpen} onClose={() => setCloneOpen(false)} />
+        <Toasts />
       </div>
     </QueryClientProvider>
   );

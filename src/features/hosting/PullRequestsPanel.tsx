@@ -16,6 +16,8 @@ import { useRepoContext } from "./useRepoContext";
 
 export interface PullRequestsPanelProps {
   repoId: RepoId;
+  /** Opens the create pull request dialog; null or absent disables the header button. */
+  onCreatePullRequest?: (() => void) | null;
 }
 
 interface MenuState {
@@ -25,7 +27,7 @@ interface MenuState {
 }
 
 /** The open pull requests of the hosted repository behind `origin`; absent for any other origin. */
-export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
+export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsPanelProps) {
   const headingId = useId();
   const bodyId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -145,6 +147,16 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
             {prCountLabel(prs?.length ?? null, list.hasMore)}
           </button>
         </h2>
+        <button
+          type="button"
+          className={styles.create}
+          aria-label="Create pull request"
+          disabled={!onCreatePullRequest}
+          // A disabled button cannot be clicked, so the callback is set here.
+          onClick={() => (onCreatePullRequest as () => void)()}
+        >
+          +
+        </button>
         <button
           type="button"
           className={styles.refresh}

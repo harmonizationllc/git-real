@@ -83,3 +83,17 @@ export function hostingMessage(error: AppError, provider: HostingProvider): Netw
 export function prCountLabel(count: number | null, more: boolean): string {
   return count === null ? "Pull requests" : `Pull requests (${count}${more ? "+" : ""})`;
 }
+
+/** The create dialog's notice when the branch is not on origin yet. */
+export const PUBLISH_FIRST_TEXT =
+  "This branch isn't on the remote yet — it will be published first";
+
+/** The create dialog's checkbox for an origin upstream that is behind the branch. */
+export function pushFirstLabel(ahead: number): string {
+  return `Push ${ahead} ${ahead === 1 ? "commit" : "commits"} first`;
+}
+
+/** The toast after a pull request is opened. */
+export function openedToastText(number: number): string {
+  return `Opened #${number}`;
+}

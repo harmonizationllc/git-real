@@ -46,6 +46,7 @@
   content: "▾ " / "";
 }
 
+.create,
 .refresh {
   flex: none;
 }
