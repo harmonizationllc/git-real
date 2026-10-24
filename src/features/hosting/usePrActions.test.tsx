@@ -225,3 +225,139 @@ describe("usePrActions open and copyLink", () => {
     expect(result.current.error).toBeNull();
   });
 });
+
+// Contract (fix wave 2, F8): a checkout failure and a failed open or copy share one error slot;
+// the most recent failure wins, and clearing or restarting a checkout clears both.
+describe("usePrActions shared error slot", () => {
+  const failCheckout = () =>
+    vi.mocked(hostingCheckoutPullRequest).mockRejectedValue(networkError("hostUnreachable"));
+
+  // Changed deliberately (round 2): a checkout error no longer outranks a newer link failure.
+  it("should show a link error that came after the checkout error", async () => {
+    failCheckout();
+    vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    act(() => result.current.open(pr7()));
+    await waitFor(() => expect(result.current.error).toEqual({ kind: "io", message: "blocked" }));
+  });
+
+  it("should show the checkout error that came after a link error", async () => {
+    failCheckout();
+    vi.mocked(copyText).mockRejectedValue(new Error("denied"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    act(() => result.current.copyLink(pr7()));
+    await waitFor(() => expect(result.current.error).toEqual({ kind: "io", message: "denied" }));
+    await act(() => result.current.checkout(pr7()));
+    expect(result.current.error).toEqual(networkError("hostUnreachable"));
+  });
+
+  it("should show the link error again once the checkout error is gone", async () => {
+    vi.mocked(hostingCheckoutPullRequest)
+      .mockRejectedValueOnce(networkError("hostUnreachable"))
+      .mockResolvedValue({ kind: "checkedOut", branch: "feature-7" });
+    vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    act(() => result.current.open(pr7()));
+    await act(() => Promise.resolve());
+    // A successful checkout clears both, so only a new link failure can show again.
+    await act(() => result.current.checkout(pr7()));
+    expect(result.current.error).toBeNull();
+    act(() => result.current.open(pr7()));
+    await waitFor(() => expect(result.current.error).toEqual({ kind: "io", message: "blocked" }));
+  });
+
+  it("should clear a link error when clearError is called", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    act(() => result.current.open(pr7()));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    act(() => result.current.clearError());
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should clear both errors with one clearError call", async () => {
+    failCheckout();
+    vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    act(() => result.current.open(pr7()));
+    await act(() => Promise.resolve());
+    act(() => result.current.clearError());
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should clear a link error when a checkout starts", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("denied"));
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    act(() => result.current.copyLink(pr7()));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    vi.mocked(hostingCheckoutPullRequest).mockReturnValue(new Promise(() => undefined));
+    act(() => {
+      void result.current.checkout(pr7());
+    });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+
+  it("should clear a checkout error when a checkout starts", async () => {
+    failCheckout();
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    vi.mocked(hostingCheckoutPullRequest).mockReturnValue(new Promise(() => undefined));
+    act(() => {
+      void result.current.checkout(pr7());
+    });
+    await waitFor(() => expect(result.current.error).toBeNull());
+  });
+});
+
+// Contract (fix wave 2, round 2): the error slot shows the most recent failure, whichever kind.
+describe("usePrActions newest error wins", () => {
+  const checkoutErr = networkError("hostUnreachable");
+  const copyErr = { kind: "io", message: "denied" };
+
+  async function checkoutThenCopyFails() {
+    vi.mocked(hostingCheckoutPullRequest).mockRejectedValue(checkoutErr);
+    vi.mocked(copyText).mockRejectedValue(new Error("denied"));
+    const view = renderHookWithProviders(() => usePrActions(1));
+    await act(() => view.result.current.checkout(pr7()));
+    expect(view.result.current.error).toEqual(checkoutErr);
+    act(() => view.result.current.copyLink(pr7()));
+    await waitFor(() => expect(view.result.current.error).toEqual(copyErr));
+    return view;
+  }
+
+  it("should show a copy failure that follows a checkout failure", async () => {
+    const { result } = await checkoutThenCopyFails();
+    expect(result.current.error).toEqual(copyErr);
+  });
+
+  it("should show a checkout failure that follows an open failure", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
+    vi.mocked(hostingCheckoutPullRequest).mockRejectedValue(checkoutErr);
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    act(() => result.current.open(pr7()));
+    await waitFor(() => expect(result.current.error).toEqual({ kind: "io", message: "blocked" }));
+    await act(() => result.current.checkout(pr7()));
+    expect(result.current.error).toEqual(checkoutErr);
+  });
+
+  it("should stay clear after clearError following both failures, even on rerender", async () => {
+    const { result, rerender } = await checkoutThenCopyFails();
+    act(() => result.current.clearError());
+    expect(result.current.error).toBeNull();
+    rerender();
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should show no error while a new checkout is pending after both failures", async () => {
+    const { result } = await checkoutThenCopyFails();
+    vi.mocked(hostingCheckoutPullRequest).mockReturnValue(new Promise(() => undefined));
+    act(() => {
+      void result.current.checkout(pr7());
+    });
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    expect(result.current.error).toBeNull();
+  });
+});

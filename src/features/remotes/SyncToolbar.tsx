@@ -14,6 +14,8 @@ import type { SyncActions } from "./useSyncActions";
 export interface SyncToolbarProps {
   sync: SyncActions;
   onOpenRemotes(target: RemotesTarget): void;
+  /** Opens the create pull request dialog; null or absent leaves it out of Push options. */
+  onCreatePullRequest?: (() => void) | null;
 }
 
 type OpenMenu = { verb: "pull" | "push"; x: number; y: number };
@@ -22,7 +24,7 @@ type OpenMenu = { verb: "pull" | "push"; x: number; y: number };
  * The header's sync controls: upstream state, Fetch, Pull, Push, Remotes…, and their dialogs.
  * A failure is shown by SyncMessage, in its own row, so it never changes this row's height.
  */
-export function SyncToolbar({ sync, onOpenRemotes }: SyncToolbarProps) {
+export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncToolbarProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const { gates, upstream, running } = sync;
@@ -37,6 +39,9 @@ export function SyncToolbar({ sync, onOpenRemotes }: SyncToolbarProps) {
   const menuItems: MenuItem[] =
     menu?.verb === "push"
       ? [
+          ...(onCreatePullRequest
+            ? [{ id: "createPr", label: "Create pull request…", onSelect: onCreatePullRequest }]
+            : []),
           {
             id: "force",
             label: "Force push (with lease)…",

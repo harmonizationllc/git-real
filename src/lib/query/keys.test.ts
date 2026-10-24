@@ -501,3 +501,73 @@ describe("hosting query keys", () => {
     expect(mutationKeys.hostingAccount[0]).not.toBe(queryKeys.repo(3)[0]);
   });
 });
+
+// Contract: GR-13b keys. Repository info and issues sit OUTSIDE the repo prefix, like the PR
+// list, so watcher events never cost a provider call; the draft is a git read under the repo prefix.
+describe("GR-13b hosting query keys", () => {
+  it("should define hostingRepoInfo(id) as ['hosting', 'repoInfo', id]", () => {
+    expect(queryKeys.hostingRepoInfo(3)).toEqual(["hosting", "repoInfo", 3]);
+  });
+
+  it("should define issues(id, query) as ['hosting', 'issues', id, query]", () => {
+    expect(queryKeys.issues(3, "crash")).toEqual(["hosting", "issues", 3, "crash"]);
+  });
+
+  it("should define prDraft(id, target) under the repo prefix", () => {
+    expect(queryKeys.prDraft(1, "main")).toEqual(["repo", 1, "prDraft", "main"]);
+  });
+
+  it("should start hostingRepoInfo and issues with 'hosting', not the repo prefix", () => {
+    expect([
+      queryKeys.hostingRepoInfo(1)[0],
+      queryKeys.issues(1, "q")[0],
+      queryKeys.hostingRepoInfo(1).slice(0, 2),
+      queryKeys.issues(1, "q").slice(0, 2),
+    ]).toEqual(["hosting", "hosting", ["hosting", "repoInfo"], ["hosting", "issues"]]);
+  });
+
+  it("should not start hostingRepoInfo or issues with the repo(1) prefix", () => {
+    expect(queryKeys.hostingRepoInfo(1).slice(0, 2)).not.toEqual(queryKeys.repo(1));
+    expect(queryKeys.issues(1, "q").slice(0, 2)).not.toEqual(queryKeys.repo(1));
+  });
+
+  it("should start prDraft with the repo(1) prefix", () => {
+    expect(queryKeys.prDraft(1, "main").slice(0, 2)).toEqual(queryKeys.repo(1));
+  });
+
+  it("should give issues a different key per query", () => {
+    expect(queryKeys.issues(1, "a")).not.toEqual(queryKeys.issues(1, "b"));
+  });
+
+  it("should give issues a different key per repo", () => {
+    expect(queryKeys.issues(1, "a")).not.toEqual(queryKeys.issues(2, "a"));
+  });
+
+  it("should give prDraft a different key per target", () => {
+    expect(queryKeys.prDraft(1, "main")).not.toEqual(queryKeys.prDraft(1, "develop"));
+  });
+
+  it("should not refresh issues or repo info when repo(id) is invalidated, but refresh prDraft", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.hostingRepoInfo(1), {});
+    qc.setQueryData(queryKeys.issues(1, ""), []);
+    qc.setQueryData(queryKeys.prDraft(1, "main"), {});
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect([
+      qc.getQueryState(queryKeys.hostingRepoInfo(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.issues(1, ""))?.isInvalidated,
+      qc.getQueryState(queryKeys.prDraft(1, "main"))?.isInvalidated,
+    ]).toEqual([false, false, true]);
+  });
+
+  it("should refresh issues and repo info when the hosting prefix is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.hostingRepoInfo(1), {});
+    qc.setQueryData(queryKeys.issues(1, ""), []);
+    await qc.invalidateQueries({ queryKey: ["hosting"] });
+    expect([
+      qc.getQueryState(queryKeys.hostingRepoInfo(1))?.isInvalidated,
+      qc.getQueryState(queryKeys.issues(1, ""))?.isInvalidated,
+    ]).toEqual([true, true]);
+  });
+});

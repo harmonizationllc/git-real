@@ -1,8 +1,25 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { commit, getCommitConfig, getHeadMessage, getStatus, onRepoChanged } from "../../lib/ipc";
+import {
+  commit,
+  getCommitConfig,
+  getHeadMessage,
+  getStatus,
+  hostingListIssues,
+  hostingRepoContext,
+  hostingRepoInfo,
+  onRepoChanged,
+} from "../../lib/ipc";
 import type { CommitConfig, OperationState, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
+import { queryKeys } from "../../lib/query/keys";
 import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
+import {
+  hostingAccount,
+  hostingError,
+  issue,
+  repoContext,
+  repoInfo,
+} from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CommitBox } from "./CommitBox";
 
@@ -16,6 +33,9 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   getCommitConfig: vi.fn(),
   getHeadMessage: vi.fn(),
   getStatus: vi.fn(),
+  hostingListIssues: vi.fn(),
+  hostingRepoContext: vi.fn(),
+  hostingRepoInfo: vi.fn(),
   onRepoChanged: vi.fn(),
 }));
 
@@ -40,6 +60,9 @@ beforeEach(() => {
   vi.mocked(getCommitConfig).mockResolvedValue(config);
   vi.mocked(getHeadMessage).mockResolvedValue({ subject: "Head subject", body: "Head body" });
   vi.mocked(commit).mockResolvedValue({ oid: "abc", summary: "S" });
+  vi.mocked(hostingRepoContext).mockResolvedValue(null);
+  vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
+  vi.mocked(hostingListIssues).mockResolvedValue([issue(7), issue(8)]);
 });
 
 const button = () => screen.getByRole("button", { name: /Commit|Amend commit|Committing…/ });
@@ -537,5 +560,183 @@ describe("CommitBox operation gate wiring", () => {
     await user.click(screen.getByLabelText("Subject"));
     await user.keyboard("{Control>}{Enter}{/Control}");
     expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (GR-13b): a usable hosting account adds a Link issue button that opens the issue picker
+// and writes the chosen #n into the field that had focus.
+describe("CommitBox issue link", () => {
+  const linkButton = () => screen.getByRole("button", { name: "Link issue" });
+  const picker = () => screen.queryByRole("dialog", { name: "Link issue" });
+  const draftOf = () => useCommitDraft.getState().drafts[1];
+
+  async function renderHosted(context = repoContext()) {
+    vi.mocked(hostingRepoContext).mockResolvedValue(context);
+    const view = renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    return view;
+  }
+
+  async function renderUnhosted(context: Awaited<ReturnType<typeof hostingRepoContext>>) {
+    vi.mocked(hostingRepoContext).mockResolvedValue(context);
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalledWith(1));
+  }
+
+  it("should show the Link issue button for a hosted repository with a usable account", async () => {
+    await renderHosted();
+    expect(await screen.findByRole("button", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should show no Link issue button without a hosted origin", async () => {
+    await renderUnhosted(null);
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
+  });
+
+  it("should show no Link issue button without a connected account", async () => {
+    await renderUnhosted(repoContext(null));
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
+  });
+
+  it("should show no Link issue button while the account needs a reconnect", async () => {
+    await renderUnhosted(repoContext(hostingAccount({ needsReconnect: true })));
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
+  });
+
+  it("should not open the picker until the button is used", async () => {
+    await renderHosted();
+    await screen.findByRole("button", { name: "Link issue" });
+    expect(picker()).toBeNull();
+  });
+
+  it("should open the Link issue dialog when the button is clicked", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  // Fix wave 2 (F3): the # button toggles the picker; a pointerdown on it must not close the
+  // picker before the click that follows toggles it.
+  it("should leave no Link issue dialog after the # button is clicked twice", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(linkButton());
+    await waitFor(() => expect(picker()).toBeNull());
+  });
+
+  it("should open the picker again on a third click of the # button", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(linkButton());
+    await waitFor(() => expect(picker()).toBeNull());
+    await user.click(linkButton());
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should still close the picker on a pointerdown on the subject field", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(screen.getByLabelText("Subject"));
+    await waitFor(() => expect(picker()).toBeNull());
+  });
+
+  it("should open the picker on Ctrl+Shift+I in the subject", async () => {
+    const { user } = await renderHosted();
+    await screen.findByRole("button", { name: "Link issue" });
+    await user.click(screen.getByLabelText("Subject"));
+    await user.keyboard("{Control>}{Shift>}i{/Shift}{/Control}");
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should write the picked #n into the body and close the picker", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await user.click(await screen.findByRole("option", { name: /^#7/ }));
+    expect(draftOf()?.body).toBe("#7");
+    expect(picker()).toBeNull();
+  });
+
+  it("should append the picked #n to the text already in the body", async () => {
+    const { user } = await renderHosted();
+    await user.type(screen.getByLabelText("Body"), "Fixes");
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await user.click(await screen.findByRole("option", { name: /^#8/ }));
+    expect(draftOf()?.body).toBe("Fixes #8");
+  });
+
+  it("should write the picked #n into the subject when it had focus", async () => {
+    const { user } = await renderHosted();
+    await screen.findByRole("button", { name: "Link issue" });
+    await user.type(screen.getByLabelText("Subject"), "Fix login");
+    await user.keyboard("{Control>}{Shift>}i{/Shift}{/Control}");
+    await user.click(await screen.findByRole("option", { name: /^#7/ }));
+    expect(draftOf()?.subject).toBe("Fix login #7");
+    expect(draftOf()?.body).toBe("");
+  });
+
+  it("should pick with the keyboard: type to search, Enter", async () => {
+    const { user } = await renderHosted();
+    await screen.findByRole("button", { name: "Link issue" });
+    await user.click(screen.getByLabelText("Subject"));
+    await user.keyboard("{Control>}{Shift>}i{/Shift}{/Control}");
+    await screen.findAllByRole("option");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(draftOf()?.subject).toBe("#8");
+  });
+
+  it("should leave the draft alone and close the picker on Escape", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.keyboard("{Escape}");
+    expect(picker()).toBeNull();
+    expect(draftOf()).toBeUndefined();
+  });
+
+  it("should put focus back in the field after picking", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await user.click(await screen.findByRole("option", { name: /^#7/ }));
+    expect(screen.getByLabelText("Body")).toHaveFocus();
+  });
+
+  it("should drop an open picker when the account stops being usable", async () => {
+    const { user, queryClient } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    queryClient.setQueryData(
+      queryKeys.hostingContext(1),
+      repoContext(hostingAccount({ needsReconnect: true })),
+    );
+    await waitFor(() => expect(picker()).toBeNull());
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
+  });
+
+  it("should ask the provider for issues only after the picker opens", async () => {
+    const { user } = await renderHosted();
+    await screen.findByRole("button", { name: "Link issue" });
+    expect(hostingListIssues).not.toHaveBeenCalled();
+    await user.click(linkButton());
+    await waitFor(() => expect(hostingListIssues).toHaveBeenCalledWith(1, "", 1));
+  });
+
+  it("should name the repository's provider in the picker's error copy", async () => {
+    vi.mocked(hostingListIssues).mockRejectedValue(hostingError("hostingUnreachable"));
+    const { user } = await renderHosted({
+      repo: { provider: "gitlab", host: "gitlab.com", namespace: "g", name: "r" },
+      account: hostingAccount({ provider: "gitlab" }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't reach GitLab");
+  });
+
+  it("should not touch the issue calls for an unhosted repository", async () => {
+    await renderUnhosted(null);
+    expect(hostingRepoInfo).not.toHaveBeenCalled();
+    expect(hostingListIssues).not.toHaveBeenCalled();
   });
 });

@@ -126,7 +126,7 @@ beforeEach(() => {
 
 async function renderPanel(data: BranchList = list()) {
   vi.mocked(listBranches).mockResolvedValue(data);
-  const view = renderWithProviders(<BranchesPanel repoId={1} />);
+  const view = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
   await screen.findByRole("region", { name: "Branches" });
   await screen.findByRole("heading", { name: "Local" });
   return view;
@@ -562,7 +562,7 @@ describe("BranchesPanel create", () => {
     vi.mocked(listBranches).mockResolvedValue(
       list({ head: { kind: "unborn", name: "main" }, local: [] }),
     );
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     const button = await screen.findByRole("button", { name: "New branch…" });
     await waitFor(() => expect(button).toBeDisabled());
     expect(button).toHaveAttribute("title", "Make a commit first");
@@ -926,13 +926,13 @@ describe("BranchesPanel head states", () => {
 describe("BranchesPanel query errors", () => {
   it("should render the list error alert without a data-variant", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
   });
 
   it("should show the list error with its message", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("list exploded");
   });
 
@@ -940,7 +940,7 @@ describe("BranchesPanel query errors", () => {
     vi.mocked(listBranches)
       .mockRejectedValueOnce({ kind: "io", message: "list exploded" })
       .mockResolvedValue(list());
-    const { user } = renderWithProviders(<BranchesPanel repoId={1} />);
+    const { user } = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await user.click(await screen.findByRole("button", { name: "Retry" }));
     expect(listBranches).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
@@ -948,7 +948,7 @@ describe("BranchesPanel query errors", () => {
 
   it("should not render branch rows while the list is in error", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await screen.findByRole("alert");
     expect(screen.queryByRole("list")).toBeNull();
   });
@@ -1216,7 +1216,7 @@ describe("BranchesPanel remote checkout title with a filter", () => {
 describe("BranchesPanel body states", () => {
   it("should show a Loading branches… status while the list is pending", () => {
     vi.mocked(listBranches).mockReturnValue(new Promise(() => {}));
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading branches…");
   });
 
@@ -1233,7 +1233,7 @@ describe("BranchesPanel body states", () => {
 
   it("should show only the error, without filter or New branch…, when the list fails", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await screen.findByRole("alert");
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "New branch…" })).toBeNull();
@@ -1244,7 +1244,7 @@ describe("BranchesPanel body states", () => {
     vi.mocked(listBranches)
       .mockRejectedValueOnce({ kind: "io", message: "list exploded" })
       .mockResolvedValue(list());
-    const { user } = renderWithProviders(<BranchesPanel repoId={1} />);
+    const { user } = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(listBranches).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
@@ -1416,7 +1416,7 @@ describe("BranchesPanel New branch… while pending", () => {
     vi.mocked(listBranches).mockResolvedValue(
       list({ head: { kind: "unborn", name: "main" }, local: [] }),
     );
-    renderWithProviders(<BranchesPanel repoId={1} />);
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     const button = await screen.findByRole("button", { name: "New branch…" });
     await waitFor(() => expect(button).toBeDisabled());
     expect(button).toHaveAttribute("title", "Make a commit first");
@@ -2413,7 +2413,9 @@ describe("BranchesPanel remote heading menu", () => {
   async function renderWithOpen() {
     const onOpenRemotes = vi.fn();
     vi.mocked(listBranches).mockResolvedValue(list());
-    const view = renderWithProviders(<BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} />);
+    const view = renderWithProviders(
+      <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} onCreatePullRequest={null} />,
+    );
     await screen.findByRole("heading", { name: "Local" });
     return { ...view, onOpenRemotes };
   }
@@ -2460,7 +2462,7 @@ describe("BranchesPanel remote heading menu", () => {
       }),
     );
     const { user } = renderWithProviders(
-      <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} />,
+      <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} onCreatePullRequest={null} />,
     );
     rightClick(await screen.findByRole("heading", { level: 2, name: "up" }));
     await user.click(menuItem("Edit remote…"));
@@ -2557,5 +2559,70 @@ describe("BranchesPanel remote heading menu", () => {
     const dialog = await dialogNamed("Remove remote origin?");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+  });
+});
+
+// Contract: only the HEAD local branch offers Create pull request…, right after Checkout.
+describe("BranchesPanel Create pull request menu item", () => {
+  async function renderWithCreate(onCreatePullRequest: (() => void) | null) {
+    vi.mocked(listBranches).mockResolvedValue(list());
+    const view = renderWithProviders(
+      <BranchesPanel repoId={1} onCreatePullRequest={onCreatePullRequest} />,
+    );
+    await screen.findByRole("heading", { name: "Local" });
+    return view;
+  }
+
+  it("should list Create pull request… right after Checkout on the HEAD branch", async () => {
+    await renderWithCreate(vi.fn());
+    rightClick(localRow("main"));
+    expect(itemLabels().slice(0, 2)).toEqual(["Checkout", "Create pull request…"]);
+  });
+
+  it("should call the prop once when Create pull request… is selected", async () => {
+    const onCreatePullRequest = vi.fn();
+    const { user } = await renderWithCreate(onCreatePullRequest);
+    rightClick(localRow("main"));
+    await user.click(menuItem("Create pull request…"));
+    expect(onCreatePullRequest).toHaveBeenCalledOnce();
+  });
+
+  it("should not list it on another local branch", async () => {
+    await renderWithCreate(vi.fn());
+    rightClick(localRow("feature"));
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+
+  it("should not list it on a remote branch, even one named like HEAD", async () => {
+    await renderWithCreate(vi.fn());
+    rightClick(remoteRow("origin", "main"));
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+
+  it("should not list it when the prop is null", async () => {
+    await renderWithCreate(null);
+    rightClick(localRow("main"));
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+});
+
+describe("BranchesPanel Create pull request menu item edge cases", () => {
+  it("should not list it when the prop is absent", async () => {
+    vi.mocked(listBranches).mockResolvedValue(list());
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    await screen.findByRole("heading", { name: "Local" });
+    rightClick(localRow("main"));
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+
+  it("should not add it to the menu opened by dropping a branch on the current branch", async () => {
+    vi.mocked(listBranches).mockResolvedValue(list());
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Local" });
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(itemLabels()).toHaveLength(3);
+    expect(itemLabels()).not.toContain("Create pull request…");
   });
 });

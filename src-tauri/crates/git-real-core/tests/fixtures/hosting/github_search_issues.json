@@ -1,0 +1,30 @@
+{
+  "total_count": 3,
+  "items": [
+    {
+      "number": 7,
+      "title": "Login fails",
+      "user": { "login": "alice" },
+      "labels": [{ "name": "bug" }, { "name": "P1" }],
+      "updated_at": "2026-10-20T12:00:00Z",
+      "html_url": "https://github.com/gorlox/test-repo/issues/7"
+    },
+    {
+      "number": 6,
+      "title": "Not an issue",
+      "user": { "login": "bob" },
+      "labels": [],
+      "pull_request": { "url": "x" },
+      "updated_at": "2026-10-19T08:30:15Z",
+      "html_url": "https://github.com/gorlox/test-repo/pull/6"
+    },
+    {
+      "number": 5,
+      "title": "Typo",
+      "user": { "login": "bob" },
+      "labels": [],
+      "updated_at": "2026-10-19T08:30:15Z",
+      "html_url": "https://github.com/gorlox/test-repo/issues/5"
+    }
+  ]
+}

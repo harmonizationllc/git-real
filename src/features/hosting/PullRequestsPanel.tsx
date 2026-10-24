@@ -16,6 +16,8 @@ import { useRepoContext } from "./useRepoContext";
 
 export interface PullRequestsPanelProps {
   repoId: RepoId;
+  /** Opens the create pull request dialog; null or absent disables the header button. */
+  onCreatePullRequest?: (() => void) | null;
 }
 
 interface MenuState {
@@ -25,7 +27,7 @@ interface MenuState {
 }
 
 /** The open pull requests of the hosted repository behind `origin`; absent for any other origin. */
-export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
+export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsPanelProps) {
   const headingId = useId();
   const bodyId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -38,6 +40,8 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [accountsPreset, setAccountsPreset] = useState<AccountsPreset | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // The row button that opened the menu, which the menu ignores so a second click toggles it.
+  const menuButton = useRef<HTMLButtonElement>(null);
 
   // Every hook runs above: the section exists only for a hosted origin.
   if (!context) return null;
@@ -59,6 +63,8 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
     { id: "copy", label: "Copy link", onSelect: () => actions.copyLink(pr) },
   ];
 
+  // The heading shows the count only while the body shows the loaded list (or its empty state).
+  let listed = false;
   let body: React.ReactNode;
   if (collapsed) {
     body = null;
@@ -88,8 +94,10 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
   } else if (prs === undefined) {
     body = <p role="status">Loading pull requests…</p>;
   } else if (prs.length === 0) {
+    listed = true;
     body = <p className={styles.empty}>No open pull requests</p>;
   } else {
+    listed = true;
     body = (
       <>
         <ul aria-label="Pull request list" className={styles.list}>
@@ -98,7 +106,10 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
               key={pr.number}
               pr={pr}
               onOpen={() => actions.open(pr)}
-              onContextMenu={(x, y) => setMenu({ x, y, pr })}
+              onContextMenu={(x, y) =>
+                setMenu((m) => (m?.pr.number === pr.number ? null : { x, y, pr }))
+              }
+              buttonRef={menu?.pr.number === pr.number ? menuButton : undefined}
             />
           ))}
         </ul>
@@ -142,9 +153,19 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
             aria-controls={bodyId}
             onClick={() => useLayoutPrefs.getState().setPullRequestsCollapsed(!collapsed)}
           >
-            {prCountLabel(prs?.length ?? null, list.hasMore)}
+            {prCountLabel(listed ? (prs as PullRequest[]).length : null, list.hasMore)}
           </button>
         </h2>
+        <button
+          type="button"
+          className={styles.create}
+          aria-label="Create pull request"
+          disabled={!onCreatePullRequest}
+          // A disabled button cannot be clicked, so the callback is set here.
+          onClick={() => (onCreatePullRequest as () => void)()}
+        >
+          +
+        </button>
         <button
           type="button"
           className={styles.refresh}
@@ -173,6 +194,7 @@ export function PullRequestsPanel({ repoId }: PullRequestsPanelProps) {
         items={menu === null ? [] : menuItems(menu.pr)}
         onClose={closeMenu}
         fallbackFocus={headingRef}
+        ignore={menuButton}
       />
       {reset !== null && (
         <ConfirmDialog

@@ -2,9 +2,12 @@
 //! the page number drives paging, so `next` is ignored.
 
 use serde::Deserialize;
+use serde_json::{Value, json};
 
-use super::http::{Transport, get, parse_timestamp, percent_encode, send_json, unexpected};
-use super::model::{CiState, PullRequest, UserInfo};
+use super::http::{
+    Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json, unexpected,
+};
+use super::model::{CiState, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo};
 use super::provider::{Provider, RepoRef, is_plain_segment};
 use crate::error::GitError;
 use crate::token::Token;
@@ -77,6 +80,30 @@ struct WireHtml {
     href: String,
 }
 
+#[derive(Deserialize)]
+struct WireRepoInfo {
+    /// `null` for an empty repository.
+    mainbranch: Option<WireBranch>,
+    has_issues: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct WireIssuePage {
+    values: Vec<WireIssue>,
+}
+
+#[derive(Deserialize)]
+struct WireIssue {
+    id: u64,
+    title: String,
+    /// `bug`, `enhancement`, ...: Bitbucket's only issue label.
+    kind: Option<Value>,
+    /// `null` for an anonymous or deleted reporter.
+    reporter: Option<WireAuthor>,
+    updated_on: String,
+    links: WirePullLinks,
+}
+
 pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<UserInfo, GitError> {
     let url = format!("{}/user", Provider::Bitbucket.api_base(host));
     let user: WireUser = send_json(t, &get(url, token, &[]), token, host)?;
@@ -118,13 +145,94 @@ pub fn get_pull_request(
     convert(pr, &repo.host)
 }
 
-fn pull_requests_url(repo: &RepoRef) -> String {
+pub fn repo_info(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+) -> Result<HostedRepoInfo, GitError> {
+    let info: WireRepoInfo =
+        send_json(t, &get(repository_url(repo), token, &[]), token, &repo.host)?;
+    Ok(HostedRepoInfo {
+        default_branch: info.mainbranch.map(|b| b.name),
+        issues_enabled: info.has_issues.unwrap_or(true),
+    })
+}
+
+/// Open means `new` or `open`. The query goes inside a `title ~ "..."` literal, so `"` and `\`
+/// are removed from it first.
+pub fn list_issues(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+    query: &str,
+    page: u32,
+) -> Result<Vec<Issue>, GitError> {
+    let mut filter = r#"(state="new" OR state="open")"#.to_owned();
+    let literal: String = issue_query(query)
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\'))
+        .collect();
+    if !literal.trim().is_empty() {
+        filter = format!(r#"{filter} AND title ~ "{literal}""#);
+    }
+    let url = format!(
+        "{}/issues?pagelen=50&page={page}&sort=-updated_on&q={}",
+        repository_url(repo),
+        percent_encode(&filter)
+    );
+    let list: WireIssuePage = send_json(t, &get(url, token, &[]), token, &repo.host)?;
+    list.values
+        .into_iter()
+        .map(|i| {
+            Ok(Issue {
+                number: i.id,
+                title: i.title,
+                author: i
+                    .reporter
+                    .and_then(|r| r.nickname.or(r.display_name))
+                    .unwrap_or_default(),
+                labels: i
+                    .kind
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .map(|k| vec![k.to_owned()])
+                    .unwrap_or_default(),
+                updated_at: parse_timestamp(&i.updated_on).ok_or_else(|| unexpected(&repo.host))?,
+                web_url: i.links.html.href,
+            })
+        })
+        .collect()
+}
+
+pub fn create_pull_request(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+    new: &NewPullRequest,
+) -> Result<PullRequest, GitError> {
+    let body = json!({
+        "title": new.title,
+        "description": new.body,
+        "source": { "branch": { "name": new.source_branch } },
+        "destination": { "branch": { "name": new.target_branch } },
+    });
+    let req = post_json(pull_requests_url(repo), token, &body);
+    let pr: WirePullRequest = send_json(t, &req, token, &repo.host)?;
+    convert(pr, &repo.host)
+}
+
+/// `{base}/repositories/{workspace}/{slug}`.
+fn repository_url(repo: &RepoRef) -> String {
     format!(
-        "{}/repositories/{}/{}/pullrequests",
+        "{}/repositories/{}/{}",
         repo.provider.api_base(&repo.host),
         percent_encode(&repo.namespace),
         percent_encode(&repo.name)
     )
+}
+
+fn pull_requests_url(repo: &RepoRef) -> String {
+    format!("{}/pullrequests", repository_url(repo))
 }
 
 fn convert(p: WirePullRequest, host: &str) -> Result<PullRequest, GitError> {

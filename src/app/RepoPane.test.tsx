@@ -14,8 +14,12 @@ import {
   getOperationState,
   getStatus,
   getStashFiles,
+  hostingCreatePullRequest,
+  hostingListIssues,
   hostingListPullRequests,
+  hostingPullRequestDraft,
   hostingRepoContext,
+  hostingRepoInfo,
   listBranches,
   listRemotes,
   listStashes,
@@ -34,7 +38,13 @@ import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
-import { repoContext } from "../test/hostingFixtures";
+import {
+  hostingAccount,
+  prDraft,
+  pullRequest,
+  repoContext,
+  repoInfo,
+} from "../test/hostingFixtures";
 import { networkError, remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
@@ -78,8 +88,12 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getOperationState: vi.fn(),
   getStatus: vi.fn(),
   getStashFiles: vi.fn(),
+  hostingCreatePullRequest: vi.fn(),
+  hostingListIssues: vi.fn(),
   hostingListPullRequests: vi.fn(),
+  hostingPullRequestDraft: vi.fn(),
   hostingRepoContext: vi.fn(),
+  hostingRepoInfo: vi.fn(),
   listBranches: vi.fn(),
   listRemotes: vi.fn(),
   listStashes: vi.fn(),
@@ -130,7 +144,12 @@ beforeEach(() => {
   StubResizeObserver.instances = [];
   bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
-  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
+  useLayoutPrefs.setState({
+    refsWidth: 240,
+    sidebarWidth: 320,
+    tagsCollapsed: true,
+    issuesCollapsed: true,
+  });
   vi.mocked(listBranches).mockResolvedValue(branchList());
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
@@ -148,6 +167,9 @@ beforeEach(() => {
   vi.mocked(listStashes).mockResolvedValue([]);
   vi.mocked(hostingRepoContext).mockResolvedValue(null);
   vi.mocked(hostingListPullRequests).mockResolvedValue([]);
+  vi.mocked(hostingListIssues).mockResolvedValue([]);
+  vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
+  vi.mocked(hostingPullRequestDraft).mockResolvedValue(prDraft());
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
   vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
@@ -1266,6 +1288,71 @@ describe("RepoPane pull requests", () => {
   });
 });
 
+// Contract (GR-13b): an Issues section follows Pull requests for a hosted origin, and the commit
+// editor's Ctrl/Cmd+Shift+I opens the issue picker without reaching the window shortcuts.
+describe("RepoPane issues", () => {
+  it("should render the Issues section after the Pull requests section", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const pulls = await screen.findByRole("region", { name: "Pull requests" });
+    const issues = await screen.findByRole("region", { name: "Issues" });
+    expect(follows(pulls, issues)).toBe(true);
+  });
+
+  it("should start the Issues section collapsed and call no issues endpoint", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const toggle = await screen.findByRole("button", { name: "Issues" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(hostingListIssues).not.toHaveBeenCalled();
+    expect(hostingRepoInfo).not.toHaveBeenCalled();
+  });
+
+  it("should render no Issues section when origin is not hosted", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Tags (0)" });
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: /^Issues/ })).toBeNull();
+  });
+
+  it("should replace the Issues section with file history while history is open", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    useWorkspace.setState({ historyPath: { 1: "src/a.ts" } });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "File history" });
+    expect(screen.queryByRole("region", { name: /^Issues/ })).toBeNull();
+  });
+
+  it("should open the issue picker on Ctrl+Shift+I in the commit subject and consume the key", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Link issue" });
+    const subject = screen.getByLabelText("Subject");
+    subject.focus();
+    expect(fireEvent.keyDown(subject, { key: "I", ctrlKey: true, shiftKey: true })).toBe(false);
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should not fetch, pull or push on Ctrl+Shift+I", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Link issue" });
+    fireEvent.keyDown(screen.getByLabelText("Subject"), {
+      key: "I",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect([fetchAll, pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0, 0]);
+  });
+
+  it("should offer no Link issue button without a connected account", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Issues" });
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
+  });
+});
+
 // Contract: the header carries the sync toolbar, and Ctrl/Cmd+Shift+F, L and P run fetch, pull
 // and push through it, under the same dialog guard as the file history shortcut.
 describe("RepoPane sync toolbar and shortcuts", () => {
@@ -1653,5 +1740,257 @@ describe("RepoPane sync during an in-progress operation", () => {
     fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "L" });
     fireEvent.keyDown(window, { ctrlKey: true, shiftKey: true, key: "P" });
     expect([pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0]);
+  });
+});
+
+// Contract: RepoPane owns the create pull request dialog and offers it from the Push options menu,
+// the current branch's menu and the pull requests header, only for a usable account on a branch.
+describe("RepoPane create pull request", () => {
+  const usableContext = () => vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+
+  /** Renders the pane and waits until the hosting context and the branch list have loaded. */
+  async function renderLoaded() {
+    const view = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    await screen.findByRole("button", { name: "Tags (0)" });
+    await act(() => Promise.resolve());
+    return view;
+  }
+
+  const createItem = () => screen.queryByRole("menuitem", { name: "Create pull request…" });
+
+  async function openPushMenu(user: ReturnType<typeof renderWithProviders>["user"]) {
+    await waitFor(() => expect(screen.getByRole("button", { name: "Push options" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Push options" }));
+  }
+
+  it("should list Create pull request… under Push options for a connected account on a branch", async () => {
+    usableContext();
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeInTheDocument();
+  });
+
+  it("should open the Create pull request dialog when the item is selected", async () => {
+    usableContext();
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    expect(await screen.findByRole("dialog", { name: "Create pull request" })).toBeInTheDocument();
+  });
+
+  it("should not mount the dialog before the item is selected", async () => {
+    usableContext();
+    await renderLoaded();
+    expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull();
+  });
+
+  it("should request the repository info for the tab's repo when the dialog opens", async () => {
+    usableContext();
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await waitFor(() => expect(hostingRepoInfo).toHaveBeenCalledWith(1));
+  });
+
+  it("should close the dialog on Escape", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "dev", oid: oidOf(2) }] },
+        ],
+      }),
+    );
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await screen.findByLabelText("Title");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull();
+  });
+
+  it("should return focus to the Push options button that opened it when the dialog closes", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "dev", oid: oidOf(2) }] },
+        ],
+      }),
+    );
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await screen.findByLabelText("Title");
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Push options" })).toHaveFocus();
+  });
+
+  it("should leave focus on the pane or the Push options button after a successful create closes the dialog", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        head: { kind: "branch", name: "feat" },
+        local: [
+          {
+            name: "feat",
+            oid: oidOf(1),
+            isHead: true,
+            tracking: { upstream: "origin/feat", ahead: 0, behind: 0 },
+          },
+        ],
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "main", oid: oidOf(2) }] },
+        ],
+      }),
+    );
+    vi.mocked(hostingCreatePullRequest).mockResolvedValue(
+      pullRequest(124, { sourceBranch: "feat", targetBranch: "main" }),
+    );
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await screen.findByLabelText("Title");
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Create pull request" })).getByRole("button", {
+        name: "Create pull request",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull(),
+    );
+    const pane = screen.getByRole("heading", { level: 1 }).closest("section");
+    const pushOptions = screen.getByRole("button", { name: "Push options" });
+    expect([pane, pushOptions]).toContain(document.activeElement);
+  });
+
+  it("should create from the dialog and close it", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        remotes: [
+          {
+            remote: "origin",
+            branches: [
+              { remote: "origin", name: "main", oid: oidOf(2) },
+              { remote: "origin", name: "dev", oid: oidOf(3) },
+            ],
+          },
+        ],
+        local: [
+          {
+            name: "feat",
+            oid: oidOf(1),
+            isHead: true,
+            tracking: { upstream: "origin/feat", ahead: 0, behind: 0 },
+          },
+        ],
+        head: { kind: "branch", name: "feat" },
+      }),
+    );
+    vi.mocked(hostingCreatePullRequest).mockResolvedValue(
+      pullRequest(124, { sourceBranch: "feat", targetBranch: "main" }),
+    );
+
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await screen.findByLabelText("Title");
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Create pull request" })).getByRole("button", {
+        name: "Create pull request",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull(),
+    );
+    expect(hostingCreatePullRequest).toHaveBeenCalledOnce();
+  });
+
+  it("should omit the item when no account is connected", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeNull();
+  });
+
+  it("should omit the item when the account needs a reconnect", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(
+      repoContext(hostingAccount({ needsReconnect: true })),
+    );
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeNull();
+  });
+
+  it("should omit the item when origin is not on a supported host", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(null);
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeNull();
+  });
+
+  // The Push options button is itself disabled on a detached HEAD, so the pane's null callback is
+  // observable through the pull requests header button.
+  it("should offer no way to open the dialog when HEAD is detached", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "detached", oid: oidOf(1) },
+      local: [],
+      remotes: [],
+    });
+    await renderLoaded();
+    expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Push options" })).toBeDisabled();
+  });
+
+  it("should offer no way to open the dialog when HEAD is unborn", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "unborn", name: "main" },
+      local: [],
+      remotes: [],
+    });
+    await renderLoaded();
+    expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
+  });
+
+  it("should open the dialog from the current branch's menu", async () => {
+    usableContext();
+    await renderLoaded();
+    fireEvent.contextMenu(screen.getByTitle("refs/heads/main"), { clientX: 10, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create pull request…" }));
+    expect(await screen.findByRole("dialog", { name: "Create pull request" })).toBeInTheDocument();
+  });
+
+  it("should open the dialog from the pull requests header button", async () => {
+    usableContext();
+    const { user } = await renderLoaded();
+    await user.click(await screen.findByRole("button", { name: "Create pull request" }));
+    expect(await screen.findByRole("dialog", { name: "Create pull request" })).toBeInTheDocument();
+  });
+
+  it("should offer no way to open the dialog when the hosting context fails to load", async () => {
+    vi.mocked(hostingRepoContext).mockRejectedValue({ kind: "io", message: "x" });
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeNull();
+  });
+
+  it("should offer no way to open the dialog before the branch list has loaded", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    await act(() => Promise.resolve());
+    expect(screen.getByRole("button", { name: "Push options" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull();
+  });
+
+  it("should disable the pull requests header button when no account is connected", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    await renderLoaded();
+    expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
   });
 });

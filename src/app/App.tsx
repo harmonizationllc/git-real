@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { Toasts } from "../components/Toasts";
 import { CloneDialog } from "../features/repo/CloneDialog";
 import { StartScreen } from "../features/repo/StartScreen";
 import { closeRepo, isAppError } from "../lib/ipc";
@@ -44,6 +45,7 @@ export default function App(): React.JSX.Element {
           )}
         </main>
         <CloneDialog open={cloneOpen} onClose={() => setCloneOpen(false)} />
+        <Toasts />
       </div>
     </QueryClientProvider>
   );

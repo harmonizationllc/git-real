@@ -111,6 +111,10 @@ pub fn run() {
             commands::hosting::hosting_repo_context,
             commands::hosting::hosting_list_pull_requests,
             commands::hosting::hosting_checkout_pull_request,
+            commands::hosting::hosting_repo_info,
+            commands::hosting::hosting_list_issues,
+            commands::hosting::hosting_pull_request_draft,
+            commands::hosting::hosting_create_pull_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

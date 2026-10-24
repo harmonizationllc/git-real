@@ -50,6 +50,16 @@ pub enum PushTarget {
     SetUpstream { remote: String, branch: String },
 }
 
+/// The prefill for a new pull request from the current branch (GR-13 spec §5.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestDraft {
+    pub title: String,
+    pub body: String,
+    /// Commits on HEAD and not on `origin/<target>`, counted up to 1000.
+    pub ahead: u32,
+}
+
 /// A configured remote with its URLs as written in the config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

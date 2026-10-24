@@ -265,7 +265,7 @@ fn a_message_that_is_not_a_string_falls_back_to_the_status() {
     for body in [
         r#"{"message":42}"#,
         r#"{"message":null,"error":null}"#,
-        r#"{"message":["a"]}"#,
+        r#"{"message":[1]}"#,
         r#"{"error":{"message":7}}"#,
         r#"{"error":{}}"#,
         r#"["message"]"#,
@@ -298,6 +298,17 @@ fn the_token_is_redacted_in_every_field_the_message_can_come_from() {
         assert_eq!(rejected_message(body), "a *** b", "{body}");
         assert_eq!(auth_message(body), "a *** b", "{body}");
     }
+}
+
+#[test]
+fn the_token_is_redacted_in_errors_first_message_and_message_array_entries() {
+    let in_errors =
+        format!(r#"{{"message":"Validation Failed","errors":[{{"message":"a {SECRET} b"}}]}}"#);
+    let in_array = format!(r#"{{"message":["x","a {SECRET} b"]}}"#);
+    assert_eq!(rejected_message(&in_errors), "a *** b");
+    assert_eq!(auth_message(&in_errors), "a *** b");
+    assert_eq!(rejected_message(&in_array), "x; a *** b");
+    assert_eq!(auth_message(&in_array), "x; a *** b");
 }
 
 #[test]

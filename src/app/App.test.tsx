@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../lib/query/client";
@@ -23,6 +23,7 @@ import {
 import type { OpenedRepo } from "../lib/ipc";
 import { useCommitDraft } from "../lib/store/commitDraft";
 import { useRepoTabs } from "../lib/store/repoTabs";
+import { useToasts } from "../lib/store/toasts";
 import { useWorkspace } from "../lib/store/workspace";
 import { networkError, remoteInfo } from "../test/remoteFixtures";
 import App from "./App";
@@ -62,6 +63,7 @@ beforeEach(() => {
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   useCommitDraft.setState({ drafts: {} });
+  useToasts.setState({ toasts: [] });
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
@@ -297,5 +299,25 @@ describe("App sync state per tab", () => {
     await user.click(screen.getByRole("tab", { name: "beta" }));
     await screen.findByRole("heading", heading("beta"));
     expect(screen.queryByText("Could not reach the remote")).toBeNull();
+  });
+});
+
+// Contract: one toast region is mounted for the whole app, whatever the active pane.
+describe("App toasts", () => {
+  it("should render a shown toast in a status region", () => {
+    renderApp();
+    act(() => {
+      useToasts.getState().show("Hi");
+    });
+    expect(screen.getByText("Hi").closest('[role="status"]')).not.toBeNull();
+  });
+
+  it("should render a shown toast over a repo pane too", async () => {
+    renderApp(repo(1, "alpha"));
+    await screen.findByRole("region", { name: "Changes" });
+    act(() => {
+      useToasts.getState().show("Hi");
+    });
+    expect(screen.getAllByText("Hi")).toHaveLength(1);
   });
 });

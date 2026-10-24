@@ -21,15 +21,25 @@ export interface ContextMenuProps {
   onClose(): void;
   /** Takes focus on close when the opener is gone, disabled or never had focus. */
   fallbackFocus?: RefObject<HTMLElement | null>;
+  /**
+   * The button that opened the menu: a primary mousedown on it does not close the menu, so the
+   * click that follows can toggle it from the parent.
+   */
+  ignore?: RefObject<HTMLElement | null>;
 }
 
-export function ContextMenu({ open, x, y, items, onClose, fallbackFocus }: ContextMenuProps) {
-  return open ? (
-    <ContextMenuBody x={x} y={y} items={items} onClose={onClose} fallbackFocus={fallbackFocus} />
-  ) : null;
+export function ContextMenu({ open, ...rest }: ContextMenuProps) {
+  return open ? <ContextMenuBody {...rest} /> : null;
 }
 
-function ContextMenuBody({ x, y, items, onClose, fallbackFocus }: Omit<ContextMenuProps, "open">) {
+function ContextMenuBody({
+  x,
+  y,
+  items,
+  onClose,
+  fallbackFocus,
+  ignore,
+}: Omit<ContextMenuProps, "open">) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: x, top: y });
 
@@ -58,11 +68,15 @@ function ContextMenuBody({ x, y, items, onClose, fallbackFocus }: Omit<ContextMe
 
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
-      if (!(menuRef.current as HTMLDivElement).contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if ((menuRef.current as HTMLDivElement).contains(target)) return;
+      // A right-click on the opener still closes, so its contextmenu reopens at the pointer.
+      if (e.button === 0 && ignore?.current?.contains(target) === true) return;
+      onClose();
     };
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [onClose]);
+  }, [onClose, ignore]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     const enabled = enabledItems();

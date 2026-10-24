@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   copyText,
@@ -8,6 +8,7 @@ import {
   hostingRepoContext,
   openExternal,
 } from "../../lib/ipc";
+import { queryKeys } from "../../lib/query/keys";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import {
   hostingAccount,
@@ -54,7 +55,7 @@ const rightClick = (el: HTMLElement) => fireEvent.contextMenu(el, { clientX: 10,
 const menuItem = (name: string) => screen.getByRole("menuitem", { name });
 
 async function renderPanel() {
-  const view = renderWithProviders(<PullRequestsPanel repoId={1} />);
+  const view = renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
   await screen.findByRole("button", { name: "Pull requests (2)" });
   return view;
 }
@@ -63,20 +64,26 @@ async function renderPanel() {
 describe("PullRequestsPanel visibility", () => {
   it("renders nothing while the context loads", () => {
     vi.mocked(hostingRepoContext).mockReturnValue(new Promise(() => undefined));
-    const { container } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { container } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders nothing when there is no hosted origin", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(null);
-    const { container } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { container } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders nothing when the context fails to load", async () => {
     vi.mocked(hostingRepoContext).mockRejectedValue({ kind: "io", message: "x" });
-    const { container } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { container } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
   });
@@ -94,7 +101,7 @@ describe("PullRequestsPanel visibility", () => {
 describe("PullRequestsPanel account states", () => {
   it("offers Connect… with the provider's name when no account is connected", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(
       await screen.findByText("Connect your GitHub account to see pull requests"),
     ).toBeInTheDocument();
@@ -106,7 +113,7 @@ describe("PullRequestsPanel account states", () => {
       repo: { provider: "gitlab", host: "gitlab.com", namespace: "g", name: "r" },
       account: null,
     });
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(
       await screen.findByText("Connect your GitLab account to see pull requests"),
     ).toBeInTheDocument();
@@ -114,14 +121,16 @@ describe("PullRequestsPanel account states", () => {
 
   it("never lists pull requests without an account", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     await screen.findByRole("button", { name: "Connect…" });
     expect(hostingListPullRequests).not.toHaveBeenCalled();
   });
 
   it("opens Hosting accounts with the connect form preset to the repository's host", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Connect…" }));
     expect(await screen.findByRole("dialog", { name: "Hosting accounts" })).toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "Connect account" })).toBeInTheDocument();
@@ -130,7 +139,9 @@ describe("PullRequestsPanel account states", () => {
 
   it("closes the Hosting accounts dialog it opened and returns focus to Connect…", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Connect…" }));
     await screen.findByRole("dialog", { name: "Connect account" });
     await user.keyboard("{Escape}");
@@ -146,7 +157,7 @@ describe("PullRequestsPanel account states", () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(
       repoContext(hostingAccount({ needsReconnect: true })),
     );
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByText("Token expired or revoked — reconnect")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
     expect(hostingListPullRequests).not.toHaveBeenCalled();
@@ -154,7 +165,7 @@ describe("PullRequestsPanel account states", () => {
 
   it("shows the reconnect line when the list answers hostingAuth", async () => {
     vi.mocked(hostingListPullRequests).mockRejectedValue(hostingError("hostingAuth"));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByText("Token expired or revoked — reconnect")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
   });
@@ -163,7 +174,9 @@ describe("PullRequestsPanel account states", () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(
       repoContext(hostingAccount({ needsReconnect: true })),
     );
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Reconnect" }));
     expect(await screen.findByRole("dialog", { name: "Connect account" })).toBeInTheDocument();
   });
@@ -173,7 +186,7 @@ describe("PullRequestsPanel account states", () => {
 describe("PullRequestsPanel list", () => {
   it("shows Loading pull requests… and a bare heading before the list arrives", async () => {
     vi.mocked(hostingListPullRequests).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByText("Loading pull requests…")).toBeInTheDocument();
     expect(toggle()).toHaveTextContent(/^Pull requests$/);
   });
@@ -188,14 +201,14 @@ describe("PullRequestsPanel list", () => {
 
   it("shows No open pull requests for an empty list", async () => {
     vi.mocked(hostingListPullRequests).mockResolvedValue([]);
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByText("No open pull requests")).toBeInTheDocument();
     expect(toggle()).toHaveTextContent("Pull requests (0)");
   });
 
   it("shows a plus in the heading and Show more after a full page", async () => {
     vi.mocked(hostingListPullRequests).mockResolvedValue(pullRequests(50));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByRole("button", { name: "Pull requests (50+)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
   });
@@ -209,7 +222,9 @@ describe("PullRequestsPanel list", () => {
     vi.mocked(hostingListPullRequests)
       .mockResolvedValueOnce(pullRequests(50, 100))
       .mockReturnValueOnce(new Promise(() => undefined));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Show more" }));
     expect(hostingListPullRequests).toHaveBeenLastCalledWith(1, 2);
     expect(await screen.findByRole("button", { name: "Loading…" })).toBeInTheDocument();
@@ -219,7 +234,9 @@ describe("PullRequestsPanel list", () => {
     vi.mocked(hostingListPullRequests)
       .mockResolvedValueOnce(pullRequests(50, 100))
       .mockRejectedValueOnce(networkError("hostUnreachable"));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(50);
@@ -230,7 +247,9 @@ describe("PullRequestsPanel list", () => {
     vi.mocked(hostingListPullRequests)
       .mockResolvedValueOnce(pullRequests(50, 100))
       .mockResolvedValueOnce(pullRequests(2, 40));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await user.click(await screen.findByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("button", { name: "Pull requests (52)" })).toBeInTheDocument();
   });
@@ -269,7 +288,9 @@ describe("PullRequestsPanel collapse", () => {
 
   it("does not fetch while collapsed and fetches once expanded", async () => {
     useLayoutPrefs.setState({ pullRequestsCollapsed: true });
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await screen.findByRole("button", { name: /^Pull requests/ });
     expect(hostingListPullRequests).not.toHaveBeenCalled();
     await user.click(toggle());
@@ -287,7 +308,7 @@ describe("PullRequestsPanel refresh", () => {
 
   it("is disabled while the list is fetching", async () => {
     vi.mocked(hostingListPullRequests).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     await screen.findByText("Loading pull requests…");
     expect(refresh()).toBeDisabled();
   });
@@ -306,13 +327,15 @@ describe("PullRequestsPanel list errors", () => {
     ["hostingRateLimited", "GitHub rate limit reached. Try again in a few minutes."],
   ] as const)("shows the %s text in an alert", async (kind, text) => {
     vi.mocked(hostingListPullRequests).mockRejectedValue(hostingError(kind));
-    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(text);
   });
 
   it("Dismiss refetches the list", async () => {
     vi.mocked(hostingListPullRequests).mockRejectedValueOnce(hostingError("hostingNotFound"));
-    const { user } = renderWithProviders(<PullRequestsPanel repoId={1} />);
+    const { user } = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
+    );
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(await screen.findByRole("button", { name: "Pull requests (2)" })).toBeInTheDocument();
@@ -325,6 +348,16 @@ describe("PullRequestsPanel context menu", () => {
   it("lists Check out, Open in browser and Copy link", async () => {
     await renderPanel();
     rightClick(row(12));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Check out",
+      "Open in browser",
+      "Copy link",
+    ]);
+  });
+
+  it("opens when the row button is clicked", async () => {
+    const { user } = await renderPanel();
+    await user.click(row(12));
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Check out",
       "Open in browser",
@@ -445,5 +478,123 @@ describe("PullRequestsPanel checkout", () => {
     await waitFor(() => expect(screen.getByRole("region")).toHaveAttribute("aria-busy", "true"));
     rightClick(row(9));
     expect(menuItem("Check out")).toBeDisabled();
+  });
+});
+
+// Contract: the header carries a Create pull request button between the heading and Refresh.
+describe("PullRequestsPanel Create pull request button", () => {
+  const createButton = () => screen.getByRole("button", { name: "Create pull request" });
+
+  async function renderWith(onCreatePullRequest: (() => void) | null) {
+    const view = renderWithProviders(
+      <PullRequestsPanel repoId={1} onCreatePullRequest={onCreatePullRequest} />,
+    );
+    await screen.findByRole("button", { name: "Pull requests (2)" });
+    return view;
+  }
+
+  it("should call the prop once when clicked", async () => {
+    const onCreatePullRequest = vi.fn();
+    const { user } = await renderWith(onCreatePullRequest);
+    await user.click(createButton());
+    expect(onCreatePullRequest).toHaveBeenCalledOnce();
+  });
+
+  it("should be enabled when the prop is set", async () => {
+    await renderWith(vi.fn());
+    expect(createButton()).toBeEnabled();
+  });
+
+  it("should be disabled when the prop is null", async () => {
+    await renderWith(null);
+    expect(createButton()).toBeDisabled();
+  });
+
+  it("should sit between the heading and Refresh", async () => {
+    await renderWith(vi.fn());
+    const heading = screen.getByRole("heading", { name: /^Pull requests/ });
+    expect(
+      heading.compareDocumentPosition(createButton()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      createButton().compareDocumentPosition(refresh()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe("PullRequestsPanel Create pull request button when the prop is absent", () => {
+  it("should be disabled", async () => {
+    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    await screen.findByRole("button", { name: "Pull requests (2)" });
+    expect(screen.getByRole("button", { name: "Create pull request" })).toBeDisabled();
+  });
+});
+
+// Contract (fix wave 2, F4): the heading carries the count only while the section is expanded and
+// its list is being shown; otherwise it reads plain "Pull requests", even with a list still cached.
+describe("PullRequestsPanel heading count", () => {
+  it("shows a plain heading after the loaded section is collapsed", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("shows the count again when the section is expanded again", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    await user.click(toggle());
+    expect(await screen.findByRole("button", { name: "Pull requests (2)" })).toBeInTheDocument();
+  });
+
+  it("shows a plain heading when a refresh answers hostingAuth", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(refresh()).toBeEnabled());
+    vi.mocked(hostingListPullRequests).mockRejectedValue(hostingError("hostingAuth"));
+    await user.click(refresh());
+    await screen.findByText("Token expired or revoked — reconnect");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("keeps the count while the expanded list is shown", async () => {
+    await renderPanel();
+    expect(toggle()).toHaveTextContent("Pull requests (2)");
+  });
+});
+
+// Contract (fix wave 2, F4): the count never survives a body that is not the list, even when the
+// list is still cached because the account behind it changed under the open section.
+describe("PullrequestsPanel heading count with a cached list", () => {
+  it("shows a plain heading when the account is removed while the list is cached", async () => {
+    const { queryClient } = await renderPanel();
+    act(() => {
+      queryClient.setQueryData(queryKeys.hostingContext(1), repoContext(null));
+    });
+    await screen.findByText("Connect your GitHub account to see pull requests");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("shows a plain heading when the account needs a reconnect while the list is cached", async () => {
+    const { queryClient } = await renderPanel();
+    act(() => {
+      queryClient.setQueryData(
+        queryKeys.hostingContext(1),
+        repoContext(hostingAccount({ needsReconnect: true })),
+      );
+    });
+    await screen.findByText("Token expired or revoked — reconnect");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+});
+
+// Contract (fix wave 2, review): a second click on the row button that opened the menu closes it.
+// RED until ContextMenu ignores a mousedown on its opener (or the panel otherwise toggles), so the
+// click that follows the outside mousedown does not reopen it.
+describe("PullRequestsPanel row menu toggle", () => {
+  it("closes the menu when the row button that opened it is clicked again", async () => {
+    const { user } = await renderPanel();
+    await user.click(row(12));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.click(row(12));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });

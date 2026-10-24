@@ -8,6 +8,7 @@ beforeEach(() => {
     sidebarWidth: 320,
     tagsCollapsed: true,
     pullRequestsCollapsed: false,
+    issuesCollapsed: true,
   });
 });
 
@@ -68,10 +69,11 @@ describe("useLayoutPrefs", () => {
     expect(useLayoutPrefs.persist.getOptions().name).toBe("git-real.layoutPrefs");
   });
 
-  it("should persist the widths and both collapse flags, not the setters", () => {
+  it("should persist the widths and the collapse flags, not the setters", () => {
     useLayoutPrefs.getState().setSidebarWidth(400);
     const raw = localStorage.getItem("git-real.layoutPrefs") as string;
     expect(Object.keys(JSON.parse(raw).state).sort()).toEqual([
+      "issuesCollapsed",
       "pullRequestsCollapsed",
       "refsWidth",
       "sidebarWidth",
@@ -259,5 +261,67 @@ describe("useLayoutPrefs pullRequestsCollapsed", () => {
     useLayoutPrefs.setState({ refsWidth: 180, pullRequestsCollapsed: true });
     useLayoutPrefs.getState().reset("refs");
     expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(true);
+  });
+});
+
+// Contract (GR-13b): the Issues section starts collapsed so opening a repository costs no call.
+describe("useLayoutPrefs issuesCollapsed", () => {
+  it("should start with issues collapsed", () => {
+    expect(useLayoutPrefs.getInitialState().issuesCollapsed).toBe(true);
+  });
+
+  it("should expand when setIssuesCollapsed(false) is called", () => {
+    useLayoutPrefs.getState().setIssuesCollapsed(false);
+    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(false);
+  });
+
+  it("should collapse again when setIssuesCollapsed(true) is called", () => {
+    useLayoutPrefs.getState().setIssuesCollapsed(false);
+    useLayoutPrefs.getState().setIssuesCollapsed(true);
+    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(true);
+  });
+
+  it("should leave the other collapse flags and the widths alone when toggled", () => {
+    useLayoutPrefs.getState().setIssuesCollapsed(false);
+    expect(useLayoutPrefs.getState()).toMatchObject({
+      refsWidth: 240,
+      sidebarWidth: 320,
+      tagsCollapsed: true,
+      pullRequestsCollapsed: false,
+    });
+  });
+
+  it("should store and persist the flag under git-real.layoutPrefs", () => {
+    useLayoutPrefs.getState().setIssuesCollapsed(false);
+    const raw = localStorage.getItem("git-real.layoutPrefs") as string;
+    expect(JSON.parse(raw).state.issuesCollapsed).toBe(false);
+  });
+
+  it("should rehydrate a stored flag", async () => {
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({
+        state: { refsWidth: 200, sidebarWidth: 300, issuesCollapsed: false },
+        version: 0,
+      }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(false);
+  });
+
+  it("should keep issues collapsed when restoring a state saved before the flag existed", async () => {
+    useLayoutPrefs.setState(useLayoutPrefs.getInitialState());
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({ state: { refsWidth: 200, sidebarWidth: 300 }, version: 0 }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(true);
+  });
+
+  it("should leave issuesCollapsed alone on reset", () => {
+    useLayoutPrefs.setState({ refsWidth: 180, issuesCollapsed: false });
+    useLayoutPrefs.getState().reset("refs");
+    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(false);
   });
 });

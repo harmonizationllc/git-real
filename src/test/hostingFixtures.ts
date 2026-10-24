@@ -1,4 +1,13 @@
-import type { AppError, AppErrorKind, HostingAccount, PullRequest, RepoContext } from "../lib/ipc";
+import type {
+  AppError,
+  AppErrorKind,
+  HostedRepoInfo,
+  HostingAccount,
+  Issue,
+  PullRequest,
+  PullRequestDraft,
+  RepoContext,
+} from "../lib/ipc";
 
 /** A connected GitHub account `octo` that needs no reconnect, unless overridden. */
 export const hostingAccount = (over: Partial<HostingAccount> = {}): HostingAccount => ({
@@ -42,3 +51,29 @@ export const hostingError = (kind: AppErrorKind, message = "provider said no"): 
 /** n pull requests numbered from `start` down. */
 export const pullRequests = (n: number, start = 100): PullRequest[] =>
   Array.from({ length: n }, (_, i) => pullRequest(start - i));
+
+/** Provider info for gorlox/test-repo: default branch main, issues turned on. */
+export const repoInfo = (over: Partial<HostedRepoInfo> = {}): HostedRepoInfo => ({
+  defaultBranch: "main",
+  issuesEnabled: true,
+  ...over,
+});
+
+/** The prefill for a one-commit pull request. */
+export const prDraft = (over: Partial<PullRequestDraft> = {}): PullRequestDraft => ({
+  title: "Add login",
+  body: "Why",
+  ahead: 1,
+  ...over,
+});
+
+/** An open issue `number` by alice labelled bug, updated at 1792497600. */
+export const issue = (number: number, over: Partial<Issue> = {}): Issue => ({
+  number,
+  title: `Issue ${number}`,
+  author: "alice",
+  labels: ["bug"],
+  updatedAt: 1792497600,
+  webUrl: `https://github.com/gorlox/test-repo/issues/${number}`,
+  ...over,
+});

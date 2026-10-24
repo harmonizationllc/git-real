@@ -1,5 +1,8 @@
+import { useRef, useState } from "react";
 import type { RepoId } from "../../lib/ipc";
 import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
+import { IssuePicker } from "../hosting/IssuePicker";
+import { useRepoContext } from "../hosting/useRepoContext";
 import { type ActiveOperation, commitButtonLabel, operationNoun } from "../merge/operationCopy";
 import { RepoError } from "../repo/RepoError";
 import { useStatus } from "../worktree/useStatus";
@@ -7,6 +10,7 @@ import { AuthorLine } from "./AuthorLine";
 import { commitDisabledReason } from "./commitGate";
 import styles from "./CommitBox.module.css";
 import { MessageEditor } from "./MessageEditor";
+import type { IssueRefInserter } from "./MessageEditor";
 import { useCommit } from "./useCommit";
 import { useCommitConfig } from "./useCommitConfig";
 import { useHeadMessage } from "./useHeadMessage";
@@ -22,6 +26,15 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
   const state = useOperationPrefill(repoId);
   const operation: ActiveOperation | null =
     state === undefined || state.kind === "none" ? null : state;
+  const { context } = useRepoContext(repoId);
+  const account = context?.account ?? null;
+  const usable = account !== null && !account.needsReconnect;
+  // Wrapped: a bare function passed to setPicker would run as a state updater.
+  const [picker, setPicker] = useState<{ insert: IssueRefInserter } | null>(null);
+  // An account that stops being usable (disconnect, expired token) takes the open picker with it.
+  if (!usable && picker !== null) setPicker(null);
+  // The picker ignores pointerdown and focus on the # button, so a second click closes it here.
+  const linkButton = useRef<HTMLButtonElement>(null);
 
   const reason = commitDisabledReason({
     amend: draft.amend,
@@ -48,6 +61,11 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
         onSubjectChange={(v) => setSubject(repoId, v)}
         onBodyChange={(v) => setBody(repoId, v)}
         onSubmit={submit}
+        // The chord cannot fire while the picker holds focus, so only the # button toggles.
+        onLinkIssue={
+          usable ? (insert) => setPicker((p) => (p === null ? { insert } : null)) : undefined
+        }
+        linkButtonRef={linkButton}
       />
       <div className={styles.actions}>
         <label className={styles.amend}>
@@ -85,6 +103,19 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
         {error && <RepoError error={error} path={null} onDismiss={clearError} />}
         {configError && <RepoError error={configError} path={null} onDismiss={refetchConfig} />}
       </div>
+      {/* A usable account implies a hosted context. */}
+      {picker !== null && context && (
+        <IssuePicker
+          repoId={repoId}
+          provider={context.repo.provider}
+          onPick={(n) => {
+            picker.insert(`#${n}`);
+            setPicker(null);
+          }}
+          onClose={() => setPicker(null)}
+          ignore={linkButton}
+        />
+      )}
     </section>
   );
 }

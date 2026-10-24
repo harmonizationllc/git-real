@@ -237,14 +237,21 @@ fn reset_epoch(resp: &Response) -> Option<u64> {
         })
 }
 
-/// The body's `message`, `error` or `error.message` string, else `HTTP <status>`; the token
-/// replaced by `***`, then cut to 200 characters.
+/// The provider's own words for a refusal, first match wins: `errors[0].message` (GitHub's
+/// `Validation Failed` details), `message` as a string or as an array of strings joined with
+/// `; ` (GitLab), `error`, `error.message`, else `HTTP <status>`; the token replaced by `***`,
+/// then cut to 200 characters.
 fn message(resp: &Response, token: &Token) -> String {
     let body: Value = serde_json::from_str(&resp.body).unwrap_or(Value::Null);
-    let text = [&body["message"], &body["error"], &body["error"]["message"]]
-        .into_iter()
-        .find_map(Value::as_str)
-        .map_or_else(|| format!("HTTP {}", resp.status), str::to_owned)
+    let text = body["errors"][0]["message"]
+        .as_str()
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned)
+        .or_else(|| body["message"].as_str().map(str::to_owned))
+        .or_else(|| joined_strings(&body["message"]))
+        .or_else(|| body["error"].as_str().map(str::to_owned))
+        .or_else(|| body["error"]["message"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("HTTP {}", resp.status))
         .replace(token.expose_secret(), "***");
     if text.chars().count() > MAX_MESSAGE_CHARS {
         let cut: String = text.chars().take(MAX_MESSAGE_CHARS).collect();
@@ -254,8 +261,21 @@ fn message(resp: &Response, token: &Token) -> String {
     }
 }
 
+/// The string entries of an array joined with `; `; `None` for a non-array or when no entry is
+/// a string.
+fn joined_strings(value: &Value) -> Option<String> {
+    let parts: Vec<&str> = value.as_array()?.iter().filter_map(Value::as_str).collect();
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// A user's issue search text as sent to a provider: surrounding whitespace dropped, so an
+/// all-blank query is no query.
+pub(crate) fn issue_query(query: &str) -> &str {
+    query.trim()
+}
+
 /// Percent-encodes everything but `A-Za-z0-9-._~`, so `segment` stays one path segment.
-pub(crate) fn percent_encode(segment: &str) -> String {
+pub fn percent_encode(segment: &str) -> String {
     segment
         .bytes()
         .map(|b| {

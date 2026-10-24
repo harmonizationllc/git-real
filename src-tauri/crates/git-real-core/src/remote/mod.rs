@@ -1,5 +1,6 @@
-//! Network operations through the system `git` CLI, and remote configuration
-//! through git2 (`remotes`).
+//! Network operations through the system `git` CLI, remote configuration
+//! through git2 (`remotes`), and the local reads behind pull requests
+//! (`pr_checkout`, `pr_draft`).
 //!
 //! Per the hybrid backend rule, anything touching the network, credentials, or
 //! signing goes through the CLI rather than `git2`; the remote config and refs
@@ -11,6 +12,7 @@ pub mod clone;
 pub mod fetch;
 pub mod host;
 pub mod pr_checkout;
+pub mod pr_draft;
 pub mod progress_parser;
 pub mod pull;
 pub mod push;

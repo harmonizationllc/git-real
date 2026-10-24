@@ -29,6 +29,8 @@ export interface BranchesPanelProps {
   repoId: RepoId;
   /** Opens the remotes dialog; without it a remote heading's Edit remote… is disabled. */
   onOpenRemotes?(target: RemotesTarget): void;
+  /** Opens the create pull request dialog from the current branch; null or absent hides it. */
+  onCreatePullRequest?: (() => void) | null;
 }
 
 interface MenuState {
@@ -78,7 +80,7 @@ function headRow(head: HeadState) {
   );
 }
 
-export function BranchesPanel({ repoId, onOpenRemotes }: BranchesPanelProps) {
+export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: BranchesPanelProps) {
   const rootRef = useRef<HTMLElement>(null);
   const { branches, error: listError, refetch } = useBranches(repoId);
   const actions = useBranchActions(repoId);
@@ -294,6 +296,9 @@ export function BranchesPanel({ repoId, onOpenRemotes }: BranchesPanelProps) {
     const { name, isHead } = target.branch;
     return [
       { ...checkout, disabled: pending || isHead },
+      ...(isHead && onCreatePullRequest
+        ? [{ id: "createPr", label: "Create pull request…", onSelect: onCreatePullRequest }]
+        : []),
       ...(isHead ? [] : rebaseItems(target, list.head)),
       {
         id: "create",

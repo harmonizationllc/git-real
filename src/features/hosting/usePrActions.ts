@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { copyText, hostingCheckoutPullRequest, openExternal, toAppError } from "../../lib/ipc";
+import { hostingCheckoutPullRequest } from "../../lib/ipc";
 import type { AppError, PullRequest, RepoId } from "../../lib/ipc";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import type { CredentialPrompt } from "../remotes/useNetworkAction";
+import { useLinkActions } from "./useLinkActions";
 
 /** A checkout that would move a diverged branch, waiting for the user's confirmation. */
 export interface ResetRequest {
@@ -31,9 +32,9 @@ export function usePrActions(repoId: RepoId): UsePrActions {
   const network = useNetworkAction(repoId);
   const [resetRequest, setResetRequest] = useState<ResetRequest | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // One error slot: a failed checkout, open or copy replaces it, so the newest error wins.
   const [error, setError] = useState<AppError | null>(null);
-
-  const fail = (e: unknown) => setError(toAppError(e));
+  const links = useLinkActions(setError);
 
   // Checkout fetches, so it goes through the network gate, which also refreshes the list.
   const checkout = async (pr: PullRequest, reset = false) => {
@@ -54,8 +55,8 @@ export function usePrActions(repoId: RepoId): UsePrActions {
 
   return {
     checkout,
-    open: (pr) => void openExternal(pr.webUrl).catch(fail),
-    copyLink: (pr) => void copyText(pr.webUrl).catch(fail),
+    open: (pr) => links.open(pr.webUrl),
+    copyLink: (pr) => links.copyLink(pr.webUrl),
     resetRequest,
     clearResetRequest: () => setResetRequest(null),
     status,
