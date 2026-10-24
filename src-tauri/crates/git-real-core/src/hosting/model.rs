@@ -162,16 +162,21 @@ fn clean_https_url(url: &str) -> Option<String> {
 }
 
 /// `user@host:path` (`[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:` then a non-empty path) or an `ssh://`
-/// URL with a non-empty host; neither the user nor the host may start with `-` (git would read
-/// it as an ssh option), and no whitespace or control character anywhere.
+/// URL with a non-empty host and a non-empty path after it; neither the user nor the host may
+/// start with `-` (git would read it as an ssh option), and no whitespace or control character
+/// anywhere.
 fn clean_ssh_url(url: String) -> Option<String> {
     if has_space_or_control(&url) {
         return None;
     }
     let ok = if let Some(rest) = url.strip_prefix("ssh://") {
-        let authority = rest.split('/').next().unwrap_or_default();
-        let host = strip_user(authority);
-        !authority.starts_with('-') && !host.is_empty() && !host.starts_with('-')
+        rest.split_once('/').is_some_and(|(authority, path)| {
+            let host = strip_user(authority);
+            !authority.starts_with('-')
+                && !host.is_empty()
+                && !host.starts_with('-')
+                && !path.is_empty()
+        })
     } else {
         url.split_once('@')
             .and_then(|(user, rest)| Some((user, rest.split_once(':')?)))
