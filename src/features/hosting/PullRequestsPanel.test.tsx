@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   copyText,
@@ -8,6 +8,7 @@ import {
   hostingRepoContext,
   openExternal,
 } from "../../lib/ipc";
+import { queryKeys } from "../../lib/query/keys";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import {
   hostingAccount,
@@ -557,5 +558,30 @@ describe("PullRequestsPanel heading count", () => {
   it("keeps the count while the expanded list is shown", async () => {
     await renderPanel();
     expect(toggle()).toHaveTextContent("Pull requests (2)");
+  });
+});
+
+// Contract (fix wave 2, F4): the count never survives a body that is not the list, even when the
+// list is still cached because the account behind it changed under the open section.
+describe("PullrequestsPanel heading count with a cached list", () => {
+  it("shows a plain heading when the account is removed while the list is cached", async () => {
+    const { queryClient } = await renderPanel();
+    act(() => {
+      queryClient.setQueryData(queryKeys.hostingContext(1), repoContext(null));
+    });
+    await screen.findByText("Connect your GitHub account to see pull requests");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("shows a plain heading when the account needs a reconnect while the list is cached", async () => {
+    const { queryClient } = await renderPanel();
+    act(() => {
+      queryClient.setQueryData(
+        queryKeys.hostingContext(1),
+        repoContext(hostingAccount({ needsReconnect: true })),
+      );
+    });
+    await screen.findByText("Token expired or revoked — reconnect");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
   });
 });

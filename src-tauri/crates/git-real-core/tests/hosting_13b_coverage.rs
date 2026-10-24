@@ -881,3 +881,82 @@ fn validate_new_pull_request_checks_both_branch_names() {
         assert!(t.requests().is_empty());
     }
 }
+
+// ------------------------------------------------ GitHub search qualifier stripping (fix wave 2)
+
+const GH_SCOPE: &str = "repo:gorlox/test-repo is:issue is:open";
+
+/// The `q` GitHub is asked for, percent-decoding aside: the pinned scope plus `rest`.
+fn gh_search_url(query: &str) -> String {
+    let t = FakeTransport::new().reply(200, r#"{"items":[]}"#);
+    hosting::list_issues(&t, &gh(), &tok(), query, 1).unwrap();
+    t.requests()[0].url.clone()
+}
+fn gh_url_for(rest: &str) -> String {
+    let q = if rest.is_empty() {
+        GH_SCOPE.to_string()
+    } else {
+        format!("{GH_SCOPE} {rest}")
+    };
+    format!(
+        "https://api.github.com/search/issues?q={}&sort=updated&order=desc&per_page=50&page=1",
+        enc(&q)
+    )
+}
+
+#[test]
+fn github_search_keeps_multibyte_tokens_and_still_strips_qualifiers_around_them() {
+    assert_eq!(
+        gh_search_url("日本語 repo:x/y ünïcode"),
+        gh_url_for("日本語 ünïcode")
+    );
+}
+
+#[test]
+fn github_search_does_not_panic_on_a_multibyte_token_that_straddles_the_prefix_length() {
+    // Each token is longer than `repo:` in bytes with a multibyte char crossing byte 5.
+    let kept = "abcé:x ééé:x répo:x";
+    assert_eq!(gh_search_url(kept), gh_url_for(kept));
+}
+
+#[test]
+fn github_search_keeps_a_token_shorter_than_every_qualifier_prefix() {
+    assert_eq!(gh_search_url("a é -"), gh_url_for("a é -"));
+}
+
+#[test]
+fn github_search_strips_only_one_leading_dash() {
+    // `--repo:x` is not a negated qualifier GitHub honours, but the helper only peels one dash.
+    assert_eq!(
+        gh_search_url("--repo:x/y login"),
+        gh_url_for("--repo:x/y login")
+    );
+}
+
+#[test]
+fn github_search_drops_a_qualifier_with_no_value() {
+    assert_eq!(
+        gh_search_url("repo: org: -user: login"),
+        gh_url_for("login")
+    );
+}
+
+#[test]
+fn github_search_splits_on_ascii_whitespace_only() {
+    // A no-break space does not separate tokens, so the qualifier stays glued to its neighbour.
+    let glued = "login\u{a0}repo:x/y";
+    assert_eq!(gh_search_url(glued), gh_url_for(glued));
+}
+
+#[test]
+fn github_search_collapses_leading_trailing_and_interior_whitespace_runs() {
+    assert_eq!(
+        gh_search_url("  \t login \n\n  crash  repo:a/b  \r\n"),
+        gh_url_for("login crash")
+    );
+}
+
+#[test]
+fn github_search_with_only_whitespace_sends_the_plain_filter() {
+    assert_eq!(gh_search_url(" \t\n "), gh_url_for(""));
+}
