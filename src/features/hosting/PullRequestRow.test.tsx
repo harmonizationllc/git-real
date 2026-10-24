@@ -136,3 +136,17 @@ describe("PullRequestRow context menu", () => {
     expect([onOpen, onContextMenu].map((f) => f.mock.calls.length)).toEqual([0, 0]);
   });
 });
+
+// Contract (fix wave 2, F5): the focus-stop button owns the context menu, so it says so; the
+// Open in browser icon button does not.
+describe("PullRequestRow menu semantics", () => {
+  it("marks the row button as opening a menu", () => {
+    const { row } = renderRow();
+    expect(row).toHaveAttribute("aria-haspopup", "menu");
+  });
+
+  it("does not mark the Open in browser button as opening a menu", () => {
+    renderRow();
+    expect(openButton()).not.toHaveAttribute("aria-haspopup");
+  });
+});

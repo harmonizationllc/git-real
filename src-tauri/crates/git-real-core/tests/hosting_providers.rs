@@ -581,6 +581,155 @@ fn issue_queries_are_percent_encoded_for_every_provider() {
     assert!(!bitbucket.contains("%5C"), "{bitbucket}");
 }
 
+// Fix wave 2 (R1): the GitHub search is pinned to `repo:{owner}/{name}`, so a user token that
+// would widen it (`repo:`, `org:`, `user:`, each optionally negated, any case) is dropped.
+const GH_PLAIN_Q: &str = "repo:gorlox/test-repo is:issue is:open";
+
+/// The decoded-by-construction `q` GitHub is asked for: the pinned prefix plus `rest`.
+fn github_q_url(rest: &str) -> String {
+    let q = if rest.is_empty() {
+        GH_PLAIN_Q.to_string()
+    } else {
+        format!("{GH_PLAIN_Q} {rest}")
+    };
+    format!(
+        "https://api.github.com/search/issues?q={}&sort=updated&order=desc&per_page=50&page=1",
+        enc(&q)
+    )
+}
+
+fn github_search_url(query: &str) -> String {
+    let t = FakeTransport::new().reply(200, r#"{"items":[]}"#);
+    hosting::list_issues(&t, &gh(), &tok(), query, 1).unwrap();
+    t.requests()[0].url.clone()
+}
+
+#[test]
+fn github_search_drops_a_repo_qualifier_and_keeps_the_rest() {
+    assert_eq!(
+        github_search_url("repo:other/x login"),
+        github_q_url("login")
+    );
+}
+
+#[test]
+fn github_search_drops_org_and_user_qualifiers() {
+    assert_eq!(github_search_url("org:acme login"), github_q_url("login"));
+    assert_eq!(github_search_url("login user:bob"), github_q_url("login"));
+}
+
+#[test]
+fn github_search_drops_negated_qualifiers() {
+    assert_eq!(
+        github_search_url("-repo:other/x -org:acme -user:bob login"),
+        github_q_url("login")
+    );
+}
+
+#[test]
+fn github_search_matches_qualifiers_case_insensitively() {
+    assert_eq!(
+        github_search_url("REPO:a/b Org:acme -USER:bob -Repo:c/d login"),
+        github_q_url("login")
+    );
+}
+
+#[test]
+fn github_search_sends_the_plain_filter_when_only_qualifiers_remain() {
+    assert_eq!(github_search_url("-Org:acme"), github_q_url(""));
+    assert_eq!(github_search_url("repo:a/b org:c user:d"), github_q_url(""));
+}
+
+#[test]
+fn github_search_leaves_a_query_without_qualifiers_unchanged() {
+    assert_eq!(
+        github_search_url("login crash"),
+        github_q_url("login crash")
+    );
+}
+
+#[test]
+fn github_search_rejoins_the_kept_tokens_with_single_spaces() {
+    assert_eq!(
+        github_search_url("login   repo:a/b \t crash"),
+        github_q_url("login crash")
+    );
+}
+
+#[test]
+fn github_search_keeps_tokens_that_only_resemble_a_qualifier() {
+    // Not at the start of the token, no colon, or other qualifier names.
+    let kept = "myrepo:x repository org user label:bug in:title";
+    assert_eq!(github_search_url(kept), github_q_url(kept));
+}
+
+#[test]
+fn github_search_keeps_a_quoted_qualifier_like_token() {
+    // A leading quote means the token does not start with `repo:`; the encoder escapes it.
+    assert_eq!(github_search_url("\"repo:x\""), github_q_url("\"repo:x\""));
+}
+
+#[test]
+fn github_search_only_strips_qualifiers_on_github() {
+    let t = FakeTransport::new().reply(200, "[]");
+    hosting::list_issues(&t, &gl(), &tok(), "repo:other/x login", 1).unwrap();
+    assert!(
+        t.requests()[0]
+            .url
+            .ends_with(&format!("&search={}", enc("repo:other/x login"))),
+        "{}",
+        t.requests()[0].url
+    );
+}
+
+// Fix wave 2 (R2): GitHub does not promise a `user` on an issue (deleted accounts), so a null or
+// missing one gives an empty author; the PR list still requires its user.
+#[test]
+fn a_github_issue_with_a_null_user_has_an_empty_author() {
+    let body = r#"{"items":[{"number":3,"title":"Ghost","user":null,"labels":[],
+        "updated_at":"2026-10-20T12:00:00Z","html_url":"https://github.com/o/r/issues/3"}]}"#;
+    let t = FakeTransport::new().reply(200, body);
+    let issues = hosting::list_issues(&t, &gh(), &tok(), "", 1).unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].author, "");
+}
+
+#[test]
+fn a_github_issue_without_a_user_key_has_an_empty_author() {
+    let body = r#"{"items":[{"number":3,"title":"Ghost","labels":[],
+        "updated_at":"2026-10-20T12:00:00Z","html_url":"https://github.com/o/r/issues/3"}]}"#;
+    let t = FakeTransport::new().reply(200, body);
+    let issues = hosting::list_issues(&t, &gh(), &tok(), "", 1).unwrap();
+    assert_eq!(issues[0].author, "");
+}
+
+#[test]
+fn a_github_issue_with_a_user_keeps_the_login_next_to_one_without() {
+    let body = r#"{"items":[
+        {"number":4,"title":"A","user":{"login":"alice"},"labels":[],
+         "updated_at":"2026-10-20T12:00:00Z","html_url":"https://github.com/o/r/issues/4"},
+        {"number":3,"title":"B","user":null,"labels":[],
+         "updated_at":"2026-10-20T12:00:00Z","html_url":"https://github.com/o/r/issues/3"}]}"#;
+    let t = FakeTransport::new().reply(200, body);
+    let issues = hosting::list_issues(&t, &gh(), &tok(), "", 1).unwrap();
+    assert_eq!(
+        issues.iter().map(|i| i.author.as_str()).collect::<Vec<_>>(),
+        ["alice", ""]
+    );
+}
+
+#[test]
+fn a_github_pull_request_with_a_null_user_is_still_an_unexpected_response() {
+    let mut list: serde_json::Value = serde_json::from_str(fixture!("github_pulls.json")).unwrap();
+    list[0]["user"] = serde_json::Value::Null;
+    let t = FakeTransport::new().reply(200, &list.to_string());
+    let err = hosting::list_pull_requests(&t, &gh(), &tok(), 1).unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingUnreachable { ref message } if message == "unexpected response from github.com"),
+        "{err:?}"
+    );
+}
+
 #[test]
 fn an_all_whitespace_issue_query_sends_the_no_query_url() {
     for (r, body) in [

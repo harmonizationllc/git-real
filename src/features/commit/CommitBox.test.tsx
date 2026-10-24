@@ -616,6 +616,34 @@ describe("CommitBox issue link", () => {
     expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
   });
 
+  // Fix wave 2 (F3): the # button toggles the picker; a pointerdown on it must not close the
+  // picker before the click that follows toggles it.
+  it("should leave no Link issue dialog after the # button is clicked twice", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(linkButton());
+    await waitFor(() => expect(picker()).toBeNull());
+  });
+
+  it("should open the picker again on a third click of the # button", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(linkButton());
+    await waitFor(() => expect(picker()).toBeNull());
+    await user.click(linkButton());
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should still close the picker on a pointerdown on the subject field", async () => {
+    const { user } = await renderHosted();
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    await screen.findByRole("dialog", { name: "Link issue" });
+    await user.click(screen.getByLabelText("Subject"));
+    await waitFor(() => expect(picker()).toBeNull());
+  });
+
   it("should open the picker on Ctrl+Shift+I in the subject", async () => {
     const { user } = await renderHosted();
     await screen.findByRole("button", { name: "Link issue" });

@@ -127,6 +127,28 @@ describe("IssuePicker requests", () => {
     expect(hostingListIssues).toHaveBeenCalledWith(1, "", 1);
   });
 
+  // Fix wave 2 (F6): an auth or rate-limit answer from the repository info never falls back to
+  // listing; any other failure still does.
+  it("does not request issues after the repository info answers hostingAuth", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingAuth"));
+    await renderPicker({}, false);
+    await wait(500);
+    expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+
+  it("does not request issues after the repository info answers hostingRateLimited", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingRateLimited"));
+    await renderPicker({}, false);
+    await wait(500);
+    expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+
+  it("still asks for the issues after the repository info answers hostingUnreachable", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingUnreachable"));
+    await renderPicker();
+    expect(hostingListIssues).toHaveBeenCalledWith(1, "", 1);
+  });
+
   it("requests once after the debounce", async () => {
     await renderPicker();
     vi.mocked(hostingListIssues).mockClear();
@@ -287,6 +309,88 @@ describe("IssuePicker closing", () => {
     const { onClose } = await renderPicker();
     fireEvent.pointerDown(screen.getAllByRole("option")[0] as HTMLElement);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // Fix wave 2 (F3): a pointerdown inside the opener (the # button) does not close the picker,
+  // because the click that follows toggles it from the parent.
+  describe("with an ignore element", () => {
+    function renderWithIgnore(ignore: HTMLElement | null | undefined) {
+      const onClose = vi.fn();
+      renderWithProviders(
+        <IssuePicker
+          repoId={1}
+          provider="github"
+          onPick={vi.fn()}
+          onClose={onClose}
+          ignore={ignore}
+        />,
+      );
+      return onClose;
+    }
+    const opener = () => {
+      const button = document.body.appendChild(document.createElement("button"));
+      button.appendChild(document.createElement("span"));
+      return button;
+    };
+
+    it("does not call onClose on a pointerdown on the ignore element", async () => {
+      const button = opener();
+      const onClose = renderWithIgnore(button);
+      await screen.findAllByRole("option");
+      fireEvent.pointerDown(button);
+      expect(onClose).not.toHaveBeenCalled();
+      button.remove();
+    });
+
+    it("does not call onClose on a pointerdown on a child of the ignore element", async () => {
+      const button = opener();
+      const onClose = renderWithIgnore(button);
+      await screen.findAllByRole("option");
+      fireEvent.pointerDown(button.firstChild as HTMLElement);
+      expect(onClose).not.toHaveBeenCalled();
+      button.remove();
+    });
+
+    it("still calls onClose on a pointerdown elsewhere outside", async () => {
+      const button = opener();
+      const onClose = renderWithIgnore(button);
+      await screen.findAllByRole("option");
+      fireEvent.pointerDown(document.body);
+      expect(onClose).toHaveBeenCalledOnce();
+      button.remove();
+    });
+
+    it("calls onClose on a pointerdown on that element when ignore is null", async () => {
+      const button = opener();
+      const onClose = renderWithIgnore(null);
+      await screen.findAllByRole("option");
+      fireEvent.pointerDown(button);
+      expect(onClose).toHaveBeenCalledOnce();
+      button.remove();
+    });
+
+    it("calls onClose on a pointerdown on that element when ignore is omitted", async () => {
+      const button = opener();
+      const onClose = renderWithIgnore(undefined);
+      await screen.findAllByRole("option");
+      fireEvent.pointerDown(button);
+      expect(onClose).toHaveBeenCalledOnce();
+      button.remove();
+    });
+
+    it("follows a changed ignore element", async () => {
+      const first = opener();
+      const second = opener();
+      const onClose = vi.fn();
+      const props = { repoId: 1, provider: "github" as const, onPick: vi.fn(), onClose };
+      const { rerender } = renderWithProviders(<IssuePicker {...props} ignore={first} />);
+      await screen.findAllByRole("option");
+      rerender(<IssuePicker {...props} ignore={second} />);
+      fireEvent.pointerDown(first);
+      expect(onClose).toHaveBeenCalledOnce();
+      first.remove();
+      second.remove();
+    });
   });
 
   it("calls onClose when focus moves to an element outside the popover", async () => {

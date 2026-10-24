@@ -191,6 +191,47 @@ describe("CreatePullRequestDialog load failures", () => {
   });
 });
 
+// Contract (fix wave 2, F7): a failed hosting context read ends the loading with the error and a
+// way out, like a failed branch or remote read.
+describe("CreatePullRequestDialog context load failure", () => {
+  const failContext = () =>
+    vi.mocked(hostingRepoContext).mockRejectedValue(hostingError("revisionNotFound", "ctx broke"));
+
+  it("should show the error when the hosting context fails to load", async () => {
+    failContext();
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText("ctx broke")).toBeInTheDocument();
+  });
+
+  it("should stop showing Loading… when the hosting context fails to load", async () => {
+    failContext();
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("ctx broke");
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("should close from the Close button when the hosting context fails to load", async () => {
+    failContext();
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("ctx broke");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should word a hosting context failure for GitHub", async () => {
+    vi.mocked(hostingRepoContext).mockRejectedValue(hostingError("hostingUnreachable"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText(/Couldn't reach GitHub/)).toBeInTheDocument();
+  });
+
+  it("should show no form fields when the hosting context fails to load", async () => {
+    failContext();
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("ctx broke");
+    expect(screen.queryByLabelText("Title")).toBeNull();
+  });
+});
+
 // Contract: Source is the HEAD branch; Target lists origin's other branches, default per provider.
 describe("CreatePullRequestDialog source and target", () => {
   it("should show the HEAD branch as the Source", async () => {

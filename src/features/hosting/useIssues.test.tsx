@@ -195,3 +195,52 @@ describe("useIssues refresh policy", () => {
     expect(hostingListIssues).toHaveBeenCalledTimes(1);
   });
 });
+
+// Contract (fix wave 2, F9): a number that reappears on a later page (the list shifted while
+// paging) appears once, in its first position, so React keys stay unique.
+describe("useIssues overlapping pages", () => {
+  const pageOne = () => issues(50, 100); // #100..#51
+  const loadBoth = async (second: ReturnType<typeof issues>) => {
+    vi.mocked(hostingListIssues).mockResolvedValueOnce(pageOne()).mockResolvedValueOnce(second);
+    const view = renderHookWithProviders(() => useIssues(1, "", true));
+    await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+    act(() => view.result.current.loadMore());
+    await waitFor(() => expect(hostingListIssues).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.result.current.loadingMore).toBe(false));
+    return view;
+  };
+
+  it("should list an issue present on both pages once", async () => {
+    const { result } = await loadBoth([issue(51), issue(50)]);
+    expect(result.current.issues?.map((i) => i.number)).toEqual([
+      ...pageOne().map((i) => i.number),
+      50,
+    ]);
+  });
+
+  it("should keep the first occurrence of a duplicated issue", async () => {
+    const { result } = await loadBoth([issue(51, { title: "Later copy" }), issue(50)]);
+    expect(result.current.issues?.find((i) => i.number === 51)?.title).toBe("Issue 51");
+  });
+
+  it("should leave the pages unchanged when no number repeats", async () => {
+    const { result } = await loadBoth([issue(50), issue(49)]);
+    expect(result.current.issues).toHaveLength(52);
+  });
+
+  it("should drop a number repeated within one page", async () => {
+    const { result } = await loadBoth([issue(50), issue(50), issue(49)]);
+    expect(result.current.issues).toHaveLength(52);
+  });
+
+  it("should still report hasMore from the raw page size, not the deduped count", async () => {
+    vi.mocked(hostingListIssues)
+      .mockResolvedValueOnce(pageOne())
+      .mockResolvedValueOnce(issues(50, 51)); // #51..#2, one overlap, a full page
+    const { result } = renderHookWithProviders(() => useIssues(1, "", true));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.issues).toHaveLength(99));
+    expect(result.current.hasMore).toBe(true);
+  });
+});

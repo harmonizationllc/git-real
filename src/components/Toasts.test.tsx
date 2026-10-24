@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useToasts } from "../lib/store/toasts";
-import { Toasts } from "./Toasts";
+import { TOAST_MS, Toasts } from "./Toasts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -103,22 +103,22 @@ describe("Toasts actions", () => {
   });
 });
 
-// Contract: every toast dismisses itself 8000 ms after it appears.
+// Contract: every toast dismisses itself TOAST_MS (8000 ms) after it appears.
 describe("Toasts auto-dismiss", () => {
-  it("should still show the toast at 7999 ms", () => {
+  it("should still show the toast one millisecond before TOAST_MS", () => {
     render(<Toasts />);
     show("Hi");
     act(() => {
-      vi.advanceTimersByTime(7999);
+      vi.advanceTimersByTime(TOAST_MS - 1);
     });
     expect(screen.getByText("Hi")).toBeInTheDocument();
   });
 
-  it("should remove the toast at 8000 ms", () => {
+  it("should remove the toast at TOAST_MS", () => {
     render(<Toasts />);
     show("Hi");
     act(() => {
-      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(TOAST_MS);
     });
     expect(screen.queryByText("Hi")).toBeNull();
   });
@@ -137,13 +137,13 @@ describe("Toasts auto-dismiss", () => {
     expect(screen.getByText("Second")).toBeInTheDocument();
   });
 
-  it("should keep a toast whose earlier twin was dismissed by hand until its own 8000 ms", () => {
+  it("should keep a toast whose earlier twin was dismissed by hand until its own TOAST_MS", () => {
     render(<Toasts />);
     show("First");
     show("Second");
     fireEvent.click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
     act(() => {
-      vi.advanceTimersByTime(7999);
+      vi.advanceTimersByTime(TOAST_MS - 1);
     });
     expect(screen.getByText("Second")).toBeInTheDocument();
   });
@@ -174,6 +174,112 @@ describe("Toasts auto-dismiss", () => {
     const view = render(<Toasts />);
     show("Hi");
     view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// Contract: a toast under the pointer or holding focus does not time out; leaving restarts the full TOAST_MS.
+describe("Toasts pause on hover and focus", () => {
+  const toastEl = () => screen.getByText("Hi").parentElement!;
+  const advance = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+
+  it("should still show a toast hovered at 7 s after another 5 s", () => {
+    render(<Toasts />);
+    show("Hi");
+    advance(7000);
+    fireEvent.pointerEnter(toastEl());
+    advance(5000);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should clear the timer while the toast is hovered", () => {
+    render(<Toasts />);
+    show("Hi");
+    fireEvent.pointerEnter(toastEl());
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("should still show the toast one millisecond before a full TOAST_MS after the pointer leaves", () => {
+    render(<Toasts />);
+    show("Hi");
+    advance(7000);
+    fireEvent.pointerEnter(toastEl());
+    advance(5000);
+    fireEvent.pointerLeave(toastEl());
+    advance(TOAST_MS - 1);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should remove the toast a full TOAST_MS after the pointer leaves", () => {
+    render(<Toasts />);
+    show("Hi");
+    advance(7000);
+    fireEvent.pointerEnter(toastEl());
+    advance(5000);
+    fireEvent.pointerLeave(toastEl());
+    advance(TOAST_MS);
+    expect(screen.queryByText("Hi")).toBeNull();
+  });
+
+  it("should keep a toast whose action button has focus past TOAST_MS", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    fireEvent.focusIn(screen.getByRole("button", { name: "Open" }));
+    advance(TOAST_MS * 2);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should remove the toast TOAST_MS after focus leaves to outside it", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    fireEvent.focusIn(open);
+    fireEvent.focusOut(open, { relatedTarget: document.body });
+    advance(TOAST_MS);
+    expect(screen.queryByText("Hi")).toBeNull();
+  });
+
+  it("should remove the toast TOAST_MS after focus leaves with no related target", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    fireEvent.focusIn(open);
+    fireEvent.focusOut(open, { relatedTarget: null });
+    advance(TOAST_MS);
+    expect(screen.queryByText("Hi")).toBeNull();
+  });
+
+  it("should keep the pause when focus moves between buttons inside the same toast", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    const close = screen.getByRole("button", { name: "Dismiss notification" });
+    fireEvent.focusIn(open);
+    fireEvent.focusOut(open, { relatedTarget: close });
+    fireEvent.focusIn(close);
+    advance(TOAST_MS * 2);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should not pause the other toast when one is hovered", () => {
+    render(<Toasts />);
+    show("First");
+    show("Second");
+    fireEvent.pointerEnter(screen.getByText("First").parentElement!);
+    advance(TOAST_MS);
+    expect(screen.queryByText("Second")).toBeNull();
+  });
+
+  it("should not start a timer when the pointer leaves a toast that was dismissed", () => {
+    render(<Toasts />);
+    show("Hi");
+    const el = toastEl();
+    fireEvent.pointerEnter(el);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    fireEvent.pointerLeave(el);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

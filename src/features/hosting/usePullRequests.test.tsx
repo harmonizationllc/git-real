@@ -173,3 +173,42 @@ describe("usePullRequests refresh policy", () => {
     expect(hostingListPullRequests).toHaveBeenCalledTimes(1);
   });
 });
+
+// Contract (fix wave 2, F9): a number that reappears on a later page (the list shifted while
+// paging) appears once, in its first position, so React keys stay unique.
+describe("usePullRequests overlapping pages", () => {
+  const loadBoth = async (second: ReturnType<typeof pullRequests>) => {
+    vi.mocked(hostingListPullRequests)
+      .mockResolvedValueOnce(pullRequests(50, 100)) // #100..#51
+      .mockResolvedValueOnce(second);
+    const view = renderHookWithProviders(() => usePullRequests(1, true));
+    await waitFor(() => expect(view.result.current.hasMore).toBe(true));
+    act(() => view.result.current.loadMore());
+    await waitFor(() => expect(hostingListPullRequests).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(view.result.current.loadingMore).toBe(false));
+    return view;
+  };
+
+  it("should list a pull request present on both pages once", async () => {
+    const { result } = await loadBoth([pullRequest(51), pullRequest(50)]);
+    expect(result.current.pullRequests?.map((p) => p.number)).toEqual([
+      ...pullRequests(50, 100).map((p) => p.number),
+      50,
+    ]);
+  });
+
+  it("should keep the first occurrence of a duplicated pull request", async () => {
+    const { result } = await loadBoth([pullRequest(51, { title: "Later copy" }), pullRequest(50)]);
+    expect(result.current.pullRequests?.find((p) => p.number === 51)?.title).toBe("PR 51");
+  });
+
+  it("should leave the pages unchanged when no number repeats", async () => {
+    const { result } = await loadBoth([pullRequest(50), pullRequest(49)]);
+    expect(result.current.pullRequests).toHaveLength(52);
+  });
+
+  it("should drop a number repeated within one page", async () => {
+    const { result } = await loadBoth([pullRequest(50), pullRequest(50), pullRequest(49)]);
+    expect(result.current.pullRequests).toHaveLength(52);
+  });
+});

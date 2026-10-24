@@ -518,3 +518,34 @@ describe("PullRequestsPanel Create pull request button when the prop is absent",
     expect(screen.getByRole("button", { name: "Create pull request" })).toBeDisabled();
   });
 });
+
+// Contract (fix wave 2, F4): the heading carries the count only while the section is expanded and
+// its list is being shown; otherwise it reads plain "Pull requests", even with a list still cached.
+describe("PullRequestsPanel heading count", () => {
+  it("shows a plain heading after the loaded section is collapsed", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("shows the count again when the section is expanded again", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    await user.click(toggle());
+    expect(await screen.findByRole("button", { name: "Pull requests (2)" })).toBeInTheDocument();
+  });
+
+  it("shows a plain heading when a refresh answers hostingAuth", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(refresh()).toBeEnabled());
+    vi.mocked(hostingListPullRequests).mockRejectedValue(hostingError("hostingAuth"));
+    await user.click(refresh());
+    await screen.findByText("Token expired or revoked — reconnect");
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+  });
+
+  it("keeps the count while the expanded list is shown", async () => {
+    await renderPanel();
+    expect(toggle()).toHaveTextContent("Pull requests (2)");
+  });
+});

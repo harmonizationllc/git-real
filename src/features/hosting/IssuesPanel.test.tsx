@@ -513,3 +513,72 @@ describe("IssuesPanel context menu", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("no browser");
   });
 });
+
+// Contract (fix wave 2, F4): the heading carries the count only while the section is expanded and
+// its list is being shown; otherwise it reads plain "Issues", even with a list still cached.
+describe("IssuesPanel heading count", () => {
+  it("shows a plain heading after the loaded section is collapsed", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    expect(toggle()).toHaveTextContent(/^Issues$/);
+  });
+
+  it("shows the count again when the section is expanded again", async () => {
+    const { user } = await renderPanel();
+    await user.click(toggle());
+    await user.click(toggle());
+    expect(await screen.findByRole("button", { name: "Issues (2)" })).toBeInTheDocument();
+  });
+
+  it("shows a plain heading when a refresh turns the issues off", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(refresh()).toBeEnabled());
+    vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo({ issuesEnabled: false }));
+    await user.click(refresh());
+    await screen.findByText(ISSUES_OFF_TEXT);
+    expect(toggle()).toHaveTextContent(/^Issues$/);
+  });
+
+  it("shows a plain heading when a refresh answers hostingAuth", async () => {
+    const { user } = await renderPanel();
+    await waitFor(() => expect(refresh()).toBeEnabled());
+    vi.mocked(hostingListIssues).mockRejectedValue(hostingError("hostingAuth"));
+    await user.click(refresh());
+    await screen.findByText("Token expired or revoked — reconnect");
+    expect(toggle()).toHaveTextContent(/^Issues$/);
+  });
+
+  it("keeps the count while the expanded list is shown", async () => {
+    await renderPanel();
+    expect(toggle()).toHaveTextContent("Issues (2)");
+  });
+});
+
+// Contract (fix wave 2, F6): an auth or rate-limit answer from the repository info never falls
+// back to listing; any other failure still does.
+describe("IssuesPanel issues gate after a repository info error", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  it("does not list issues after the repository info answers hostingAuth", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingAuth"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    await screen.findByText("Token expired or revoked — reconnect");
+    await settle();
+    expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+
+  it("does not list issues after the repository info answers hostingRateLimited", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingRateLimited"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    await waitFor(() => expect(hostingRepoInfo).toHaveBeenCalled());
+    await settle();
+    expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+
+  it("still lists issues after the repository info answers hostingUnreachable", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingUnreachable"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Issues (2)" })).toBeInTheDocument();
+    expect(hostingListIssues).toHaveBeenCalledExactlyOnceWith(1, "", 1);
+  });
+});
