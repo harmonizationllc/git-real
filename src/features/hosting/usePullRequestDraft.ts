@@ -1,7 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { hostingPullRequestDraft, toAppError } from "../../lib/ipc";
 import type { AppError, PullRequestDraft, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
+
+const IDLE_KEY = ["prDraft", "idle"] as const;
 
 export interface UsePullRequestDraft {
   draft: PullRequestDraft | undefined;
@@ -16,13 +18,16 @@ export interface UsePullRequestDraft {
  */
 export function usePullRequestDraft(repoId: RepoId, target: string | null): UsePullRequestDraft {
   const query = useQuery<PullRequestDraft, AppError>({
-    queryKey: queryKeys.prDraft(repoId, target ?? ""),
-    // Disabled while the target is null, so the function only runs with one.
-    queryFn: () =>
-      hostingPullRequestDraft(repoId, target as string).catch((e: unknown) => {
-        throw toAppError(e);
-      }),
-    enabled: target !== null,
+    // useQuery always registers an entry; an idle one sits outside the repo's prDraft prefix.
+    queryKey: target === null ? IDLE_KEY : queryKeys.prDraft(repoId, target),
+    // No function without a target, so a null target registers no cache entry.
+    queryFn:
+      target === null
+        ? skipToken
+        : () =>
+            hostingPullRequestDraft(repoId, target).catch((e: unknown) => {
+              throw toAppError(e);
+            }),
     staleTime: Infinity,
     gcTime: 0,
   });

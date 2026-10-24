@@ -9,7 +9,12 @@ import { useRemotes } from "../remotes/useRemotes";
 import styles from "./CreatePullRequestDialog.module.css";
 import { defaultTarget, originBranchName, prPushPlan } from "./createPrPlan";
 import type { PrPushPlan } from "./createPrPlan";
-import { PUBLISH_FIRST_TEXT, hostingMessage, pushFirstLabel } from "./hostingCopy";
+import {
+  PUBLISH_FIRST_TEXT,
+  hostingErrorText,
+  hostingMessage,
+  pushFirstLabel,
+} from "./hostingCopy";
 import { useCreatePullRequest } from "./useCreatePullRequest";
 import type { CreatePrInput } from "./useCreatePullRequest";
 import { usePullRequestDraft } from "./usePullRequestDraft";
@@ -55,8 +60,8 @@ export function CreatePullRequestDialog({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const { branches } = useBranches(repoId);
-  const { remotes } = useRemotes(repoId);
+  const { branches, error: branchesError } = useBranches(repoId);
+  const { remotes, error: remotesError } = useRemotes(repoId);
   const { context } = useRepoContext(repoId);
   const repoInfo = useRepoInfo(repoId, true);
   const remoteNames = remotes?.map((r) => r.name) ?? [];
@@ -119,8 +124,25 @@ export function CreatePullRequestDialog({
     if (e.key === "Escape" && !pending) onClose();
   };
 
+  // Without branches or remotes the form can never open, so the failure is the whole body.
+  const loadError =
+    branches === undefined ? branchesError : remotes === undefined ? remotesError : null;
+
   let body: React.ReactNode;
-  if (blocked !== null) {
+  if (loadError !== null) {
+    body = (
+      <>
+        <p className={styles.note}>
+          {hostingErrorText(loadError, context?.repo.provider ?? "github")}
+        </p>
+        <div className={styles.actions}>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </>
+    );
+  } else if (blocked !== null) {
     body = (
       <>
         <p className={styles.note}>{blocked}</p>

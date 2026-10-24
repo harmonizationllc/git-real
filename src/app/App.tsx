@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { Toasts } from "../components/Toasts";
 import { CloneDialog } from "../features/repo/CloneDialog";
 import { StartScreen } from "../features/repo/StartScreen";
 import { closeRepo, isAppError } from "../lib/ipc";
@@ -9,7 +10,6 @@ import { useCommitDraft } from "../lib/store/commitDraft";
 import { useRepoTabs } from "../lib/store/repoTabs";
 import { useWorkspace } from "../lib/store/workspace";
 import styles from "./App.module.css";
-import { Toasts } from "../components/Toasts";
 import { RepoPane } from "./RepoPane";
 import { TabBar } from "./TabBar";
 
