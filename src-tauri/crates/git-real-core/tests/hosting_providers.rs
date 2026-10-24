@@ -1227,6 +1227,9 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         "ssh:///p.git",
         "ssh://",
         "ssh:///p",
+        // An ssh:// form needs a non-empty path after the host, like the scp form.
+        "ssh://git@h",
+        "ssh://git@h/",
         "ssh://u@-h/p.git",
         // Multibyte: the scp host is ASCII-only, so this is dropped (must not panic).
         "git@h\u{e9}:p.git",
