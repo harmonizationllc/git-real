@@ -301,6 +301,17 @@ fn the_token_is_redacted_in_every_field_the_message_can_come_from() {
 }
 
 #[test]
+fn the_token_is_redacted_in_errors_first_message_and_message_array_entries() {
+    let in_errors =
+        format!(r#"{{"message":"Validation Failed","errors":[{{"message":"a {SECRET} b"}}]}}"#);
+    let in_array = format!(r#"{{"message":["x","a {SECRET} b"]}}"#);
+    assert_eq!(rejected_message(&in_errors), "a *** b");
+    assert_eq!(auth_message(&in_errors), "a *** b");
+    assert_eq!(rejected_message(&in_array), "x; a *** b");
+    assert_eq!(auth_message(&in_array), "x; a *** b");
+}
+
+#[test]
 fn every_occurrence_of_the_token_is_redacted() {
     let body = format!(r#"{{"message":"{SECRET} and {SECRET}, again {SECRET}"}}"#);
     let message = rejected_message(&body);

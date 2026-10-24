@@ -808,3 +808,31 @@ fn exactly_one_thousand_commits_ahead_is_one_thousand_and_humanizes_the_name() {
 
     assert_eq!((got.title.as_str(), got.ahead), ("Bulk import", 1000));
 }
+
+#[test]
+fn nine_hundred_ninety_nine_commits_ahead_is_reported_exactly() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, head) = fx();
+    on_branch(&path, "feature/bulk-import");
+    {
+        let repo = git2::Repository::open(&path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+        let tree = repo.head().unwrap().peel_to_tree().unwrap();
+        for i in 0..999 {
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                &format!("c{i}"),
+                &tree,
+                &[&parent],
+            )
+            .unwrap();
+        }
+    }
+
+    assert_eq!(draft(&path, &head).unwrap().ahead, 999);
+}
