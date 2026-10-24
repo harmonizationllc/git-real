@@ -5,6 +5,7 @@ mod common;
 
 use common::FakeTransport;
 use git_real_core::GitError;
+use git_real_core::hosting::http::percent_encode as enc;
 use git_real_core::hosting::{
     self, CheckoutPlan, CiState, HostedRepoInfo, Issue, Method, NewPullRequest, Provider as P,
     PullRequest, RepoRef, Token, UserInfo,
@@ -383,20 +384,6 @@ fn checkout_plans() {
 }
 
 // --- GR-13b: repository info, issues, create pull request ---
-
-/// `percent_encode` of the hosting layer (it is crate-private): everything but `A-Za-z0-9-._~`
-/// becomes `%XX`, so the expectations below are computed from the documented rule.
-fn enc(s: &str) -> String {
-    s.bytes()
-        .map(|b| {
-            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
-                char::from(b).to_string()
-            } else {
-                format!("%{b:02X}")
-            }
-        })
-        .collect()
-}
 
 fn header<'a>(req: &'a hosting::Request, name: &str) -> Vec<&'a str> {
     req.headers
