@@ -639,6 +639,12 @@ describe("CreatePullRequestDialog stability", () => {
 // Contract: focus starts on Title, returns to Title after an error, and is held on the box while
 // the call is in flight; the box is inert while a sign-in dialog is on top.
 describe("CreatePullRequestDialog focus", () => {
+  it("should focus the dialog box while it shows Loading…", () => {
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(dialog()).toHaveFocus();
+  });
+
   it("should return focus to the Title field after an error", async () => {
     vi.mocked(hostingCreatePullRequest).mockRejectedValue(hostingError("hostingRejected"));
     const { user } = await renderForm();
