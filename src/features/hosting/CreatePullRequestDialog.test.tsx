@@ -78,7 +78,7 @@ const dialog = () => screen.getByRole("dialog", { name: "Create pull request" })
 const title = () => screen.getByLabelText("Title") as HTMLInputElement;
 const description = () => screen.getByLabelText("Description") as HTMLTextAreaElement;
 const target = () => screen.getByLabelText("Target") as HTMLSelectElement;
-const create = () => screen.getByRole("button", { name: "Create" });
+const create = () => screen.getByRole("button", { name: "Create pull request" });
 const targetOptions = () =>
   within(target())
     .getAllByRole("option")
@@ -532,7 +532,7 @@ describe("CreatePullRequestDialog nothing to open", () => {
     vi.mocked(listBranches).mockResolvedValue(branchList({ origin: [] }));
     await renderSettled();
     expect(screen.queryByLabelText("Title")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create pull request" })).toBeNull();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 

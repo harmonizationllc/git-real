@@ -1722,6 +1722,13 @@ describe("RepoPane create pull request", () => {
 
   it("should close the dialog on Escape", async () => {
     usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "dev", oid: oidOf(2) }] },
+        ],
+      }),
+    );
     const { user } = await renderLoaded();
     await openPushMenu(user);
     await user.click(createItem() as HTMLElement);
@@ -1732,6 +1739,13 @@ describe("RepoPane create pull request", () => {
 
   it("should return focus to the Push options button that opened it when the dialog closes", async () => {
     usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "dev", oid: oidOf(2) }] },
+        ],
+      }),
+    );
     const { user } = await renderLoaded();
     await openPushMenu(user);
     await user.click(createItem() as HTMLElement);
@@ -1765,7 +1779,11 @@ describe("RepoPane create pull request", () => {
     await openPushMenu(user);
     await user.click(createItem() as HTMLElement);
     await screen.findByLabelText("Title");
-    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Create pull request" })).getByRole("button", {
+        name: "Create pull request",
+      }),
+    );
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull(),
     );
@@ -1806,7 +1824,11 @@ describe("RepoPane create pull request", () => {
     await openPushMenu(user);
     await user.click(createItem() as HTMLElement);
     await screen.findByLabelText("Title");
-    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Create pull request" })).getByRole("button", {
+        name: "Create pull request",
+      }),
+    );
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull(),
     );

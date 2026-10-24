@@ -1,5 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useToasts } from "../lib/store/toasts";
 import { Toasts } from "./Toasts";
@@ -20,8 +19,6 @@ const show = (text: string, action?: { label: string; run(): void }) => {
   });
   return id;
 };
-
-const user = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
 // Contract: a polite status region lists the toasts, each with an optional action and a dismiss.
 describe("Toasts rendering", () => {
@@ -66,41 +63,41 @@ describe("Toasts rendering", () => {
 
 // Contract: the action runs and dismisses; Dismiss notification removes without running.
 describe("Toasts actions", () => {
-  it("should run the action when its button is clicked", async () => {
+  it("should run the action when its button is clicked", () => {
     const run = vi.fn();
     render(<Toasts />);
     show("Opened #124", { label: "Open in browser", run });
-    await user().click(screen.getByRole("button", { name: "Open in browser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in browser" }));
     expect(run).toHaveBeenCalledOnce();
   });
 
-  it("should dismiss the toast after its action runs", async () => {
+  it("should dismiss the toast after its action runs", () => {
     render(<Toasts />);
     show("Opened #124", { label: "Open in browser", run: vi.fn() });
-    await user().click(screen.getByRole("button", { name: "Open in browser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open in browser" }));
     expect(screen.queryByText("Opened #124")).toBeNull();
   });
 
-  it("should remove the toast when Dismiss notification is clicked", async () => {
+  it("should remove the toast when Dismiss notification is clicked", () => {
     render(<Toasts />);
     show("Hi");
-    await user().click(screen.getByRole("button", { name: "Dismiss notification" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
     expect(screen.queryByText("Hi")).toBeNull();
   });
 
-  it("should not run the action when the toast is dismissed", async () => {
+  it("should not run the action when the toast is dismissed", () => {
     const run = vi.fn();
     render(<Toasts />);
     show("Hi", { label: "Open", run });
-    await user().click(screen.getByRole("button", { name: "Dismiss notification" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("should dismiss only the toast whose button was clicked", async () => {
+  it("should dismiss only the toast whose button was clicked", () => {
     render(<Toasts />);
     show("First");
     show("Second");
-    await user().click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
     expect(screen.getByRole("status")).toHaveTextContent("Second");
     expect(screen.queryByText("First")).toBeNull();
   });
@@ -140,11 +137,11 @@ describe("Toasts auto-dismiss", () => {
     expect(screen.getByText("Second")).toBeInTheDocument();
   });
 
-  it("should keep a toast whose earlier twin was dismissed by hand until its own 8000 ms", async () => {
+  it("should keep a toast whose earlier twin was dismissed by hand until its own 8000 ms", () => {
     render(<Toasts />);
     show("First");
     show("Second");
-    await user().click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
     act(() => {
       vi.advanceTimersByTime(7999);
     });
