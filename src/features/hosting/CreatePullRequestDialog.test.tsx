@@ -878,3 +878,33 @@ describe("CreatePullRequestDialog provider copy", () => {
     expect(await within(dialog()).findByText(hostingErrorText(rejected, "gitlab"))).toBeVisible();
   });
 });
+
+// Contract: reopening the dialog on another branch starts from that branch's draft, not a cached one.
+describe("CreatePullRequestDialog reopened on another branch", () => {
+  it("should seed Title and Description from the new branch's draft", async () => {
+    vi.mocked(hostingPullRequestDraft)
+      .mockResolvedValueOnce(prDraft({ title: "Work on feat", body: "A" }))
+      .mockResolvedValueOnce(prDraft({ title: "Work on other", body: "B" }));
+    const view = await renderForm();
+    expect(title()).toHaveValue("Work on feat");
+    view.rerender(<></>);
+    // Everything but the cached drafts is refetched, as after a real close and reopen.
+    view.queryClient.removeQueries({ predicate: (q) => q.queryKey[2] !== "prDraft" });
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "branch", name: "other" },
+      local: [
+        {
+          name: "other",
+          oid: oidOf(3),
+          isHead: true,
+          tracking: { upstream: "origin/other", ahead: 0, behind: 0 },
+        },
+      ],
+      remotes: branchList({ origin: ["main", "develop", "other"] }).remotes,
+    });
+    view.rerender(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await screen.findByLabelText("Title");
+    await waitFor(() => expect(title()).toHaveValue("Work on other"));
+    expect(description()).toHaveValue("B");
+  });
+});
