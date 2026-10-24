@@ -6,11 +6,14 @@ import { networkMessage } from "../remotes/networkMessage";
 import {
   DEFAULT_HOST,
   PROVIDER_LABEL,
+  PUBLISH_FIRST_TEXT,
   RECONNECT_TEXT,
   SCOPE_HINT,
   hostingErrorText,
   hostingMessage,
+  openedToastText,
   prCountLabel,
+  pushFirstLabel,
   tokenPageUrl,
 } from "./hostingCopy";
 
@@ -193,5 +196,26 @@ describe("prCountLabel", () => {
 
   it("should add a plus while more pages exist", () => {
     expect(prCountLabel(50, true)).toBe("Pull requests (50+)");
+  });
+});
+
+// Contract: copy of the create pull request dialog and its toast.
+describe("create pull request copy", () => {
+  it("should explain that an unpublished branch is published first", () => {
+    expect(PUBLISH_FIRST_TEXT).toBe(
+      "This branch isn't on the remote yet — it will be published first",
+    );
+  });
+
+  it("should label the push checkbox in the singular for one commit", () => {
+    expect(pushFirstLabel(1)).toBe("Push 1 commit first");
+  });
+
+  it("should label the push checkbox in the plural for several commits", () => {
+    expect(pushFirstLabel(3)).toBe("Push 3 commits first");
+  });
+
+  it("should name the opened pull request in the toast", () => {
+    expect(openedToastText(124)).toBe("Opened #124");
   });
 });

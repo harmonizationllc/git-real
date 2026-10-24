@@ -32,11 +32,18 @@ function fakeSync(over: Partial<SyncActions> = {}): SyncActions {
   };
 }
 
-function renderToolbar(over: Partial<SyncActions> = {}) {
+function renderToolbar(over: Partial<SyncActions> = {}, withCreatePr = false) {
   const sync = fakeSync(over);
   const onOpenRemotes = vi.fn();
-  const view = renderWithProviders(<SyncToolbar sync={sync} onOpenRemotes={onOpenRemotes} />);
-  return { sync, onOpenRemotes, ...view };
+  const onCreatePullRequest = withCreatePr ? vi.fn() : null;
+  const view = renderWithProviders(
+    <SyncToolbar
+      sync={sync}
+      onOpenRemotes={onOpenRemotes}
+      onCreatePullRequest={onCreatePullRequest}
+    />,
+  );
+  return { sync, onOpenRemotes, onCreatePullRequest, ...view };
 }
 
 const button = (name: string) => screen.getByRole("button", { name });
@@ -378,6 +385,7 @@ describe("SyncToolbar dialog order and focus", () => {
             }),
         }}
         onOpenRemotes={vi.fn()}
+        onCreatePullRequest={null}
       />
     );
   }
@@ -387,5 +395,44 @@ describe("SyncToolbar dialog order and focus", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("group", { name: "Sync" })).toHaveFocus();
+  });
+});
+
+// Contract: Push options leads with Create pull request… when the pane allows it; null hides it.
+describe("SyncToolbar Create pull request menu item", () => {
+  it("should list Create pull request… first under Push options when the prop is set", async () => {
+    const { user } = renderToolbar({}, true);
+    await user.click(button("Push options"));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Create pull request…",
+      "Force push (with lease)…",
+    ]);
+  });
+
+  it("should omit Create pull request… when the prop is null", async () => {
+    const { user } = renderToolbar();
+    await user.click(button("Push options"));
+    expect(screen.queryByRole("menuitem", { name: "Create pull request…" })).toBeNull();
+  });
+
+  it("should call the prop once when Create pull request… is selected", async () => {
+    const { user, onCreatePullRequest } = renderToolbar({}, true);
+    await user.click(button("Push options"));
+    await user.click(screen.getByRole("menuitem", { name: "Create pull request…" }));
+    expect(onCreatePullRequest).toHaveBeenCalledOnce();
+  });
+
+  it("should not list Create pull request… under Pull options", async () => {
+    const { user } = renderToolbar({}, true);
+    await user.click(button("Pull options"));
+    expect(screen.queryByRole("menuitem", { name: "Create pull request…" })).toBeNull();
+  });
+
+  it("should not call the prop when another Push options item is selected", async () => {
+    const { user, onCreatePullRequest, sync } = renderToolbar({}, true);
+    await user.click(button("Push options"));
+    await user.click(screen.getByRole("menuitem", { name: "Force push (with lease)…" }));
+    expect(onCreatePullRequest).not.toHaveBeenCalled();
+    expect(sync.requestForcePush).toHaveBeenCalledOnce();
   });
 });
