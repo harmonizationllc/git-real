@@ -175,6 +175,41 @@ describe("CreatePullRequestDialog source and target", () => {
     expect(hostingPullRequestDraft).toHaveBeenCalledExactlyOnceWith(1, "develop");
   });
 
+  it("should leave the source out of the Target when it is the provider's default branch", async () => {
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "branch", name: "main" },
+      local: [
+        {
+          name: "main",
+          oid: oidOf(1),
+          isHead: true,
+          tracking: { ...synced, upstream: "origin/main" },
+        },
+      ],
+      remotes: [
+        {
+          remote: "origin",
+          branches: ["main", "develop"].map((name) => ({ remote: "origin", name, oid: oidOf(2) })),
+        },
+      ],
+    });
+    await renderForm();
+    expect(targetOptions()).toEqual(["develop"]);
+    expect(target()).toHaveValue("develop");
+    expect(hostingPullRequestDraft).toHaveBeenCalledExactlyOnceWith(1, "develop");
+  });
+
+  it("should leave the upstream's name out of the Target when it differs from the local name", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        tracking: { ...synced, upstream: "origin/renamed" },
+        origin: ["main", "renamed"],
+      }),
+    );
+    await renderForm();
+    expect(targetOptions()).toEqual(["main"]);
+  });
+
   it("should not refill the title or request another draft when the Target changes", async () => {
     const { user } = await renderForm();
     await user.clear(title());
@@ -564,5 +599,73 @@ describe("CreatePullRequestDialog dismissal", () => {
     const { user } = await renderForm();
     await user.click(dialog().parentElement as HTMLElement);
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: once the form is up, a refetch of the repository never remounts it or resets its state.
+describe("CreatePullRequestDialog stability", () => {
+  it("should keep typed text, Target options and the draft request after a failed create refreshes the branches", async () => {
+    vi.mocked(hostingCreatePullRequest).mockRejectedValueOnce(hostingError("hostingRejected"));
+    const { user } = await renderForm();
+    await user.clear(title());
+    await user.type(title(), "Mine");
+    await user.selectOptions(target(), "develop");
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({ origin: ["main", "develop", "feat", "other"] }),
+    );
+    await user.click(create());
+    await within(dialog()).findByRole("alert");
+    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
+    expect(title()).toHaveValue("Mine");
+    expect(target()).toHaveValue("develop");
+    expect(targetOptions()).toEqual(["main", "develop"]);
+    expect(hostingPullRequestDraft).toHaveBeenCalledOnce();
+  });
+
+  it("should stop announcing the publish and send no push on a retry once the branch is on origin", async () => {
+    vi.mocked(listBranches).mockResolvedValue(branchList({ tracking: null }));
+    vi.mocked(hostingCreatePullRequest).mockRejectedValueOnce(hostingError("hostingRejected"));
+    const { user } = await renderForm();
+    vi.mocked(listBranches).mockResolvedValue(branchList({ tracking: synced }));
+    await user.click(create());
+    await within(dialog()).findByRole("alert");
+    await waitFor(() => expect(screen.queryByText(PUBLISH_FIRST_TEXT)).toBeNull());
+    await user.click(create());
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(vi.mocked(hostingCreatePullRequest).mock.calls[1]?.[1].push).toBeNull();
+  });
+});
+
+// Contract: focus starts on Title, returns to Title after an error, and is held on the box while
+// the call is in flight; the box is inert while a sign-in dialog is on top.
+describe("CreatePullRequestDialog focus", () => {
+  it("should return focus to the Title field after an error", async () => {
+    vi.mocked(hostingCreatePullRequest).mockRejectedValue(hostingError("hostingRejected"));
+    const { user } = await renderForm();
+    await user.click(create());
+    await within(dialog()).findByRole("alert");
+    expect(title()).toHaveFocus();
+  });
+
+  it("should hold focus on the dialog box while the call is in flight", async () => {
+    vi.mocked(hostingCreatePullRequest).mockReturnValue(new Promise(() => undefined));
+    const { user } = await renderForm();
+    await user.click(create());
+    await waitFor(() => expect(dialog()).toHaveFocus());
+  });
+
+  it("should make the box inert while the sign-in dialog is open", async () => {
+    vi.mocked(hostingCreatePullRequest).mockRejectedValue(authError());
+    const { user } = await renderForm();
+    await user.click(create());
+    await screen.findByRole("dialog", { name: "Sign in to github.com" });
+    expect(
+      screen.getByRole("dialog", { name: "Create pull request", hidden: true }),
+    ).toHaveAttribute("inert");
+  });
+
+  it("should not make the box inert while no sign-in is open", async () => {
+    await renderForm();
+    expect(dialog()).not.toHaveAttribute("inert");
   });
 });

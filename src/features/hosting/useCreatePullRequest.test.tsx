@@ -157,6 +157,16 @@ describe("useCreatePullRequest success", () => {
     expect(openExternal).toHaveBeenCalledExactlyOnceWith(created().webUrl);
   });
 
+  it("should show the failure as a toast when opening the browser is refused", async () => {
+    vi.mocked(openExternal).mockRejectedValue({ kind: "io", message: "no browser" });
+    const { result } = render(null);
+    await act(() => result.current.submit(input()));
+    useToasts.getState().toasts[0]?.action?.run();
+    await waitFor(() =>
+      expect(useToasts.getState().toasts.map((t) => t.text)).toContain("no browser"),
+    );
+  });
+
   it("should leave no error behind", async () => {
     const { result } = render(null);
     await act(() => result.current.submit(input()));

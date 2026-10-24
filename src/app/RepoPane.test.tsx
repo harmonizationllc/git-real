@@ -37,7 +37,13 @@ import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
-import { hostingAccount, prDraft, repoContext, repoInfo } from "../test/hostingFixtures";
+import {
+  hostingAccount,
+  prDraft,
+  pullRequest,
+  repoContext,
+  repoInfo,
+} from "../test/hostingFixtures";
 import { networkError, remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
@@ -1734,6 +1740,40 @@ describe("RepoPane create pull request", () => {
     expect(screen.getByRole("button", { name: "Push options" })).toHaveFocus();
   });
 
+  it("should leave focus on the pane or the Push options button after a successful create closes the dialog", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        head: { kind: "branch", name: "feat" },
+        local: [
+          {
+            name: "feat",
+            oid: oidOf(1),
+            isHead: true,
+            tracking: { upstream: "origin/feat", ahead: 0, behind: 0 },
+          },
+        ],
+        remotes: [
+          { remote: "origin", branches: [{ remote: "origin", name: "main", oid: oidOf(2) }] },
+        ],
+      }),
+    );
+    vi.mocked(hostingCreatePullRequest).mockResolvedValue(
+      pullRequest(124, { sourceBranch: "feat", targetBranch: "main" }),
+    );
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    await user.click(createItem() as HTMLElement);
+    await screen.findByLabelText("Title");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull(),
+    );
+    const pane = screen.getByRole("heading", { level: 1 }).closest("section");
+    const pushOptions = screen.getByRole("button", { name: "Push options" });
+    expect([pane, pushOptions]).toContain(document.activeElement);
+  });
+
   it("should create from the dialog and close it", async () => {
     usableContext();
     vi.mocked(listBranches).mockResolvedValue(
@@ -1758,19 +1798,10 @@ describe("RepoPane create pull request", () => {
         head: { kind: "branch", name: "feat" },
       }),
     );
-    vi.mocked(hostingCreatePullRequest).mockResolvedValue({
-      number: 124,
-      title: "Add login",
-      author: "octo",
-      sourceBranch: "feat",
-      targetBranch: "main",
-      fromFork: false,
-      forkCloneUrl: null,
-      draft: false,
-      ciState: "none",
-      updatedAt: 1792497600,
-      webUrl: "https://github.com/gorlox/test-repo/pull/124",
-    });
+    vi.mocked(hostingCreatePullRequest).mockResolvedValue(
+      pullRequest(124, { sourceBranch: "feat", targetBranch: "main" }),
+    );
+
     const { user } = await renderLoaded();
     await openPushMenu(user);
     await user.click(createItem() as HTMLElement);
@@ -1817,6 +1848,17 @@ describe("RepoPane create pull request", () => {
     await renderLoaded();
     expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Push options" })).toBeDisabled();
+  });
+
+  it("should offer no way to open the dialog when HEAD is unborn", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "unborn", name: "main" },
+      local: [],
+      remotes: [],
+    });
+    await renderLoaded();
+    expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
   });
 
   it("should open the dialog from the current branch's menu", async () => {
