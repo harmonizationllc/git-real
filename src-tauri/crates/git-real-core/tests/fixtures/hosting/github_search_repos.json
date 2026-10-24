@@ -1,0 +1,16 @@
+{
+  "total_count": 1,
+  "items": [
+    {
+      "full_name": "octo/git-real",
+      "name": "git-real",
+      "owner": { "login": "octo" },
+      "description": "A Git client",
+      "private": false,
+      "updated_at": "2026-10-24T18:00:00Z",
+      "clone_url": "https://github.com/octo/git-real.git",
+      "ssh_url": "git@github.com:octo/git-real.git",
+      "html_url": "https://github.com/octo/git-real"
+    }
+  ]
+}

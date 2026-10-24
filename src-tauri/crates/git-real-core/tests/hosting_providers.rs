@@ -7,8 +7,8 @@ use common::FakeTransport;
 use git_real_core::GitError;
 use git_real_core::hosting::http::percent_encode as enc;
 use git_real_core::hosting::{
-    self, CheckoutPlan, CiState, HostedRepoInfo, Issue, Method, NewPullRequest, Provider as P,
-    PullRequest, RepoRef, Token, UserInfo,
+    self, Account, CheckoutPlan, CiState, HostedRepo, HostedRepoInfo, Issue, Method,
+    NewPullRequest, Provider as P, PullRequest, RepoRef, Token, UserInfo,
 };
 
 macro_rules! fixture {
@@ -935,4 +935,388 @@ fn issue_and_repo_info_serialize_camel_case() {
             target_branch: "m".into(),
         }
     );
+}
+
+// --- GR-13c: the account's own repositories (clone dialog browser) ---
+
+fn account(provider: P, host: &str) -> Account {
+    Account::new(
+        provider,
+        host,
+        UserInfo {
+            username: "octo".into(),
+            display_name: None,
+            avatar_url: None,
+        },
+    )
+}
+
+fn my_repos(
+    provider: P,
+    host: &str,
+    query: &str,
+    page: u32,
+    body: &str,
+) -> (Result<Vec<HostedRepo>, GitError>, String) {
+    let t = FakeTransport::new().reply(200, body);
+    let got = hosting::list_my_repos(&t, &account(provider, host), &tok(), query, page);
+    (got, t.requests()[0].url.clone())
+}
+
+const GH_LIST_URL: &str = "https://api.github.com/user/repos?affiliation=owner,collaborator,organization_member&sort=updated&direction=desc&per_page=50&page=1";
+
+// Blank query: the three list URLs and the mapped rows; a row with an unusable clone URL is
+// dropped, userinfo is stripped, an empty description becomes None.
+#[test]
+fn my_repos_for_each_provider() {
+    let (gh_rows, gh_url) = my_repos(
+        P::GitHub,
+        "github.com",
+        "",
+        1,
+        fixture!("github_user_repos.json"),
+    );
+    assert_eq!(gh_url, GH_LIST_URL);
+    assert_eq!(
+        gh_rows.unwrap(),
+        vec![
+            HostedRepo {
+                full_name: "octo/git-real".into(),
+                name: "git-real".into(),
+                owner: "octo".into(),
+                description: Some("A Git client".into()),
+                private: false,
+                updated_at: 1792864800,
+                https_url: "https://github.com/octo/git-real.git".into(),
+                ssh_url: Some("git@github.com:octo/git-real.git".into()),
+                web_url: "https://github.com/octo/git-real".into(),
+            },
+            HostedRepo {
+                full_name: "octo/secret".into(),
+                name: "secret".into(),
+                owner: "octo".into(),
+                description: None,
+                private: true,
+                updated_at: 1792756800,
+                https_url: "https://github.com/octo/secret.git".into(),
+                ssh_url: None,
+                web_url: "https://github.com/octo/secret".into(),
+            },
+        ]
+    );
+
+    let (gl_rows, gl_url) = my_repos(
+        P::GitLab,
+        "gitlab.com",
+        "",
+        1,
+        fixture!("gitlab_projects.json"),
+    );
+    assert_eq!(
+        gl_url,
+        "https://gitlab.com/api/v4/projects?membership=true&order_by=last_activity_at&sort=desc&per_page=50&page=1"
+    );
+    let gl_rows = gl_rows.unwrap();
+    assert_eq!(
+        gl_rows[0],
+        HostedRepo {
+            full_name: "group/sub/app".into(),
+            name: "app".into(),
+            owner: "group/sub".into(),
+            description: None,
+            private: true,
+            updated_at: 1792746900,
+            https_url: "https://gitlab.com/group/sub/app.git".into(),
+            ssh_url: Some("git@gitlab.com:group/sub/app.git".into()),
+            web_url: "https://gitlab.com/group/sub/app".into(),
+        }
+    );
+    assert_eq!(
+        (
+            gl_rows[1].private,
+            gl_rows[1].ssh_url.clone(),
+            gl_rows[1].description.clone()
+        ),
+        (false, None, Some("Public one".to_owned()))
+    );
+
+    let (bb_rows, bb_url) = my_repos(
+        P::Bitbucket,
+        "bitbucket.org",
+        "",
+        1,
+        fixture!("bitbucket_repositories.json"),
+    );
+    assert_eq!(
+        bb_url,
+        "https://api.bitbucket.org/2.0/repositories?role=member&sort=-updated_on&pagelen=50&page=1"
+    );
+    assert_eq!(
+        bb_rows.unwrap(),
+        vec![HostedRepo {
+            full_name: "ws/site".into(),
+            name: "site".into(),
+            owner: "ws".into(),
+            description: Some("Docs site".into()),
+            private: true,
+            updated_at: 1792652400,
+            https_url: "https://bitbucket.org/ws/site.git".into(),
+            ssh_url: Some("git@bitbucket.org:ws/site.git".into()),
+            web_url: "https://bitbucket.org/ws/site".into(),
+        }]
+    );
+}
+
+// A GitHub search reply is read from `items`.
+#[test]
+fn github_my_repos_search_reads_items() {
+    let (rows, _) = my_repos(
+        P::GitHub,
+        "github.com",
+        "git",
+        1,
+        fixture!("github_search_repos.json"),
+    );
+    assert_eq!(
+        rows.unwrap()
+            .iter()
+            .map(|r| r.full_name.as_str())
+            .collect::<Vec<_>>(),
+        ["octo/git-real"]
+    );
+}
+
+// Review Focus 2: user:/org: typed by the user cannot widen the GitHub search; quotes, `#`, `&`
+// and spaces are percent-encoded everywhere; Bitbucket strips quotes and backslashes.
+#[test]
+fn repo_queries_are_scoped_and_encoded_for_every_provider() {
+    let q = r#"user:other "lo gin" #1 & x"#;
+
+    let (rows, url) = my_repos(
+        P::GitHub,
+        "github.com",
+        q,
+        2,
+        fixture!("github_search_repos.json"),
+    );
+    assert_eq!(
+        url,
+        format!(
+            "https://api.github.com/search/repositories?q={}&sort=updated&order=desc&per_page=50&page=2",
+            enc(r#""lo gin" #1 & x in:name user:octo"#)
+        )
+    );
+    assert_eq!(rows.unwrap().len(), 1);
+
+    let (_, url) = my_repos(P::GitLab, "gitlab.com", q, 1, "[]");
+    assert!(url.ends_with(&format!("&search={}", enc(q))), "{url}");
+
+    let (_, url) = my_repos(P::Bitbucket, "bitbucket.org", q, 1, r#"{"values":[]}"#);
+    assert!(
+        url.ends_with(&format!(
+            "&q={}",
+            enc(r#"name ~ "user:other lo gin #1 & x""#)
+        )),
+        "{url}"
+    );
+}
+
+#[test]
+fn bitbucket_repo_query_strips_quotes_and_backslashes_so_the_literal_cannot_close() {
+    let (_, url) = my_repos(
+        P::Bitbucket,
+        "bitbucket.org",
+        r#"a" OR name ~ "b\"#,
+        1,
+        r#"{"values":[]}"#,
+    );
+    assert!(
+        url.ends_with(&format!("&q={}", enc(r#"name ~ "a OR name ~ b""#))),
+        "{url}"
+    );
+}
+
+#[test]
+fn a_blank_or_whitespace_query_sends_the_plain_list_on_every_provider() {
+    let (_, gh) = my_repos(P::GitHub, "github.com", "   ", 1, "[]");
+    let (_, gl) = my_repos(P::GitLab, "gitlab.com", "  ", 1, "[]");
+    let (_, bb) = my_repos(P::Bitbucket, "bitbucket.org", "  ", 1, r#"{"values":[]}"#);
+    assert_eq!(gh, GH_LIST_URL);
+    assert!(!gl.contains("search="), "{gl}");
+    assert!(!bb.contains("&q="), "{bb}");
+}
+
+#[test]
+fn bitbucket_a_repo_query_of_only_quotes_sends_the_plain_list() {
+    let (_, url) = my_repos(
+        P::Bitbucket,
+        "bitbucket.org",
+        r#"" \"#,
+        1,
+        r#"{"values":[]}"#,
+    );
+    assert!(!url.contains("&q="), "{url}");
+}
+
+#[test]
+fn github_blank_after_stripping_lists_instead_of_searching() {
+    let (_, url) = my_repos(P::GitHub, "github.com", "-user:x", 1, "[]");
+    assert_eq!(url, GH_LIST_URL);
+}
+
+#[test]
+fn github_enterprise_repos_use_the_host_api_base() {
+    let (_, url) = my_repos(P::GitHub, "ghe.corp", "", 1, "[]");
+    assert!(
+        url.starts_with("https://ghe.corp/api/v3/user/repos?"),
+        "{url}"
+    );
+}
+
+// Review Focus 1: a clone URL with userinfo is cleaned, one with junk drops the row/ssh URL
+// before it can reach `git clone`.
+#[test]
+fn clone_urls_are_sanitized_before_they_can_reach_git() {
+    let repo = |https: &str, ssh: Option<&str>, description: Option<&str>| HostedRepo {
+        full_name: "o/r".into(),
+        name: "r".into(),
+        owner: "o".into(),
+        description: description.map(Into::into),
+        private: false,
+        updated_at: 0,
+        https_url: https.into(),
+        ssh_url: ssh.map(Into::into),
+        web_url: "https://h/o/r".into(),
+    };
+    let https = |u: &str| repo(u, None, None).sanitized().map(|r| r.https_url);
+    let ssh = |u: &str| {
+        repo("https://h/p.git", Some(u), None)
+            .sanitized()
+            .unwrap()
+            .ssh_url
+    };
+
+    assert_eq!(
+        https("https://u@h/p.git").as_deref(),
+        Some("https://h/p.git")
+    );
+    assert_eq!(https("https://h/p.git").as_deref(), Some("https://h/p.git"));
+    for bad in [
+        "http://h/p.git",
+        "https:///p",
+        "https://h/p\n.git",
+        "javascript:alert(1)",
+    ] {
+        assert_eq!(https(bad), None, "{bad:?}");
+    }
+
+    assert_eq!(ssh("git@h:p.git").as_deref(), Some("git@h:p.git"));
+    assert_eq!(
+        ssh("ssh://git@h/p.git").as_deref(),
+        Some("ssh://git@h/p.git")
+    );
+    for bad in ["git@h:p .git", "ftp://x"] {
+        assert_eq!(ssh(bad), None, "{bad:?}");
+    }
+
+    assert_eq!(
+        repo("https://h/p.git", None, Some(""))
+            .sanitized()
+            .unwrap()
+            .description,
+        None
+    );
+}
+
+#[test]
+fn clone_urls_with_control_characters_or_whitespace_are_rejected() {
+    let base = |https: &str, ssh: Option<&str>| HostedRepo {
+        full_name: "o/r".into(),
+        name: "r".into(),
+        owner: "o".into(),
+        description: None,
+        private: false,
+        updated_at: 0,
+        https_url: https.into(),
+        ssh_url: ssh.map(Into::into),
+        web_url: "https://h/o/r".into(),
+    };
+    assert_eq!(base("https://h/p .git", None).sanitized(), None);
+    assert_eq!(base("https://h/p\t.git", None).sanitized(), None);
+    assert_eq!(base("https://u@h/p\r.git", None).sanitized(), None);
+    assert_eq!(
+        base("https://h/p.git", Some("ssh://git@h/p\n.git"))
+            .sanitized()
+            .unwrap()
+            .ssh_url,
+        None
+    );
+    assert_eq!(
+        base("https://h/p.git", Some("git@h:p\x07.git"))
+            .sanitized()
+            .unwrap()
+            .ssh_url,
+        None
+    );
+}
+
+#[test]
+fn a_bitbucket_repository_without_an_https_clone_link_is_an_unexpected_response() {
+    let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{"clone":[{"name":"ssh","href":"git@bitbucket.org:ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
+    assert!(
+        matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from bitbucket.org")
+    );
+}
+
+#[test]
+fn a_gitlab_project_without_visibility_is_private() {
+    let body = r#"[{"path_with_namespace":"g/a","path":"a","namespace":{"full_path":"g"},"last_activity_at":"2026-10-23T09:15:00.000Z","http_url_to_repo":"https://gitlab.com/g/a.git","web_url":"https://gitlab.com/g/a"}]"#;
+    let (got, _) = my_repos(P::GitLab, "gitlab.com", "", 1, body);
+    assert!(got.unwrap()[0].private);
+}
+
+#[test]
+fn a_repo_list_missing_a_required_field_is_an_unexpected_response() {
+    for (p, host, body) in [
+        (P::GitHub, "github.com", r#"[{"full_name":"o/r"}]"#),
+        (P::GitLab, "gitlab.com", r#"[{"path":"r"}]"#),
+        (
+            P::Bitbucket,
+            "bitbucket.org",
+            r#"{"values":[{"name":"r"}]}"#,
+        ),
+    ] {
+        let (got, _) = my_repos(p, host, "", 1, body);
+        assert!(
+            matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if *message == format!("unexpected response from {host}")),
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn my_repos_pages_and_errors_like_the_other_lists() {
+    for (p, host, body) in [
+        (P::GitHub, "github.com", "[]"),
+        (P::GitLab, "gitlab.com", "[]"),
+        (P::Bitbucket, "bitbucket.org", r#"{"values":[]}"#),
+    ] {
+        let (_, url) = my_repos(p, host, "", 3, body);
+        assert!(url.ends_with("&page=3"), "{host}: {url}");
+
+        let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+        let err = hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap_err();
+        assert!(
+            matches!(err, GitError::HostingAuth { .. }),
+            "{host}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn my_repos_sends_a_bearer_token() {
+    let t = FakeTransport::new().reply(200, "[]");
+    hosting::list_my_repos(&t, &account(P::GitHub, "github.com"), &tok(), "", 1).unwrap();
+    assert_eq!(header(&t.requests()[0], "authorization"), ["Bearer t0k"]);
 }

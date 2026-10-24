@@ -1,0 +1,23 @@
+[
+  {
+    "path_with_namespace": "group/sub/app",
+    "path": "app",
+    "namespace": { "full_path": "group/sub" },
+    "description": "",
+    "visibility": "private",
+    "last_activity_at": "2026-10-23T09:15:00.000Z",
+    "http_url_to_repo": "https://gitlab.com/group/sub/app.git",
+    "ssh_url_to_repo": "git@gitlab.com:group/sub/app.git",
+    "web_url": "https://gitlab.com/group/sub/app"
+  },
+  {
+    "path_with_namespace": "group/pub",
+    "path": "pub",
+    "namespace": { "full_path": "group" },
+    "description": "Public one",
+    "visibility": "public",
+    "last_activity_at": "2026-10-22T08:00:00.000Z",
+    "http_url_to_repo": "https://gitlab.com/group/pub.git",
+    "web_url": "https://gitlab.com/group/pub"
+  }
+]
