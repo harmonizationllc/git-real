@@ -16,7 +16,9 @@ pub mod ureq_transport;
 pub use crate::model::CheckoutPrOutcome;
 pub use crate::token::Token;
 pub use http::{Method, Request, Response, Transport};
-pub use model::{Account, CiState, PullRequest, RepoContext, UserInfo};
+pub use model::{
+    Account, CiState, HostedRepoInfo, Issue, NewPullRequest, PullRequest, RepoContext, UserInfo,
+};
 pub use provider::{Provider, RepoRef};
 
 use crate::error::GitError;
@@ -61,6 +63,52 @@ pub fn get_pull_request(
         Provider::GitHub => github::get_pull_request(t, repo, token, number),
         Provider::GitLab => gitlab::get_pull_request(t, repo, token, number),
         Provider::Bitbucket => bitbucket::get_pull_request(t, repo, token, number),
+    }
+}
+
+/// The default branch of `repo` and whether its issues are turned on.
+pub fn repo_info(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+) -> Result<HostedRepoInfo, GitError> {
+    match repo.provider {
+        Provider::GitHub => github::repo_info(t, repo, token),
+        Provider::GitLab => gitlab::repo_info(t, repo, token),
+        Provider::Bitbucket => bitbucket::repo_info(t, repo, token),
+    }
+}
+
+/// One page (1-based, 50 per page) of `repo`'s open issues matching `query` (all of them when
+/// blank), newest update first.
+pub fn list_issues(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+    query: &str,
+    page: u32,
+) -> Result<Vec<Issue>, GitError> {
+    match repo.provider {
+        Provider::GitHub => github::list_issues(t, repo, token, query, page),
+        Provider::GitLab => gitlab::list_issues(t, repo, token, query, page),
+        Provider::Bitbucket => bitbucket::list_issues(t, repo, token, query, page),
+    }
+}
+
+/// Opens `new` on `repo`. `InvalidBranchName` for a source or target git would refuse, before
+/// any request.
+pub fn create_pull_request(
+    t: &dyn Transport,
+    repo: &RepoRef,
+    token: &Token,
+    new: &NewPullRequest,
+) -> Result<PullRequest, GitError> {
+    validate_branch_name(&new.source_branch)?;
+    validate_branch_name(&new.target_branch)?;
+    match repo.provider {
+        Provider::GitHub => github::create_pull_request(t, repo, token, new),
+        Provider::GitLab => gitlab::create_pull_request(t, repo, token, new),
+        Provider::Bitbucket => bitbucket::create_pull_request(t, repo, token, new),
     }
 }
 

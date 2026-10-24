@@ -1,6 +1,6 @@
 //! Data types the hosting domain hands to the app layer.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::provider::{Provider, RepoRef};
 
@@ -83,4 +83,37 @@ pub struct PullRequest {
     /// Epoch seconds.
     pub updated_at: i64,
     pub web_url: String,
+}
+
+/// What the provider says about a hosted repository beyond its pull requests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedRepoInfo {
+    /// `None` for an empty repository.
+    pub default_branch: Option<String>,
+    /// `false` when the repository has its issue tracker turned off.
+    pub issues_enabled: bool,
+}
+
+/// An open issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    pub author: String,
+    pub labels: Vec<String>,
+    /// Epoch seconds.
+    pub updated_at: i64,
+    pub web_url: String,
+}
+
+/// A pull request to open: `source_branch` into `target_branch`, both on the hosted repository.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPullRequest {
+    pub title: String,
+    pub body: String,
+    pub source_branch: String,
+    pub target_branch: String,
 }
