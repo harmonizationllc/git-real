@@ -54,6 +54,12 @@ async function renderBrowser(over: { disabled?: boolean } = {}, settle = true) {
 const search = () => screen.getByLabelText("Search repositories");
 const type = (value: string) => fireEvent.change(search(), { target: { value } });
 const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+// Freezes the clock after the browser has settled: nothing advances unless a test advances it, so
+// the debounce edges (299 ms / 300 ms) cannot drift under machine load.
+const freezeClock = () => {
+  vi.useRealTimers();
+  vi.useFakeTimers();
+};
 const use = (fullName: string) => screen.getByRole("button", { name: `Use ${fullName}` });
 const radio = (name: "HTTPS" | "SSH") => screen.getByRole("radio", { name });
 
@@ -100,6 +106,38 @@ describe("RepoBrowser without an account", () => {
     await renderBrowser({}, false);
     await screen.findByText("Connect a hosting account to browse your repositories");
     expect(screen.queryByLabelText("Search repositories")).not.toBeInTheDocument();
+  });
+});
+
+// Contract: while the accounts load the browser says so; if they fail it shows the error and
+// Dismiss asks again. It never sits blank.
+describe("RepoBrowser while the accounts load", () => {
+  it("shows Loading… as a status while the accounts query is pending", async () => {
+    vi.mocked(hostingListAccounts).mockReturnValue(new Promise(() => undefined));
+    await renderBrowser({}, false);
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading…");
+    expect(screen.queryByLabelText("Search repositories")).not.toBeInTheDocument();
+    expect(hostingListMyRepos).not.toHaveBeenCalled();
+  });
+
+  it("shows the error's text in an alert when the accounts query fails", async () => {
+    vi.mocked(hostingListAccounts).mockRejectedValue({ kind: "io", message: "keychain locked" });
+    await renderBrowser({}, false);
+    expect(await screen.findByRole("alert")).toHaveTextContent("keychain locked");
+    expect(screen.queryByText("Connect a hosting account to browse your repositories")).toBeNull();
+    expect(hostingListMyRepos).not.toHaveBeenCalled();
+  });
+
+  it("refetches the accounts on Dismiss and then lists the repositories", async () => {
+    vi.mocked(hostingListAccounts).mockRejectedValueOnce({
+      kind: "io",
+      message: "keychain locked",
+    });
+    await renderBrowser({}, false);
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(await screen.findByRole("button", { name: "Use octo/git-real" })).toBeInTheDocument();
+    expect(hostingListAccounts).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -239,30 +277,38 @@ describe("RepoBrowser with two accounts", () => {
 
 // Contract: typing is debounced 300 ms and requests the trimmed query.
 describe("RepoBrowser search", () => {
-  it("does not request before the debounce elapses", async () => {
+  it("does not request at 299 ms and requests exactly once at 300 ms", async () => {
     await renderBrowser();
+    freezeClock();
     type("git");
     await wait(299);
     expect(hostingListMyRepos).toHaveBeenCalledTimes(1);
+    await wait(1);
+    expect(hostingListMyRepos).toHaveBeenCalledTimes(2);
+    expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "git", 1);
   });
 
   it("requests once after the debounce with the trimmed query", async () => {
     await renderBrowser();
+    freezeClock();
     type("  git  ");
     await wait(300);
-    await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "git", 1));
+    expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "git", 1);
     expect(hostingListMyRepos).toHaveBeenCalledTimes(2);
   });
 
-  it("requests once for rapid typing", async () => {
+  it("requests once for rapid typing, 300 ms after the last keystroke", async () => {
     await renderBrowser();
+    freezeClock();
     type("g");
     await wait(100);
     type("gi");
     await wait(100);
     type("git");
-    await wait(300);
-    await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "git", 1));
+    await wait(299);
+    expect(hostingListMyRepos).toHaveBeenCalledTimes(1);
+    await wait(1);
+    expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "git", 1);
     expect(hostingListMyRepos).toHaveBeenCalledTimes(2);
   });
 

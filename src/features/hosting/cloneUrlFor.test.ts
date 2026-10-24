@@ -31,4 +31,11 @@ describe("cloneUrlFor", () => {
       fellBack: false,
     });
   });
+
+  // Documents current behaviour: only null means "no SSH URL". The Rust sanitiser turns an
+  // unusable ssh URL into null, so an empty string should not arrive; if it did, the field
+  // would be filled with "" and no hint would show.
+  it("should return an empty sshUrl as is, without a fallback, because only null means missing", () => {
+    expect(cloneUrlFor(hostedRepo({ sshUrl: "" }), "ssh")).toEqual({ url: "", fellBack: false });
+  });
 });

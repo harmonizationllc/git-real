@@ -636,6 +636,51 @@ describe("CloneDialog source tabs", () => {
     expect(urlTab()).toHaveAttribute("aria-selected", "true");
   });
 
+  it("should move the tab stop and aria-selected together with the keyboard selection", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("{ArrowRight}");
+    expect(accountTab()).toHaveAttribute("tabindex", "0");
+    expect(urlTab()).toHaveAttribute("tabindex", "-1");
+    expect(urlTab()).toHaveAttribute("aria-selected", "false");
+    await user.keyboard("{ArrowLeft}");
+    expect(urlTab()).toHaveAttribute("tabindex", "0");
+    expect(accountTab()).toHaveAttribute("tabindex", "-1");
+    expect(accountTab()).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("should keep the selected tab on Home from URL and on End from From account", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("{Home}");
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+    expect(urlTab()).toHaveFocus();
+    await user.click(accountTab());
+    await user.keyboard("{End}");
+    expect(accountTab()).toHaveAttribute("aria-selected", "true");
+    expect(accountTab()).toHaveFocus();
+  });
+
+  it("should swap the visible panel with the keyboard selection", async () => {
+    const { user } = await renderOpen();
+    const panelOf = (tab: HTMLElement) =>
+      document.getElementById(tab.getAttribute("aria-controls") as string) as HTMLElement;
+    expect(panelOf(urlTab())).toBeVisible();
+    expect(panelOf(accountTab())).not.toBeVisible();
+    urlTab().focus();
+    await user.keyboard("{ArrowRight}");
+    expect(panelOf(accountTab())).toBeVisible();
+    expect(panelOf(urlTab())).not.toBeVisible();
+  });
+
+  it("should prevent the default of handled keys only, so Home and End do not scroll", async () => {
+    await renderOpen();
+    expect(fireEvent.keyDown(urlTab(), { key: "Home" })).toBe(false);
+    expect(fireEvent.keyDown(urlTab(), { key: "End" })).toBe(false);
+    expect(fireEvent.keyDown(urlTab(), { key: "ArrowRight" })).toBe(false);
+    expect(fireEvent.keyDown(urlTab(), { key: "a" })).toBe(true);
+  });
+
   it("should disable both tabs while cloning", async () => {
     vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
     await startClone();

@@ -45,6 +45,12 @@ async function renderPicker(over: { provider?: HostingProvider } = {}, settle = 
   return { onPick, onClose, ...view };
 }
 
+// Freezes the clock after the picker has settled: nothing advances unless a test advances it, so
+// the debounce edges (299 ms / 300 ms) cannot drift under machine load.
+const freezeClock = () => {
+  vi.useRealTimers();
+  vi.useFakeTimers();
+};
 const input = () => screen.getByLabelText("Search issues");
 const options = () => screen.getAllByRole("option").map((o) => o.textContent);
 const press = (key: string) => fireEvent.keyDown(input(), { key });
@@ -169,6 +175,7 @@ describe("IssuePicker requests", () => {
 
   it("requests once after the debounce", async () => {
     await renderPicker();
+    freezeClock();
     vi.mocked(hostingListIssues).mockClear();
     type("cra");
     await wait(100);
@@ -178,11 +185,12 @@ describe("IssuePicker requests", () => {
     await wait(299);
     expect(hostingListIssues).not.toHaveBeenCalled();
     await wait(1);
-    await waitFor(() => expect(hostingListIssues).toHaveBeenCalledExactlyOnceWith(1, "crash", 1));
+    expect(hostingListIssues).toHaveBeenCalledExactlyOnceWith(1, "crash", 1);
   });
 
   it("does not request on a keystroke before the debounce elapses", async () => {
     await renderPicker();
+    freezeClock();
     vi.mocked(hostingListIssues).mockClear();
     type("c");
     await wait(250);
