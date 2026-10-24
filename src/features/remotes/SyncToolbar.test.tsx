@@ -436,3 +436,13 @@ describe("SyncToolbar Create pull request menu item", () => {
     expect(sync.requestForcePush).toHaveBeenCalledOnce();
   });
 });
+
+describe("SyncToolbar Create pull request menu item when the prop is absent", () => {
+  it("should omit Create pull request… and keep the force push item", async () => {
+    const { user } = renderWithProviders(<SyncToolbar sync={fakeSync()} onOpenRemotes={vi.fn()} />);
+    await user.click(button("Push options"));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Force push (with lease)…",
+    ]);
+  });
+});

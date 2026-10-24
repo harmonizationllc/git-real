@@ -510,3 +510,11 @@ describe("PullRequestsPanel Create pull request button", () => {
     ).toBeTruthy();
   });
 });
+
+describe("PullRequestsPanel Create pull request button when the prop is absent", () => {
+  it("should be disabled", async () => {
+    renderWithProviders(<PullRequestsPanel repoId={1} />);
+    await screen.findByRole("button", { name: "Pull requests (2)" });
+    expect(screen.getByRole("button", { name: "Create pull request" })).toBeDisabled();
+  });
+});

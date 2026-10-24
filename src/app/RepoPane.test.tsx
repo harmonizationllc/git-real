@@ -1898,6 +1898,23 @@ describe("RepoPane create pull request", () => {
     expect(await screen.findByRole("dialog", { name: "Create pull request" })).toBeInTheDocument();
   });
 
+  it("should offer no way to open the dialog when the hosting context fails to load", async () => {
+    vi.mocked(hostingRepoContext).mockRejectedValue({ kind: "io", message: "x" });
+    const { user } = await renderLoaded();
+    await openPushMenu(user);
+    expect(createItem()).toBeNull();
+  });
+
+  it("should offer no way to open the dialog before the branch list has loaded", async () => {
+    usableContext();
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    await act(() => Promise.resolve());
+    expect(screen.getByRole("button", { name: "Push options" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "Create pull request" })).toBeNull();
+  });
+
   it("should disable the pull requests header button when no account is connected", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
     await renderLoaded();

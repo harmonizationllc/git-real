@@ -4,7 +4,7 @@ import { hostingCreatePullRequest, openExternal } from "../../lib/ipc";
 import type { Tracking } from "../../lib/ipc";
 import { useToasts } from "../../lib/store/toasts";
 import { hostingError, pullRequest } from "../../test/hostingFixtures";
-import { authError } from "../../test/remoteFixtures";
+import { authError, networkError } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useCreatePullRequest } from "./useCreatePullRequest";
 import type { CreatePrInput } from "./useCreatePullRequest";
@@ -167,6 +167,14 @@ describe("useCreatePullRequest success", () => {
     );
   });
 
+  it("should show the message of a plain Error when opening the browser throws", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("boom"));
+    const { result } = render(null);
+    await act(() => result.current.submit(input()));
+    useToasts.getState().toasts[0]?.action?.run();
+    await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.text)).toContain("boom"));
+  });
+
   it("should leave no error behind", async () => {
     const { result } = render(null);
     await act(() => result.current.submit(input()));
@@ -193,6 +201,20 @@ describe("useCreatePullRequest failure", () => {
     const { result } = render(null);
     await act(() => result.current.submit(input()));
     expect(useToasts.getState().toasts).toEqual([]);
+  });
+
+  it("should set a push failure as the error and resolve null", async () => {
+    vi.mocked(hostingCreatePullRequest).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = render(null);
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.submit(input());
+    });
+    expect([outcome, result.current.error?.kind, useToasts.getState().toasts]).toEqual([
+      null,
+      "networkFailed",
+      [],
+    ]);
   });
 
   it("should clear the error when clearError is called", async () => {
@@ -266,6 +288,7 @@ describe("useCreatePullRequest sign-in", () => {
       outcome = await done;
     });
     expect(outcome).toEqual(created());
+    expect(useToasts.getState().toasts.map((t) => t.text)).toEqual(["Opened #124"]);
     expect(hostingCreatePullRequest).toHaveBeenCalledTimes(2);
     expect(hostingCreatePullRequest).toHaveBeenLastCalledWith(1, expect.anything(), {
       origin: "https://github.com",

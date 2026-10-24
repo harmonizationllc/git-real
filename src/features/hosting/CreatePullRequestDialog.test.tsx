@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   hostingCreatePullRequest,
@@ -12,6 +12,7 @@ import {
 import type { BranchList, HeadState, Tracking } from "../../lib/ipc";
 import { useToasts } from "../../lib/store/toasts";
 import {
+  hostingAccount,
   hostingError,
   prDraft,
   pullRequest,
@@ -673,5 +674,207 @@ describe("CreatePullRequestDialog focus", () => {
   it("should not make the box inert while no sign-in is open", async () => {
     await renderForm();
     expect(dialog()).not.toHaveAttribute("inert");
+  });
+});
+
+// Contract: while the call is in flight the form is read-only and says Creating….
+describe("CreatePullRequestDialog while creating", () => {
+  async function renderPending() {
+    vi.mocked(listBranches).mockResolvedValue(branchList({ tracking: { ...synced, ahead: 2 } }));
+    vi.mocked(hostingCreatePullRequest).mockReturnValue(new Promise(() => undefined));
+    const view = await renderForm();
+    await view.user.click(create());
+    await waitFor(() => expect(hostingCreatePullRequest).toHaveBeenCalled());
+    return view;
+  }
+
+  it("should disable the Target, Title, Description and push checkbox", async () => {
+    await renderPending();
+    expect(target()).toBeDisabled();
+    expect(title()).toBeDisabled();
+    expect(description()).toBeDisabled();
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+  });
+
+  it("should disable Cancel", async () => {
+    await renderPending();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("should relabel the submit button Creating… and disable it", async () => {
+    await renderPending();
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Create pull request" })).toBeNull();
+  });
+
+  it("should keep the source read-only and unchanged", async () => {
+    await renderPending();
+    expect(screen.getByLabelText("Source")).toHaveValue("feat");
+  });
+});
+
+// Contract: Enter in a field submits the form, but never with a blank title.
+describe("CreatePullRequestDialog keyboard submit", () => {
+  it("should create when Enter is pressed in the Title field", async () => {
+    const { user } = await renderForm();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(hostingCreatePullRequest).toHaveBeenCalledOnce());
+  });
+
+  it("should not create when Enter is pressed with a blank title", async () => {
+    const { user } = await renderForm();
+    await user.clear(title());
+    await user.keyboard("{Enter}");
+    expect(hostingCreatePullRequest).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the push line follows the upstream, whichever remote it is on and however far it lags.
+describe("CreatePullRequestDialog push line edge cases", () => {
+  it("should offer neither the text nor a checkbox when the upstream is only behind", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({ tracking: { ...synced, ahead: 0, behind: 3 } }),
+    );
+    await renderForm();
+    expect([screen.queryByText(PUBLISH_FIRST_TEXT), screen.queryByRole("checkbox")]).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("should publish and keep the local name out of the Target when the upstream is on another remote", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        tracking: { upstream: "fork/feat", ahead: 0, behind: 0 },
+        origin: ["main", "feat"],
+      }),
+    );
+    vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin"), remoteInfo("fork")]);
+    await renderForm();
+    expect(within(dialog()).getByText(PUBLISH_FIRST_TEXT)).toBeInTheDocument();
+    expect(targetOptions()).toEqual(["main"]);
+  });
+
+  it("should publish and keep the local name out of the Target when the upstream is gone", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({
+        tracking: { upstream: "origin/feat", ahead: null, behind: null },
+        origin: ["main", "feat"],
+      }),
+    );
+    await renderForm();
+    expect(within(dialog()).getByText(PUBLISH_FIRST_TEXT)).toBeInTheDocument();
+    expect(targetOptions()).toEqual(["main"]);
+  });
+});
+
+// Contract: the form waits for every input and never opens on a missing hosting context.
+describe("CreatePullRequestDialog waiting for inputs", () => {
+  async function stayLoading() {
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await waitFor(() => expect(hostingRepoInfo).toHaveBeenCalled());
+    await act(() => Promise.resolve());
+    expect(within(dialog()).getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Title")).toBeNull();
+    expect(hostingPullRequestDraft).not.toHaveBeenCalled();
+  }
+
+  it("should keep showing Loading… while the remotes have not loaded", async () => {
+    vi.mocked(listRemotes).mockReturnValue(new Promise(() => undefined));
+    await stayLoading();
+  });
+
+  it("should keep showing Loading… when the origin is not on a supported host", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(null);
+    await stayLoading();
+  });
+
+  it("should close on Escape while Loading…", () => {
+    vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+// Contract: an unborn HEAD is not a branch to open from, like a detached one.
+describe("CreatePullRequestDialog unborn HEAD", () => {
+  it("should ask to check out a branch and offer only Close", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      branchList({ head: { kind: "unborn", name: "main" } }),
+    );
+    await renderSettled();
+    expect(
+      within(dialog()).getByText("Check out a branch to open a pull request."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Title")).toBeNull();
+    expect(hostingPullRequestDraft).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the dialog keeps the branch it opened for, even when HEAD moves under it.
+describe("CreatePullRequestDialog when HEAD moves", () => {
+  it("should keep the Source and open the pull request from the original branch", async () => {
+    vi.mocked(hostingCreatePullRequest).mockRejectedValueOnce(hostingError("hostingRejected"));
+    const { user } = await renderForm();
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "branch", name: "other" },
+      local: [
+        { name: "feat", oid: oidOf(1), isHead: false, tracking: synced },
+        { name: "other", oid: oidOf(3), isHead: true, tracking: null },
+      ],
+      remotes: branchList().remotes,
+    });
+    await user.click(create());
+    await within(dialog()).findByRole("alert");
+    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText("Source")).toHaveValue("feat");
+    await user.click(create());
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    const request = vi.mocked(hostingCreatePullRequest).mock.calls[1]?.[1];
+    expect([request?.branch, request?.pr.sourceBranch]).toEqual(["feat", "feat"]);
+  });
+});
+
+// Contract: dismissing the repository info error asks again, without moving the chosen target.
+describe("CreatePullRequestDialog repository info retry", () => {
+  it("should ask again on Dismiss, clear the line and keep the fallback target", async () => {
+    vi.mocked(hostingRepoInfo)
+      .mockRejectedValueOnce(hostingError("hostingUnreachable"))
+      .mockResolvedValue(repoInfo({ defaultBranch: "develop" }));
+    const { user } = await renderForm();
+    const alert = await within(dialog()).findByRole("alert");
+    await user.click(within(alert).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(within(dialog()).queryByRole("alert")).toBeNull());
+    expect(hostingRepoInfo).toHaveBeenCalledTimes(2);
+    expect(target()).toHaveValue("main");
+    expect(hostingPullRequestDraft).toHaveBeenCalledOnce();
+  });
+});
+
+// Contract: provider copy follows the repository's provider, not a fixed one.
+describe("CreatePullRequestDialog provider copy", () => {
+  const gitlab = () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue({
+      repo: { provider: "gitlab", host: "gitlab.com", namespace: "g", name: "r" },
+      account: hostingAccount({ provider: "gitlab", host: "gitlab.com" }),
+    });
+  };
+
+  it("should name GitLab in the repository info error", async () => {
+    gitlab();
+    const failing = hostingError("hostingUnreachable");
+    vi.mocked(hostingRepoInfo).mockRejectedValue(failing);
+    await renderForm();
+    expect(within(dialog()).getByText(hostingErrorText(failing, "gitlab"))).toBeInTheDocument();
+  });
+
+  it("should name GitLab in a rejected token error from the create call", async () => {
+    gitlab();
+    const rejected = hostingError("hostingAuth");
+    vi.mocked(hostingCreatePullRequest).mockRejectedValue(rejected);
+    const { user } = await renderForm();
+    await user.click(create());
+    expect(await within(dialog()).findByText(hostingErrorText(rejected, "gitlab"))).toBeVisible();
   });
 });

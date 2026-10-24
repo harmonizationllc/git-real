@@ -2605,3 +2605,24 @@ describe("BranchesPanel Create pull request menu item", () => {
     expect(itemLabels()).not.toContain("Create pull request…");
   });
 });
+
+describe("BranchesPanel Create pull request menu item edge cases", () => {
+  it("should not list it when the prop is absent", async () => {
+    vi.mocked(listBranches).mockResolvedValue(list());
+    renderWithProviders(<BranchesPanel repoId={1} />);
+    await screen.findByRole("heading", { name: "Local" });
+    rightClick(localRow("main"));
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+
+  it("should not add it to the menu opened by dropping a branch on the current branch", async () => {
+    vi.mocked(listBranches).mockResolvedValue(list());
+    renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={vi.fn()} />);
+    await screen.findByRole("heading", { name: "Local" });
+    pickUp(localRow("feature"));
+    hover(localRow("main"));
+    dropOn(localRow("main"));
+    expect(itemLabels()).toHaveLength(3);
+    expect(itemLabels()).not.toContain("Create pull request…");
+  });
+});

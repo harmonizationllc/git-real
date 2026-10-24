@@ -148,6 +148,28 @@ describe("Toasts auto-dismiss", () => {
     expect(screen.getByText("Second")).toBeInTheDocument();
   });
 
+  it("should clear a toast's timer when it is dismissed by hand", () => {
+    render(<Toasts />);
+    show("Hi");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("should clear a toast's timer when its action dismisses it", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("should leave the other toast's timer running when one is dismissed", () => {
+    render(<Toasts />);
+    show("First");
+    show("Second");
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss notification" })[0]!);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
   it("should clear its timers on unmount", () => {
     const view = render(<Toasts />);
     show("Hi");

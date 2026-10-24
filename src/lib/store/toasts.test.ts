@@ -38,6 +38,13 @@ describe("useToasts", () => {
     expect(second).toBeGreaterThan(first);
   });
 
+  it("should keep increasing ids after the toasts are reset", () => {
+    const first = useToasts.getState().show("A");
+    useToasts.setState({ toasts: [] });
+    const second = useToasts.getState().show("B");
+    expect(second).toBeGreaterThan(first);
+  });
+
   it("should keep toasts in the order they were shown", () => {
     useToasts.getState().show("A");
     useToasts.getState().show("B");
