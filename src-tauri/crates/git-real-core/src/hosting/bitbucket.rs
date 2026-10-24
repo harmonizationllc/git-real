@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 use super::http::{
     Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json, unexpected,
 };
-use super::model::{CiState, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo};
+use super::model::{
+    Account, CiState, HostedRepo, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo,
+};
 use super::provider::{Provider, RepoRef, is_plain_segment};
 use crate::error::GitError;
 use crate::token::Token;
@@ -31,8 +33,8 @@ struct WireHref {
 }
 
 #[derive(Deserialize)]
-struct WirePage {
-    values: Vec<WirePullRequest>,
+struct WirePage<T> {
+    values: Vec<T>,
 }
 
 #[derive(Deserialize)]
@@ -88,11 +90,6 @@ struct WireRepoInfo {
 }
 
 #[derive(Deserialize)]
-struct WireIssuePage {
-    values: Vec<WireIssue>,
-}
-
-#[derive(Deserialize)]
 struct WireIssue {
     id: u64,
     title: String,
@@ -102,6 +99,36 @@ struct WireIssue {
     reporter: Option<WireAuthor>,
     updated_on: String,
     links: WirePullLinks,
+}
+
+#[derive(Deserialize)]
+struct WireMyRepo {
+    full_name: String,
+    name: String,
+    workspace: WireWorkspace,
+    description: Option<String>,
+    is_private: bool,
+    updated_on: String,
+    links: WireRepoLinks,
+}
+
+#[derive(Deserialize)]
+struct WireWorkspace {
+    slug: String,
+}
+
+#[derive(Deserialize)]
+struct WireRepoLinks {
+    #[serde(rename = "clone")]
+    clones: Vec<WireCloneLink>,
+    html: WireHtml,
+}
+
+#[derive(Deserialize)]
+struct WireCloneLink {
+    /// `https` or `ssh`.
+    name: String,
+    href: String,
 }
 
 pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<UserInfo, GitError> {
@@ -127,7 +154,7 @@ pub fn list_pull_requests(
         "{}?state=OPEN&sort=-updated_on&pagelen=50&page={page}",
         pull_requests_url(repo)
     );
-    let list: WirePage = send_json(t, &get(url, token, &[]), token, &repo.host)?;
+    let list: WirePage<WirePullRequest> = send_json(t, &get(url, token, &[]), token, &repo.host)?;
     list.values
         .into_iter()
         .map(|p| convert(p, &repo.host))
@@ -180,7 +207,7 @@ pub fn list_issues(
         repository_url(repo),
         percent_encode(&filter)
     );
-    let list: WireIssuePage = send_json(t, &get(url, token, &[]), token, &repo.host)?;
+    let list: WirePage<WireIssue> = send_json(t, &get(url, token, &[]), token, &repo.host)?;
     list.values
         .into_iter()
         .map(|i| {
@@ -201,6 +228,36 @@ pub fn list_issues(
                 web_url: i.links.html.href,
             })
         })
+        .collect()
+}
+
+/// Every repository the account is a member of. The query goes inside a `name ~ "..."`
+/// literal, so `"` and `\` are removed from it first.
+pub fn list_my_repos(
+    t: &dyn Transport,
+    account: &Account,
+    token: &Token,
+    query: &str,
+    page: u32,
+) -> Result<Vec<HostedRepo>, GitError> {
+    let mut url = format!(
+        "{}/repositories?role=member&sort=-updated_on&pagelen=50&page={page}",
+        Provider::Bitbucket.api_base(&account.host)
+    );
+    let literal: String = issue_query(query)
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\'))
+        .collect();
+    if !literal.trim().is_empty() {
+        url = format!(
+            "{url}&q={}",
+            percent_encode(&format!(r#"name ~ "{literal}""#))
+        );
+    }
+    let list: WirePage<WireMyRepo> = send_json(t, &get(url, token, &[]), token, &account.host)?;
+    list.values
+        .into_iter()
+        .filter_map(|r| convert_repo(r, &account.host).transpose())
         .collect()
 }
 
@@ -270,4 +327,30 @@ fn convert(p: WirePullRequest, host: &str) -> Result<PullRequest, GitError> {
 fn is_plain_full_name(name: &str) -> bool {
     name.split_once('/')
         .is_some_and(|(a, b)| is_plain_segment(a) && is_plain_segment(b))
+}
+
+/// `unexpected` without an `https` clone link; `Ok(None)` when that link is unusable, so the
+/// row is left out.
+fn convert_repo(r: WireMyRepo, host: &str) -> Result<Option<HostedRepo>, GitError> {
+    let href = |name: &str| {
+        r.links
+            .clones
+            .iter()
+            .find(|l| l.name == name)
+            .map(|l| l.href.clone())
+    };
+    let https_url = href("https").ok_or_else(|| unexpected(host))?;
+    let ssh_url = href("ssh");
+    Ok(HostedRepo {
+        full_name: r.full_name,
+        name: r.name,
+        owner: r.workspace.slug,
+        description: r.description,
+        private: r.is_private,
+        updated_at: parse_timestamp(&r.updated_on).ok_or_else(|| unexpected(host))?,
+        https_url,
+        ssh_url,
+        web_url: r.links.html.href,
+    }
+    .sanitized())
 }

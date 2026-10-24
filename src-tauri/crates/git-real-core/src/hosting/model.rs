@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::provider::{Provider, RepoRef};
+use super::provider::{Provider, RepoRef, host_port};
+use crate::remote::host::strip_user;
 
 /// The account a token belongs to, as the provider reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,4 +117,78 @@ pub struct NewPullRequest {
     pub body: String,
     pub source_branch: String,
     pub target_branch: String,
+}
+
+/// A repository the account can clone, from the clone dialog's browser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedRepo {
+    pub full_name: String,
+    pub name: String,
+    /// The user, organization, group path or workspace the repository belongs to.
+    pub owner: String,
+    pub description: Option<String>,
+    pub private: bool,
+    /// Epoch seconds.
+    pub updated_at: i64,
+    pub https_url: String,
+    pub ssh_url: Option<String>,
+    pub web_url: String,
+}
+
+impl HostedRepo {
+    /// The repository with clone URLs safe to hand to `git clone`: `None` when `https_url` is
+    /// not a plain `https://<host>/<path>` (userinfo is stripped), `ssh_url` dropped when it is
+    /// not a plain scp-like or `ssh://` URL, and an empty description as `None`.
+    pub fn sanitized(self) -> Option<HostedRepo> {
+        let https_url = clean_https_url(&self.https_url)?;
+        Some(HostedRepo {
+            https_url,
+            ssh_url: self.ssh_url.and_then(clean_ssh_url),
+            description: self.description.filter(|d| !d.is_empty()),
+            ..self
+        })
+    }
+}
+
+/// `https://<host[:port]>/<path>` with any `user@` dropped; `None` for another scheme, a bad
+/// host, an empty path, or any whitespace or control character.
+fn clean_https_url(url: &str) -> Option<String> {
+    let (authority, path) = url.strip_prefix("https://")?.split_once('/')?;
+    let authority = strip_user(authority);
+    host_port(authority)?;
+    let cleaned = format!("https://{authority}/{path}");
+    (!path.is_empty() && !has_space_or_control(&cleaned)).then_some(cleaned)
+}
+
+/// `user@host:path` (`[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:` then a non-empty path) or an `ssh://`
+/// URL; neither the user nor the host may start with `-` (git would read it as an ssh option),
+/// and no whitespace or control character anywhere.
+fn clean_ssh_url(url: String) -> Option<String> {
+    if has_space_or_control(&url) {
+        return None;
+    }
+    let ok = if let Some(rest) = url.strip_prefix("ssh://") {
+        let authority = rest.split('/').next().unwrap_or_default();
+        !authority.starts_with('-') && !strip_user(authority).starts_with('-')
+    } else {
+        url.split_once('@')
+            .and_then(|(user, rest)| Some((user, rest.split_once(':')?)))
+            .is_some_and(|(user, (host, path))| {
+                plain(user, b"._-") && plain(host, b".-") && !path.is_empty()
+            })
+    };
+    ok.then_some(url)
+}
+
+/// Non-empty, not starting with `-`, ASCII alphanumerics and `extra` only.
+fn plain(s: &str, extra: &[u8]) -> bool {
+    !s.is_empty()
+        && !s.starts_with('-')
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || extra.contains(&b))
+}
+
+fn has_space_or_control(s: &str) -> bool {
+    s.chars().any(|c| c.is_whitespace() || c.is_control())
 }

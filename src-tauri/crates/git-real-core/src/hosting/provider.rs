@@ -146,7 +146,7 @@ fn split_url(url: &str) -> Option<(String, &str)> {
 
 /// Splits `name[:port]` and lower-cases the name: `[a-z0-9.-]+` not starting with `-` or `.`
 /// (no IPv6 literals), port 1–65535 written in at most 5 digits.
-fn host_port(host: &str) -> Option<(String, Option<&str>)> {
+pub(crate) fn host_port(host: &str) -> Option<(String, Option<&str>)> {
     let (name, port) = match host.split_once(':') {
         Some((name, port)) => (name, Some(port)),
         None => (host, None),
