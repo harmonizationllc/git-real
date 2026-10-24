@@ -3,7 +3,7 @@ name = "git-real-core"
 version = "0.1.0"
 description = "Pure Git domain logic for Git Real, independent of Tauri"
 authors = ["Jason Harmon <23158200+harmonizationllc@users.noreply.github.com>"]
-license = "MIT"
+license = "GPL-3.0-only"
 edition = "2024"
 
 [lib]

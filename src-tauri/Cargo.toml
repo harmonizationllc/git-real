@@ -7,7 +7,7 @@ name = "git-real"
 version = "0.1.0"
 description = "Git Real, a lightweight desktop Git client"
 authors = ["Jason Harmon <23158200+harmonizationllc@users.noreply.github.com>"]
-license = "MIT"
+license = "GPL-3.0-only"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
