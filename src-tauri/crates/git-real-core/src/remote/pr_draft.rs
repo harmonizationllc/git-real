@@ -8,7 +8,7 @@ use crate::refs::{is_not_found, validate_branch_name};
 use crate::repo::RepoSession;
 
 /// The most commits [`RepoSession::pull_request_draft`] counts.
-const MAX_AHEAD: usize = 1000;
+const MAX_AHEAD: u32 = 1000;
 
 /// A branch name read as a sentence: the text after the last `/`, runs of `-` and `_` as one
 /// space, trimmed, first character upper-cased (`feature/add-login` → `Add login`).
@@ -41,9 +41,9 @@ impl RepoSession {
         let mut walk = repo.revwalk()?;
         walk.push_head()?;
         walk.hide(target_oid)?;
-        let mut ahead = 0usize;
+        let mut ahead = 0u32;
         let mut first = None;
-        for oid in walk.take(MAX_AHEAD) {
+        for oid in walk.take(MAX_AHEAD as usize) {
             let oid = oid?;
             first.get_or_insert(oid);
             ahead += 1;
@@ -61,10 +61,6 @@ impl RepoSession {
             }
             _ => (humanize_branch(&branch), String::new()),
         };
-        Ok(PullRequestDraft {
-            title,
-            body,
-            ahead: u32::try_from(ahead).unwrap_or(MAX_AHEAD as u32),
-        })
+        Ok(PullRequestDraft { title, body, ahead })
     }
 }

@@ -78,7 +78,8 @@ struct WireSearch {
 struct WireIssue {
     number: u64,
     title: String,
-    user: WireLogin,
+    /// `null` or missing for some deleted accounts; the schema does not promise `ghost`.
+    user: Option<WireLogin>,
     labels: Vec<WireLabel>,
     updated_at: String,
     html_url: String,
@@ -139,6 +140,22 @@ pub fn repo_info(
     })
 }
 
+/// The user's search terms without `repo:`, `org:` or `user:` qualifiers (negated or not, any
+/// case), so a query can never widen or move the search beyond this repository.
+fn strip_repo_qualifiers(query: &str) -> String {
+    const SCOPES: [&[u8]; 3] = [b"repo:", b"org:", b"user:"];
+    query
+        .split_ascii_whitespace()
+        .filter(|t| {
+            let s = t.strip_prefix('-').unwrap_or(t).as_bytes();
+            !SCOPES
+                .iter()
+                .any(|p| s.len() >= p.len() && s[..p.len()].eq_ignore_ascii_case(p))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Issues come from the search API, so the same call serves the list and the picker; pull
 /// requests among the hits are dropped.
 pub fn list_issues(
@@ -149,7 +166,7 @@ pub fn list_issues(
     page: u32,
 ) -> Result<Vec<Issue>, GitError> {
     let mut q = format!("repo:{}/{} is:issue is:open", repo.namespace, repo.name);
-    let query = issue_query(query);
+    let query = strip_repo_qualifiers(issue_query(query));
     if !query.is_empty() {
         q = format!("{q} {query}");
     }
@@ -167,7 +184,7 @@ pub fn list_issues(
             Ok(Issue {
                 number: i.number,
                 title: i.title,
-                author: i.user.login,
+                author: i.user.map(|u| u.login).unwrap_or_default(),
                 labels: i.labels.into_iter().map(|l| l.name).collect(),
                 updated_at: parse_timestamp(&i.updated_at).ok_or_else(|| unexpected(&repo.host))?,
                 web_url: i.html_url,
