@@ -1215,7 +1215,14 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         ssh("ssh://git@h/p.git").as_deref(),
         Some("ssh://git@h/p.git")
     );
-    for bad in ["git@h:p .git", "ftp://x"] {
+    for bad in [
+        "git@h:p .git",
+        "ftp://x",
+        "-u@h:p.git",
+        "u@-h:p.git",
+        "ssh://-u@h/p.git",
+        "git@h:p\u{7}.git",
+    ] {
         assert_eq!(ssh(bad), None, "{bad:?}");
     }
 
