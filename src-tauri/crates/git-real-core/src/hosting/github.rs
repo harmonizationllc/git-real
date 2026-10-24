@@ -141,12 +141,15 @@ pub fn repo_info(
 }
 
 /// The user's search terms without `repo:`, `org:` or `user:` qualifiers (negated or not, any
-/// case), so a query can never widen or move the search beyond this repository.
+/// case, glued to opening parentheses or not), so a query can never widen or move the search
+/// beyond this repository.
 fn strip_repo_qualifiers(query: &str) -> String {
     const SCOPES: [&[u8]; 3] = [b"repo:", b"org:", b"user:"];
     query
         .split_ascii_whitespace()
         .filter(|t| {
+            // Grouping parentheses, then one negating dash (GitHub honours no more than one).
+            let t = t.trim_start_matches('(');
             let s = t.strip_prefix('-').unwrap_or(t).as_bytes();
             !SCOPES
                 .iter()

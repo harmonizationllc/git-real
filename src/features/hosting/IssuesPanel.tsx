@@ -44,6 +44,8 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [accountsPreset, setAccountsPreset] = useState<AccountsPreset | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // The row button that opened the menu, which the menu ignores so a second click toggles it.
+  const menuButton = useRef<HTMLButtonElement>(null);
 
   // Every hook runs above: the section exists only for a hosted origin.
   if (!context) return null;
@@ -120,7 +122,10 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
               key={issue.number}
               issue={issue}
               onOpen={() => links.open(issue.webUrl)}
-              onContextMenu={(x, y) => setMenu({ x, y, issue })}
+              onContextMenu={(x, y) =>
+                setMenu((m) => (m?.issue.number === issue.number ? null : { x, y, issue }))
+              }
+              buttonRef={menu?.issue.number === issue.number ? menuButton : undefined}
             />
           ))}
         </ul>
@@ -185,6 +190,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         items={menu === null ? [] : menuItems(menu.issue)}
         onClose={closeMenu}
         fallbackFocus={headingRef}
+        ignore={menuButton}
       />
       <AccountsDialog
         open={accountsPreset !== null}

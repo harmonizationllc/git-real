@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, Ref } from "react";
 import type { CiState, PullRequest } from "../../lib/ipc";
 import { fullDate } from "../graph/model/relativeTime";
 import styles from "./PullRequestRow.module.css";
@@ -7,6 +7,8 @@ export interface PullRequestRowProps {
   pr: PullRequest;
   onOpen(): void;
   onContextMenu(x: number, y: number): void;
+  /** Lands on the row button, so an open menu can tell a click on it from other clicks. */
+  buttonRef?: Ref<HTMLButtonElement>;
 }
 
 const CI_TEXT: Record<Exclude<CiState, "none">, string> = {
@@ -15,7 +17,7 @@ const CI_TEXT: Record<Exclude<CiState, "none">, string> = {
   pending: "CI pending",
 };
 
-export function PullRequestRow({ pr, onOpen, onContextMenu }: PullRequestRowProps) {
+export function PullRequestRow({ pr, onOpen, onContextMenu, buttonRef }: PullRequestRowProps) {
   // The menu opens at the row button's bottom-left, as from a pointer at that corner.
   const openMenuAt = (button: HTMLButtonElement) => {
     const r = button.getBoundingClientRect();
@@ -39,6 +41,7 @@ export function PullRequestRow({ pr, onOpen, onContextMenu }: PullRequestRowProp
     >
       {/* The row is the context menu's button (a click or Enter opens it); the title says when it last changed. */}
       <button
+        ref={buttonRef}
         type="button"
         className={styles.row}
         aria-haspopup="menu"

@@ -40,6 +40,8 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [accountsPreset, setAccountsPreset] = useState<AccountsPreset | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // The row button that opened the menu, which the menu ignores so a second click toggles it.
+  const menuButton = useRef<HTMLButtonElement>(null);
 
   // Every hook runs above: the section exists only for a hosted origin.
   if (!context) return null;
@@ -104,7 +106,10 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
               key={pr.number}
               pr={pr}
               onOpen={() => actions.open(pr)}
-              onContextMenu={(x, y) => setMenu({ x, y, pr })}
+              onContextMenu={(x, y) =>
+                setMenu((m) => (m?.pr.number === pr.number ? null : { x, y, pr }))
+              }
+              buttonRef={menu?.pr.number === pr.number ? menuButton : undefined}
             />
           ))}
         </ul>
@@ -189,6 +194,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
         items={menu === null ? [] : menuItems(menu.pr)}
         onClose={closeMenu}
         fallbackFocus={headingRef}
+        ignore={menuButton}
       />
       {reset !== null && (
         <ConfirmDialog
