@@ -1,1 +1,6 @@
-{"id":100,"default_branch":"develop","issues_access_level":"disabled","issues_enabled":false}
+{
+  "id": 100,
+  "default_branch": "develop",
+  "issues_access_level": "disabled",
+  "issues_enabled": false
+}

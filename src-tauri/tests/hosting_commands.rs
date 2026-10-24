@@ -1461,3 +1461,122 @@ fn create_of_an_unknown_repo_is_unknown_repo() {
     .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
+
+// --- GR-13b coverage: gaps found by the audit ---
+
+#[test]
+fn repo_info_with_a_rejected_token_marks_the_account_for_reconnect() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+    let err = hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id).unwrap_err();
+    assert_eq!(
+        (err.kind, fx.store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingAuth, true)
+    );
+}
+
+#[test]
+fn repo_info_sends_the_stored_token_as_a_bearer_header() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().reply(200, r#"{"default_branch":"main"}"#);
+    hosting_repo_info_inner(&fx.reg, &fx.store, &t, fx.id).unwrap();
+    let auth: Vec<_> = t.requests()[0]
+        .headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    assert_eq!(auth, [format!("Bearer {SECRET}")]);
+}
+
+// A provider refusal after a good push keeps the branch published, and the retry succeeds: the
+// second push has nothing to send and the provider is asked again.
+#[test]
+fn create_rejected_after_a_successful_push_leaves_the_branch_published_and_retry_works() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    let tip = fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new()
+        .reply(422, DUPLICATE_PR)
+        .reply(201, &github_pr(21, "feat", false));
+    let request = create_request(&fx, set_upstream_origin_feat());
+
+    let first = fx.create(&t, &request).unwrap_err();
+    assert_eq!(first.kind, AppErrorKind::HostingRejected);
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), Some(tip.clone()));
+
+    let second = fx.create(&t, &request).unwrap();
+
+    assert_eq!(second.number, 21);
+    assert_eq!(t.requests().len(), 2);
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), Some(tip));
+}
+
+// A transport failure (offline) on the create call is the hosting error, not a panic or a
+// swallowed push.
+#[test]
+fn create_with_the_provider_unreachable_reports_it() {
+    let fx = hosted();
+    fx.connect();
+    let t = FakeTransport::new().fail(git_real_core::GitError::HostingUnreachable {
+        message: "offline".to_owned(),
+    });
+    let err = fx.create(&t, &create_request(&fx, None)).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::HostingUnreachable);
+}
+
+// Typed credentials reach the push: with a local bare behind insteadOf they are never asked
+// for, so the push must still publish the branch and then open the pull request.
+#[test]
+fn create_with_typed_credentials_still_publishes_and_opens_the_pull_request() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    let tip = fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new().reply(201, &github_pr(21, "feat", false));
+    let typed = Credentials::new("https://github.com", "me", "typed").unwrap();
+
+    let pr = hosting_create_pull_request_inner(
+        &fx.reg,
+        &fx.store,
+        &t,
+        fx.id,
+        &create_request(&fx, set_upstream_origin_feat()),
+        Some(&typed),
+    )
+    .unwrap();
+
+    assert_eq!(pr.number, 21);
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), Some(tip));
+}
+
+// Publishing a branch that is not checked out is refused before anything is sent.
+#[test]
+fn create_with_a_push_for_a_branch_that_is_not_checked_out_pushes_nothing() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    fx.start_branch("feat");
+    fx.commit("feature.txt", "feature work");
+    let t = FakeTransport::new();
+    let request = CreatePrRequest {
+        branch: "other".to_owned(),
+        ..create_request(&fx, set_upstream_origin_feat())
+    };
+
+    let _ = fx.create(&t, &request).unwrap_err();
+
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/feat"), None);
+    assert_eq!(ref_oid(&fx.bare, "refs/heads/other"), None);
+}

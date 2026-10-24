@@ -1,1 +1,10 @@
-[{"iid":11,"title":"Crash on start","author":{"username":"alice"},"labels":["bug"],"updated_at":"2026-10-20T12:00:00.123Z","web_url":"https://gitlab.com/group/sub/proj/-/issues/11"}]
+[
+  {
+    "iid": 11,
+    "title": "Crash on start",
+    "author": { "username": "alice" },
+    "labels": ["bug"],
+    "updated_at": "2026-10-20T12:00:00.123Z",
+    "web_url": "https://gitlab.com/group/sub/proj/-/issues/11"
+  }
+]
