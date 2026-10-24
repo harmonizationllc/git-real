@@ -80,3 +80,54 @@ describe("useLinkActions", () => {
     expect(result.current.error).toBeNull();
   });
 });
+
+// Contract (fix wave 2, round 2): with an onError callback a failure goes to it and the hook's
+// own error stays null; without one the error is set as before.
+describe("useLinkActions onError", () => {
+  it("should call onError once with the mapped error when opening is rejected", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("no browser"));
+    const onError = vi.fn();
+    const { result } = renderHookWithProviders(() => useLinkActions(onError));
+    await act(async () => result.current.open(URL));
+    expect(onError).toHaveBeenCalledExactlyOnceWith({ kind: "io", message: "no browser" });
+  });
+
+  it("should leave error null when opening is rejected and onError is given", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("no browser"));
+    const { result } = renderHookWithProviders(() => useLinkActions(vi.fn()));
+    await act(async () => result.current.open(URL));
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should call onError once with the mapped error when copying is rejected", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
+    const onError = vi.fn();
+    const { result } = renderHookWithProviders(() => useLinkActions(onError));
+    await act(async () => result.current.copyLink(URL));
+    expect(onError).toHaveBeenCalledExactlyOnceWith({ kind: "io", message: "clipboard denied" });
+  });
+
+  it("should leave error null when copying is rejected and onError is given", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
+    const { result } = renderHookWithProviders(() => useLinkActions(vi.fn()));
+    await act(async () => result.current.copyLink(URL));
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should not call onError after a successful open and copy", async () => {
+    const onError = vi.fn();
+    const { result } = renderHookWithProviders(() => useLinkActions(onError));
+    await act(async () => {
+      result.current.open(URL);
+      result.current.copyLink(URL);
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("should set error without onError, as before", async () => {
+    vi.mocked(openExternal).mockRejectedValue(new Error("no browser"));
+    const { result } = renderHookWithProviders(() => useLinkActions());
+    await act(async () => result.current.open(URL));
+    expect(result.current.error).toEqual({ kind: "io", message: "no browser" });
+  });
+});
