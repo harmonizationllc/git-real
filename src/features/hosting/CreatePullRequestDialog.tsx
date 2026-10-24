@@ -285,7 +285,7 @@ function CreatePrForm({
           Cancel
         </button>
         <button type="submit" disabled={pending || title.trim() === ""}>
-          {pending ? "Creating…" : "Create"}
+          {pending ? "Creating…" : "Create pull request"}
         </button>
       </div>
     </form>
