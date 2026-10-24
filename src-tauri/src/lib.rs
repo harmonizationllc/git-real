@@ -113,6 +113,7 @@ pub fn run() {
             commands::hosting::hosting_checkout_pull_request,
             commands::hosting::hosting_repo_info,
             commands::hosting::hosting_list_issues,
+            commands::hosting::hosting_list_my_repos,
             commands::hosting::hosting_pull_request_draft,
             commands::hosting::hosting_create_pull_request,
         ])

@@ -59,6 +59,8 @@ export const queryKeys = {
   hostingRepoInfo: (id: RepoId) => ["hosting", "repoInfo", id] as const,
   /** Open issues matching `query`; outside the repo prefix, like the pull requests. */
   issues: (id: RepoId, query: string) => ["hosting", "issues", id, query] as const,
+  /** An account's repositories matching `query`; under 'hosting', so connect/disconnect refresh it. */
+  myRepos: (accountId: string, query: string) => ["hosting", "myRepos", accountId, query] as const,
   /** The pull request prefill; a git read, under the repo prefix. */
   prDraft: (id: RepoId, target: string) => ["repo", id, "prDraft", target] as const,
 };

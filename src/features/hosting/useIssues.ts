@@ -23,6 +23,7 @@ export function useIssues(repoId: RepoId, query: string, enabled: boolean): UseI
     queryKeys.issues(repoId, query),
     (page) => hostingListIssues(repoId, query, page),
     enabled,
+    (i) => i.number,
   );
   return { issues: items, ...rest };
 }

@@ -1,5 +1,6 @@
-//! Hosting commands (GR-13a, GR-13b): connected accounts, the hosted repository behind
-//! `origin`, its pull requests and issues, checking a pull request out and opening one.
+//! Hosting commands (GR-13a, GR-13b, GR-13c): connected accounts, the hosted repository behind
+//! `origin`, its pull requests and issues, checking a pull request out and opening one, and the
+//! repositories an account can clone.
 //!
 //! Provider calls run through a [`Transport`]; git work follows the GR-7 shape (prepare under
 //! the session lock, run git with it released). A token crosses IPC only inbound, on connect.
@@ -8,8 +9,8 @@ use std::sync::Arc;
 
 use git_real_core::hosting::provider::{detect, validate_host};
 use git_real_core::hosting::{
-    self, Account, CheckoutPlan, CheckoutPrOutcome, HostedRepoInfo, Issue, NewPullRequest,
-    Provider, PullRequest, RepoContext, RepoRef, Token, Transport,
+    self, Account, CheckoutPlan, CheckoutPrOutcome, HostedRepo, HostedRepoInfo, Issue,
+    NewPullRequest, Provider, PullRequest, RepoContext, RepoRef, Token, Transport,
 };
 use git_real_core::{Credentials, GitError, PullRequestDraft, PushTarget};
 use serde::Deserialize;
@@ -137,6 +138,23 @@ pub fn hosting_list_issues_inner(
     let (repo, account) = connected_repo(reg, store, id)?;
     with_token(store, &account, |token| {
         hosting::list_issues(t, &repo, token, query, page.max(1))
+    })
+}
+
+/// One page of the repositories account `account_id` can clone; `NoHostingAccount` for an
+/// unknown account, before any request.
+pub fn hosting_list_my_repos_inner(
+    store: &HostingStore,
+    t: &dyn Transport,
+    account_id: &str,
+    query: &str,
+    page: u32,
+) -> Result<Vec<HostedRepo>, AppError> {
+    let account = store
+        .account(account_id)
+        .ok_or(GitError::NoHostingAccount)?;
+    with_token(store, &account, |token| {
+        hosting::list_my_repos(t, &account, token, query, page.max(1))
     })
 }
 
@@ -306,6 +324,22 @@ pub async fn hosting_list_issues(
     let transport = Arc::clone(transport.inner());
     run_blocking(move || hosting_list_issues_inner(&reg, &hosting, &*transport, id, &query, page))
         .await
+}
+
+#[tauri::command]
+pub async fn hosting_list_my_repos(
+    hosting: State<'_, Arc<HostingStore>>,
+    transport: State<'_, Arc<dyn Transport>>,
+    account_id: String,
+    query: String,
+    page: u32,
+) -> Result<Vec<HostedRepo>, AppError> {
+    let hosting = Arc::clone(hosting.inner());
+    let transport = Arc::clone(transport.inner());
+    run_blocking(move || {
+        hosting_list_my_repos_inner(&hosting, &*transport, &account_id, &query, page)
+    })
+    .await
 }
 
 #[tauri::command]

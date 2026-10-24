@@ -23,6 +23,7 @@ export function usePullRequests(repoId: RepoId, enabled: boolean): UsePullReques
     queryKeys.pullRequests(repoId),
     (page) => hostingListPullRequests(repoId, page),
     enabled,
+    (i) => i.number,
   );
   return { pullRequests: items, ...rest };
 }
