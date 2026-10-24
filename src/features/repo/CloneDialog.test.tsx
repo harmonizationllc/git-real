@@ -797,6 +797,13 @@ describe("CloneDialog repository pick", () => {
     expect(screen.getByText(HINT)).toBeInTheDocument();
   });
 
+  // Review M4: the hint appears after the pick, so it must be announced.
+  it("should announce the fallback hint as a status", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await pickFirst(hostedRepo({ sshUrl: null }));
+    expect(screen.getByRole("status")).toHaveTextContent(HINT);
+  });
+
   it("should show no hint for SSH when the repository has an SSH URL", async () => {
     useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
     await pickFirst();
@@ -866,6 +873,22 @@ describe("CloneDialog repository pick", () => {
     await user.type(await screen.findByLabelText("Search repositories"), "git{Enter}");
     expect(cloneRepo).not.toHaveBeenCalled();
   });
+
+  // Review I2: the radios sit inside the clone form, so Enter on one must not submit it.
+  it.each(["HTTPS", "SSH"])(
+    "should not clone when Enter is pressed on the %s radio",
+    async (label) => {
+      vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
+      vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+      const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await fillForm(user);
+      await user.click(screen.getByRole("tab", { name: "From account" }));
+      const radio = await screen.findByRole("radio", { name: label });
+      radio.focus();
+      await user.keyboard("{Enter}");
+      expect(cloneRepo).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // Review Focus 4: accounts can vanish while the tab is open; a filled URL stays.
@@ -940,6 +963,25 @@ describe("CloneDialog accounts", () => {
     );
     expect(onClose).not.toHaveBeenCalled();
     expect(dialogBox()).not.toHaveAttribute("inert");
+  });
+
+  // R4: connecting an account unmounts the notice button that opened the dialog, so focus
+  // falls back to the From account tab.
+  it("should return focus to the From account tab when the opener is gone on close", async () => {
+    const { user, queryClient } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+    const accountsDialog = await screen.findByRole("dialog", { name: "Hosting accounts" });
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    await act(() => queryClient.invalidateQueries({ queryKey: ["hosting"] }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Hosting accounts…" })).not.toBeInTheDocument(),
+    );
+    fireEvent.keyDown(accountsDialog, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("tab", { name: "From account" })).toHaveFocus();
   });
 
   it("should open the accounts dialog preset to the account from Reconnect", async () => {
