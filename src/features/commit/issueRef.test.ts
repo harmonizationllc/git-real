@@ -17,7 +17,7 @@ describe("insertIssueRef", () => {
   });
 
   it("should add only a trailing space at the start of the text", () => {
-    expect(insertIssueRef("Fix login", 0, 0, "#1")).toEqual({ value: "#1 Fix login", caret: 2 });
+    expect(insertIssueRef("Fix login", 0, 0, "#1")).toEqual({ value: "#1 Fix login", caret: 3 });
   });
 
   it("should add a space on both sides when a selection sits between two words' letters", () => {
@@ -38,6 +38,14 @@ describe("insertIssueRef", () => {
 
   it("should add no leading space after a tab", () => {
     expect(insertIssueRef("a\t", 2, 2, "#5")).toEqual({ value: "a\t#5", caret: 4 });
+  });
+
+  it("should pad both sides when the selection is the whitespace between two words", () => {
+    expect(insertIssueRef("Fix login", 3, 4, "#12")).toEqual({ value: "Fix #12 login", caret: 8 });
+  });
+
+  it("should add no spaces when the selection is everything", () => {
+    expect(insertIssueRef("old text", 0, 8, "#3")).toEqual({ value: "#3", caret: 2 });
   });
 
   it("should not change the text outside the replaced range", () => {

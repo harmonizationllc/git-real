@@ -165,6 +165,23 @@ describe("CreatePullRequestDialog load failures", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
+  it("should word a hosting load failure for GitHub while the repository context is still unknown", async () => {
+    vi.mocked(hostingRepoContext).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(listBranches).mockRejectedValue(hostingError("hostingUnreachable"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText(/Couldn't reach GitHub/)).toBeInTheDocument();
+  });
+
+  it("should word a hosting load failure for the repository's own provider once known", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue({
+      repo: { provider: "gitlab", host: "gitlab.com", namespace: "g", name: "r" },
+      account: hostingAccount({ provider: "gitlab" }),
+    });
+    vi.mocked(listBranches).mockRejectedValue(hostingError("hostingUnreachable"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText(/Couldn't reach GitLab/)).toBeInTheDocument();
+  });
+
   it("should show the error and a Close button when the remote list fails to load", async () => {
     vi.mocked(listRemotes).mockRejectedValue(hostingError("revisionNotFound", "remotes broke"));
     renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);

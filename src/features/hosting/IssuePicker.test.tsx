@@ -394,3 +394,85 @@ describe("IssuePicker states", () => {
     expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 });
+
+// Contract: keyboard handling at the edges, a fresh search restarting at the top, error retry.
+describe("IssuePicker edge behaviour", () => {
+  it("scrolls the newly active option into view on ArrowDown", async () => {
+    await renderPicker();
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
+    press("ArrowDown");
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: "nearest" });
+    expect(scroll.mock.contexts[0]).toBe(screen.getAllByRole("option")[1]);
+  });
+
+  it("prevents the default of ArrowUp and ArrowDown even with no options, without picking", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    const { onPick } = await renderPicker({}, false);
+    await screen.findByText("No open issues match");
+    expect(fireEvent.keyDown(input(), { key: "ArrowDown" })).toBe(false);
+    expect(fireEvent.keyDown(input(), { key: "ArrowUp" })).toBe(false);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("points aria-activedescendant nowhere when there are no options", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    await renderPicker({}, false);
+    await screen.findByText("No open issues match");
+    expect(input()).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("points the search field at the listbox it controls", async () => {
+    await renderPicker();
+    expect(input().getAttribute("aria-controls")).toBe(screen.getByRole("listbox").id);
+  });
+
+  it("starts at the first option again after a new search settles", async () => {
+    vi.mocked(hostingListIssues).mockImplementation((_id, query) =>
+      Promise.resolve(query === "" ? [issue(7), issue(8), issue(9)] : [issue(3), issue(4)]),
+    );
+    const { onPick } = await renderPicker();
+    press("ArrowDown");
+    press("ArrowDown");
+    type("x");
+    await wait(300);
+    await waitFor(() => expect(options()).toEqual(["#3 Issue 3", "#4 Issue 4"]));
+    press("Enter");
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(3);
+  });
+
+  it("keeps Enter from picking when only Enter is pressed on an issues-off repository", async () => {
+    vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo({ issuesEnabled: false }));
+    const { onPick } = await renderPicker({}, false);
+    await screen.findByText(ISSUES_OFF_TEXT);
+    press("Enter");
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("does not pick on Escape or an unrelated key", async () => {
+    const { onPick } = await renderPicker();
+    press("Escape");
+    press("a");
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("calls the latest onClose on an outside pointerdown after a re-render", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const props = { repoId: 1, provider: "github", onPick: vi.fn() } as const;
+    const view = renderWithProviders(<IssuePicker {...props} onClose={first} />);
+    await screen.findAllByRole("option");
+    view.rerender(<IssuePicker {...props} onClose={second} />);
+    fireEvent.pointerDown(document.body);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledOnce();
+  });
+
+  it("retries the search when the error is dismissed", async () => {
+    vi.mocked(hostingListIssues).mockRejectedValueOnce(hostingError("hostingNotFound"));
+    await renderPicker({}, false);
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(options()).toEqual(["#7 Issue 7", "#8 Issue 8", "#9 Issue 9"]));
+    expect(hostingListIssues).toHaveBeenCalledTimes(2);
+  });
+});

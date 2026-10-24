@@ -13,7 +13,13 @@ import {
 import type { CommitConfig, OperationState, StatusEntry, WorkingTreeStatus } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
-import { hostingAccount, issue, repoContext, repoInfo } from "../../test/hostingFixtures";
+import {
+  hostingAccount,
+  hostingError,
+  issue,
+  repoContext,
+  repoInfo,
+} from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CommitBox } from "./CommitBox";
 
@@ -688,6 +694,16 @@ describe("CommitBox issue link", () => {
     expect(hostingListIssues).not.toHaveBeenCalled();
     await user.click(linkButton());
     await waitFor(() => expect(hostingListIssues).toHaveBeenCalledWith(1, "", 1));
+  });
+
+  it("should name the repository's provider in the picker's error copy", async () => {
+    vi.mocked(hostingListIssues).mockRejectedValue(hostingError("hostingUnreachable"));
+    const { user } = await renderHosted({
+      repo: { provider: "gitlab", host: "gitlab.com", namespace: "g", name: "r" },
+      account: hostingAccount({ provider: "gitlab" }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Link issue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't reach GitLab");
   });
 
   it("should not touch the issue calls for an unhosted repository", async () => {

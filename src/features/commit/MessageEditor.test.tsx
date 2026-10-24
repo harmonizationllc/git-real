@@ -361,6 +361,25 @@ describe("MessageEditor issue link", () => {
       expect(onLinkIssue).not.toHaveBeenCalled();
     });
 
+    it("should do nothing during IME composition in the body either", () => {
+      const { onLinkIssue } = setupLink();
+      expect(fireEvent.keyDown(body(), { ...CHORD, isComposing: true })).toBe(true);
+      expect(onLinkIssue).not.toHaveBeenCalled();
+    });
+
+    it("should do nothing for keyCode 229, WebKit's post-composition key", () => {
+      const { onLinkIssue } = setupLink();
+      expect(fireEvent.keyDown(subject(), { ...CHORD, keyCode: 229 })).toBe(true);
+      expect(fireEvent.keyDown(body(), { ...CHORD, keyCode: 229 })).toBe(true);
+      expect(onLinkIssue).not.toHaveBeenCalled();
+    });
+
+    it("should do nothing with Alt held in addition to no Ctrl or Meta", () => {
+      const { onLinkIssue } = setupLink();
+      fireEvent.keyDown(subject(), { key: "I", shiftKey: true, altKey: true });
+      expect(onLinkIssue).not.toHaveBeenCalled();
+    });
+
     it("should bind the inserter to the field that got the chord, not the last focused one", () => {
       const { insert, onBodyChange, onSubjectChange } = setupLink({ body: "Details" });
       caretIn(subject(), 3);

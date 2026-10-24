@@ -236,6 +236,20 @@ describe("IssuesPanel account states", () => {
     expect(screen.getByRole("radio", { name: "GitHub" })).toBeChecked();
   });
 
+  it("closes the Hosting accounts dialog it opened and returns focus to Connect…", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    const { user } = renderWithProviders(<IssuesPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Connect…" }));
+    await screen.findByRole("dialog", { name: "Connect account" });
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Connect account" })).toBeNull(),
+    );
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("button", { name: "Connect…" })).toHaveFocus();
+  });
+
   it("shows the reconnect line and Reconnect for an account that needs it, without calling", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(
       repoContext(hostingAccount({ needsReconnect: true })),
@@ -245,6 +259,17 @@ describe("IssuesPanel account states", () => {
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
     expect(hostingListIssues).not.toHaveBeenCalled();
     expect(hostingRepoInfo).not.toHaveBeenCalled();
+  });
+
+  it("opens the connect form for the repository's own provider and host from Reconnect", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue({
+      repo: { provider: "gitlab", host: "gitlab.example.com", namespace: "g", name: "r" },
+      account: hostingAccount({ provider: "gitlab", needsReconnect: true }),
+    });
+    const { user } = renderWithProviders(<IssuesPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Reconnect" }));
+    await screen.findByRole("dialog", { name: "Connect account" });
+    expect(screen.getByRole("radio", { name: "GitLab" })).toBeChecked();
   });
 
   it("shows the reconnect line when the list answers hostingAuth", async () => {
@@ -334,6 +359,21 @@ describe("IssuesPanel list", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem").length).toBeGreaterThanOrEqual(50);
     expect(screen.getByRole("button", { name: "Issues (50+)" })).toBeInTheDocument();
+  });
+});
+
+// Contract: a failed Show more is retried by its Dismiss without losing the loaded pages.
+describe("IssuesPanel failed Show more", () => {
+  it("Dismiss refetches and clears the alert", async () => {
+    vi.mocked(hostingListIssues)
+      .mockResolvedValueOnce(manyIssues(50, 100))
+      .mockRejectedValueOnce(networkError("hostUnreachable"));
+    const { user } = renderWithProviders(<IssuesPanel repoId={1} />);
+    await user.click(await screen.findByRole("button", { name: "Show more" }));
+    await screen.findByRole("alert");
+    vi.mocked(hostingListIssues).mockResolvedValue(manyIssues(50, 100));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
 
