@@ -168,9 +168,11 @@ pub fn list_issues(
     page: u32,
 ) -> Result<Vec<Issue>, GitError> {
     let mut filter = r#"(state="new" OR state="open")"#.to_owned();
-    let query = issue_query(query);
-    if !query.is_empty() {
-        let literal: String = query.chars().filter(|c| !matches!(c, '"' | '\\')).collect();
+    let literal: String = issue_query(query)
+        .chars()
+        .filter(|c| !matches!(c, '"' | '\\'))
+        .collect();
+    if !literal.trim().is_empty() {
         filter = format!(r#"{filter} AND title ~ "{literal}""#);
     }
     let url = format!(

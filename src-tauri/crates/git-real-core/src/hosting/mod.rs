@@ -95,6 +95,12 @@ pub fn list_issues(
     }
 }
 
+/// `InvalidBranchName` when git would refuse the source or the target branch name.
+pub fn validate_new_pull_request(new: &NewPullRequest) -> Result<(), GitError> {
+    validate_branch_name(&new.source_branch)?;
+    validate_branch_name(&new.target_branch)
+}
+
 /// Opens `new` on `repo`. `InvalidBranchName` for a source or target git would refuse, before
 /// any request.
 pub fn create_pull_request(
@@ -103,8 +109,7 @@ pub fn create_pull_request(
     token: &Token,
     new: &NewPullRequest,
 ) -> Result<PullRequest, GitError> {
-    validate_branch_name(&new.source_branch)?;
-    validate_branch_name(&new.target_branch)?;
+    validate_new_pull_request(new)?;
     match repo.provider {
         Provider::GitHub => github::create_pull_request(t, repo, token, new),
         Provider::GitLab => gitlab::create_pull_request(t, repo, token, new),

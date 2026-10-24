@@ -160,6 +160,7 @@ pub fn hosting_create_pull_request_inner(
     credentials: Option<&Credentials>,
 ) -> Result<PullRequest, AppError> {
     let (repo, account) = connected_repo(reg, store, id)?;
+    hosting::validate_new_pull_request(&request.pr)?;
     if let Some(target) = &request.push {
         let auth = NetworkAuth::new(credentials, store);
         push_inner(reg, id, target, false, &request.branch, auth)?;

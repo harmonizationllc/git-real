@@ -245,6 +245,7 @@ fn message(resp: &Response, token: &Token) -> String {
     let body: Value = serde_json::from_str(&resp.body).unwrap_or(Value::Null);
     let text = body["errors"][0]["message"]
         .as_str()
+        .filter(|m| !m.is_empty())
         .map(str::to_owned)
         .or_else(|| body["message"].as_str().map(str::to_owned))
         .or_else(|| joined_strings(&body["message"]))

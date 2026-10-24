@@ -53,14 +53,18 @@ impl RepoSession {
                 let commit = repo.find_commit(oid)?;
                 let CommitMessage { subject, body } =
                     split(&String::from_utf8_lossy(commit.message_bytes()));
-                (subject, body)
+                if subject.is_empty() {
+                    (humanize_branch(&branch), String::new())
+                } else {
+                    (subject, body)
+                }
             }
             _ => (humanize_branch(&branch), String::new()),
         };
         Ok(PullRequestDraft {
             title,
             body,
-            ahead: u32::try_from(ahead).unwrap_or(1000),
+            ahead: u32::try_from(ahead).unwrap_or(MAX_AHEAD as u32),
         })
     }
 }
