@@ -224,6 +224,21 @@ describe("CreatePullRequestDialog context load failure", () => {
     expect(await within(dialog()).findByText(/Couldn't reach GitHub/)).toBeInTheDocument();
   });
 
+  it("should show the remote list's error, not the context's, when both fail", async () => {
+    failContext();
+    vi.mocked(listRemotes).mockRejectedValue(hostingError("revisionNotFound", "remotes broke"));
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    expect(await within(dialog()).findByText("remotes broke")).toBeInTheDocument();
+    expect(screen.queryByText("ctx broke")).toBeNull();
+  });
+
+  it("should show a single Close button when the hosting context fails to load", async () => {
+    failContext();
+    renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);
+    await within(dialog()).findByText("ctx broke");
+    expect(within(dialog()).getAllByRole("button", { name: "Close" })).toHaveLength(1);
+  });
+
   it("should show no form fields when the hosting context fails to load", async () => {
     failContext();
     renderWithProviders(<CreatePullRequestDialog repoId={1} onClose={onClose} />);

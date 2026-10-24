@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { createRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { MessageEditor } from "./MessageEditor";
 
@@ -184,7 +184,7 @@ describe("MessageEditor issue link", () => {
 
   /** Fixed values: the callbacks are spies and nothing is re-rendered unless the test does so. */
   function setupLink(over: Partial<Props> = {}) {
-    const onLinkIssue = vi.fn<(insert: Inserter, opener: HTMLElement) => void>();
+    const onLinkIssue = vi.fn<(insert: Inserter) => void>();
     const props: Props = {
       subject: "Fix login",
       body: "Details",
@@ -252,19 +252,24 @@ describe("MessageEditor issue link", () => {
       expect(onLinkIssue).toHaveBeenCalledOnce();
     });
 
-    // Fix wave 2 (F3): the second argument is the opener, so the parent can tell a second click
-    // on the button from any other outside click.
-    it("should pass an inserter and the button itself as the opener when clicked", () => {
-      const { onLinkIssue } = setupLink();
-      fireEvent.click(linkButton());
-      expect(onLinkIssue).toHaveBeenCalledWith(expect.any(Function), linkButton());
+    // Fix wave 2 (F3): the parent can reach the button, so it can tell a click on it from any
+    // other outside click.
+    it("should attach linkButtonRef to the # button", () => {
+      const ref = createRef<HTMLButtonElement>();
+      setupLink({ linkButtonRef: ref });
+      expect(ref.current).toBe(linkButton());
     });
 
-    it("should pass the same button element on every click", () => {
+    it("should call onLinkIssue with the inserter only", () => {
       const { onLinkIssue } = setupLink();
       fireEvent.click(linkButton());
-      fireEvent.click(linkButton());
-      expect(onLinkIssue.mock.calls[1]?.[1]).toBe(onLinkIssue.mock.calls[0]?.[1]);
+      expect(onLinkIssue).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    it("should accept a callback ref for the # button", () => {
+      const seen = vi.fn();
+      setupLink({ linkButtonRef: seen });
+      expect(seen).toHaveBeenCalledWith(linkButton());
     });
 
     it("should be disabled while the editor is disabled", () => {
@@ -321,19 +326,6 @@ describe("MessageEditor issue link", () => {
       const { onLinkIssue } = setupLink();
       fireEvent.keyDown(body(), CHORD);
       expect(onLinkIssue).toHaveBeenCalledOnce();
-    });
-
-    // Fix wave 2 (F3): from the chord the opener is the field that had focus, not the button.
-    it("should pass the subject field as the opener on the chord in the subject", () => {
-      const { onLinkIssue } = setupLink();
-      fireEvent.keyDown(subject(), CHORD);
-      expect(onLinkIssue).toHaveBeenCalledWith(expect.any(Function), subject());
-    });
-
-    it("should pass the body field as the opener on the chord in the body", () => {
-      const { onLinkIssue } = setupLink();
-      fireEvent.keyDown(body(), CHORD);
-      expect(onLinkIssue).toHaveBeenCalledWith(expect.any(Function), body());
     });
 
     it("should work with Meta instead of Ctrl", () => {

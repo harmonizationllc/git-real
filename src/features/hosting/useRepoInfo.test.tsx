@@ -4,7 +4,7 @@ import { hostingRepoInfo } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { hostingError, repoInfo } from "../../test/hostingFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
-import { useRepoInfo } from "./useRepoInfo";
+import { issuesAllowed, useRepoInfo } from "./useRepoInfo";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -66,5 +66,40 @@ describe("useRepoInfo", () => {
     await waitFor(() => expect(result.current.info).toBeDefined());
     act(() => result.current.refetch());
     await waitFor(() => expect(hostingRepoInfo).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Contract (fix wave 2, F6): the one rule for asking the provider for issues.
+describe("issuesAllowed", () => {
+  it("should allow when the repository has issues turned on", () => {
+    expect(issuesAllowed(repoInfo({ issuesEnabled: true }), null)).toBe(true);
+  });
+
+  it("should not allow when the repository has issues turned off", () => {
+    expect(issuesAllowed(repoInfo({ issuesEnabled: false }), null)).toBe(false);
+  });
+
+  it("should not allow while the info is still loading", () => {
+    expect(issuesAllowed(undefined, null)).toBe(false);
+  });
+
+  it.each(["hostingUnreachable", "hostingNotFound", "io"] as const)(
+    "should allow the fallback listing after a %s error with no info",
+    (kind) => {
+      expect(issuesAllowed(undefined, hostingError(kind))).toBe(true);
+    },
+  );
+
+  it.each(["hostingAuth", "hostingRateLimited"] as const)(
+    "should not allow after a %s error with no info",
+    (kind) => {
+      expect(issuesAllowed(undefined, hostingError(kind))).toBe(false);
+    },
+  );
+
+  it("should follow the info, not a stale error, once the info is known", () => {
+    expect(
+      issuesAllowed(repoInfo({ issuesEnabled: false }), hostingError("hostingUnreachable")),
+    ).toBe(false);
   });
 });

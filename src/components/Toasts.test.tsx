@@ -282,4 +282,41 @@ describe("Toasts pause on hover and focus", () => {
     fireEvent.pointerLeave(el);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  // Held while hovered OR focused: ending one reason while the other holds must not restart it.
+  it("should keep the pause when the pointer leaves while focus is still inside", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerEnter(toastEl());
+    fireEvent.focusIn(open);
+    fireEvent.pointerLeave(toastEl());
+    advance(TOAST_MS * 2);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should keep the pause when focus leaves while the pointer is still over the toast", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerEnter(toastEl());
+    fireEvent.focusIn(open);
+    fireEvent.focusOut(open, { relatedTarget: document.body });
+    advance(TOAST_MS * 2);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+  });
+
+  it("should remove the toast a full TOAST_MS after both the pointer and focus have left", () => {
+    render(<Toasts />);
+    show("Hi", { label: "Open", run: vi.fn() });
+    const open = screen.getByRole("button", { name: "Open" });
+    fireEvent.pointerEnter(toastEl());
+    fireEvent.focusIn(open);
+    fireEvent.focusOut(open, { relatedTarget: document.body });
+    fireEvent.pointerLeave(toastEl());
+    advance(TOAST_MS - 1);
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+    advance(1);
+    expect(screen.queryByText("Hi")).toBeNull();
+  });
 });

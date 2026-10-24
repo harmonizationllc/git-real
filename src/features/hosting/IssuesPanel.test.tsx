@@ -467,6 +467,15 @@ describe("IssuesPanel context menu", () => {
     ]);
   });
 
+  it("opens when the row button is clicked", async () => {
+    const { user } = await renderPanel();
+    await user.click(row(12));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Open in browser",
+      "Copy link",
+    ]);
+  });
+
   it("opens with Shift+F10 and returns focus to the row on Escape", async () => {
     const { user } = await renderPanel();
     row(12).focus();
@@ -570,9 +579,29 @@ describe("IssuesPanel issues gate after a repository info error", () => {
   it("does not list issues after the repository info answers hostingRateLimited", async () => {
     vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingRateLimited"));
     renderWithProviders(<IssuesPanel repoId={1} />);
-    await waitFor(() => expect(hostingRepoInfo).toHaveBeenCalled());
+    await screen.findByRole("alert");
     await settle();
     expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+
+  it("shows the rate-limit copy instead of Loading issues… after a hostingRateLimited repository info", async () => {
+    vi.mocked(hostingRepoInfo).mockRejectedValue(hostingError("hostingRateLimited"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "GitHub rate limit reached. Try again in a few minutes.",
+    );
+    expect(screen.queryByText("Loading issues…")).toBeNull();
+  });
+
+  it("Dismiss on that error asks the repository info again", async () => {
+    vi.mocked(hostingRepoInfo)
+      .mockRejectedValueOnce(hostingError("hostingRateLimited"))
+      .mockResolvedValue(repoInfo());
+    const { user } = renderWithProviders(<IssuesPanel repoId={1} />);
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(await screen.findByRole("button", { name: "Issues (2)" })).toBeInTheDocument();
+    expect(hostingRepoInfo).toHaveBeenCalledTimes(2);
   });
 
   it("still lists issues after the repository info answers hostingUnreachable", async () => {

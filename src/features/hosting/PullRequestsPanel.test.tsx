@@ -354,6 +354,16 @@ describe("PullRequestsPanel context menu", () => {
     ]);
   });
 
+  it("opens when the row button is clicked", async () => {
+    const { user } = await renderPanel();
+    await user.click(row(12));
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Check out",
+      "Open in browser",
+      "Copy link",
+    ]);
+  });
+
   it("opens with Shift+F10 and returns focus to the row on Escape", async () => {
     const { user } = await renderPanel();
     row(12).focus();

@@ -84,7 +84,7 @@ describe("PullRequestRow open button", () => {
   });
 });
 
-// Contract: right-click and the keyboard open the context menu; a plain click or Enter do not.
+// Contract: right-click and the keyboard open the context menu; a click or Enter opens it too.
 describe("PullRequestRow context menu", () => {
   it("right-click calls onContextMenu with the pointer position", () => {
     const { row } = renderRow();
@@ -123,17 +123,29 @@ describe("PullRequestRow context menu", () => {
     expect(onContextMenu).not.toHaveBeenCalled();
   });
 
-  it("a click on the row calls neither callback", async () => {
+  // Fix wave 2 (F5), changed deliberately: the row button now backs aria-haspopup="menu", so a
+  // click (and Enter, which browsers turn into a click) opens the menu at the button's bottom-left,
+  // like Shift+F10. It still never opens the item.
+  it("a click on the row opens the menu at its bottom-left and does not open the item", async () => {
     const { row } = renderRow();
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue({ left: 5, bottom: 30 } as DOMRect);
     await userEvent.setup().click(row);
-    expect([onOpen, onContextMenu].map((f) => f.mock.calls.length)).toEqual([0, 0]);
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith(5, 30);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it("Enter on the row calls neither callback", async () => {
+  it("Enter on the row opens the menu once and does not open the item", async () => {
     const { row } = renderRow();
     row.focus();
     await userEvent.setup().keyboard("{Enter}");
-    expect([onOpen, onContextMenu].map((f) => f.mock.calls.length)).toEqual([0, 0]);
+    expect(onContextMenu).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("a click on the Open in browser button does not open the menu", async () => {
+    renderRow();
+    await userEvent.setup().click(openButton());
+    expect(onContextMenu).not.toHaveBeenCalled();
   });
 });
 
