@@ -5,12 +5,14 @@ import { networkError } from "../../test/remoteFixtures";
 import { networkMessage } from "../remotes/networkMessage";
 import {
   DEFAULT_HOST,
+  ISSUES_OFF_TEXT,
   PROVIDER_LABEL,
   PUBLISH_FIRST_TEXT,
   RECONNECT_TEXT,
   SCOPE_HINT,
   hostingErrorText,
   hostingMessage,
+  issueCountLabel,
   openedToastText,
   prCountLabel,
   pushFirstLabel,
@@ -217,5 +219,31 @@ describe("create pull request copy", () => {
 
   it("should name the opened pull request in the toast", () => {
     expect(openedToastText(124)).toBe("Opened #124");
+  });
+});
+
+// Contract: the Issues heading counts the issues, with + while more pages exist.
+describe("issueCountLabel", () => {
+  it("should be Issues while the count is unknown", () => {
+    expect(issueCountLabel(null, false)).toBe("Issues");
+  });
+
+  it("should show the count", () => {
+    expect(issueCountLabel(3, false)).toBe("Issues (3)");
+  });
+
+  it("should show zero", () => {
+    expect(issueCountLabel(0, false)).toBe("Issues (0)");
+  });
+
+  it("should add a plus while more pages exist", () => {
+    expect(issueCountLabel(50, true)).toBe("Issues (50+)");
+  });
+});
+
+// Contract: copy of the Issues panel and the issue picker when the tracker is switched off.
+describe("issues copy", () => {
+  it("should say that issues are turned off for the repository", () => {
+    expect(ISSUES_OFF_TEXT).toBe("Issues are turned off for this repository");
   });
 });

@@ -15,6 +15,7 @@ import {
   getStatus,
   getStashFiles,
   hostingCreatePullRequest,
+  hostingListIssues,
   hostingListPullRequests,
   hostingPullRequestDraft,
   hostingRepoContext,
@@ -88,6 +89,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getStatus: vi.fn(),
   getStashFiles: vi.fn(),
   hostingCreatePullRequest: vi.fn(),
+  hostingListIssues: vi.fn(),
   hostingListPullRequests: vi.fn(),
   hostingPullRequestDraft: vi.fn(),
   hostingRepoContext: vi.fn(),
@@ -142,7 +144,12 @@ beforeEach(() => {
   StubResizeObserver.instances = [];
   bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
-  useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true });
+  useLayoutPrefs.setState({
+    refsWidth: 240,
+    sidebarWidth: 320,
+    tagsCollapsed: true,
+    issuesCollapsed: true,
+  });
   vi.mocked(listBranches).mockResolvedValue(branchList());
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
@@ -160,6 +167,7 @@ beforeEach(() => {
   vi.mocked(listStashes).mockResolvedValue([]);
   vi.mocked(hostingRepoContext).mockResolvedValue(null);
   vi.mocked(hostingListPullRequests).mockResolvedValue([]);
+  vi.mocked(hostingListIssues).mockResolvedValue([]);
   vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
   vi.mocked(hostingPullRequestDraft).mockResolvedValue(prDraft());
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
@@ -1277,6 +1285,71 @@ describe("RepoPane pull requests", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "File history" });
     expect(screen.queryByRole("region", { name: /^Pull requests/ })).toBeNull();
+  });
+});
+
+// Contract (GR-13b): an Issues section follows Pull requests for a hosted origin, and the commit
+// editor's Ctrl/Cmd+Shift+I opens the issue picker without reaching the window shortcuts.
+describe("RepoPane issues", () => {
+  it("should render the Issues section after the Pull requests section", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const pulls = await screen.findByRole("region", { name: "Pull requests" });
+    const issues = await screen.findByRole("region", { name: "Issues" });
+    expect(follows(pulls, issues)).toBe(true);
+  });
+
+  it("should start the Issues section collapsed and call no issues endpoint", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const toggle = await screen.findByRole("button", { name: "Issues" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(hostingListIssues).not.toHaveBeenCalled();
+    expect(hostingRepoInfo).not.toHaveBeenCalled();
+  });
+
+  it("should render no Issues section when origin is not hosted", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Tags (0)" });
+    await waitFor(() => expect(hostingRepoContext).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: /^Issues/ })).toBeNull();
+  });
+
+  it("should replace the Issues section with file history while history is open", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    useWorkspace.setState({ historyPath: { 1: "src/a.ts" } });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "File history" });
+    expect(screen.queryByRole("region", { name: /^Issues/ })).toBeNull();
+  });
+
+  it("should open the issue picker on Ctrl+Shift+I in the commit subject and consume the key", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Link issue" });
+    const subject = screen.getByLabelText("Subject");
+    subject.focus();
+    expect(fireEvent.keyDown(subject, { key: "I", ctrlKey: true, shiftKey: true })).toBe(false);
+    expect(await screen.findByRole("dialog", { name: "Link issue" })).toBeInTheDocument();
+  });
+
+  it("should not fetch, pull or push on Ctrl+Shift+I", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("button", { name: "Link issue" });
+    fireEvent.keyDown(screen.getByLabelText("Subject"), {
+      key: "I",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect([fetchAll, pull, push].map((f) => vi.mocked(f).mock.calls.length)).toEqual([0, 0, 0]);
+  });
+
+  it("should offer no Link issue button without a connected account", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Issues" });
+    expect(screen.queryByRole("button", { name: "Link issue" })).toBeNull();
   });
 });
 
