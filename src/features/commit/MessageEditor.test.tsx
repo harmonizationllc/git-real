@@ -355,6 +355,24 @@ describe("MessageEditor issue link", () => {
       expect(onLinkIssue).not.toHaveBeenCalled();
     });
 
+    it("should fire when the physical key is I on a non-Latin layout, and consume the event", () => {
+      const { onLinkIssue } = setupLink();
+      const notPrevented = fireEvent.keyDown(subject(), {
+        code: "KeyI",
+        key: "Ш",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+      expect(onLinkIssue).toHaveBeenCalledOnce();
+      expect(notPrevented).toBe(false);
+    });
+
+    it("should not fire for another physical key on a non-Latin layout", () => {
+      const { onLinkIssue } = setupLink();
+      fireEvent.keyDown(subject(), { code: "KeyJ", key: "О", ctrlKey: true, shiftKey: true });
+      expect(onLinkIssue).not.toHaveBeenCalled();
+    });
+
     it("should do nothing during IME composition", () => {
       const { onLinkIssue } = setupLink();
       expect(fireEvent.keyDown(subject(), { ...CHORD, isComposing: true })).toBe(true);

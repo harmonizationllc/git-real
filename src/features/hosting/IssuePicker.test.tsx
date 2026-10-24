@@ -242,6 +242,18 @@ describe("IssuePicker choosing", () => {
     expect(fireEvent.keyDown(input(), { key: "ArrowDown" })).toBe(false);
   });
 
+  it("does not pick on an Enter that confirms an IME composition", async () => {
+    const { onPick } = await renderPicker();
+    expect(fireEvent.keyDown(input(), { key: "Enter", isComposing: true })).toBe(true);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("does not pick on an Enter with keyCode 229 (WebKit after a composition)", async () => {
+    const { onPick } = await renderPicker();
+    expect(fireEvent.keyDown(input(), { key: "Enter", keyCode: 229 })).toBe(true);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
   it("picks nothing on Enter when there are no options", async () => {
     vi.mocked(hostingListIssues).mockResolvedValue([]);
     const { onPick } = await renderPicker({}, false);
