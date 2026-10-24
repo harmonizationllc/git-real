@@ -13,14 +13,14 @@ export interface UsePullRequestDraft {
 
 /**
  * The title and description to start a pull request into `target` from; read once. The key names
- * only the target, so the draft is dropped as soon as nothing observes it: every open of the dialog
- * reads a fresh one for the branch HEAD is on now.
+ * only the target, and `gcTime: 0` drops the draft as soon as the dialog stops observing it, so
+ * every open of the dialog reads a fresh one for the branch HEAD is on now.
  */
 export function usePullRequestDraft(repoId: RepoId, target: string | null): UsePullRequestDraft {
   const query = useQuery<PullRequestDraft, AppError>({
     // useQuery always registers an entry; an idle one sits outside the repo's prDraft prefix.
     queryKey: target === null ? IDLE_KEY : queryKeys.prDraft(repoId, target),
-    // No function without a target, so a null target registers no cache entry.
+    // No function without a target: skipToken still registers the idle entry but never fetches.
     queryFn:
       target === null
         ? skipToken

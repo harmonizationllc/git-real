@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useToasts } from "../lib/store/toasts";
 import type { Toast } from "../lib/store/toasts";
 import styles from "./Toasts.module.css";
@@ -18,18 +18,33 @@ export function Toasts() {
   );
 }
 
-/** One toast; its timer lives and dies with it, so a dismiss or unmount clears it. */
+/**
+ * One toast; its timer lives and dies with it, so a dismiss or unmount clears it. The timer is
+ * held while the toast is hovered or holds focus, and a full TOAST_MS restarts once neither holds.
+ */
 function ToastItem({ toast }: { toast: Toast }) {
   const { id, text, action } = toast;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
   useEffect(() => {
+    if (held) return;
     const timer = setTimeout(() => useToasts.getState().dismiss(id), TOAST_MS);
     return () => clearTimeout(timer);
-  }, [id]);
+  }, [id, held]);
 
   const dismiss = () => useToasts.getState().dismiss(id);
 
   return (
-    <div className={styles.toast}>
+    <div
+      className={styles.toast}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      }}
+    >
       <p className={styles.text}>{text}</p>
       {action !== null && (
         <button

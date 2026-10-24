@@ -1,12 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { FocusEvent, KeyboardEvent } from "react";
+import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import type { HostingProvider, RepoId } from "../../lib/ipc";
 import { NetworkError } from "../remotes/NetworkError";
 import { ISSUES_OFF_TEXT, hostingMessage } from "./hostingCopy";
 import styles from "./IssuePicker.module.css";
 import { useIssues } from "./useIssues";
-import { useRepoInfo } from "./useRepoInfo";
+import { issuesAllowed, useRepoInfo } from "./useRepoInfo";
 
 /** How long typing must pause before the query reaches the provider. */
 const DEBOUNCE_MS = 300;
@@ -19,6 +19,11 @@ export interface IssuePickerProps {
   provider: HostingProvider;
   onPick(number: number): void;
   onClose(): void;
+  /**
+   * An element outside the popover (the # button) whose pointerdown or focus does not close it,
+   * so the click on it can toggle the picker from the parent.
+   */
+  ignore?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -26,7 +31,7 @@ export interface IssuePickerProps {
  * issue's number. It closes on Escape, a pointerdown outside it, or focus leaving it, because an
  * open dialog switches off every window shortcut.
  */
-export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerProps) {
+export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: IssuePickerProps) {
   const listId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -36,8 +41,9 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   const [active, setActive] = useState(0);
   const repoInfo = useRepoInfo(repoId, true);
   const info = repoInfo.info;
-  // No issues call before the repository info answers; a failed info falls back to asking.
-  const allowed = info?.issuesEnabled === true || (info === undefined && repoInfo.error !== null);
+  // No issues call before the repository info answers; a failed info falls back to asking
+  // unless it was the token or the rate limit.
+  const allowed = issuesAllowed(info, repoInfo.error);
   const list = useIssues(repoId, debounced, allowed);
 
   // Off while React tears the popover down, StrictMode's simulated unmount included. Declared
@@ -64,14 +70,20 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
     return () => clearTimeout(timer);
   }, [query]);
 
-  // The latest onClose, so the document listener is added once.
+  // The latest onClose and ignore, so the document listener is added once.
   const closeRef = useRef(onClose);
+  const ignoreRef = useRef(ignore);
   useLayoutEffect(() => {
     closeRef.current = onClose;
+    ignoreRef.current = ignore;
   });
+  // Read only from event handlers: inside the popover or the ignored element.
+  const isInside = (node: Node) =>
+    (rootRef.current as HTMLDivElement).contains(node) ||
+    ignoreRef.current?.current?.contains(node) === true;
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
-      if (!(rootRef.current as HTMLDivElement).contains(e.target as Node)) closeRef.current();
+      if (!isInside(e.target as Node)) closeRef.current();
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -108,7 +120,7 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   // Clicking an option does not take focus, so a null relatedTarget is not "focus left".
   const onBlur = (e: FocusEvent) => {
     const next = e.relatedTarget;
-    if (live.current && next !== null && !(rootRef.current as HTMLDivElement).contains(next)) {
+    if (live.current && next !== null && !isInside(next)) {
       onClose();
     }
   };
@@ -116,6 +128,14 @@ export function IssuePicker({ repoId, provider, onPick, onClose }: IssuePickerPr
   let body: React.ReactNode = null;
   if (off) {
     body = <p className={styles.empty}>{ISSUES_OFF_TEXT}</p>;
+  } else if (info === undefined && repoInfo.error !== null && !allowed) {
+    // The repository info failed in a way a search would only repeat, so it stands in for it.
+    body = (
+      <NetworkError
+        message={hostingMessage(repoInfo.error, provider)}
+        onDismiss={repoInfo.refetch}
+      />
+    );
   } else if (list.error !== null && issues === undefined) {
     body = <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />;
   } else if (issues === undefined) {

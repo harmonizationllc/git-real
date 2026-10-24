@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { copyText, hostingCheckoutPullRequest, openExternal, toAppError } from "../../lib/ipc";
+import { hostingCheckoutPullRequest } from "../../lib/ipc";
 import type { AppError, PullRequest, RepoId } from "../../lib/ipc";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import type { CredentialPrompt } from "../remotes/useNetworkAction";
+import { useLinkActions } from "./useLinkActions";
 
 /** A checkout that would move a diverged branch, waiting for the user's confirmation. */
 export interface ResetRequest {
@@ -31,19 +32,22 @@ export function usePrActions(repoId: RepoId): UsePrActions {
   const network = useNetworkAction(repoId);
   const [resetRequest, setResetRequest] = useState<ResetRequest | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<AppError | null>(null);
-
-  const fail = (e: unknown) => setError(toAppError(e));
+  const links = useLinkActions();
+  const [checkoutError, setCheckoutError] = useState<AppError | null>(null);
+  const clearError = () => {
+    setCheckoutError(null);
+    links.clearError();
+  };
 
   // Checkout fetches, so it goes through the network gate, which also refreshes the list.
   const checkout = async (pr: PullRequest, reset = false) => {
     setResetRequest(null);
     setStatus(null);
-    setError(null);
+    clearError();
     const result = await network.run((c) =>
       hostingCheckoutPullRequest(repoId, pr.number, reset, c),
     );
-    if (result.status === "failed") setError(result.error);
+    if (result.status === "failed") setCheckoutError(result.error);
     else if (result.status === "ok") {
       const outcome = result.value;
       // The outcome names the branch it landed on: a fork pull request lands on pr/<n>.
@@ -54,13 +58,14 @@ export function usePrActions(repoId: RepoId): UsePrActions {
 
   return {
     checkout,
-    open: (pr) => void openExternal(pr.webUrl).catch(fail),
-    copyLink: (pr) => void copyText(pr.webUrl).catch(fail),
+    open: (pr) => links.open(pr.webUrl),
+    copyLink: (pr) => links.copyLink(pr.webUrl),
     resetRequest,
     clearResetRequest: () => setResetRequest(null),
     status,
-    error,
-    clearError: () => setError(null),
+    // A checkout failure and a failed open or copy share the one error slot.
+    error: checkoutError ?? links.error,
+    clearError,
     pending: network.pending,
     prompt: network.prompt,
   };

@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef } from "react";
+import type { Ref } from "react";
 import { insertIssueRef } from "./issueRef";
 import { SUBJECT_LIMIT } from "./limits";
 import styles from "./MessageEditor.module.css";
@@ -19,6 +20,8 @@ export interface MessageEditorProps {
    * triggering field and its caret at that moment.
    */
   onLinkIssue?(insert: IssueRefInserter): void;
+  /** Lands on the # button, so the parent can tell a click on it from other outside clicks. */
+  linkButtonRef?: Ref<HTMLButtonElement>;
 }
 
 /** Writes `text` into the field and at the caret captured when the link was requested. */
@@ -55,7 +58,8 @@ function handleEnter(
 }
 
 export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
-  const { subject, body, disabled, onSubjectChange, onBodyChange, onSubmit, onLinkIssue } = props;
+  const { subject, body, disabled, onSubjectChange, onBodyChange, onSubmit } = props;
+  const { onLinkIssue, linkButtonRef } = props;
   const bodyId = useId();
   const hintId = useId();
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -148,6 +152,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
         </label>
         {onLinkIssue && (
           <button
+            ref={linkButtonRef}
             type="button"
             className={styles.link}
             aria-label="Link issue"

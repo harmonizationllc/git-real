@@ -17,7 +17,7 @@ import styles from "./IssuesPanel.module.css";
 import { useIssues } from "./useIssues";
 import { useLinkActions } from "./useLinkActions";
 import { useRepoContext } from "./useRepoContext";
-import { useRepoInfo } from "./useRepoInfo";
+import { issuesAllowed, useRepoInfo } from "./useRepoInfo";
 
 interface MenuState {
   x: number;
@@ -36,9 +36,9 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   const usable = account !== null && !account.needsReconnect;
   const repoInfo = useRepoInfo(repoId, !collapsed && usable);
   const info = repoInfo.info;
-  // No issues call before the repository info answers; a failed info falls back to asking,
-  // so the list's own error (or the reconnect state) still shows.
-  const allowed = info?.issuesEnabled === true || (info === undefined && repoInfo.error !== null);
+  // No issues call before the repository info answers; a failed info falls back to asking
+  // (unless it was the token or the rate limit), so the list's own error still shows.
+  const allowed = issuesAllowed(info, repoInfo.error);
   const list = useIssues(repoId, "", !collapsed && usable && allowed);
   const links = useLinkActions();
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -67,6 +67,8 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     { id: "copy", label: "Copy link", onSelect: () => links.copyLink(issue.webUrl) },
   ];
 
+  // The heading shows the count only while the body shows the loaded list (or its empty state).
+  let listed = false;
   let body: React.ReactNode;
   if (collapsed) {
     body = null;
@@ -92,14 +94,24 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     );
   } else if (info?.issuesEnabled === false) {
     body = <p className={styles.empty}>{ISSUES_OFF_TEXT}</p>;
+  } else if (info === undefined && repoInfo.error !== null && !allowed) {
+    // The repository info failed in a way a listing would only repeat, so it stands in for it.
+    body = (
+      <NetworkError
+        message={hostingMessage(repoInfo.error, provider)}
+        onDismiss={repoInfo.refetch}
+      />
+    );
   } else if (list.error !== null && issues === undefined) {
     // Nothing loaded yet: the error stands in for the list. A failed Show more keeps the list.
     body = <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />;
   } else if (issues === undefined) {
     body = <p role="status">Loading issues…</p>;
   } else if (issues.length === 0) {
+    listed = true;
     body = <p className={styles.empty}>No open issues</p>;
   } else {
+    listed = true;
     body = (
       <>
         <ul aria-label="Issue list" className={styles.list}>
@@ -146,7 +158,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
             aria-controls={bodyId}
             onClick={() => useLayoutPrefs.getState().setIssuesCollapsed(!collapsed)}
           >
-            {issueCountLabel(issues?.length ?? null, list.hasMore)}
+            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore)}
           </button>
         </h2>
         <button

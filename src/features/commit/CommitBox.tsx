@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RepoId } from "../../lib/ipc";
 import { EMPTY_DRAFT, useCommitDraft } from "../../lib/store/commitDraft";
 import { IssuePicker } from "../hosting/IssuePicker";
@@ -33,6 +33,8 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
   const [picker, setPicker] = useState<{ insert: IssueRefInserter } | null>(null);
   // An account that stops being usable (disconnect, expired token) takes the open picker with it.
   if (!usable && picker !== null) setPicker(null);
+  // The picker ignores pointerdown and focus on the # button, so a second click closes it here.
+  const linkButton = useRef<HTMLButtonElement>(null);
 
   const reason = commitDisabledReason({
     amend: draft.amend,
@@ -59,7 +61,11 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
         onSubjectChange={(v) => setSubject(repoId, v)}
         onBodyChange={(v) => setBody(repoId, v)}
         onSubmit={submit}
-        onLinkIssue={usable ? (insert) => setPicker({ insert }) : undefined}
+        // The chord cannot fire while the picker holds focus, so only the # button toggles.
+        onLinkIssue={
+          usable ? (insert) => setPicker((p) => (p === null ? { insert } : null)) : undefined
+        }
+        linkButtonRef={linkButton}
       />
       <div className={styles.actions}>
         <label className={styles.amend}>
@@ -107,6 +113,7 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
             setPicker(null);
           }}
           onClose={() => setPicker(null)}
+          ignore={linkButton}
         />
       )}
     </section>

@@ -62,7 +62,7 @@ export function CreatePullRequestDialog({
   const titleRef = useRef<HTMLInputElement>(null);
   const { branches, error: branchesError } = useBranches(repoId);
   const { remotes, error: remotesError } = useRemotes(repoId);
-  const { context } = useRepoContext(repoId);
+  const { context, error: contextError } = useRepoContext(repoId);
   const repoInfo = useRepoInfo(repoId, true);
   const remoteNames = remotes?.map((r) => r.name) ?? [];
   const [base, setBase] = useState<Base | null>(null);
@@ -124,9 +124,16 @@ export function CreatePullRequestDialog({
     if (e.key === "Escape" && !pending) onClose();
   };
 
-  // Without branches or remotes the form can never open, so the failure is the whole body.
+  // Without branches, remotes or the hosting context the form can never open, so the failure is
+  // the whole body.
   const loadError =
-    branches === undefined ? branchesError : remotes === undefined ? remotesError : null;
+    branches === undefined
+      ? branchesError
+      : remotes === undefined
+        ? remotesError
+        : context === undefined
+          ? contextError
+          : null;
 
   let body: React.ReactNode;
   if (loadError !== null) {

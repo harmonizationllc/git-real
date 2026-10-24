@@ -61,6 +61,8 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
     { id: "copy", label: "Copy link", onSelect: () => actions.copyLink(pr) },
   ];
 
+  // The heading shows the count only while the body shows the loaded list (or its empty state).
+  let listed = false;
   let body: React.ReactNode;
   if (collapsed) {
     body = null;
@@ -90,8 +92,10 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   } else if (prs === undefined) {
     body = <p role="status">Loading pull requests…</p>;
   } else if (prs.length === 0) {
+    listed = true;
     body = <p className={styles.empty}>No open pull requests</p>;
   } else {
+    listed = true;
     body = (
       <>
         <ul aria-label="Pull request list" className={styles.list}>
@@ -144,7 +148,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
             aria-controls={bodyId}
             onClick={() => useLayoutPrefs.getState().setPullRequestsCollapsed(!collapsed)}
           >
-            {prCountLabel(prs?.length ?? null, list.hasMore)}
+            {prCountLabel(listed ? (prs as PullRequest[]).length : null, list.hasMore)}
           </button>
         </h2>
         <button
