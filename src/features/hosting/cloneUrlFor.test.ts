@@ -32,10 +32,11 @@ describe("cloneUrlFor", () => {
     });
   });
 
-  // Documents current behaviour: only null means "no SSH URL". The Rust sanitiser turns an
-  // unusable ssh URL into null, so an empty string should not arrive; if it did, the field
-  // would be filled with "" and no hint would show.
-  it("should return an empty sshUrl as is, without a fallback, because only null means missing", () => {
-    expect(cloneUrlFor(hostedRepo({ sshUrl: "" }), "ssh")).toEqual({ url: "", fellBack: false });
+  // An empty string is as unusable as null: the field must not be filled with "".
+  it("should fall back to the HTTPS URL and say so when ssh is preferred but sshUrl is empty", () => {
+    expect(cloneUrlFor(hostedRepo({ sshUrl: "" }), "ssh")).toEqual({
+      url: "https://github.com/octo/git-real.git",
+      fellBack: true,
+    });
   });
 });
