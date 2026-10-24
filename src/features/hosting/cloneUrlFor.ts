@@ -6,6 +6,7 @@ export function cloneUrlFor(
   repo: HostedRepo,
   form: CloneUrlForm,
 ): { url: string; fellBack: boolean } {
-  if (form === "ssh" && repo.sshUrl !== null) return { url: repo.sshUrl, fellBack: false };
+  // An empty SSH URL counts as none.
+  if (form === "ssh" && repo.sshUrl) return { url: repo.sshUrl, fellBack: false };
   return { url: repo.httpsUrl, fellBack: form === "ssh" };
 }

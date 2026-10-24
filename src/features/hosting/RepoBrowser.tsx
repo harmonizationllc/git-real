@@ -33,7 +33,7 @@ export interface RepoBrowserProps {
  */
 export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserProps) {
   const pickerId = useId();
-  const { accounts } = useHostingAccounts();
+  const { accounts, error: accountsError, refetch: refetchAccounts } = useHostingAccounts();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -42,6 +42,7 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
   const usable = account !== null && !account.needsReconnect;
   const list = useMyRepos(account?.id ?? null, debounced, usable);
   const form = useLayoutPrefs((s) => s.cloneUrlForm);
+  const setForm = useLayoutPrefs((s) => s.setCloneUrlForm);
   const now = useNow();
 
   useEffect(() => {
@@ -49,8 +50,18 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Every hook runs above: nothing shows until the accounts answer.
-  if (accounts === undefined) return null;
+  // Every hook runs above. Before the accounts answer there is no provider to name, so a failure
+  // shows its own text.
+  if (accounts === undefined) {
+    return accountsError === null ? (
+      <p role="status">Loading…</p>
+    ) : (
+      <NetworkError
+        message={{ title: accountsError.message, hint: null, action: null, details: null }}
+        onDismiss={refetchAccounts}
+      />
+    );
+  }
 
   if (account === null) {
     return (
@@ -68,8 +79,8 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
   // hostingAuth counts too.
   const reconnect = account.needsReconnect || list.error?.kind === "hostingAuth";
 
-  // Enter would otherwise submit the clone form around the browser.
-  const onSearchKeyDown = (e: KeyboardEvent) => {
+  // Enter in the search or on a radio would otherwise submit the clone form around the browser.
+  const onEnterKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter") e.preventDefault();
   };
 
@@ -163,10 +174,15 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
             autoComplete="off"
             disabled={disabled}
             className={styles.search}
-            onKeyDown={onSearchKeyDown}
+            onKeyDown={onEnterKeyDown}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <div role="radiogroup" aria-label="Clone with" className={styles.forms}>
+          <div
+            role="radiogroup"
+            aria-label="Clone with"
+            className={styles.forms}
+            onKeyDown={onEnterKeyDown}
+          >
             {URL_FORMS.map(({ form: value, label }) => (
               <label key={value}>
                 <input
@@ -175,7 +191,7 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
                   value={value}
                   checked={form === value}
                   disabled={disabled}
-                  onChange={() => useLayoutPrefs.getState().setCloneUrlForm(value)}
+                  onChange={() => setForm(value)}
                 />{" "}
                 {label}
               </label>

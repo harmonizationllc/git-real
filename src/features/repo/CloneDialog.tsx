@@ -166,7 +166,9 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
                       }}
                     />
                     {picked !== null && cloneUrlFor(picked, form).fellBack && (
-                      <p className={styles.hint}>This repository has no SSH URL; HTTPS was used</p>
+                      <p role="status" className={styles.hint}>
+                        This repository has no SSH URL; HTTPS was used
+                      </p>
                     )}
                   </div>
                 )}

@@ -18,9 +18,11 @@ export interface UseMyRepos {
  * requested without an account; never refetched on focus.
  */
 export function useMyRepos(accountId: string | null, query: string, enabled: boolean): UseMyRepos {
+  // Without an account the query is disabled, so the empty id never reaches the provider.
+  const id = accountId ?? "";
   const { items, ...rest } = usePagedQuery(
-    queryKeys.myRepos(accountId ?? "", query),
-    (page) => hostingListMyRepos(accountId as string, query, page),
+    queryKeys.myRepos(id, query),
+    (page) => hostingListMyRepos(id, query, page),
     enabled && accountId !== null,
     (r) => r.fullName,
   );
