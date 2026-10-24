@@ -1225,6 +1225,11 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         "ftp://x",
         "ssh://git@/p.git",
         "ssh:///p.git",
+        "ssh://",
+        "ssh:///p",
+        "ssh://u@-h/p.git",
+        // Multibyte: the scp host is ASCII-only, so this is dropped (must not panic).
+        "git@h\u{e9}:p.git",
         "-u@h:p.git",
         "u@-h:p.git",
         "ssh://-u@h/p.git",
@@ -1330,9 +1335,19 @@ fn my_repos_pages_and_errors_like_the_other_lists() {
 
 #[test]
 fn my_repos_sends_a_bearer_token() {
-    let t = FakeTransport::new().reply(200, "[]");
-    hosting::list_my_repos(&t, &account(P::GitHub, "github.com"), &tok(), "", 1).unwrap();
-    assert_eq!(header(&t.requests()[0], "authorization"), ["Bearer t0k"]);
+    for (p, host, empty) in [
+        (P::GitHub, "github.com", "[]"),
+        (P::GitLab, "gitlab.com", "[]"),
+        (P::Bitbucket, "bitbucket.org", r#"{"values":[]}"#),
+    ] {
+        let t = FakeTransport::new().reply(200, empty);
+        hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap();
+        assert_eq!(
+            header(&t.requests()[0], "authorization"),
+            ["Bearer t0k"],
+            "{host}"
+        );
+    }
 }
 
 // --- GR-13c coverage audit: edge cases of the sanitiser and the new call ---
@@ -1361,11 +1376,15 @@ fn https_clone_urls_keep_a_port_and_drop_odd_hosts_paths_and_schemes() {
         ("https://u:pw@h:8443/p.git", "https://h:8443/p.git"),
         ("https://u@v@h/p.git", "https://h/p.git"),
         ("https://h/a/b/c.git", "https://h/a/b/c.git"),
+        // Multibyte path characters are kept today; pinned so a change is deliberate.
+        ("https://h/\u{e9}", "https://h/\u{e9}"),
     ] {
         assert_eq!(sanitize_https(input).as_deref(), Some(want), "{input:?}");
     }
     for bad in [
-        "https://h/",      // nothing after the host
+        "https://h/", // nothing after the host
+        "https://-h/p",
+        "https://u@/p",
         "https://h",       // no path separator at all
         "HTTPS://h/p.git", // scheme match is exact and case-sensitive
         "Https://h/p.git",
@@ -1562,9 +1581,13 @@ fn my_repos_never_puts_the_token_in_the_url_or_an_error() {
         hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap();
         assert!(!t.requests()[0].url.contains("t0k"), "{host}");
 
-        for status in [401, 422] {
+        for status in [401, 403, 422] {
             let t = FakeTransport::new().reply(status, r#"{"message":"bad token t0k here"}"#);
             let err = hosting::list_my_repos(&t, &account(p, host), &tok(), "", 1).unwrap_err();
+            assert!(
+                t.requests().iter().all(|r| !r.url.contains("t0k")),
+                "{host}"
+            );
             assert!(
                 !format!("{err:?}").contains("t0k"),
                 "{host} {status}: {err:?}"

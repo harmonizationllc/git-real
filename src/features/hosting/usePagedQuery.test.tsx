@@ -188,7 +188,7 @@ describe("usePagedQuery keyOf", () => {
     expect(result.current.items?.at(-1)).toEqual({ fullName: "o/new", updated: 2 });
   });
 
-  it("should keep rows that share no key even when they lack a number", async () => {
+  it("should keep distinct string-keyed rows in order", async () => {
     const named = vi.fn<(page: number) => Promise<Named[]>>();
     named.mockResolvedValue([
       { fullName: "o/a", updated: 1 },
