@@ -1,9 +1,19 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { checkGitCli, cloneRepo, listRecent, onCloneProgress, pickFolder } from "../../lib/ipc";
+import {
+  checkGitCli,
+  cloneRepo,
+  hostingListAccounts,
+  hostingListMyRepos,
+  listRecent,
+  onCloneProgress,
+  pickFolder,
+} from "../../lib/ipc";
 import type { OpenedRepo, Progress, UnlistenFn } from "../../lib/ipc";
+import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { hostedRepo, hostingAccount } from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CloneDialog } from "./CloneDialog";
 
@@ -14,6 +24,8 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   onCloneProgress: vi.fn(),
   pickFolder: vi.fn(),
   listRecent: vi.fn(),
+  hostingListAccounts: vi.fn(),
+  hostingListMyRepos: vi.fn(),
 }));
 
 function deferred<T>() {
@@ -44,6 +56,10 @@ beforeEach(() => {
   vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
+  vi.mocked(hostingListAccounts).mockResolvedValue([]);
+  vi.mocked(hostingListMyRepos).mockResolvedValue([hostedRepo()]);
+  localStorage.clear();
+  useLayoutPrefs.setState({ cloneUrlForm: "https" });
   vi.mocked(onCloneProgress).mockImplementation(async (_id, handler) => {
     push = handler;
     return unlisten as unknown as UnlistenFn;
@@ -58,6 +74,7 @@ async function fillForm(user: UserEvent, url = URL_A) {
 
 const cloneBtn = () => screen.getByRole("button", { name: "Clone" });
 const dialog = () => screen.getByRole("dialog", { name: "Clone repository" });
+const dialogBox = dialog;
 const bar = () => screen.getByRole("progressbar", { name: "Clone progress" });
 
 async function startClone(onClose = vi.fn()) {
@@ -498,5 +515,400 @@ describe("CloneDialog dismissal", () => {
     rerender(<CloneDialog open onClose={vi.fn()} />);
     expect(await screen.findByLabelText("Repository URL")).toHaveValue("");
     expect(screen.queryByText(/Destination:/)).not.toBeInTheDocument();
+  });
+});
+
+// Contract (GR-13c): a Clone source tablist switches between the URL field and the account browser.
+describe("CloneDialog source tabs", () => {
+  const urlTab = () => screen.getByRole("tab", { name: "URL" });
+  const accountTab = () => screen.getByRole("tab", { name: "From account" });
+  const urlField = () => screen.getByLabelText("Repository URL");
+
+  async function renderOpen(onClose = vi.fn()) {
+    const view = renderWithProviders(<CloneDialog open onClose={onClose} />);
+    await screen.findByLabelText("Repository URL");
+    return { ...view, onClose };
+  }
+
+  it("should show a tablist named Clone source with URL and From account tabs", async () => {
+    await renderOpen();
+    const list = screen.getByRole("tablist", { name: "Clone source" });
+    expect(
+      within(list)
+        .getAllByRole("tab")
+        .map((t) => t.textContent),
+    ).toEqual(["URL", "From account"]);
+  });
+
+  it("should select the URL tab by default", async () => {
+    await renderOpen();
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+    expect(accountTab()).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("should show the URL field and hide the browser by default", async () => {
+    await renderOpen();
+    expect(urlField()).toBeVisible();
+    expect(screen.queryByLabelText("Search repositories")).not.toBeInTheDocument();
+  });
+
+  it("should not request repositories while the URL tab is active", async () => {
+    await renderOpen();
+    await act(() => Promise.resolve());
+    expect(hostingListMyRepos).not.toHaveBeenCalled();
+  });
+
+  it("should link each tab to its tabpanel", async () => {
+    await renderOpen();
+    const panel = screen.getByRole("tabpanel", { name: "URL" });
+    expect(urlTab()).toHaveAttribute("aria-controls", panel.id);
+    expect(accountTab().getAttribute("aria-controls")).not.toBe(panel.id);
+    expect(
+      document.getElementById(accountTab().getAttribute("aria-controls") as string),
+    ).not.toBeNull();
+  });
+
+  it("should give only the selected tab a tab stop", async () => {
+    await renderOpen();
+    expect(urlTab()).toHaveAttribute("tabindex", "0");
+    expect(accountTab()).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("should show the browser when From account is clicked", async () => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const { user } = await renderOpen();
+    await user.click(accountTab());
+    expect(accountTab()).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: "Use octo/git-real" })).toBeInTheDocument();
+    expect(hostingListMyRepos).toHaveBeenCalledWith("github:github.com:octo", "", 1);
+  });
+
+  it("should hide the URL field while From account is active", async () => {
+    const { user } = await renderOpen();
+    await user.click(accountTab());
+    expect(screen.queryByLabelText("Repository URL")).not.toBeInTheDocument();
+  });
+
+  it("should keep a typed URL when switching to From account and back", async () => {
+    const { user } = await renderOpen();
+    await user.type(urlField(), URL_A);
+    await user.click(accountTab());
+    await user.click(urlTab());
+    expect(urlField()).toHaveValue(URL_A);
+  });
+
+  it("should move to From account and focus it on ArrowRight", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("{ArrowRight}");
+    expect(accountTab()).toHaveAttribute("aria-selected", "true");
+    expect(accountTab()).toHaveFocus();
+  });
+
+  it("should wrap to From account on ArrowLeft from URL", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(accountTab()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("should wrap back to URL on ArrowRight from From account", async () => {
+    const { user } = await renderOpen();
+    await user.click(accountTab());
+    await user.keyboard("{ArrowRight}");
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+    expect(urlTab()).toHaveFocus();
+  });
+
+  it("should select the last tab on End and the first on Home", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("{End}");
+    expect(accountTab()).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{Home}");
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("should ignore other keys on a tab", async () => {
+    const { user } = await renderOpen();
+    urlTab().focus();
+    await user.keyboard("a");
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("should disable both tabs while cloning", async () => {
+    vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
+    await startClone();
+    await screen.findByText("Starting clone…");
+    expect(urlTab()).toBeDisabled();
+    expect(accountTab()).toBeDisabled();
+  });
+
+  it("should start on the URL tab when reopened after using From account", async () => {
+    const { user, rerender } = await renderOpen();
+    await user.click(accountTab());
+    rerender(<CloneDialog open={false} onClose={vi.fn()} />);
+    rerender(<CloneDialog open onClose={vi.fn()} />);
+    expect(await screen.findByLabelText("Repository URL")).toBeInTheDocument();
+    expect(urlTab()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("should not render the tabs when git is missing", async () => {
+    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await screen.findByText(/Git was not found/);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  });
+
+  // Escape and Cancel keep working from the From account tab.
+  it("should close on Escape from the From account tab", async () => {
+    const { user, onClose } = await renderOpen();
+    await user.click(accountTab());
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should close on Cancel from the From account tab", async () => {
+    const { user, onClose } = await renderOpen();
+    await user.click(accountTab());
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Contract: a pick fills the URL field, activates URL and focuses the field; Destination follows.
+describe("CloneDialog repository pick", () => {
+  const urlField = () => screen.getByLabelText("Repository URL");
+  const HINT = "This repository has no SSH URL; HTTPS was used";
+
+  async function pickFirst(repo = hostedRepo()) {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue([repo]);
+    const view = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await view.user.click(await screen.findByRole("tab", { name: "From account" }));
+    await view.user.click(await screen.findByRole("button", { name: `Use ${repo.fullName}` }));
+    return view;
+  }
+
+  it("should fill the Repository URL field with the HTTPS URL by default", async () => {
+    await pickFirst();
+    expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
+  });
+
+  it("should fill the field with the SSH URL when SSH is preferred", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await pickFirst();
+    expect(urlField()).toHaveValue("git@github.com:octo/git-real.git");
+  });
+
+  it("should activate the URL tab after a pick", async () => {
+    await pickFirst();
+    expect(screen.getByRole("tab", { name: "URL" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("should focus the Repository URL field after a pick", async () => {
+    await pickFirst();
+    expect(urlField()).toHaveFocus();
+  });
+
+  it("should derive the destination from the picked URL as for a typed one", async () => {
+    const { user } = await pickFirst();
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    expect(await screen.findByText("Destination: /home/u/src/git-real")).toBeInTheDocument();
+  });
+
+  it("should clone the picked URL", async () => {
+    vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
+    const { user } = await pickFirst();
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    await screen.findByText("Destination: /home/u/src/git-real");
+    await user.click(cloneBtn());
+    expect(cloneRepo).toHaveBeenCalledWith(
+      "https://github.com/octo/git-real.git",
+      "/home/u/src/git-real",
+      expect.any(Number),
+    );
+  });
+
+  it("should replace a URL typed earlier with the picked one", async () => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Use octo/git-real" }));
+    expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
+  });
+
+  it("should show no hint after a plain pick", async () => {
+    await pickFirst();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  // Review Focus 3: SSH chosen for a repository with no SSH URL.
+  it("should fall back to HTTPS with a hint when the repository has no SSH URL", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await pickFirst(hostedRepo({ sshUrl: null }));
+    expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
+
+  it("should show no hint for SSH when the repository has an SSH URL", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await pickFirst();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("should show no hint for HTTPS when the repository has no SSH URL", async () => {
+    await pickFirst(hostedRepo({ sshUrl: null }));
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("should re-fill the field with the SSH URL when the preference changes to SSH", async () => {
+    await pickFirst();
+    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    expect(urlField()).toHaveValue("git@github.com:octo/git-real.git");
+  });
+
+  it("should re-fill the field with the HTTPS URL when the preference changes back", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await pickFirst();
+    act(() => useLayoutPrefs.getState().setCloneUrlForm("https"));
+    expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
+  });
+
+  it("should show the hint after the preference changes to SSH for a repository without one", async () => {
+    await pickFirst(hostedRepo({ sshUrl: null }));
+    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
+
+  it("should re-fill when SSH is chosen from the radios on the From account tab", async () => {
+    const { user } = await pickFirst();
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("radio", { name: "SSH" }));
+    await user.click(screen.getByRole("tab", { name: "URL" }));
+    expect(urlField()).toHaveValue("git@github.com:octo/git-real.git");
+  });
+
+  it("should not re-fill once the user has typed in the field", async () => {
+    const { user } = await pickFirst();
+    await user.type(urlField(), "x");
+    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    expect(urlField()).toHaveValue("https://github.com/octo/git-real.gitx");
+  });
+
+  it("should drop the hint once the user has typed in the field", async () => {
+    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    const { user } = await pickFirst(hostedRepo({ sshUrl: null }));
+    await user.type(urlField(), "x");
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("should not touch a typed URL when the preference changes without a pick", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    expect(urlField()).toHaveValue(URL_A);
+  });
+
+  // R6: Enter in the search field must not submit the clone form.
+  it("should not clone when Enter is pressed in the search field", async () => {
+    vi.mocked(cloneRepo).mockReturnValue(new Promise(() => {}));
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await fillForm(user);
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await user.type(await screen.findByLabelText("Search repositories"), "git{Enter}");
+    expect(cloneRepo).not.toHaveBeenCalled();
+  });
+});
+
+// Review Focus 4: accounts can vanish while the tab is open; a filled URL stays.
+describe("CloneDialog accounts", () => {
+  const NOTICE = "Connect a hosting account to browse your repositories";
+
+  it("should show the connect notice on From account when there are no accounts", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument();
+  });
+
+  it("should show the connect notice when the last account disappears", async () => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const { user, queryClient } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await screen.findByRole("button", { name: "Use octo/git-real" });
+    vi.mocked(hostingListAccounts).mockResolvedValue([]);
+    await act(() => queryClient.invalidateQueries({ queryKey: ["hosting"] }));
+    expect(await screen.findByText(NOTICE)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "URL" }));
+    expect(screen.getByLabelText("Repository URL")).toHaveValue(URL_A);
+  });
+
+  it("should keep a picked URL when the last account disappears", async () => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const { user, queryClient } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Use octo/git-real" }));
+    vi.mocked(hostingListAccounts).mockResolvedValue([]);
+    await act(() => queryClient.invalidateQueries({ queryKey: ["hosting"] }));
+    expect(screen.getByLabelText("Repository URL")).toHaveValue(
+      "https://github.com/octo/git-real.git",
+    );
+  });
+
+  // R4: the accounts dialog is a sibling of the clone box, which goes inert behind it.
+  it("should open the Hosting accounts dialog from the connect notice", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+    expect(await screen.findByRole("dialog", { name: "Hosting accounts" })).toBeInTheDocument();
+  });
+
+  it("should not nest the accounts dialog inside the clone dialog box", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+    const accounts = await screen.findByRole("dialog", { name: "Hosting accounts" });
+    expect(dialogBox()).not.toContainElement(accounts);
+  });
+
+  it("should make the clone dialog inert while the accounts dialog is open", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+    await screen.findByRole("dialog", { name: "Hosting accounts" });
+    expect(dialogBox()).toHaveAttribute("inert");
+  });
+
+  it("should not close the clone dialog when Escape closes the accounts dialog", async () => {
+    const onClose = vi.fn();
+    const { user } = renderWithProviders(<CloneDialog open onClose={onClose} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+    fireEvent.keyDown(await screen.findByRole("dialog", { name: "Hosting accounts" }), {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument(),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogBox()).not.toHaveAttribute("inert");
+  });
+
+  it("should open the accounts dialog preset to the account from Reconnect", async () => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount({ needsReconnect: true })]);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await user.click(await screen.findByRole("button", { name: "Reconnect" }));
+    expect(await screen.findByRole("dialog", { name: "Connect account" })).toBeInTheDocument();
+  });
+
+  it("should not render the accounts dialog before it is asked for", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    await screen.findByText(NOTICE);
+    expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument();
   });
 });

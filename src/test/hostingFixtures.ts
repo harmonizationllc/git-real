@@ -1,6 +1,7 @@
 import type {
   AppError,
   AppErrorKind,
+  HostedRepo,
   HostedRepoInfo,
   HostingAccount,
   Issue,
@@ -77,3 +78,30 @@ export const issue = (number: number, over: Partial<Issue> = {}): Issue => ({
   webUrl: `https://github.com/gorlox/test-repo/issues/${number}`,
   ...over,
 });
+
+/** The repository octo/git-real on GitHub, public, with an SSH URL, updated at 1792497600. */
+export const hostedRepo = (over: Partial<HostedRepo> = {}): HostedRepo => ({
+  fullName: "octo/git-real",
+  name: "git-real",
+  owner: "octo",
+  description: "A lightweight Git client",
+  private: false,
+  updatedAt: 1792497600,
+  httpsUrl: "https://github.com/octo/git-real.git",
+  sshUrl: "git@github.com:octo/git-real.git",
+  webUrl: "https://github.com/octo/git-real",
+  ...over,
+});
+
+/** n repositories octo/repo-<i> counting up from `start`. */
+export const hostedRepos = (n: number, start = 0): HostedRepo[] =>
+  Array.from({ length: n }, (_, i) => {
+    const name = `repo-${start + i}`;
+    return hostedRepo({
+      fullName: `octo/${name}`,
+      name,
+      httpsUrl: `https://github.com/octo/${name}.git`,
+      sshUrl: `git@github.com:octo/${name}.git`,
+      webUrl: `https://github.com/octo/${name}`,
+    });
+  });

@@ -9,6 +9,7 @@ beforeEach(() => {
     tagsCollapsed: true,
     pullRequestsCollapsed: false,
     issuesCollapsed: true,
+    cloneUrlForm: "https",
   });
 });
 
@@ -73,6 +74,7 @@ describe("useLayoutPrefs", () => {
     useLayoutPrefs.getState().setSidebarWidth(400);
     const raw = localStorage.getItem("git-real.layoutPrefs") as string;
     expect(Object.keys(JSON.parse(raw).state).sort()).toEqual([
+      "cloneUrlForm",
       "issuesCollapsed",
       "pullRequestsCollapsed",
       "refsWidth",
@@ -323,5 +325,44 @@ describe("useLayoutPrefs issuesCollapsed", () => {
     useLayoutPrefs.setState({ refsWidth: 180, issuesCollapsed: false });
     useLayoutPrefs.getState().reset("refs");
     expect(useLayoutPrefs.getState().issuesCollapsed).toBe(false);
+  });
+});
+
+// Contract (GR-13c): the clone dialog's HTTPS/SSH choice defaults to HTTPS and persists app-wide.
+describe("useLayoutPrefs cloneUrlForm", () => {
+  it("should default to https", () => {
+    expect(useLayoutPrefs.getInitialState().cloneUrlForm).toBe("https");
+  });
+
+  it("should switch to ssh when setCloneUrlForm('ssh') is called", () => {
+    useLayoutPrefs.getState().setCloneUrlForm("ssh");
+    expect(useLayoutPrefs.getState().cloneUrlForm).toBe("ssh");
+  });
+
+  it("should switch back to https when setCloneUrlForm('https') is called", () => {
+    useLayoutPrefs.getState().setCloneUrlForm("ssh");
+    useLayoutPrefs.getState().setCloneUrlForm("https");
+    expect(useLayoutPrefs.getState().cloneUrlForm).toBe("https");
+  });
+
+  it("should persist the choice in the partialized state", () => {
+    useLayoutPrefs.getState().setCloneUrlForm("ssh");
+    const raw = localStorage.getItem("git-real.layoutPrefs") as string;
+    expect(JSON.parse(raw).state.cloneUrlForm).toBe("ssh");
+  });
+
+  it("should keep https when restoring a state saved before cloneUrlForm existed", async () => {
+    useLayoutPrefs.setState(useLayoutPrefs.getInitialState(), true);
+    localStorage.setItem(
+      "git-real.layoutPrefs",
+      JSON.stringify({ state: { refsWidth: 200, sidebarWidth: 300 }, version: 0 }),
+    );
+    await useLayoutPrefs.persist.rehydrate();
+    expect(useLayoutPrefs.getState().cloneUrlForm).toBe("https");
+  });
+
+  it("should leave the widths alone when setCloneUrlForm is called", () => {
+    useLayoutPrefs.getState().setCloneUrlForm("ssh");
+    expect(useLayoutPrefs.getState()).toMatchObject({ refsWidth: 240, sidebarWidth: 320 });
   });
 });
