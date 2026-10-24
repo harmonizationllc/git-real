@@ -265,7 +265,7 @@ fn a_message_that_is_not_a_string_falls_back_to_the_status() {
     for body in [
         r#"{"message":42}"#,
         r#"{"message":null,"error":null}"#,
-        r#"{"message":["a"]}"#,
+        r#"{"message":[1]}"#,
         r#"{"error":{"message":7}}"#,
         r#"{"error":{}}"#,
         r#"["message"]"#,
