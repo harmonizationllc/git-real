@@ -264,6 +264,7 @@ describe("MessageEditor issue link", () => {
       const { onLinkIssue } = setupLink();
       fireEvent.click(linkButton());
       expect(onLinkIssue).toHaveBeenCalledWith(expect.any(Function));
+      expect(onLinkIssue.mock.calls[0]).toHaveLength(1);
     });
 
     it("should accept a callback ref for the # button", () => {

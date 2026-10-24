@@ -669,6 +669,16 @@ fn github_search_keeps_a_quoted_qualifier_like_token() {
     assert_eq!(github_search_url("\"repo:x\""), github_q_url("\"repo:x\""));
 }
 
+// Fix wave 2 (review): a qualifier glued to grouping parentheses is still a qualifier. RED until
+// the developer peels leading `(` and `-` characters before the prefix check.
+#[test]
+fn github_search_drops_qualifiers_glued_to_parentheses() {
+    assert_eq!(
+        github_search_url("(repo:x OR repo:y) login"),
+        github_q_url("OR login")
+    );
+}
+
 #[test]
 fn github_search_only_strips_qualifiers_on_github() {
     let t = FakeTransport::new().reply(200, "[]");

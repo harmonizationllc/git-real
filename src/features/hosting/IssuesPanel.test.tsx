@@ -637,3 +637,16 @@ describe("IssuesPanel heading count with a cached list", () => {
     expect(toggle()).toHaveTextContent(/^Issues$/);
   });
 });
+
+// Contract (fix wave 2, review): a second click on the row button that opened the menu closes it.
+// RED until ContextMenu ignores a mousedown on its opener (or the panel otherwise toggles), so the
+// click that follows the outside mousedown does not reopen it.
+describe("IssuesPanel row menu toggle", () => {
+  it("closes the menu when the row button that opened it is clicked again", async () => {
+    const { user } = await renderPanel();
+    await user.click(row(12));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.click(row(12));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
