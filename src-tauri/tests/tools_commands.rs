@@ -85,8 +85,9 @@ fn open_repo_in_registry(reg: &RepoRegistry, path: &Path) -> RepoId {
 fn open_in_editor_without_a_configured_editor_is_no_external_tool() {
     let (_dir, path) = common::temp_file_path("settings.json");
     let store = SettingsStore::load(path);
+    let reg = RepoRegistry::default();
     // No editor configured
-    let err = open_in_editor_inner(&store, "/some/file").unwrap_err();
+    let err = open_in_editor_inner(&reg, &store, None, "/some/file").unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NoExternalTool);
     assert!(
         err.to_string().contains("no external editor is configured"),
@@ -322,6 +323,107 @@ fn open_in_editor_with_a_configured_editor_returns_ok() {
     // script file, preventing ETXTBSY when a parallel test's fork inherits the write fd.
     let editor_cmd = format!("sh {}", editor_path.display());
     let store = store_with_editor(spath, &editor_cmd);
+    let reg = RepoRegistry::default();
 
-    open_in_editor_inner(&store, "/some/file.rs").unwrap();
+    open_in_editor_inner(&reg, &store, None, "/some/file.rs").unwrap();
+}
+
+// ─── R18: open_in_editor gains repoId to resolve relative paths ───────────────
+
+/// R18: when a repo id is given, the handler resolves the relative path against
+/// the session's working directory and sets the editor's cwd to that directory.
+#[test]
+fn open_in_editor_with_a_repo_id_resolves_the_path_against_the_workdir_and_sets_cwd() {
+    let git_dir = tempfile::tempdir().unwrap();
+    // Fake editor: records argv and $PWD into the directory it runs in.
+    let editor_path = {
+        let p = git_dir.path().join("fake_editor");
+        let body = "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$PWD/editor-argv.txt\"\necho \"$PWD\" > \"$PWD/editor-pwd.txt\"\n";
+        fs::write(&p, body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    // Use "sh <path>" to avoid ETXTBSY on freshly-written scripts.
+    let editor_cmd = format!("sh {}", editor_path.display());
+
+    let (_repo_dir, repo_path) = common::temp_repo_with_commit();
+    let reg = RepoRegistry::default();
+    let id = open_repo_in_registry(&reg, &repo_path);
+
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, &editor_cmd);
+
+    open_in_editor_inner(&reg, &store, Some(id), "README.md").unwrap();
+
+    // Wait for the editor to record its info.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !repo_path.join("editor-argv.txt").exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor argv file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let argv = fs::read_to_string(repo_path.join("editor-argv.txt")).unwrap();
+    let expected_path = repo_path.join("README.md");
+    assert!(
+        argv.contains(expected_path.to_str().unwrap()),
+        "expected absolute joined path in argv: {argv}"
+    );
+
+    let pwd = fs::read_to_string(repo_path.join("editor-pwd.txt")).unwrap();
+    assert_eq!(
+        pwd.trim(),
+        repo_path.to_str().unwrap(),
+        "editor cwd must equal the repository working directory"
+    );
+}
+
+/// R18: an unknown repo id returns a repo-not-found error.
+#[test]
+fn open_in_editor_with_an_unknown_repo_id_fails() {
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, "code --wait");
+    let reg = RepoRegistry::default();
+
+    let err = open_in_editor_inner(&reg, &store, Some(9999), "README.md").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::UnknownRepo);
+}
+
+/// R18: when repoId is null (None), the path must already be absolute and is passed
+/// unchanged to the editor.
+#[test]
+fn open_in_editor_without_a_repo_id_passes_the_absolute_path_unchanged() {
+    let git_dir = tempfile::tempdir().unwrap();
+    let argv_file = git_dir.path().join("argv.txt");
+    let argv_file_str = argv_file.to_str().unwrap();
+    let editor_path = {
+        let p = git_dir.path().join("fake_editor");
+        let body = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{argv_file_str}'\n");
+        fs::write(&p, &body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    let editor_cmd = format!("sh {}", editor_path.display());
+
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, &editor_cmd);
+    let reg = RepoRegistry::default();
+
+    open_in_editor_inner(&reg, &store, None, "/absolute/path/to/file.rs").unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !argv_file.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor argv file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let argv = fs::read_to_string(&argv_file).unwrap();
+    assert!(
+        argv.contains("/absolute/path/to/file.rs"),
+        "expected absolute path unchanged in argv: {argv}"
+    );
 }

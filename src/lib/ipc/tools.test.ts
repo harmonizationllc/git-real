@@ -27,14 +27,27 @@ afterEach(() => {
   clearMocks();
 });
 
-// Contract: openInEditor invokes open_in_editor with { path }.
+// Contract: openInEditor invokes open_in_editor with { path, repoId }.
+// R18: repoId defaults to null when omitted; passing a RepoId sends it as-is.
 describe("openInEditor", () => {
-  it("sends open_in_editor with path", async () => {
+  it("sends open_in_editor with path and repoId null when omitted", async () => {
     const calls = mockWith(null);
     await openInEditor("/some/file.ts");
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe("open_in_editor");
-    expect(calls[0].args).toEqual({ path: "/some/file.ts" });
+    expect(calls[0].args).toEqual({ path: "/some/file.ts", repoId: null });
+  });
+
+  it("openInEditor sends repoId null when omitted", async () => {
+    const calls = mockWith(null);
+    await openInEditor("/another/file.rs");
+    expect(calls[0].args).toEqual({ path: "/another/file.rs", repoId: null });
+  });
+
+  it("openInEditor sends the repo id when given", async () => {
+    const calls = mockWith(null);
+    await openInEditor("relative/file.ts", 42);
+    expect(calls[0].args).toEqual({ path: "relative/file.ts", repoId: 42 });
   });
 
   it("openInEditor rejection passes through", async () => {

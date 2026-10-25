@@ -1,6 +1,13 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHunk, getFileContent, getFileDiff, getSettings, getStatus } from "../../lib/ipc";
+import {
+  applyHunk,
+  getFileContent,
+  getFileDiff,
+  getSettings,
+  getStatus,
+  openInEditor,
+} from "../../lib/ipc";
 import type { AppError, FileDiff, Settings, StatusEntry } from "../../lib/ipc";
 import { useDiffPrefs } from "../../lib/store/diffPrefs";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -18,6 +25,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   applyHunk: vi.fn(),
   getStatus: vi.fn(),
   getSettings: vi.fn(),
+  openInEditor: vi.fn(),
 }));
 const conflictEditorMounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../merge/editor/ConflictEditor", async () => {
@@ -89,6 +97,7 @@ beforeEach(() => {
     externalDiffTool: null,
     externalMergeTool: null,
   } satisfies Settings);
+  vi.mocked(openInEditor).mockResolvedValue(undefined);
 });
 
 // Contract: nothing selected, nothing rendered or fetched; RepoPane decides what shows instead.
@@ -1275,6 +1284,21 @@ describe("DetailPane file header", () => {
     setup();
     await diffRegion();
     expect(screen.getAllByRole("button", { name: "Close diff" })).toHaveLength(1);
+  });
+
+  // R18: DetailPane passes its repoId to FileHeader so Open in editor sends the correct id.
+  it("passes repoId to the header so Open in editor includes the repo id", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: null,
+      gitExecutable: null,
+      externalEditor: "code",
+      externalDiffTool: null,
+      externalMergeTool: null,
+    } satisfies Settings);
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+    await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("a.ts", REPO));
   });
 });
 

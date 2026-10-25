@@ -98,7 +98,7 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
     // inherits the write fd from the just-created script.
     let cmd = format!("sh {} --wait", editor_path.display());
     let file_path = PathBuf::from("/some/file");
-    open_in_editor(&cmd, &file_path).unwrap();
+    open_in_editor(&cmd, &file_path, None).unwrap();
 
     // The function returns immediately; wait up to 2 s for the argv file.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
@@ -119,7 +119,7 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
 
 #[test]
 fn open_in_editor_maps_a_spawn_failure() {
-    let err = open_in_editor("/nonexistent/editor x", &PathBuf::from("/f")).unwrap_err();
+    let err = open_in_editor("/nonexistent/editor x", &PathBuf::from("/f"), None).unwrap_err();
     match &err {
         ToolError::Spawn { program, .. } => {
             assert_eq!(program, "/nonexistent/editor");
@@ -132,6 +132,87 @@ fn open_in_editor_maps_a_spawn_failure() {
         }
         other => panic!("expected Spawn, got {:?}", other),
     }
+}
+
+// R18: open_in_editor gains a cwd parameter so the editor opens the correct file.
+
+#[test]
+fn open_in_editor_runs_in_the_given_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let pwd_file = dir.path().join("editor-pwd.txt");
+    let pwd_file_str = pwd_file.to_str().unwrap();
+
+    // Editor script: records $PWD so we can confirm the working directory.
+    let script = format!("echo \"$PWD\" > '{pwd_file_str}'\n");
+    let editor_path = {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.path().join("fake_editor");
+        std::fs::write(&p, format!("#!/bin/sh\n{script}")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+
+    let cmd = format!("sh {} --wait", editor_path.display());
+    let file_path = PathBuf::from("relative/file.ts");
+    let cwd = dir.path();
+    open_in_editor(&cmd, &file_path, Some(cwd)).unwrap();
+
+    // Wait for the editor to write its pwd file.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !pwd_file.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor pwd file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let recorded = std::fs::read_to_string(&pwd_file).unwrap();
+    assert_eq!(
+        recorded.trim(),
+        cwd.to_str().unwrap(),
+        "editor must run in the given cwd"
+    );
+}
+
+#[test]
+fn open_in_editor_without_cwd_inherits_the_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let argv_file = dir.path().join("argv.txt");
+    let argv_file_str = argv_file.to_str().unwrap();
+
+    // Editor script: records argv to confirm it ran; $PWD is the test process's cwd.
+    let script = format!("printf '%s\\n' \"$@\" > '{argv_file_str}'\n");
+    let editor_path = {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.path().join("fake_editor");
+        std::fs::write(&p, format!("#!/bin/sh\n{script}")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+
+    let cmd = format!("sh {}", editor_path.display());
+    let file_path = PathBuf::from("/some/absolute/file.ts");
+    // cwd = None: the editor inherits the test-process working directory (not a custom dir).
+    open_in_editor(&cmd, &file_path, None).unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !argv_file.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor argv file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let lines: Vec<String> = std::fs::read_to_string(&argv_file)
+        .unwrap()
+        .lines()
+        .map(|l| l.to_owned())
+        .collect();
+    assert!(
+        lines.contains(&"/some/absolute/file.ts".to_string()),
+        "expected absolute path in argv: {:?}",
+        lines
+    );
 }
 
 // ─── open_external_diff ───────────────────────────────────────────────────────

@@ -227,12 +227,21 @@ describe("FileHeader external tool buttons (GR-14)", () => {
     expect(screen.queryByRole("button", { name: "External diff" })).toBeNull();
   });
 
-  it("Open in editor calls openInEditor with the path when a tool is configured", async () => {
+  it("Open in editor calls openInEditor with the path and repoId when a tool is configured", async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
     setup({ path: "src/a.ts", scope: "unstaged" });
     await act(() => new Promise((r) => setTimeout(r, 0)));
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
-    await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/a.ts"));
+    await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/a.ts", 1));
+  });
+
+  // R18: FileHeader receives repoId from DetailPane and passes it to openInEditor.
+  it("Open in editor sends the repo id and the relative path", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
+    setup({ path: "src/b.ts", repoId: 5, scope: "unstaged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+    await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/b.ts", 5));
   });
 
   it("External diff calls openExternalDiff with the external scope when a tool is configured", async () => {

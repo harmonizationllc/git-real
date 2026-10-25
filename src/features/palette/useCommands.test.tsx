@@ -203,6 +203,31 @@ describe("useCommands Open repository in editor", () => {
     await act(() => editorCmd!.run());
     expect(openInEditor).toHaveBeenCalledWith("/r/repo");
   });
+
+  // R18: the palette uses the absolute repository path with no repoId argument.
+  // FileHeader and DetailPane pass repoId; the palette passes the absolute path directly.
+  it("the editor command still sends the absolute repo path with no repo id", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
+    act(() => {
+      useShell.getState().publishRepoActions({
+        repoId: 1,
+        path: "/r/repo",
+        gates: { fetch: null, pull: null, push: null },
+        fetch: vi.fn(),
+        pull: vi.fn(),
+        push: vi.fn(),
+        fileHistory: vi.fn(),
+      });
+    });
+    vi.mocked(openInEditor).mockResolvedValue(undefined);
+    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
+    const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
+    await act(() => editorCmd!.run());
+    // Called with the absolute path only — no second repoId argument.
+    expect(openInEditor).toHaveBeenCalledWith("/r/repo");
+    expect(openInEditor).not.toHaveBeenCalledWith("/r/repo", expect.anything());
+  });
 });
 
 // Contract: shortcut ids are attached to the matching rows.

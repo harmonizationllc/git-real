@@ -1413,4 +1413,31 @@ describe("CloneDialog default clone directory (GR-14)", () => {
       expect(pickFolder).toHaveBeenCalledWith(expect.any(String), "/home/u/projects"),
     );
   });
+
+  // Defect B: the branch where pickFolder returns null while parentDir is already set
+  // (seeded from defaultCloneDir) was not covered.
+  it("a cancelled picker leaves a set parentDir unchanged", async () => {
+    const DIR = "/home/u/projects";
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: DIR,
+      gitExecutable: null,
+      externalEditor: null,
+      externalDiffTool: null,
+      externalMergeTool: null,
+    } satisfies Settings);
+    // The picker resolves null (user cancelled).
+    vi.mocked(pickFolder).mockResolvedValue(null);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    // Type a URL so the Destination line appears from the default dir.
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    // Wait for settings + defaultCloneDir to seed parentDir.
+    await waitFor(() => {
+      expect(screen.queryByText(new RegExp(DIR.replace("/", "\\/")))).not.toBeNull();
+    });
+    // Click "Choose folder" — picker returns null (cancelled).
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    await waitFor(() => expect(pickFolder).toHaveBeenCalledWith(expect.any(String), DIR));
+    // The Destination line must still reference the defaultCloneDir-seeded path.
+    expect(screen.getByText(new RegExp(DIR.replace("/", "\\/")))).toBeInTheDocument();
+  });
 });
