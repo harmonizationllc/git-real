@@ -315,3 +315,15 @@ describe("useCreatePullRequest pending", () => {
     expect(result.current.pending).toBe(false);
   });
 });
+
+// Contract (GR-14): the PR opened toast must be a success variant.
+describe("useCreatePullRequest PR toast variant (GR-14)", () => {
+  it("the opened toast is a success variant", async () => {
+    const view = render(null, ["origin"]);
+    await act(async () => {
+      await view.result.current.create(input());
+    });
+    const toast = useToasts.getState().toasts[0];
+    expect(toast?.variant).toBe("success");
+  });
+});

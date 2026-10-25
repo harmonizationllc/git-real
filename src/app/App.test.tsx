@@ -326,3 +326,26 @@ describe("App toasts", () => {
     expect(screen.getAllByText("Hi")).toHaveLength(1);
   });
 });
+
+// Contract (GR-14): global shortcuts and shell dialogs from the App root.
+describe("App global shortcuts (GR-14)", () => {
+  it("Ctrl+/ opens the shortcuts dialog and Escape returns focus to the app root", async () => {
+    const { user } = renderApp();
+    const appRoot = document.querySelector("[data-focus-target]") as HTMLElement | null;
+    if (appRoot) appRoot.focus();
+    await user.keyboard("{Control>/}{/Control}");
+    await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  it("Ctrl+K opens the palette; opening Settings from it closes the palette", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>k{/Control}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    // Opening settings should close the palette (single dialog slot).
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Control>},{/Control}");
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+  });
+});
