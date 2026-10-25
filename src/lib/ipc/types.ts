@@ -21,6 +21,12 @@ export interface RecentEntry {
   lastOpened: number;
 }
 
+/** A recent repository with its summary fields, as the command palette lists them. */
+export interface RecentRepo extends RepoSummary {
+  /** Unix millis; the time it was last opened. */
+  lastOpened: number;
+}
+
 export type ProgressPhase =
   "counting" | "compressing" | "receiving" | "resolving" | "checkingOut" | "other";
 

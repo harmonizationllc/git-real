@@ -42,6 +42,25 @@ export function rankFiles(query: string, paths: string[], limit: number): string
   return scored.slice(0, limit).map(([, path]) => path);
 }
 
+/**
+ * The indices in `text` matched by the greedy leftmost walk of `query` (case-insensitive), for
+ * highlighting each matched character. An empty query matches nothing (`[]`); `null` when `query`
+ * is not a subsequence of `text`. Mirrors {@link fuzzyMatch}'s walk so the marks match the score.
+ */
+export function fuzzyIndices(query: string, text: string): number[] | null {
+  if (query === "") return [];
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  const indices: number[] = [];
+  let at = -1;
+  for (const ch of q) {
+    at = t.indexOf(ch, at + 1);
+    if (at === -1) return null;
+    indices.push(at);
+  }
+  return indices;
+}
+
 /** Anything the palette can rank: a label and an optional detail line. */
 export interface Rankable {
   label: string;
