@@ -44,7 +44,9 @@ export const useToasts = create<ToastsState>()((set) => ({
   toasts: [],
   show: (text, action = null) => {
     const id = nextId++;
-    set((s) => ({ toasts: capped(s.toasts, { id, text, action, variant: "info", sticky: false }) }));
+    set((s) => ({
+      toasts: capped(s.toasts, { id, text, action, variant: "info", sticky: false }),
+    }));
     return id;
   },
   notify: ({ text, variant, action = null, sticky }) => {

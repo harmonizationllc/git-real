@@ -1,8 +1,4 @@
-import {
-  DEFAULT_MONO,
-  useAppearancePrefs,
-  type ThemePref,
-} from "../lib/store/appearancePrefs";
+import { DEFAULT_MONO, useAppearancePrefs, type ThemePref } from "../lib/store/appearancePrefs";
 
 export { DEFAULT_MONO };
 

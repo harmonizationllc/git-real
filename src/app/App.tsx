@@ -38,7 +38,8 @@ function AppShell(): React.JSX.Element {
   // The single opener, shared by the start screen, the shortcuts hook and (later) the palette.
   const opener = useOpenRepo();
   const actions: ShellActions = {
-    openRepo: () => void pickFolder("Open repository").then((p) => p !== null && actions.openPath(p)),
+    openRepo: () =>
+      void pickFolder("Open repository").then((p) => p !== null && actions.openPath(p)),
     cloneRepo: () => setCloneOpen(true),
     openPath: async (path) => {
       // A failed open from a shortcut or the palette sends the user back to the start screen,

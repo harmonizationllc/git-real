@@ -60,8 +60,13 @@ export interface Ranked<T> {
  */
 export function rankCommands<T extends Rankable>(query: string, items: readonly T[]): Ranked<T>[] {
   if (query === "") return items.map((item) => ({ item, matched: null }));
-  const scored: { item: T; matched: "label" | "detail"; score: number; kind: number; index: number }[] =
-    [];
+  const scored: {
+    item: T;
+    matched: "label" | "detail";
+    score: number;
+    kind: number;
+    index: number;
+  }[] = [];
   items.forEach((item, index) => {
     const labelScore = fuzzyMatch(query, item.label);
     if (labelScore !== null) {
