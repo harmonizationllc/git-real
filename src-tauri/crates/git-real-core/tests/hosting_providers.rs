@@ -7,8 +7,8 @@ use common::FakeTransport;
 use git_real_core::GitError;
 use git_real_core::hosting::http::percent_encode as enc;
 use git_real_core::hosting::{
-    self, Account, CheckoutPlan, CiState, HostedRepo, HostedRepoInfo, Issue, Method,
-    NewPullRequest, Provider as P, PullRequest, RepoRef, Token, UserInfo,
+    self, Account, CheckoutPlan, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue,
+    Method, NewPullRequest, Provider as P, PullRequest, RepoRef, Token, UserInfo,
 };
 
 macro_rules! fixture {
@@ -958,6 +958,18 @@ fn my_repos(
     page: u32,
     body: &str,
 ) -> (Result<Vec<HostedRepo>, GitError>, String) {
+    let (got, url) = my_repos_page(provider, host, query, page, body);
+    (got.map(|p| p.repos), url)
+}
+
+/// Like `my_repos`, but keeps the whole wire page (rows and `has_more`).
+fn my_repos_page(
+    provider: P,
+    host: &str,
+    query: &str,
+    page: u32,
+    body: &str,
+) -> (Result<HostedRepoPage, GitError>, String) {
     let t = FakeTransport::new().reply(200, body);
     let got = hosting::list_my_repos(&t, &account(provider, host), &tok(), query, page);
     (got, t.requests()[0].url.clone())
@@ -1064,6 +1076,149 @@ fn my_repos_for_each_provider() {
             ssh_url: Some("git@bitbucket.org:ws/site.git".into()),
             web_url: "https://bitbucket.org/ws/site".into(),
         }]
+    );
+}
+
+// Fix 1: `has_more` comes from the raw row count (== 50) before any row is dropped.
+fn github_rows(count: usize, bad_index: Option<usize>) -> String {
+    let rows: Vec<String> = (0..count)
+        .map(|i| {
+            let url = if Some(i) == bad_index {
+                "http://github.com/o/bad.git".to_owned()
+            } else {
+                format!("https://github.com/o/r{i}.git")
+            };
+            format!(
+                r#"{{"full_name":"o/r{i}","name":"r{i}","owner":{{"login":"o"}},"private":false,"updated_at":"2026-10-24T18:00:00Z","clone_url":"{url}","html_url":"https://github.com/o/r{i}"}}"#
+            )
+        })
+        .collect();
+    format!("[{}]", rows.join(","))
+}
+
+#[test]
+fn a_full_raw_page_with_one_dropped_row_still_reports_more() {
+    let (got, _) = my_repos_page(P::GitHub, "github.com", "", 1, &github_rows(50, Some(7)));
+    let page = got.unwrap();
+    assert_eq!((page.repos.len(), page.has_more), (49, true));
+}
+
+#[test]
+fn a_full_raw_page_with_no_dropped_row_reports_more() {
+    let (got, _) = my_repos_page(P::GitHub, "github.com", "", 1, &github_rows(50, None));
+    let page = got.unwrap();
+    assert_eq!((page.repos.len(), page.has_more), (50, true));
+}
+
+#[test]
+fn a_raw_page_of_forty_nine_reports_no_more() {
+    let (got, _) = my_repos_page(P::GitHub, "github.com", "", 1, &github_rows(49, None));
+    let page = got.unwrap();
+    assert_eq!((page.repos.len(), page.has_more), (49, false));
+}
+
+#[test]
+fn an_empty_page_reports_no_more() {
+    let (got, _) = my_repos_page(P::GitHub, "github.com", "", 1, "[]");
+    assert_eq!(
+        got.unwrap(),
+        HostedRepoPage {
+            repos: vec![],
+            has_more: false
+        }
+    );
+}
+
+#[test]
+fn a_page_of_fifty_unusable_rows_is_empty_but_reports_more() {
+    let rows: Vec<String> = (0..50)
+        .map(|i| {
+            format!(
+                r#"{{"full_name":"o/r{i}","name":"r{i}","owner":{{"login":"o"}},"private":false,"updated_at":"2026-10-24T18:00:00Z","clone_url":"git://x/r{i}","html_url":"https://github.com/o/r{i}"}}"#
+            )
+        })
+        .collect();
+    let (got, _) = my_repos_page(
+        P::GitHub,
+        "github.com",
+        "",
+        1,
+        &format!("[{}]", rows.join(",")),
+    );
+    let page = got.unwrap();
+    assert_eq!((page.repos.len(), page.has_more), (0, true));
+}
+
+#[test]
+fn a_github_search_page_counts_raw_items_for_has_more() {
+    let items = |n: usize, bad: Option<usize>| {
+        let list = github_rows(n, bad);
+        format!(r#"{{"items":{list}}}"#)
+    };
+    let (full, _) = my_repos_page(P::GitHub, "github.com", "git", 1, &items(50, Some(0)));
+    let full = full.unwrap();
+    assert_eq!((full.repos.len(), full.has_more), (49, true));
+    let (short, _) = my_repos_page(P::GitHub, "github.com", "git", 1, &items(49, None));
+    assert!(!short.unwrap().has_more);
+}
+
+#[test]
+fn a_gitlab_page_counts_raw_rows_for_has_more() {
+    let rows = |n: usize, bad: Option<usize>| {
+        let list: Vec<String> = (0..n)
+            .map(|i| {
+                let url = if Some(i) == bad {
+                    "http://gitlab.com/g/bad.git".to_owned()
+                } else {
+                    format!("https://gitlab.com/g/a{i}.git")
+                };
+                format!(
+                    r#"{{"path_with_namespace":"g/a{i}","path":"a{i}","namespace":{{"full_path":"g"}},"visibility":"private","last_activity_at":"2026-10-23T09:15:00.000Z","http_url_to_repo":"{url}","web_url":"https://gitlab.com/g/a{i}"}}"#
+                )
+            })
+            .collect();
+        format!("[{}]", list.join(","))
+    };
+    let (full, _) = my_repos_page(P::GitLab, "gitlab.com", "", 1, &rows(50, Some(3)));
+    let full = full.unwrap();
+    assert_eq!((full.repos.len(), full.has_more), (49, true));
+    let (short, _) = my_repos_page(P::GitLab, "gitlab.com", "", 1, &rows(49, None));
+    assert!(!short.unwrap().has_more);
+}
+
+#[test]
+fn a_bitbucket_page_counts_raw_rows_for_has_more_including_ssh_only_rows() {
+    let rows = |n: usize, ssh_only: Option<usize>| {
+        let list: Vec<String> = (0..n)
+            .map(|i| {
+                let clone = if Some(i) == ssh_only {
+                    format!(r#"{{"name":"ssh","href":"git@bitbucket.org:ws/s{i}.git"}}"#)
+                } else {
+                    format!(r#"{{"name":"https","href":"https://bitbucket.org/ws/s{i}.git"}}"#)
+                };
+                format!(
+                    r#"{{"full_name":"ws/s{i}","name":"s{i}","workspace":{{"slug":"ws"}},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{{"clone":[{clone}],"html":{{"href":"https://bitbucket.org/ws/s{i}"}}}}}}"#
+                )
+            })
+            .collect();
+        format!(r#"{{"values":[{}]}}"#, list.join(","))
+    };
+    let (full, _) = my_repos_page(P::Bitbucket, "bitbucket.org", "", 1, &rows(50, Some(0)));
+    let full = full.unwrap();
+    assert_eq!((full.repos.len(), full.has_more), (49, true));
+    let (short, _) = my_repos_page(P::Bitbucket, "bitbucket.org", "", 1, &rows(49, None));
+    assert!(!short.unwrap().has_more);
+}
+
+#[test]
+fn the_repo_page_serializes_as_repos_and_has_more() {
+    let page = HostedRepoPage {
+        repos: vec![],
+        has_more: true,
+    };
+    assert_eq!(
+        serde_json::to_string(&page).unwrap(),
+        r#"{"repos":[],"hasMore":true}"#
     );
 }
 
@@ -1220,7 +1375,15 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         ssh("ssh://git@h:22/p.git").as_deref(),
         Some("ssh://git@h:22/p.git")
     );
+    // Fix 7: an `ssh://` port is non-empty ASCII digits, so it can never read as an ssh option.
+    assert_eq!(ssh("ssh://h:22/p.git").as_deref(), Some("ssh://h:22/p.git"));
     for bad in [
+        "ssh://git@h:-oX/p",
+        "ssh://git@h:/p",
+        "ssh://git@h:2a/p.git",
+        "ssh://h:-oProxyCommand=x/p",
+        "ssh://h:/p",
+        "ssh://git@h:\u{663}/p.git",
         "git@h:p .git",
         "ftp://x",
         "ssh://git@/p.git",
@@ -1282,9 +1445,46 @@ fn clone_urls_with_control_characters_or_whitespace_are_rejected() {
     );
 }
 
+// Fix 2: a Bitbucket row with no `https` clone link is dropped (one odd repository must not hide
+// the rest of the page); a missing or unparsable `updated_on` still fails the page.
 #[test]
-fn a_bitbucket_repository_without_an_https_clone_link_is_an_unexpected_response() {
+fn a_bitbucket_repository_without_an_https_clone_link_is_dropped_without_failing_the_page() {
+    let row = |slug: &str, clones: &str| {
+        format!(
+            r#"{{"full_name":"ws/{slug}","name":"{slug}","workspace":{{"slug":"ws"}},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{{"clone":[{clones}],"html":{{"href":"https://bitbucket.org/ws/{slug}"}}}}}}"#
+        )
+    };
+    let body = format!(
+        r#"{{"values":[{},{}]}}"#,
+        row(
+            "ssh-only",
+            r#"{"name":"ssh","href":"git@bitbucket.org:ws/ssh-only.git"}"#
+        ),
+        row(
+            "good",
+            r#"{"name":"https","href":"https://u@bitbucket.org/ws/good.git"},{"name":"ssh","href":"git@bitbucket.org:ws/good.git"}"#
+        )
+    );
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, &body);
+    assert_eq!(
+        got.unwrap()
+            .iter()
+            .map(|r| r.full_name.as_str())
+            .collect::<Vec<_>>(),
+        ["ws/good"]
+    );
+}
+
+#[test]
+fn a_bitbucket_page_of_only_ssh_clone_links_is_empty_not_an_error() {
     let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{"clone":[{"name":"ssh","href":"git@bitbucket.org:ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
+    assert!(got.unwrap().is_empty());
+}
+
+#[test]
+fn a_bitbucket_repository_with_an_https_link_and_a_bad_timestamp_fails_the_page() {
+    let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"yesterday","links":{"clone":[{"name":"https","href":"https://bitbucket.org/ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
     let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
     assert!(
         matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from bitbucket.org")

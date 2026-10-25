@@ -2,7 +2,7 @@ import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hostingListMyRepos } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { hostedRepo, hostedRepos, hostingError } from "../../test/hostingFixtures";
+import { hostedRepo, hostedRepoPage, hostedRepos, hostingError } from "../../test/hostingFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useMyRepos } from "./useMyRepos";
 
@@ -15,7 +15,7 @@ const ACCOUNT = "github:github.com:octo";
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepos(2));
+  vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(2)));
 });
 
 // Contract: nothing is requested without an account or while disabled; page 1 uses the query.
@@ -88,13 +88,39 @@ describe("useMyRepos requests", () => {
 // Contract: pages hold 50 repositories; a full page means there may be more.
 describe("useMyRepos paging", () => {
   it("should report hasMore when the last page has 50 items", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepos(50));
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(50)));
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
   });
 
+  // Fix 1: the wire page's hasMore decides, not the number of repositories that survived.
+  it("should report hasMore from the wire page when fewer than 50 repositories came back", async () => {
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(49), true));
+    const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
+    await waitFor(() => expect(result.current.repos).toHaveLength(49));
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it("should not report hasMore when the wire page says false even with 50 repositories", async () => {
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(50), false));
+    const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
+    await waitFor(() => expect(result.current.repos).toHaveLength(50));
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("should request page 2 after a short page that says hasMore", async () => {
+    vi.mocked(hostingListMyRepos)
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(49), true))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(2, 49), false));
+    const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.repos).toHaveLength(51));
+    expect(hostingListMyRepos).toHaveBeenLastCalledWith(ACCOUNT, "", 2);
+  });
+
   it("should not report hasMore for a page under 50", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepos(49));
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(49)));
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.repos).toHaveLength(49));
     expect(result.current.hasMore).toBe(false);
@@ -102,8 +128,8 @@ describe("useMyRepos paging", () => {
 
   it("should request page 2 with the same account and query and append it on loadMore", async () => {
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce(hostedRepos(50))
-      .mockResolvedValueOnce(hostedRepos(3, 50));
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(50)))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(3, 50)));
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "repo", true));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
     act(() => result.current.loadMore());
@@ -113,7 +139,7 @@ describe("useMyRepos paging", () => {
 
   it("should flag loadingMore while the next page loads", async () => {
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce(hostedRepos(50))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(50)))
       .mockReturnValueOnce(new Promise(() => undefined));
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
@@ -126,8 +152,10 @@ describe("useMyRepos paging", () => {
   it("should dedupe repositories across pages by full name", async () => {
     const moved = hostedRepo({ fullName: "octo/moved", name: "moved" });
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce([moved, ...hostedRepos(49)])
-      .mockResolvedValueOnce([moved, hostedRepo({ fullName: "octo/later", name: "later" })]);
+      .mockResolvedValueOnce(hostedRepoPage([moved, ...hostedRepos(49)], true))
+      .mockResolvedValueOnce(
+        hostedRepoPage([moved, hostedRepo({ fullName: "octo/later", name: "later" })]),
+      );
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
     act(() => result.current.loadMore());
@@ -139,8 +167,10 @@ describe("useMyRepos paging", () => {
   it("should keep the first occurrence when a full name repeats", async () => {
     const first = hostedRepo({ fullName: "octo/dup", description: "first" });
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce([first, ...hostedRepos(49)])
-      .mockResolvedValueOnce([hostedRepo({ fullName: "octo/dup", description: "second" })]);
+      .mockResolvedValueOnce(hostedRepoPage([first, ...hostedRepos(49)], true))
+      .mockResolvedValueOnce(
+        hostedRepoPage([hostedRepo({ fullName: "octo/dup", description: "second" })]),
+      );
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
     act(() => result.current.loadMore());
@@ -150,10 +180,12 @@ describe("useMyRepos paging", () => {
   });
 
   it("should keep two repositories that share a name but not an owner", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue([
-      hostedRepo({ fullName: "octo/app", name: "app" }),
-      hostedRepo({ fullName: "acme/app", name: "app", owner: "acme" }),
-    ]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(
+      hostedRepoPage([
+        hostedRepo({ fullName: "octo/app", name: "app" }),
+        hostedRepo({ fullName: "acme/app", name: "app", owner: "acme" }),
+      ]),
+    );
     const { result } = renderHookWithProviders(() => useMyRepos(ACCOUNT, "", true));
     await waitFor(() => expect(result.current.repos).toHaveLength(2));
   });

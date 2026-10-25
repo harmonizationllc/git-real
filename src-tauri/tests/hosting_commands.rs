@@ -1212,7 +1212,7 @@ fn list_my_repos_uses_the_account_token_and_pages() {
         r#"[{"full_name":"octo/r","name":"r","owner":{"login":"octo"},"description":null,"private":true,"updated_at":"2026-10-24T18:00:00Z","clone_url":"https://github.com/octo/r.git","html_url":"https://github.com/octo/r"}]"#,
     );
 
-    let repos = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 0).unwrap();
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 0).unwrap();
 
     let req = &t.requests()[0];
     let auth: Vec<_> = req
@@ -1224,12 +1224,45 @@ fn list_my_repos_uses_the_account_token_and_pages() {
     assert_eq!(auth, [format!("Bearer {SECRET}")]);
     assert!(req.url.ends_with("&page=1"), "{}", req.url);
     assert_eq!(
-        repos
+        page.repos
             .iter()
             .map(|r| r.full_name.as_str())
             .collect::<Vec<_>>(),
         ["octo/r"]
     );
+}
+
+// Fix 1: the command returns the wire page; `has_more` comes from the raw row count.
+#[test]
+fn list_my_repos_returns_a_page_with_has_more_for_a_full_raw_page() {
+    let (_dir, store) = connected_store();
+    let row = |i: usize, url: &str| {
+        format!(
+            r#"{{"full_name":"octo/r{i}","name":"r{i}","owner":{{"login":"octo"}},"private":false,"updated_at":"2026-10-24T18:00:00Z","clone_url":"{url}","html_url":"https://github.com/octo/r{i}"}}"#
+        )
+    };
+    let rows: Vec<String> = (0..50)
+        .map(|i| {
+            if i == 0 {
+                row(i, "http://github.com/octo/r0.git")
+            } else {
+                row(i, &format!("https://github.com/octo/r{i}.git"))
+            }
+        })
+        .collect();
+    let t = FakeTransport::new().reply(200, &format!("[{}]", rows.join(",")));
+
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+
+    assert_eq!((page.repos.len(), page.has_more), (49, true));
+}
+
+#[test]
+fn list_my_repos_reports_no_more_for_a_short_page() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(200, "[]");
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+    assert!(!page.has_more);
 }
 
 #[test]

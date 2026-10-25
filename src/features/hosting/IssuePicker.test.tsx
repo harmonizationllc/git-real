@@ -319,6 +319,42 @@ describe("IssuePicker closing", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  // Fix 6: Escape clears a non-empty search first and only an Escape on an empty field closes.
+  it("empties the field and stays open on Escape with text", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    press("Escape");
+    expect(input()).toHaveValue("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes on a second Escape once the field is empty", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    press("Escape");
+    press("Escape");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("clears a whitespace-only field on Escape instead of closing", async () => {
+    const { onClose } = await renderPicker();
+    type("   ");
+    press("Escape");
+    expect(input()).toHaveValue("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("returns to the full list after Escape clears a debounced search", async () => {
+    await renderPicker();
+    type("bug");
+    await wait(300);
+    await screen.findByText("bug");
+    press("Escape");
+    await wait(300);
+    await waitFor(() => expect(hostingListIssues).toHaveBeenLastCalledWith(1, "", 1));
+    expect(options()).toHaveLength(3);
+  });
+
   it("does not call onClose on another key", async () => {
     const { onClose } = await renderPicker();
     press("a");

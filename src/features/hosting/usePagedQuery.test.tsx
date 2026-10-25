@@ -1,7 +1,8 @@
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
-import { usePagedQuery } from "./usePagedQuery";
+import { fullPage, usePagedQuery } from "./usePagedQuery";
+import type { Page } from "./usePagedQuery";
 
 interface Item {
   number: number;
@@ -17,7 +18,12 @@ const KEY = ["test", "paged"] as const;
 
 function render(enabled = true) {
   return renderHookWithProviders(() =>
-    usePagedQuery<Item>(KEY, fetchPage, enabled, (i) => i.number),
+    usePagedQuery<Item>(
+      KEY,
+      (p) => fetchPage(p).then(fullPage),
+      enabled,
+      (i) => i.number,
+    ),
   );
 }
 
@@ -69,6 +75,85 @@ describe("usePagedQuery hasMore", () => {
     await waitFor(() => expect(result.current.loadingMore).toBe(false));
     expect(result.current.items).toHaveLength(50);
     expect(result.current.hasMore).toBe(true);
+  });
+});
+
+// Contract (GR-13c fix 1): fullPage turns a bare list into a page whose only size signal is its
+// length: exactly 50 means there may be more.
+describe("fullPage", () => {
+  it.each([
+    [0, false],
+    [49, false],
+    [50, true],
+    [51, false],
+  ])("should give hasMore for %i items as %s", (n, expected) => {
+    expect(fullPage(items(n, 200)).hasMore).toBe(expected);
+  });
+
+  it("should carry the same items through unchanged", () => {
+    const list = items(3, 10);
+    expect(fullPage(list).items).toEqual(list);
+  });
+});
+
+// Contract (GR-13c fix 1): the provider's own hasMore decides paging, not the item count, so a
+// page that lost rows while being sanitised can still continue.
+describe("usePagedQuery page hasMore", () => {
+  const pageFetch = vi.fn<(page: number) => Promise<Page<Item>>>();
+  const renderPages = () =>
+    renderHookWithProviders(() =>
+      usePagedQuery<Item>(["test", "pages"], pageFetch, true, (i) => i.number),
+    );
+
+  beforeEach(() => {
+    pageFetch.mockReset();
+  });
+
+  it("should offer more when hasMore is true even though the page has fewer than 50 items", async () => {
+    pageFetch.mockResolvedValue({ items: items(49, 200), hasMore: true });
+    const { result } = renderPages();
+    await waitFor(() => expect(result.current.items).toHaveLength(49));
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it("should request page 2 after a 49-item page that says hasMore", async () => {
+    pageFetch
+      .mockResolvedValueOnce({ items: items(49, 200), hasMore: true })
+      .mockResolvedValueOnce({ items: items(2, 100), hasMore: false });
+    const { result } = renderPages();
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.items).toHaveLength(51));
+    expect(pageFetch.mock.calls).toEqual([[1], [2]]);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("should stop when hasMore is false even at 50 items", async () => {
+    pageFetch.mockResolvedValue({ items: items(50, 200), hasMore: false });
+    const { result } = renderPages();
+    await waitFor(() => expect(result.current.items).toHaveLength(50));
+    expect(result.current.hasMore).toBe(false);
+    act(() => result.current.loadMore());
+    await act(() => Promise.resolve());
+    expect(pageFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("should flatten the items of every page in order", async () => {
+    pageFetch
+      .mockResolvedValueOnce({ items: items(2, 10, "p1"), hasMore: true })
+      .mockResolvedValueOnce({ items: items(2, 5, "p2"), hasMore: false });
+    const { result } = renderPages();
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.items).toHaveLength(4));
+    expect(result.current.items?.map((i) => i.title)).toEqual(["p1", "p1", "p2", "p2"]);
+  });
+
+  it("should offer more after an empty page that says hasMore", async () => {
+    pageFetch.mockResolvedValue({ items: [], hasMore: true });
+    const { result } = renderPages();
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    expect(result.current.items).toEqual([]);
   });
 });
 
@@ -177,7 +262,12 @@ describe("usePagedQuery keyOf", () => {
         { fullName: "o/new", updated: 2 },
       ]);
     const { result } = renderHookWithProviders(() =>
-      usePagedQuery<Named>(["test", "named"], named, true, (r) => r.fullName),
+      usePagedQuery<Named>(
+        ["test", "named"],
+        (p) => named(p).then(fullPage),
+        true,
+        (r) => r.fullName,
+      ),
     );
     await waitFor(() => expect(result.current.hasMore).toBe(true));
     act(() => result.current.loadMore());
@@ -195,7 +285,12 @@ describe("usePagedQuery keyOf", () => {
       { fullName: "o/b", updated: 1 },
     ]);
     const { result } = renderHookWithProviders(() =>
-      usePagedQuery<Named>(["test", "named2"], named, true, (r) => r.fullName),
+      usePagedQuery<Named>(
+        ["test", "named2"],
+        (p) => named(p).then(fullPage),
+        true,
+        (r) => r.fullName,
+      ),
     );
     await waitFor(() =>
       expect(result.current.items?.map((r) => r.fullName)).toEqual(["o/a", "o/b"]),
@@ -209,7 +304,12 @@ describe("usePagedQuery key identity", () => {
     const rows = [{ k: "O/R" }, { k: "o/r" }, { k: "1" }, { k: 1 }, { k: "o/r" }, { k: 1 }];
     const fetch = vi.fn<(page: number) => Promise<typeof rows>>().mockResolvedValue(rows);
     const { result } = renderHookWithProviders(() =>
-      usePagedQuery(["test", "mixed"], fetch, true, (r: (typeof rows)[number]) => r.k),
+      usePagedQuery(
+        ["test", "mixed"],
+        (p) => fetch(p).then(fullPage),
+        true,
+        (r: (typeof rows)[number]) => r.k,
+      ),
     );
     await waitFor(() =>
       expect(result.current.items?.map((r) => r.k)).toEqual(["O/R", "o/r", "1", 1]),
@@ -219,7 +319,9 @@ describe("usePagedQuery key identity", () => {
   it("should not call keyOf or fetchPage while disabled", async () => {
     const fetch = vi.fn<(page: number) => Promise<{ k: string }[]>>();
     const keyOf = vi.fn((r: { k: string }) => r.k);
-    renderHookWithProviders(() => usePagedQuery(["test", "idle"], fetch, false, keyOf));
+    renderHookWithProviders(() =>
+      usePagedQuery(["test", "idle"], (p) => fetch(p).then(fullPage), false, keyOf),
+    );
     await act(() => Promise.resolve());
     expect([fetch.mock.calls.length, keyOf.mock.calls.length]).toEqual([0, 0]);
   });

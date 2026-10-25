@@ -1374,7 +1374,7 @@ describe("GR-13b hosting command wrappers", () => {
     expect(calls[0]?.args).toEqual({ id: 3, query: "", page: 1 });
   });
 
-  it("hostingListMyRepos sends accountId, query and page and returns the repositories", async () => {
+  it("hostingListMyRepos sends accountId, query and page and returns the page with its hasMore", async () => {
     const repo = {
       fullName: "octo/git-real",
       name: "git-real",
@@ -1386,7 +1386,7 @@ describe("GR-13b hosting command wrappers", () => {
       sshUrl: "git@github.com:octo/git-real.git",
       webUrl: "https://github.com/octo/git-real",
     };
-    const calls = mockWith([repo]);
+    const calls = mockWith({ repos: [repo], hasMore: true });
     const result = await hostingListMyRepos("github:github.com:octo", "git", 2);
     expect(calls).toEqual([
       {
@@ -1394,11 +1394,11 @@ describe("GR-13b hosting command wrappers", () => {
         args: { accountId: "github:github.com:octo", query: "git", page: 2 },
       },
     ]);
-    expect(result).toEqual([repo]);
+    expect(result).toEqual({ repos: [repo], hasMore: true });
   });
 
   it("hostingListMyRepos sends an empty query as an empty string", async () => {
-    const calls = mockWith([]);
+    const calls = mockWith({ repos: [], hasMore: false });
     await hostingListMyRepos("gitlab:gitlab.com:octo", "", 1);
     expect(calls[0]?.args).toEqual({ accountId: "gitlab:gitlab.com:octo", query: "", page: 1 });
   });

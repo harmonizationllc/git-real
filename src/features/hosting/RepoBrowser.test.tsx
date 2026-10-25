@@ -1,8 +1,15 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostingListAccounts, hostingListMyRepos } from "../../lib/ipc";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
-import { hostedRepo, hostedRepos, hostingAccount, hostingError } from "../../test/hostingFixtures";
+import {
+  hostedRepo,
+  hostedRepoPage,
+  hostedRepos,
+  hostingAccount,
+  hostingError,
+} from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { fullDate } from "../graph/model/relativeTime";
 import { RepoBrowser } from "./RepoBrowser";
@@ -26,9 +33,11 @@ beforeEach(() => {
   vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
   vi.mocked(hostingListMyRepos).mockImplementation((_id, query) =>
     Promise.resolve(
-      query === ""
-        ? [hostedRepo(), hostedRepo({ fullName: "octo/other", name: "other", private: true })]
-        : [hostedRepo({ fullName: "octo/found", name: "found" })],
+      hostedRepoPage(
+        query === ""
+          ? [hostedRepo(), hostedRepo({ fullName: "octo/other", name: "other", private: true })]
+          : [hostedRepo({ fullName: "octo/found", name: "found" })],
+      ),
     ),
   );
 });
@@ -37,18 +46,48 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function renderBrowser(over: { disabled?: boolean } = {}, settle = true) {
+// RepoBrowser is controlled (fix 5): the parent owns the selected account. The harness is that
+// parent, keeping the choice in state the way CloneDialog does.
+function Harness(props: {
+  initial: string | null;
+  onSelectAccount: (id: string) => void;
+  onPick: () => void;
+  onManageAccounts: () => void;
+  disabled: boolean;
+}) {
+  const [selected, setSelected] = useState(props.initial);
+  return (
+    <RepoBrowser
+      selectedAccountId={selected}
+      onSelectAccount={(id) => {
+        props.onSelectAccount(id);
+        setSelected(id);
+      }}
+      onPick={props.onPick}
+      onManageAccounts={props.onManageAccounts}
+      disabled={props.disabled}
+    />
+  );
+}
+
+async function renderBrowser(
+  over: { disabled?: boolean; selectedAccountId?: string | null } = {},
+  settle = true,
+) {
   const onPick = vi.fn();
   const onManageAccounts = vi.fn();
+  const onSelectAccount = vi.fn();
   const view = renderWithProviders(
-    <RepoBrowser
+    <Harness
+      initial={over.selectedAccountId ?? null}
+      onSelectAccount={onSelectAccount}
       onPick={onPick}
       onManageAccounts={onManageAccounts}
       disabled={over.disabled ?? false}
     />,
   );
   if (settle) await screen.findByRole("button", { name: "Use octo/git-real" });
-  return { onPick, onManageAccounts, ...view };
+  return { onPick, onManageAccounts, onSelectAccount, ...view };
 }
 
 const search = () => screen.getByLabelText("Search repositories");
@@ -188,14 +227,18 @@ describe("RepoBrowser with one account", () => {
   });
 
   it("shows no description text for a repository without one", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue([hostedRepo({ description: null })]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(
+      hostedRepoPage([hostedRepo({ description: null })]),
+    );
     await renderBrowser();
     expect(screen.queryByText("null")).not.toBeInTheDocument();
     expect(screen.queryByText("A lightweight Git client")).not.toBeInTheDocument();
   });
 
   it("renders the description as text, not markup", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue([hostedRepo({ description: "<b>bold</b>" })]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(
+      hostedRepoPage([hostedRepo({ description: "<b>bold</b>" })]),
+    );
     await renderBrowser();
     expect(screen.getByText("<b>bold</b>")).toBeInTheDocument();
   });
@@ -203,7 +246,9 @@ describe("RepoBrowser with one account", () => {
   // Review Focus 5 / R7: the relative time uses the shared helper and the full date is the title.
   it("shows Updated with a relative time", async () => {
     const threeHoursAgo = Math.floor(Date.now() / 1000) - 3 * 3600;
-    vi.mocked(hostingListMyRepos).mockResolvedValue([hostedRepo({ updatedAt: threeHoursAgo })]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(
+      hostedRepoPage([hostedRepo({ updatedAt: threeHoursAgo })]),
+    );
     await renderBrowser();
     expect(screen.getByText("Updated 3 hours ago")).toBeInTheDocument();
   });
@@ -214,14 +259,14 @@ describe("RepoBrowser with one account", () => {
   });
 
   it("shows No repositories for an empty list and a blank query", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue([]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([]));
     await renderBrowser({}, false);
     expect(await screen.findByText("No repositories")).toBeInTheDocument();
   });
 
   it("shows No repositories match for an empty list and a typed query", async () => {
     await renderBrowser();
-    vi.mocked(hostingListMyRepos).mockResolvedValue([]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([]));
     type("zzz");
     await wait(300);
     expect(await screen.findByText("No repositories match")).toBeInTheDocument();
@@ -272,6 +317,67 @@ describe("RepoBrowser with two accounts", () => {
     await act(() => queryClient.invalidateQueries({ queryKey: ["hosting"] }));
     await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "", 1));
     expect(screen.queryByLabelText("Account")).not.toBeInTheDocument();
+  });
+});
+
+// Contract (fix 5): the selected account is a prop; the picker only reports a choice.
+describe("RepoBrowser controlled account", () => {
+  beforeEach(() => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([
+      hostingAccount(),
+      hostingAccount({
+        id: LAB,
+        provider: "gitlab",
+        host: "gitlab.example.com",
+        username: "octo2",
+      }),
+    ]);
+  });
+
+  it("selects and queries the account named by selectedAccountId", async () => {
+    await renderBrowser({ selectedAccountId: LAB });
+    expect(screen.getByLabelText("Account")).toHaveValue(LAB);
+    expect(hostingListMyRepos).toHaveBeenCalledExactlyOnceWith(LAB, "", 1);
+  });
+
+  it("falls back to the first account when selectedAccountId is null", async () => {
+    await renderBrowser({ selectedAccountId: null });
+    expect(screen.getByLabelText("Account")).toHaveValue(OCTO);
+  });
+
+  it("falls back to the first account when selectedAccountId matches no account", async () => {
+    await renderBrowser({ selectedAccountId: "gitlab:gone.example.com:nobody" });
+    expect(screen.getByLabelText("Account")).toHaveValue(OCTO);
+    expect(hostingListMyRepos).toHaveBeenCalledExactlyOnceWith(OCTO, "", 1);
+  });
+
+  it("calls onSelectAccount with the chosen account id", async () => {
+    const { onSelectAccount } = await renderBrowser();
+    fireEvent.change(screen.getByLabelText("Account"), { target: { value: LAB } });
+    expect(onSelectAccount).toHaveBeenCalledExactlyOnceWith(LAB);
+  });
+
+  it("does not call onSelectAccount on mount or when nothing is chosen", async () => {
+    const { onSelectAccount } = await renderBrowser();
+    expect(onSelectAccount).not.toHaveBeenCalled();
+  });
+
+  it("keeps showing the prop's account until the parent changes it", async () => {
+    const onSelectAccount = vi.fn();
+    renderWithProviders(
+      <RepoBrowser
+        selectedAccountId={OCTO}
+        onSelectAccount={onSelectAccount}
+        onPick={vi.fn()}
+        onManageAccounts={vi.fn()}
+        disabled={false}
+      />,
+    );
+    await screen.findByRole("button", { name: "Use octo/git-real" });
+    fireEvent.change(screen.getByLabelText("Account"), { target: { value: LAB } });
+    expect(onSelectAccount).toHaveBeenCalledExactlyOnceWith(LAB);
+    expect(screen.getByLabelText("Account")).toHaveValue(OCTO);
+    expect(requestedAccounts()).not.toContain(LAB);
   });
 });
 
@@ -348,7 +454,7 @@ describe("RepoBrowser search", () => {
   });
 
   it("makes every button a non-submit button", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepos(50));
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(50)));
     await renderBrowser({}, false);
     await screen.findByRole("button", { name: "Show more" });
     const buttons = screen.getAllByRole("button");
@@ -357,12 +463,101 @@ describe("RepoBrowser search", () => {
   });
 });
 
+// Contract (fix 6): Escape in a non-empty search field clears it and goes no further, so a dialog
+// around the browser stays open; in an empty field it bubbles on as before.
+describe("RepoBrowser search Escape", () => {
+  const renderInsideParent = async () => {
+    const parentKey = vi.fn();
+    renderWithProviders(
+      <div onKeyDown={parentKey}>
+        <RepoBrowser
+          selectedAccountId={null}
+          onSelectAccount={vi.fn()}
+          onPick={vi.fn()}
+          onManageAccounts={vi.fn()}
+          disabled={false}
+        />
+      </div>,
+    );
+    await screen.findByRole("button", { name: "Use octo/git-real" });
+    return parentKey;
+  };
+
+  it("empties the field on Escape", async () => {
+    await renderBrowser();
+    type("found");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(search()).toHaveValue("");
+  });
+
+  it("does not let Escape reach the parent while the field has text", async () => {
+    const parentKey = await renderInsideParent();
+    type("found");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(parentKey).not.toHaveBeenCalled();
+  });
+
+  it("lets Escape reach the parent when the field is empty", async () => {
+    const parentKey = await renderInsideParent();
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(parentKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a second Escape reach the parent after the first cleared the field", async () => {
+    const parentKey = await renderInsideParent();
+    type("found");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(parentKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not stop other keys while the field has text", async () => {
+    const parentKey = await renderInsideParent();
+    type("found");
+    fireEvent.keyDown(search(), { key: "a" });
+    expect(parentKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns to the full list after Escape clears a debounced search", async () => {
+    await renderBrowser();
+    type("found");
+    await wait(300);
+    await screen.findByRole("button", { name: "Use octo/found" });
+    fireEvent.keyDown(search(), { key: "Escape" });
+    await wait(300);
+    expect(await screen.findByRole("button", { name: "Use octo/git-real" })).toBeInTheDocument();
+    expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "", 1);
+  });
+
+  it("treats a whitespace-only field as text and clears it", async () => {
+    const parentKey = await renderInsideParent();
+    type("   ");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(search()).toHaveValue("");
+    expect(parentKey).not.toHaveBeenCalled();
+  });
+});
+
 // Contract: 50 per page; Show more loads the next page and keeps the loaded ones.
 describe("RepoBrowser paging", () => {
   it("shows Show more after a full page", async () => {
-    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepos(50));
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(50)));
     await renderBrowser({}, false);
     expect(await screen.findByRole("button", { name: "Show more" })).toBeInTheDocument();
+  });
+
+  // Fix 1: the wire page's hasMore, not the row count, decides whether Show more is offered.
+  it("shows Show more after a short page whose wire hasMore is true", async () => {
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(49), true));
+    await renderBrowser({}, false);
+    expect(await screen.findByRole("button", { name: "Show more" })).toBeInTheDocument();
+  });
+
+  it("shows no Show more after a page of 50 whose wire hasMore is false", async () => {
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage(hostedRepos(50), false));
+    await renderBrowser({}, false);
+    await screen.findByRole("button", { name: "Use octo/repo-0" });
+    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
   });
 
   it("shows no Show more after a short page", async () => {
@@ -372,7 +567,7 @@ describe("RepoBrowser paging", () => {
 
   it("loads page 2 on Show more and shows Loading… meanwhile", async () => {
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce(hostedRepos(50))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(50)))
       .mockReturnValueOnce(new Promise(() => undefined));
     await renderBrowser({}, false);
     fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
@@ -382,8 +577,8 @@ describe("RepoBrowser paging", () => {
 
   it("appends page 2 to the list", async () => {
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce(hostedRepos(50))
-      .mockResolvedValueOnce(hostedRepos(2, 50));
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(50)))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(2, 50)));
     await renderBrowser({}, false);
     fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("button", { name: "Use octo/repo-51" })).toBeInTheDocument();
@@ -392,7 +587,7 @@ describe("RepoBrowser paging", () => {
 
   it("keeps the loaded list when Show more fails", async () => {
     vi.mocked(hostingListMyRepos)
-      .mockResolvedValueOnce(hostedRepos(50))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(50)))
       .mockRejectedValueOnce(hostingError("hostingUnreachable"));
     await renderBrowser({}, false);
     fireEvent.click(await screen.findByRole("button", { name: "Show more" }));

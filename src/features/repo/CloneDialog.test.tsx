@@ -13,7 +13,7 @@ import {
 import type { OpenedRepo, Progress, UnlistenFn } from "../../lib/ipc";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import { useRepoTabs } from "../../lib/store/repoTabs";
-import { hostedRepo, hostingAccount } from "../../test/hostingFixtures";
+import { hostedRepo, hostedRepoPage, hostingAccount } from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CloneDialog } from "./CloneDialog";
 
@@ -57,7 +57,7 @@ beforeEach(() => {
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
-  vi.mocked(hostingListMyRepos).mockResolvedValue([hostedRepo()]);
+  vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([hostedRepo()]));
   localStorage.clear();
   useLayoutPrefs.setState({ cloneUrlForm: "https" });
   vi.mocked(onCloneProgress).mockImplementation(async (_id, handler) => {
@@ -728,7 +728,7 @@ describe("CloneDialog repository pick", () => {
 
   async function pickFirst(repo = hostedRepo()) {
     vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
-    vi.mocked(hostingListMyRepos).mockResolvedValue([repo]);
+    vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([repo]));
     const view = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await view.user.click(await screen.findByRole("tab", { name: "From account" }));
     await view.user.click(await screen.findByRole("button", { name: `Use ${repo.fullName}` }));
@@ -802,6 +802,54 @@ describe("CloneDialog repository pick", () => {
     useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
     await pickFirst(hostedRepo({ sshUrl: null }));
     expect(screen.getByRole("status")).toHaveTextContent(HINT);
+  });
+
+  // Fix 3: a live region only announces text that changes inside an element that was already
+  // there, so the region is mounted with the URL field and merely filled or emptied.
+  describe("hint status region", () => {
+    const urlPanel = () => screen.getByRole("tabpanel", { name: "URL" });
+    const region = () => within(urlPanel()).getByRole("status");
+
+    it("should render an empty status region with the URL field before any pick", async () => {
+      renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await screen.findByLabelText("Repository URL");
+      expect(region()).toBeEmptyDOMElement();
+    });
+
+    it("should keep the status region empty after a pick that needs no fallback", async () => {
+      await pickFirst();
+      expect(region()).toBeEmptyDOMElement();
+    });
+
+    it("should fill the same status region when a pick falls back to HTTPS", async () => {
+      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await pickFirst(hostedRepo({ sshUrl: null }));
+      expect(region()).toHaveTextContent(HINT);
+    });
+
+    it("should empty the same status element, not remount it, when HTTPS is chosen again", async () => {
+      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await pickFirst(hostedRepo({ sshUrl: null }));
+      const before = region();
+      act(() => useLayoutPrefs.getState().setCloneUrlForm("https"));
+      expect(region()).toBe(before);
+      expect(before).toBeEmptyDOMElement();
+    });
+
+    it("should fill the same status element, not remount it, when SSH is chosen later", async () => {
+      await pickFirst(hostedRepo({ sshUrl: null }));
+      const before = region();
+      act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+      expect(region()).toBe(before);
+      expect(before).toHaveTextContent(HINT);
+    });
+
+    it("should empty the status region once the user types in the field", async () => {
+      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      const { user } = await pickFirst(hostedRepo({ sshUrl: null }));
+      await user.type(urlField(), "x");
+      expect(region()).toBeEmptyDOMElement();
+    });
   });
 
   it("should show no hint for SSH when the repository has an SSH URL", async () => {
@@ -1033,6 +1081,42 @@ describe("CloneDialog accounts", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // Fix 4: an opener recorded as <body> (nothing was focused at the click) is not inside the clone
+  // box, so focus goes to the From account tab instead of being "restored" to the body.
+  it("should focus the From account tab when the recorded opener is the document body", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    const opener = await screen.findByRole("button", { name: "Hosting accounts…" });
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(opener);
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Hosting accounts" })).getByRole("button", {
+        name: "Close",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "From account" }));
+  });
+
+  it("should not leave focus on the body after the accounts dialog closes", async () => {
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.click(await screen.findByRole("tab", { name: "From account" }));
+    const opener = await screen.findByRole("button", { name: "Hosting accounts…" });
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.click(opener);
+    fireEvent.keyDown(await screen.findByRole("dialog", { name: "Hosting accounts" }), {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).not.toBe(document.body);
+    expect(dialogBox()).toContainElement(document.activeElement as HTMLElement);
+  });
+
   it("should open the accounts dialog preset to the account from Reconnect", async () => {
     vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount({ needsReconnect: true })]);
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
@@ -1046,5 +1130,112 @@ describe("CloneDialog accounts", () => {
     await user.click(await screen.findByRole("tab", { name: "From account" }));
     await screen.findByText(NOTICE);
     expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument();
+  });
+});
+
+// Fix 5: the dialog owns the selected account, so it survives a trip to the URL tab and back.
+describe("CloneDialog selected account", () => {
+  const LAB = "gitlab:gitlab.example.com:octo2";
+  const OCTO = "github:github.com:octo";
+
+  beforeEach(() => {
+    vi.mocked(hostingListAccounts).mockResolvedValue([
+      hostingAccount(),
+      hostingAccount({
+        id: LAB,
+        provider: "gitlab",
+        host: "gitlab.example.com",
+        username: "octo2",
+      }),
+    ]);
+  });
+
+  async function openAccountTab() {
+    const view = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await view.user.click(await screen.findByRole("tab", { name: "From account" }));
+    await screen.findByRole("button", { name: "Use octo/git-real" });
+    return view;
+  }
+
+  it("should start on the first account", async () => {
+    await openAccountTab();
+    expect(screen.getByLabelText("Account")).toHaveValue(OCTO);
+  });
+
+  it("should keep the second account selected after switching to URL and back", async () => {
+    const { user } = await openAccountTab();
+    await user.selectOptions(screen.getByLabelText("Account"), LAB);
+    await user.click(screen.getByRole("tab", { name: "URL" }));
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    expect(await screen.findByLabelText("Account")).toHaveValue(LAB);
+  });
+
+  it("should request the kept account again, not the first, when the tab returns", async () => {
+    const { user } = await openAccountTab();
+    await user.selectOptions(screen.getByLabelText("Account"), LAB);
+    await user.click(screen.getByRole("tab", { name: "URL" }));
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await screen.findByLabelText("Account");
+    await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(LAB, "", 1));
+  });
+
+  it("should keep the account after a pick brings the user back to the tab", async () => {
+    const { user } = await openAccountTab();
+    await user.selectOptions(screen.getByLabelText("Account"), LAB);
+    await user.click(await screen.findByRole("button", { name: "Use octo/git-real" }));
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    expect(await screen.findByLabelText("Account")).toHaveValue(LAB);
+  });
+
+  it("should fall back to the first account when the kept one disappears", async () => {
+    const { user, queryClient } = await openAccountTab();
+    await user.selectOptions(screen.getByLabelText("Account"), LAB);
+    await user.click(screen.getByRole("tab", { name: "URL" }));
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    await act(() => queryClient.invalidateQueries({ queryKey: ["hosting"] }));
+    await user.click(screen.getByRole("tab", { name: "From account" }));
+    await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "", 1));
+    expect(screen.queryByLabelText("Account")).not.toBeInTheDocument();
+  });
+});
+
+// Fix 6: Escape in the search field clears it first; only an Escape on an empty field closes.
+describe("CloneDialog Escape in the repository search", () => {
+  async function openSearch() {
+    vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+    const onClose = vi.fn();
+    const view = renderWithProviders(<CloneDialog open onClose={onClose} />);
+    await view.user.click(await screen.findByRole("tab", { name: "From account" }));
+    const field = await screen.findByLabelText("Search repositories");
+    return { ...view, onClose, field };
+  }
+
+  it("should keep the dialog open and empty the field on Escape with text", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.change(field, { target: { value: "git" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(field).toHaveValue("");
+  });
+
+  it("should close the dialog on a second Escape once the field is empty", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.change(field, { target: { value: "git" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should close the dialog on Escape in an empty search field", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should still close on Escape from the tab strip while the field has text", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.change(field, { target: { value: "git" } });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "From account" }), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

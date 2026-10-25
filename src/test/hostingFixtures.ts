@@ -3,6 +3,7 @@ import type {
   AppErrorKind,
   HostedRepo,
   HostedRepoInfo,
+  HostedRepoPage,
   HostingAccount,
   Issue,
   PullRequest,
@@ -105,3 +106,9 @@ export const hostedRepos = (n: number, start = 0): HostedRepo[] =>
       webUrl: `https://github.com/octo/${name}`,
     });
   });
+
+/** The wire page for `repos`; `hasMore` defaults to the raw page being full (50). */
+export const hostedRepoPage = (
+  repos: HostedRepo[],
+  hasMore: boolean = repos.length === 50,
+): HostedRepoPage => ({ repos, hasMore });
