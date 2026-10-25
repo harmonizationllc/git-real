@@ -101,6 +101,8 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // An Escape that cancels an IME composition belongs to the composition.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Escape") onClose();
   };
 

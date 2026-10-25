@@ -101,6 +101,10 @@ export function RepoBrowser({
     }
   };
 
+  // A failed Show more keeps what loaded and offers a retry.
+  const moreError = list.error !== null && (
+    <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
+  );
   const showMore = list.hasMore && (
     <button type="button" disabled={list.loadingMore} onClick={list.loadMore}>
       {list.loadingMore ? "Loading…" : "Show more"}
@@ -121,6 +125,7 @@ export function RepoBrowser({
         <p className={styles.empty}>
           {debounced === "" ? "No repositories" : "No repositories match"}
         </p>
+        {moreError}
         {showMore}
       </>
     );
@@ -152,9 +157,7 @@ export function RepoBrowser({
             </li>
           ))}
         </ul>
-        {list.error !== null && (
-          <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
-        )}
+        {moreError}
         {showMore}
       </>
     );
