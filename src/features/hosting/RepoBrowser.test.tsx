@@ -595,6 +595,16 @@ describe("RepoBrowser paging", () => {
     expect(await screen.findByRole("button", { name: "Use octo/repo-0" })).toBeInTheDocument();
   });
 
+  it("shows the error with Retry when Show more fails on an empty first page", async () => {
+    vi.mocked(hostingListMyRepos)
+      .mockResolvedValueOnce(hostedRepoPage([], true))
+      .mockRejectedValueOnce(hostingError("hostingUnreachable"));
+    await renderBrowser({}, false);
+    fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
   it("shows no Show more after a short page", async () => {
     await renderBrowser();
     expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
