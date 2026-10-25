@@ -805,40 +805,84 @@ describe("CloneDialog repository pick", () => {
   });
 
   // Fix 3: a live region only announces text that changes inside an element that was already
-  // there, so the region is mounted with the URL field and merely filled or emptied.
+  // there, so one always-mounted region sits between the tabpanels (outside the URL panel) and is
+  // merely filled or emptied. The URL input points at it with aria-describedby.
   describe("hint status region", () => {
-    const urlPanel = () => screen.getByRole("tabpanel", { name: "URL" });
-    const region = () => within(urlPanel()).getByRole("status");
+    const hintNode = () => document.querySelector<HTMLElement>('p[role="status"][id$="-url-hint"]');
+    const region = () => hintNode() as HTMLElement;
 
-    it("should render an empty status region with the URL field before any pick", async () => {
+    async function pickFromAccountTab(repo = hostedRepo()) {
+      vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+      vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([repo]));
+      const view = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await view.user.click(await screen.findByRole("tab", { name: "From account" }));
+      const before = region();
+      await view.user.click(await screen.findByRole("button", { name: `Use ${repo.fullName}` }));
+      return { ...view, before };
+    }
+
+    it("should render an empty status region before any pick", async () => {
       renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
       await screen.findByLabelText("Repository URL");
       expect(region()).toBeEmptyDOMElement();
     });
 
-    it("should keep the status region empty after a pick that needs no fallback", async () => {
-      await pickFirst();
+    it("should place the region outside both tabpanels", async () => {
+      renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await screen.findByLabelText("Repository URL");
+      expect(region()).toBeInTheDocument();
+      expect(screen.getByRole("tabpanel", { name: "URL" })).not.toContainElement(region());
+    });
+
+    it("should point the URL input at the region with aria-describedby", async () => {
+      renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      const field = await screen.findByLabelText("Repository URL");
+      expect(field.getAttribute("aria-describedby")).toBe(region().id);
+    });
+
+    it("should keep the region mounted while the From account tab is active", async () => {
+      const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await screen.findByLabelText("Repository URL");
+      const node = region();
+      await user.click(screen.getByRole("tab", { name: "From account" }));
+      expect(region()).toBe(node);
+      expect(node).toBeVisible();
+    });
+
+    it("should keep the region empty after a pick that needs no fallback", async () => {
+      await pickFromAccountTab();
       expect(region()).toBeEmptyDOMElement();
     });
 
-    it("should fill the same status region when a pick falls back to HTTPS", async () => {
+    it("should fill the very same node that existed on the From account tab when a pick falls back", async () => {
       useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
-      await pickFirst(hostedRepo({ sshUrl: null }));
-      expect(region()).toHaveTextContent(HINT);
+      const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
+      expect(region()).toBe(before);
+      expect(before).toHaveTextContent(HINT);
+      expect(screen.getByLabelText("Repository URL").getAttribute("aria-describedby")).toBe(
+        before.id,
+      );
+    });
+
+    it("should have no hint text while the From account tab is active", async () => {
+      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
+      const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+      await user.click(await screen.findByRole("tab", { name: "From account" }));
+      await screen.findByRole("button", { name: "Use octo/git-real" });
+      expect(region()).toBeEmptyDOMElement();
     });
 
     it("should empty the same status element, not remount it, when HTTPS is chosen again", async () => {
       useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
-      await pickFirst(hostedRepo({ sshUrl: null }));
-      const before = region();
+      const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
       act(() => useLayoutPrefs.getState().setCloneUrlForm("https"));
       expect(region()).toBe(before);
       expect(before).toBeEmptyDOMElement();
     });
 
     it("should fill the same status element, not remount it, when SSH is chosen later", async () => {
-      await pickFirst(hostedRepo({ sshUrl: null }));
-      const before = region();
+      const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
       act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
       expect(region()).toBe(before);
       expect(before).toHaveTextContent(HINT);
@@ -846,7 +890,7 @@ describe("CloneDialog repository pick", () => {
 
     it("should empty the status region once the user types in the field", async () => {
       useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
-      const { user } = await pickFirst(hostedRepo({ sshUrl: null }));
+      const { user } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
       await user.type(urlField(), "x");
       expect(region()).toBeEmptyDOMElement();
     });

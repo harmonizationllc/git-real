@@ -1381,6 +1381,8 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
         "ssh://git@h:-oX/p",
         "ssh://git@h:/p",
         "ssh://git@h:2a/p.git",
+        "ssh://git@h:0/p",
+        "ssh://git@h:99999/p",
         "ssh://h:-oProxyCommand=x/p",
         "ssh://h:/p",
         "ssh://git@h:\u{663}/p.git",
@@ -1480,6 +1482,25 @@ fn a_bitbucket_page_of_only_ssh_clone_links_is_empty_not_an_error() {
     let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"2026-10-22T07:00:00.000000+00:00","links":{"clone":[{"name":"ssh","href":"git@bitbucket.org:ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
     let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
     assert!(got.unwrap().is_empty());
+}
+
+// The timestamp is checked before the clone link, so a bad one fails the page even without https.
+#[test]
+fn a_bitbucket_repository_with_a_bad_timestamp_fails_the_page_even_without_an_https_link() {
+    let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"updated_on":"yesterday","links":{"clone":[{"name":"ssh","href":"git@bitbucket.org:ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
+    assert!(
+        matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from bitbucket.org")
+    );
+}
+
+#[test]
+fn a_bitbucket_repository_with_a_missing_timestamp_and_no_https_link_fails_the_page() {
+    let body = r#"{"values":[{"full_name":"ws/site","name":"site","workspace":{"slug":"ws"},"is_private":true,"links":{"clone":[{"name":"ssh","href":"git@bitbucket.org:ws/site.git"}],"html":{"href":"https://bitbucket.org/ws/site"}}}]}"#;
+    let (got, _) = my_repos(P::Bitbucket, "bitbucket.org", "", 1, body);
+    assert!(
+        matches!(got.unwrap_err(), GitError::HostingUnreachable { ref message } if message == "unexpected response from bitbucket.org")
+    );
 }
 
 #[test]

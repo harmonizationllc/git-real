@@ -560,6 +560,17 @@ describe("RepoBrowser paging", () => {
     expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
   });
 
+  it("shows the empty text and Show more when page 1 is empty but the wire says hasMore", async () => {
+    vi.mocked(hostingListMyRepos)
+      .mockResolvedValueOnce(hostedRepoPage([], true))
+      .mockResolvedValueOnce(hostedRepoPage(hostedRepos(1)));
+    await renderBrowser({}, false);
+    expect(await screen.findByText("No repositories")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() => expect(hostingListMyRepos).toHaveBeenLastCalledWith(OCTO, "", 2));
+    expect(await screen.findByRole("button", { name: "Use octo/repo-0" })).toBeInTheDocument();
+  });
+
   it("shows no Show more after a short page", async () => {
     await renderBrowser();
     expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
