@@ -56,6 +56,10 @@ const KINDS: Record<AppErrorKind, true> = {
   noHostingAccount: true,
   invalidHostingHost: true,
   invalidToken: true,
+  invalidSettings: true,
+  gitCliInvalid: true,
+  noExternalTool: true,
+  externalToolFailed: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

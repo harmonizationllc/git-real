@@ -89,7 +89,11 @@ export type AppErrorKind =
   | "keychainUnavailable"
   | "noHostingAccount"
   | "invalidHostingHost"
-  | "invalidToken";
+  | "invalidToken"
+  | "invalidSettings"
+  | "gitCliInvalid"
+  | "noExternalTool"
+  | "externalToolFailed";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -101,7 +105,25 @@ export interface AppError {
 export interface GitCliInfo {
   available: boolean;
   path: string | null;
+  version: string | null;
+  error: string | null;
 }
+
+/** The backend settings the Settings dialog edits; appearance lives in localStorage. */
+export interface Settings {
+  defaultCloneDir: string | null;
+  gitExecutable: string | null;
+  externalEditor: string | null;
+  externalDiffTool: string | null;
+  externalMergeTool: string | null;
+}
+
+/** A partial settings update: a present key with `null` clears, a value sets, an absent key keeps. */
+export type SettingsPatch = Partial<Settings>;
+
+/** Which diff an external diff tool should show. */
+export type ExternalDiffScope =
+  { kind: "unstaged" } | { kind: "staged" } | { kind: "commit"; oid: string };
 
 export type ChangeKind =
   "added" | "modified" | "deleted" | "renamed" | "typeChange" | "untracked" | "conflicted";
