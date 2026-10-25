@@ -50,14 +50,14 @@ The survey of `main` at d2a2116 found:
 
 ### Goals (the ticket's acceptance criteria, mapped)
 
-| AC | Delivered by |
-| --- | --- |
-| 1 Layout with sidebar, graph, detail/diff panel; resizable | Existing (above). GR-14 adds nothing structural; see ruling R1. |
-| 2 Light and dark themes following the system, with manual override | §3 theme preference, `data-theme`, token restructure. |
+| AC                                                                                                                           | Delivered by                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1 Layout with sidebar, graph, detail/diff panel; resizable                                                                   | Existing (above). GR-14 adds nothing structural; see ruling R1.        |
+| 2 Light and dark themes following the system, with manual override                                                           | §3 theme preference, `data-theme`, token restructure.                  |
 | 3 Settings page: default clone directory, diff font and size, external editor, external diff/merge tool, Git executable path | §4 Settings dialog, §5 settings store and commands, §6 external tools. |
-| 4 Keyboard shortcuts for common actions with a reference dialog | §7 shortcut registry and `ShortcutsDialog`. |
-| 5 Command palette for quick actions and repository switching | §8 `CommandPalette`. |
-| 6 Toast notifications for long-running operation completion and errors | §9 toast variants and the operations that raise them. |
+| 4 Keyboard shortcuts for common actions with a reference dialog                                                              | §7 shortcut registry and `ShortcutsDialog`.                            |
+| 5 Command palette for quick actions and repository switching                                                                 | §8 `CommandPalette`.                                                   |
+| 6 Toast notifications for long-running operation completion and errors                                                       | §9 toast variants and the operations that raise them.                  |
 
 ### Non-goals (follow-ups, each becomes a Jira ticket at the end)
 
@@ -173,12 +173,12 @@ Shape: question / options / selected / cost if wrong. **P** = person-grade
 
 ```ts
 interface AppearancePrefs {
-  theme: "system" | "light" | "dark";      // default "system"
-  diffFontFamily: string | null;           // null = the default stack
-  diffFontSize: number;                    // px, integer 10–24, default 13
+  theme: "system" | "light" | "dark"; // default "system"
+  diffFontFamily: string | null; // null = the default stack
+  diffFontSize: number; // px, integer 10–24, default 13
   setTheme(theme): void;
-  setDiffFontFamily(family: string | null): void;   // trimmed; "" → null
-  setDiffFontSize(size: number): void;              // clamped to 10–24, rounded
+  setDiffFontFamily(family: string | null): void; // trimmed; "" → null
+  setDiffFontSize(size: number): void; // clamped to 10–24, rounded
 }
 ```
 
@@ -204,9 +204,20 @@ what the Settings dialog uses.
 cases and the light set is forced back for the override:
 
 ```css
-:root { /* light values */  color-scheme: light; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { /* dark values */ color-scheme: dark; } }
-:root[data-theme="dark"] { /* dark values */ color-scheme: dark; }
+:root {
+  /* light values */
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* dark values */
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  /* dark values */
+  color-scheme: dark;
+}
 ```
 
 A rule inside a media query cannot share a selector list with one outside
@@ -241,8 +252,16 @@ makes native form controls and scrollbars follow. The CodeMirror themes
 - State lives in `src/lib/store/shell.ts`:
 
 ```ts
-type ShellDialog = null | { kind: "settings"; section?: SettingsSection } | { kind: "palette" } | { kind: "shortcuts" };
-interface ShellState { dialog: ShellDialog; open(d: Exclude<ShellDialog, null>): void; close(): void; }
+type ShellDialog =
+  | null
+  | { kind: "settings"; section?: SettingsSection }
+  | { kind: "palette" }
+  | { kind: "shortcuts" };
+interface ShellState {
+  dialog: ShellDialog;
+  open(d: Exclude<ShellDialog, null>): void;
+  close(): void;
+}
 ```
 
 `App.tsx` renders `SettingsDialog`, `CommandPalette` and `ShortcutsDialog`
@@ -259,9 +278,11 @@ tab-bar button as `fallbackFocus`.
 section into view and focuses its first control.
 
 **Appearance**
+
 - `Theme` — radiogroup, radios `System`, `Light`, `Dark`. Applies on change.
 
 **Diff**
+
 - `Font family` — text input, placeholder `System monospace`; empty clears
   to the default. Applies on blur or Enter.
 - `Font size` — number input, `min=10 max=24 step=1`, suffix text `px`.
@@ -271,16 +292,19 @@ section into view and focuses its first control.
   the tokens, lines `- const total = a + b;` and `+ const total = add(a, b);`.
 
 **Clone**
+
 - `Default clone directory` — read-only value (`Not set` when null) with
   buttons `Choose folder…` (`pickFolder("Choose default clone directory", current)`)
   and `Clear` (disabled when null).
 
 **Tools** (each a text input; applies on blur or Enter; empty → unset)
+
 - `External editor` — hint `Command line; the file or folder path is appended, e.g. code --wait`
 - `External diff tool` — hint `Git difftool command, e.g. meld "$LOCAL" "$REMOTE"`
 - `External merge tool` — hint `Git mergetool command, e.g. meld "$LOCAL" "$BASE" "$REMOTE" --output "$MERGED"`
 
 **Git**
+
 - `Git executable` — text input, placeholder `Found on PATH` with the
   discovered path shown underneath as `Using ‹path› (git version ‹x.y.z›)`
   when unset, or `Using ‹path› (git version ‹x.y.z›)` for a valid override;
@@ -380,14 +404,14 @@ Git override into `git_cli`). Managed in `lib.rs` `setup` from
 
 ### 5.4 Commands (all through `run_blocking`; JS args camelCase)
 
-| Command | Args | Returns |
-| --- | --- | --- |
-| `get_settings` | – | `Settings` |
-| `update_settings` | `patch: SettingsPatch` | `Settings` (errors: `InvalidSettings { message }` for normalisation failures, `GitCliInvalid`, `GitCliMissing`, `Io`) |
-| `check_git_cli` (existing) | – | `GitCliInfo { available, path, version: Option<String> }` — now reports the effective executable (override or PATH) and its version |
-| `open_in_editor` | `path: String` | `()`; errors `NoExternalTool { tool: "editor" }`, `ExternalToolFailed { message }` |
-| `open_external_diff` | `repoId, path, scope: ExternalDiffScope` | `()`; errors `NoExternalTool { tool: "diff" }`, `ExternalToolFailed` |
-| `open_external_merge` | `repoId, path` | `()`; errors `NoExternalTool { tool: "merge" }`, `ExternalToolFailed` |
+| Command                    | Args                                     | Returns                                                                                                                             |
+| -------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `get_settings`             | –                                        | `Settings`                                                                                                                          |
+| `update_settings`          | `patch: SettingsPatch`                   | `Settings` (errors: `InvalidSettings { message }` for normalisation failures, `GitCliInvalid`, `GitCliMissing`, `Io`)               |
+| `check_git_cli` (existing) | –                                        | `GitCliInfo { available, path, version: Option<String> }` — now reports the effective executable (override or PATH) and its version |
+| `open_in_editor`           | `path: String`                           | `()`; errors `NoExternalTool { tool: "editor" }`, `ExternalToolFailed { message }`                                                  |
+| `open_external_diff`       | `repoId, path, scope: ExternalDiffScope` | `()`; errors `NoExternalTool { tool: "diff" }`, `ExternalToolFailed`                                                                |
+| `open_external_merge`      | `repoId, path`                           | `()`; errors `NoExternalTool { tool: "merge" }`, `ExternalToolFailed`                                                               |
 
 `ExternalDiffScope` (tagged `kind`): `{ kind: "unstaged" }` (index vs
 worktree), `{ kind: "staged" }` (`--cached`), `{ kind: "commit", oid }`
@@ -404,9 +428,19 @@ added to `src/lib/query/keys.ts` beside `recent` and `gitCli`.
 ### 5.5 Wire shapes
 
 ```ts
-interface Settings { defaultCloneDir: string | null; gitExecutable: string | null; externalEditor: string | null; externalDiffTool: string | null; externalMergeTool: string | null; }
-type SettingsPatch = Partial<Settings>;            // present key with null clears
-interface GitCliInfo { available: boolean; path: string | null; version: string | null; }
+interface Settings {
+  defaultCloneDir: string | null;
+  gitExecutable: string | null;
+  externalEditor: string | null;
+  externalDiffTool: string | null;
+  externalMergeTool: string | null;
+}
+type SettingsPatch = Partial<Settings>; // present key with null clears
+interface GitCliInfo {
+  available: boolean;
+  path: string | null;
+  version: string | null;
+}
 ```
 
 ## 6. External tools (`git-real-core/src/tools.rs`)
@@ -452,7 +486,7 @@ interface GitCliInfo { available: boolean; path: string | null; version: string 
   `Couldn't open ‹tool›: ‹message›` with action `Settings…`.
 - `ConflictToolbar` (not `ConflictEditor` itself) gains an optional
   `onOpenMergeTool` and a `mergeToolRunning` flag rendering `Open in merge
-  tool`, disabled and reading `Merge tool open…` while the tool runs; the
+tool`, disabled and reading `Merge tool open…` while the tool runs; the
   same button is offered on the placeholder toolbar for binary or too-large
   conflicts, which are the main reason to reach for an external tool.
   Unset and failure behave as above.
@@ -464,10 +498,16 @@ interface GitCliInfo { available: boolean; path: string | null; version: string 
 ### 7.1 Registry (`src/lib/shortcuts/`)
 
 ```ts
-interface Shortcut { id: ShortcutId; keys: string; label: string; group: "Application" | "Repository" | "Commit" | "Navigation"; when: "always" | "repo" | "editor"; }
+interface Shortcut {
+  id: ShortcutId;
+  keys: string;
+  label: string;
+  group: "Application" | "Repository" | "Commit" | "Navigation";
+  when: "always" | "repo" | "editor";
+}
 export const SHORTCUTS: readonly Shortcut[];
 export function matchesShortcut(e: KeyboardEvent | React.KeyboardEvent, id: ShortcutId): boolean;
-export function formatKeys(keys: string): string;  // "Mod+Shift+F" → "Ctrl+Shift+F" (or "⌘⇧F" on macOS by navigator.platform)
+export function formatKeys(keys: string): string; // "Mod+Shift+F" → "Ctrl+Shift+F" (or "⌘⇧F" on macOS by navigator.platform)
 ```
 
 `keys` uses `Mod` for Ctrl/Cmd. `matchesShortcut` compares `e.key`
@@ -475,22 +515,22 @@ case-insensitively (and `e.code` for letters, as `isLinkChord` does) and
 requires exactly the listed modifiers; it ignores `e.repeat`,
 `e.defaultPrevented`, and composing events.
 
-| id | keys | label | group | when |
-| --- | --- | --- | --- | --- |
-| `palette` | Mod+K | Command palette | Application | always |
-| `shortcuts` | Mod+/ | Keyboard shortcuts | Application | always |
-| `settings` | Mod+, | Settings | Application | always |
-| `openRepo` | Mod+O | Open repository… | Application | always |
-| `cloneRepo` | Mod+Shift+O | Clone repository… | Application | always |
-| `closeTab` | Mod+W | Close repository tab | Navigation | repo |
-| `nextTab` | Mod+PageDown | Next repository tab | Navigation | repo |
-| `prevTab` | Mod+PageUp | Previous repository tab | Navigation | repo |
-| `fetch` | Mod+Shift+F | Fetch | Repository | repo |
-| `pull` | Mod+Shift+L | Pull | Repository | repo |
-| `push` | Mod+Shift+P | Push | Repository | repo |
-| `fileHistory` | Mod+Shift+H | File history… | Repository | repo |
-| `commit` | Mod+Enter | Commit | Commit | editor |
-| `linkIssue` | Mod+Shift+I | Link issue… | Commit | editor |
+| id            | keys         | label                   | group       | when   |
+| ------------- | ------------ | ----------------------- | ----------- | ------ |
+| `palette`     | Mod+K        | Command palette         | Application | always |
+| `shortcuts`   | Mod+/        | Keyboard shortcuts      | Application | always |
+| `settings`    | Mod+,        | Settings                | Application | always |
+| `openRepo`    | Mod+O        | Open repository…        | Application | always |
+| `cloneRepo`   | Mod+Shift+O  | Clone repository…       | Application | always |
+| `closeTab`    | Mod+W        | Close repository tab    | Navigation  | repo   |
+| `nextTab`     | Mod+PageDown | Next repository tab     | Navigation  | repo   |
+| `prevTab`     | Mod+PageUp   | Previous repository tab | Navigation  | repo   |
+| `fetch`       | Mod+Shift+F  | Fetch                   | Repository  | repo   |
+| `pull`        | Mod+Shift+L  | Pull                    | Repository  | repo   |
+| `push`        | Mod+Shift+P  | Push                    | Repository  | repo   |
+| `fileHistory` | Mod+Shift+H  | File history…           | Repository  | repo   |
+| `commit`      | Mod+Enter    | Commit                  | Commit      | editor |
+| `linkIssue`   | Mod+Shift+I  | Link issue…             | Commit      | editor |
 
 The reference dialog also lists two static rows under **Navigation**:
 `Escape` — `Close dialog or menu`, and `Arrow keys` — `Move within lists and menus`.
@@ -528,7 +568,7 @@ the bottom of the Settings dialog.
   placeholder `Type a command or repository name`, `role="combobox"`,
   `aria-controls` the listbox, `aria-activedescendant`), a `role="listbox"`
   grouped with `role="group" aria-label` headings `Actions`, `Open
-  repositories`, `Recent repositories`. Empty: `No matching commands`
+repositories`, `Recent repositories`. Empty: `No matching commands`
   (`role="status"`). Arrow keys move, Home/End jump, Enter runs, Escape
   clears a non-empty query first and closes on the second press (the
   RepoBrowser rule); composing Escape is ignored. Clicking a row runs it.
@@ -575,14 +615,14 @@ toasts are shown; older info/success toasts are dropped first.
 
 Raised by:
 
-| Event | Toast |
-| --- | --- |
-| fetch done (`useSyncActions`) | success `Fetch complete` |
-| pull done, clean | success `Pull complete` (conflicts: none; the `OperationBanner` shows) |
-| push done | success `Pushed ‹branch›` |
-| clone done (`useOpenRepo`) | success `Cloned ‹name›` |
-| external tool failure | error `Couldn't open ‹editor|diff tool|merge tool›: ‹message›`, action `Settings…` |
-| settings save failure | error `Couldn't save settings: ‹message›` |
+| Event                         | Toast                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| fetch done (`useSyncActions`) | success `Fetch complete`                                               |
+| pull done, clean              | success `Pull complete` (conflicts: none; the `OperationBanner` shows) |
+| push done                     | success `Pushed ‹branch›`                                              |
+| clone done (`useOpenRepo`)    | success `Cloned ‹name›`                                                |
+| external tool failure         | error `Couldn't open ‹editor                                           | diff tool | merge tool›: ‹message›`, action `Settings…` |
+| settings save failure         | error `Couldn't save settings: ‹message›`                              |
 
 Successful toasts do not duplicate `SyncMessage` (which only renders
 failures). The existing `PR opened` toast becomes `success`.
@@ -598,15 +638,15 @@ clone flow changes.
 
 ## 11. Error handling summary
 
-| Failure | Surface |
-| --- | --- |
-| `settings.json` unreadable at startup | log + defaults; nothing shown |
-| save fails (`Io`) | field reverts; error toast |
-| Git executable invalid | inline `role="alert"` under the field; not stored; `locate()` unaffected |
+| Failure                                 | Surface                                                                                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json` unreadable at startup   | log + defaults; nothing shown                                                                                                                           |
+| save fails (`Io`)                       | field reverts; error toast                                                                                                                              |
+| Git executable invalid                  | inline `role="alert"` under the field; not stored; `locate()` unaffected                                                                                |
 | configured Git executable deleted later | every CLI op fails `GitCliMissing` with the configured path in the message (existing surfaces); the Settings dialog shows the same text under the field |
-| tool unset | Settings opens at Tools; no backend call |
-| tool fails | error toast with `Settings…` action |
-| palette action gated | row disabled with the gate reason |
+| tool unset                              | Settings opens at Tools; no backend call                                                                                                                |
+| tool fails                              | error toast with `Settings…` action                                                                                                                     |
+| palette action gated                    | row disabled with the gate reason                                                                                                                       |
 
 ## 12. Testing strategy
 
@@ -655,7 +695,7 @@ Plus the coverage agent's confirmation and the architect's explicit approval.
    `Browse…` → pick `/usr/bin/git` → `Using /usr/bin/git (git version …)`;
    `Use PATH` reverts.
 5. Settings → Tools → editor `xdg-open`; select a changed file; `Open in
-   editor` launches it. Clear the editor; click again → Settings opens at Tools.
+editor` launches it. Clear the editor; click again → Settings opens at Tools.
 6. Ctrl+K → type `fet` → Enter: fetch runs and `Fetch complete` toasts.
    Ctrl+K → type a recent repository name → Enter: it opens in a new tab;
    Ctrl+PageUp/PageDown cycle tabs; Ctrl+W closes the current one.
