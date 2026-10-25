@@ -57,12 +57,19 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const accountTabRef = useRef<HTMLButtonElement>(null);
   // The URL field takes focus once it shows: on open, and after a pick.
   const focusUrl = useRef(true);
+  // The From account tab takes focus once the accounts dialog has closed. The dialog's own
+  // restore runs while this box is still inert, so it cannot land; this runs after inert is gone.
+  const focusAccountTab = useRef(false);
 
   useEffect(() => () => releaseSubscription(subRef), []);
   useLayoutEffect(() => {
     if (focusUrl.current && urlInputRef.current !== null) {
       urlInputRef.current.focus();
       focusUrl.current = false;
+    }
+    if (focusAccountTab.current) {
+      (accountTabRef.current as HTMLButtonElement).focus();
+      focusAccountTab.current = false;
     }
   });
 
@@ -220,7 +227,10 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
       <AccountsDialog
         open={accounts !== null}
         preset={accounts?.preset}
-        onClose={() => setAccounts(null)}
+        onClose={() => {
+          focusAccountTab.current = true;
+          setAccounts(null);
+        }}
         fallbackFocus={accountTabRef}
       />
     </>

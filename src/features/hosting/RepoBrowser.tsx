@@ -6,6 +6,7 @@ import type { CloneUrlForm } from "../../lib/store/layoutPrefs";
 import { fullDate, relativeTime } from "../graph/model/relativeTime";
 import { useNow } from "../graph/useNow";
 import { NetworkError } from "../remotes/NetworkError";
+import { networkMessage } from "../remotes/networkMessage";
 import type { AccountsPreset } from "./AccountsDialog";
 import { RECONNECT_TEXT, hostingMessage } from "./hostingCopy";
 import styles from "./RepoBrowser.module.css";
@@ -51,15 +52,12 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
   }, [query]);
 
   // Every hook runs above. Before the accounts answer there is no provider to name, so a failure
-  // shows its own text.
+  // gets the general network copy.
   if (accounts === undefined) {
     return accountsError === null ? (
       <p role="status">Loading…</p>
     ) : (
-      <NetworkError
-        message={{ title: accountsError.message, hint: null, action: null, details: null }}
-        onDismiss={refetchAccounts}
-      />
+      <NetworkError message={networkMessage(accountsError)} onDismiss={refetchAccounts} />
     );
   }
 
