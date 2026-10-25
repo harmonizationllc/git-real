@@ -57,9 +57,10 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const accountTabRef = useRef<HTMLButtonElement>(null);
   // The URL field takes focus once it shows: on open, and after a pick.
   const focusUrl = useRef(true);
-  // The From account tab takes focus once the accounts dialog has closed. The dialog's own
-  // restore runs while this box is still inert, so it cannot land; this runs after inert is gone.
-  const focusAccountTab = useRef(false);
+  // The element that opened the accounts dialog, and whether the dialog was open at the last
+  // commit. The dialog's own restore runs while this box is still inert, so it cannot land.
+  const accountsOpener = useRef<HTMLElement | null>(null);
+  const accountsWereOpen = useRef(false);
 
   useEffect(() => () => releaseSubscription(subRef), []);
   useLayoutEffect(() => {
@@ -67,10 +68,14 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
       urlInputRef.current.focus();
       focusUrl.current = false;
     }
-    if (focusAccountTab.current) {
-      (accountTabRef.current as HTMLButtonElement).focus();
-      focusAccountTab.current = false;
+    // After the commit that closed the accounts dialog, inert is gone: back to the opener while it
+    // can take focus, else to the From account tab (connecting an account removes the notice).
+    if (accountsWereOpen.current && accounts === null) {
+      const opener = accountsOpener.current;
+      const usable = opener !== null && opener.isConnected && !opener.matches(":disabled");
+      (usable ? opener : (accountTabRef.current as HTMLButtonElement)).focus();
     }
+    accountsWereOpen.current = accounts !== null;
   });
 
   // A changed HTTPS/SSH preference re-fills the field for the picked repository.
@@ -189,7 +194,10 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
                 {tab === "account" && (
                   <RepoBrowser
                     onPick={pick}
-                    onManageAccounts={(preset) => setAccounts({ preset })}
+                    onManageAccounts={(preset) => {
+                      accountsOpener.current = document.activeElement as HTMLElement | null;
+                      setAccounts({ preset });
+                    }}
                     disabled={cloning}
                   />
                 )}
@@ -227,10 +235,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
       <AccountsDialog
         open={accounts !== null}
         preset={accounts?.preset}
-        onClose={() => {
-          focusAccountTab.current = true;
-          setAccounts(null);
-        }}
+        onClose={() => setAccounts(null)}
         fallbackFocus={accountTabRef}
       />
     </>
