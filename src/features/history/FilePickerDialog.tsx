@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { RepoId } from "../../lib/ipc";
 import { RepoError } from "../repo/RepoError";
-import { MAX_PICKER_ROWS, rankFiles } from "./model/fuzzy";
+import { MAX_PICKER_ROWS, rankFiles } from "../../lib/fuzzy";
 import { useTrackedFiles } from "./useTrackedFiles";
 import styles from "./FilePickerDialog.module.css";
 
