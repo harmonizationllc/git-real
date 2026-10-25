@@ -34,7 +34,7 @@ let nextId = 1;
 function capped(list: Toast[], toast: Toast): Toast[] {
   const next = [...list, toast];
   if (next.length <= MAX_TOASTS) return next;
-  const nonError = next.findIndex((t) => t.variant !== "error");
+  const nonError = next.slice(0, MAX_TOASTS).findIndex((t) => t.variant !== "error");
   next.splice(nonError === -1 ? 0 : nonError, 1);
   return next;
 }
