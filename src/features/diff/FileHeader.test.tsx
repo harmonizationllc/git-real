@@ -1,7 +1,38 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getSettings, openExternalDiff, openInEditor } from "../../lib/ipc";
+import type { DiffScope, Settings } from "../../lib/ipc";
+import { queryClient } from "../../lib/query/client";
+import { useShell } from "../../lib/store/shell";
+import { useToasts } from "../../lib/store/toasts";
 import type { CentreView } from "../../lib/store/workspace";
+import { renderWithProviders } from "../../test/renderWithProviders";
 import { CloseDiffButton, FileHeader } from "./FileHeader";
+
+vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+  openInEditor: vi.fn(),
+  openExternalDiff: vi.fn(),
+}));
+
+const defaultSettings: Settings = {
+  defaultCloneDir: null,
+  gitExecutable: null,
+  externalEditor: null,
+  externalDiffTool: null,
+  externalMergeTool: null,
+};
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  queryClient.clear();
+  useShell.setState({ dialog: null, repoActions: null });
+  useToasts.setState({ toasts: [] });
+  vi.mocked(getSettings).mockResolvedValue(defaultSettings);
+  vi.mocked(openInEditor).mockResolvedValue(undefined);
+  vi.mocked(openExternalDiff).mockResolvedValue(undefined);
+});
 
 function setup(
   over: {
@@ -9,15 +40,21 @@ function setup(
     oldPath?: string | null;
     view?: CentreView;
     blameDisabledReason?: string;
+    repoId?: number;
+    scope?: DiffScope;
+    isStash?: boolean;
   } = {},
 ) {
   const props = { onViewChange: vi.fn(), onHistory: vi.fn(), onClose: vi.fn() };
-  const view = render(
+  const view = renderWithProviders(
     <FileHeader
       path={over.path ?? "src/a.ts"}
       oldPath={over.oldPath}
       view={over.view ?? "diff"}
       blameDisabledReason={over.blameDisabledReason}
+      repoId={over.repoId ?? 1}
+      scope={over.scope ?? "unstaged"}
+      isStash={over.isStash ?? false}
       {...props}
     />,
   );
@@ -148,14 +185,92 @@ describe("FileHeader buttons", () => {
 // Contract: CloseDiffButton moved here and keeps its label and click behaviour.
 describe("CloseDiffButton", () => {
   it("should render a button named Close diff", () => {
-    render(<CloseDiffButton onClick={vi.fn()} />);
+    renderWithProviders(<CloseDiffButton onClick={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Close diff" })).toBeInTheDocument();
   });
 
   it("should call onClick once when clicked", () => {
     const onClick = vi.fn();
-    render(<CloseDiffButton onClick={onClick} />);
+    renderWithProviders(<CloseDiffButton onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: "Close diff" }));
     expect(onClick).toHaveBeenCalledOnce();
+  });
+});
+
+// Task 15: external tool buttons in FileHeader.
+describe("FileHeader external tool buttons (GR-14)", () => {
+  it("shows Open in editor and External diff for unstaged scope", async () => {
+    setup({ scope: "unstaged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(screen.getByRole("button", { name: "Open in editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
+  });
+
+  it("shows Open in editor and External diff for staged scope", async () => {
+    setup({ scope: "staged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(screen.getByRole("button", { name: "Open in editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
+  });
+
+  it("hides Open in editor for a commit scope but shows External diff", async () => {
+    setup({ scope: { commit: "deadbeef" } });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(screen.queryByRole("button", { name: "Open in editor" })).toBeNull();
+    expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
+  });
+
+  it("hides both for a stash file", async () => {
+    setup({ isStash: true });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(screen.queryByRole("button", { name: "Open in editor" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "External diff" })).toBeNull();
+  });
+
+  it("Open in editor calls openInEditor with the path when a tool is configured", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
+    setup({ path: "src/a.ts", scope: "unstaged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+    await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/a.ts"));
+  });
+
+  it("External diff calls openExternalDiff with the external scope when a tool is configured", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalDiffTool: "meld" });
+    setup({ repoId: 1, path: "src/a.ts", scope: "staged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: "External diff" }));
+    await waitFor(() =>
+      expect(openExternalDiff).toHaveBeenCalledWith(1, "src/a.ts", { kind: "staged" }),
+    );
+  });
+
+  it("an unset editor opens Settings at Tools without a backend call", async () => {
+    setup({ scope: "unstaged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
+    await waitFor(() =>
+      expect(useShell.getState().dialog).toMatchObject({ kind: "settings", section: "tools" }),
+    );
+    expect(openInEditor).not.toHaveBeenCalled();
+  });
+
+  it("a rejected diff tool call toasts Couldn't open diff tool: … with Settings…", async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalDiffTool: "meld" });
+    vi.mocked(openExternalDiff).mockRejectedValue({
+      kind: "externalToolFailed",
+      message: "meld exited with code 1",
+    });
+    setup({ scope: "unstaged" });
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    fireEvent.click(screen.getByRole("button", { name: "External diff" }));
+    await waitFor(() => {
+      const toasts = useToasts.getState().toasts;
+      expect(toasts.some((t) => t.text.startsWith("Couldn't open diff tool:"))).toBe(true);
+    });
+    const toast = useToasts
+      .getState()
+      .toasts.find((t) => t.text.startsWith("Couldn't open diff tool:"));
+    expect(toast?.action?.label).toBe("Settings…");
   });
 });

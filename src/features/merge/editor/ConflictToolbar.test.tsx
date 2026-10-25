@@ -164,3 +164,40 @@ describe("ConflictToolbar callbacks", () => {
     expect(p.onMarkResolved).not.toHaveBeenCalled();
   });
 });
+
+// Task 15: optional onOpenMergeTool and mergeToolRunning props.
+describe("ConflictToolbar merge tool button (GR-14)", () => {
+  it("renders Open in merge tool on the full toolbar when onOpenMergeTool is given", () => {
+    const onOpenMergeTool = vi.fn();
+    render(<ConflictToolbar {...props({ remaining: 2, onOpenMergeTool })} />);
+    expect(screen.getByRole("button", { name: "Open in merge tool" })).toBeInTheDocument();
+  });
+
+  it("renders Open in merge tool on the placeholder toolbar (remaining null) when onOpenMergeTool is given", () => {
+    const onOpenMergeTool = vi.fn();
+    render(<ConflictToolbar {...props({ remaining: null, onOpenMergeTool })} />);
+    expect(screen.getByRole("button", { name: "Open in merge tool" })).toBeInTheDocument();
+  });
+
+  it("shows Merge tool open… and is disabled while mergeToolRunning is true", () => {
+    const onOpenMergeTool = vi.fn();
+    render(
+      <ConflictToolbar {...props({ remaining: 2, onOpenMergeTool, mergeToolRunning: true })} />,
+    );
+    const runningBtn = screen.getByRole("button", { name: "Merge tool open…" });
+    expect(runningBtn).toBeDisabled();
+  });
+
+  it("omits the button without the onOpenMergeTool callback", () => {
+    render(<ConflictToolbar {...props({ remaining: 2 })} />);
+    expect(screen.queryByRole("button", { name: "Open in merge tool" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge tool open…" })).toBeNull();
+  });
+
+  it("calls onOpenMergeTool when the button is clicked", () => {
+    const onOpenMergeTool = vi.fn();
+    render(<ConflictToolbar {...props({ remaining: 2, onOpenMergeTool })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open in merge tool" }));
+    expect(onOpenMergeTool).toHaveBeenCalledOnce();
+  });
+});

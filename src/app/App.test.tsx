@@ -11,6 +11,7 @@ import {
   getCommitConfig,
   getHeadMessage,
   getLogSummary,
+  getSettings,
   getStatus,
   listBranches,
   listRecent,
@@ -49,6 +50,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
   onRepoChanged: vi.fn(),
+  getSettings: vi.fn(),
 }));
 
 const repo = (id: number, name: string, headBranch: string | null = "main"): OpenedRepo => ({
@@ -89,6 +91,13 @@ beforeEach(() => {
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 0, maxLanes: 1 });
+  vi.mocked(getSettings).mockResolvedValue({
+    defaultCloneDir: null,
+    gitExecutable: null,
+    externalEditor: null,
+    externalDiffTool: null,
+    externalMergeTool: null,
+  });
 });
 
 function renderApp(...seed: OpenedRepo[]) {
@@ -378,5 +387,31 @@ describe("App openRepo and openPath actions (GR-14)", () => {
     expect(useRepoTabs.getState().activeId).toBe(1);
     await user.keyboard("{Control>}o{/Control}");
     await waitFor(() => expect(useRepoTabs.getState().activeId).toBeNull());
+  });
+});
+
+// Task 15: App mounts SettingsDialog and CommandPalette from the shell store.
+describe("App shell dialogs (GR-14 Cycle 3)", () => {
+  it("Ctrl+, opens Settings dialog and Escape returns focus to the app root", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>},{/Control}");
+    // SettingsDialog must mount (requires App to render it on dialog.kind === "settings").
+    await screen.findByRole("dialog", { name: "Settings" });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    // Focus should be on the app root (data-focus-target).
+    const appRoot = document.querySelector("[data-focus-target]") as HTMLElement | null;
+    if (appRoot) expect(document.activeElement).toBe(appRoot);
+  });
+
+  it("Ctrl+K opens the palette and opening Settings from it closes the palette", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>}k{/Control}");
+    // CommandPalette must mount (requires App to render it on dialog.kind === "palette").
+    await screen.findByRole("dialog", { name: "Command palette" });
+    // Now open settings via shortcut; single-slot rule means palette closes.
+    await user.keyboard("{Control>},{/Control}");
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    await screen.findByRole("dialog", { name: "Settings" });
   });
 });

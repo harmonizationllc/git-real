@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { DiffScope } from "../../../lib/ipc";
-import { commitOf, isReadOnly, scopeId } from "./scope";
+import { commitOf, externalScope, isReadOnly, scopeId } from "./scope";
 
 // Contract: scope helpers turn a DiffScope into a key, a commit oid and a read-only flag.
 describe("scopeId", () => {
@@ -47,5 +47,20 @@ describe("isReadOnly narrowing", () => {
     const s = { commit: "abc" } as DiffScope;
     if (isReadOnly(s)) expectTypeOf(s).toEqualTypeOf<{ commit: string }>();
     expect(isReadOnly(s)).toBe(true);
+  });
+});
+
+// Task 15: externalScope maps a DiffScope to the wire ExternalDiffScope.
+describe("externalScope", () => {
+  it("maps unstaged to { kind: 'unstaged' }", () => {
+    expect(externalScope("unstaged")).toEqual({ kind: "unstaged" });
+  });
+
+  it("maps staged to { kind: 'staged' }", () => {
+    expect(externalScope("staged")).toEqual({ kind: "staged" });
+  });
+
+  it("maps a commit scope to { kind: 'commit', oid }", () => {
+    expect(externalScope({ commit: "deadbeef" })).toEqual({ kind: "commit", oid: "deadbeef" });
   });
 });

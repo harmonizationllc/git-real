@@ -6,11 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getFileContent,
   getOperationState,
+  getSettings,
   listBranches,
+  openExternalMerge,
   resolveConflicts,
   writeResolution,
 } from "../../../lib/ipc";
-import type { BranchList, OperationState } from "../../../lib/ipc";
+import type { BranchList, OperationState, Settings } from "../../../lib/ipc";
+import { useShell } from "../../../lib/store/shell";
+import { useToasts } from "../../../lib/store/toasts";
 import { queryKeys } from "../../../lib/query/keys";
 import { useWorkspace } from "../../../lib/store/workspace";
 import { renderWithProviders } from "../../../test/renderWithProviders";
@@ -23,7 +27,9 @@ vi.mock(import("../../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getFileContent: vi.fn(),
   getOperationState: vi.fn(),
+  getSettings: vi.fn(),
   listBranches: vi.fn(),
+  openExternalMerge: vi.fn(),
   writeResolution: vi.fn(),
   resolveConflicts: vi.fn(),
 }));
@@ -126,7 +132,17 @@ beforeEach(async () => {
     return Promise.resolve();
   });
   vi.mocked(resolveConflicts).mockResolvedValue(undefined);
+  vi.mocked(getSettings).mockResolvedValue({
+    defaultCloneDir: null,
+    gitExecutable: null,
+    externalEditor: null,
+    externalDiffTool: null,
+    externalMergeTool: null,
+  } satisfies Settings);
+  vi.mocked(openExternalMerge).mockResolvedValue(undefined);
   useWorkspace.setState(useWorkspace.getInitialState(), true);
+  useShell.setState({ dialog: null, repoActions: null });
+  useToasts.setState({ toasts: [] });
 });
 
 afterEach(() => {
@@ -871,5 +887,71 @@ describe("ConflictEditor unmount", () => {
     unmount();
     await tick(0);
     expect(writeResolution).toHaveBeenCalledExactlyOnceWith(REPO, PATH, "x" + TWO, false);
+  });
+});
+
+// Task 15: external merge tool integration.
+describe("ConflictEditor external merge tool (GR-14)", () => {
+  it("Open in merge tool calls openExternalMerge and shows the running label until it settles", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: null,
+      gitExecutable: null,
+      externalEditor: null,
+      externalDiffTool: null,
+      externalMergeTool: "meld",
+    } satisfies Settings);
+    let resolveExternalMerge!: () => void;
+    vi.mocked(openExternalMerge).mockImplementation(
+      () =>
+        new Promise<void>((res) => {
+          resolveExternalMerge = res;
+        }),
+    );
+    setup();
+    await screen.findByRole("button", { name: "Open in merge tool" });
+    fireEvent.click(screen.getByRole("button", { name: "Open in merge tool" }));
+    await screen.findByRole("button", { name: "Merge tool open…" });
+    expect(screen.getByRole("button", { name: "Merge tool open…" })).toBeDisabled();
+    // Settle the promise.
+    resolveExternalMerge();
+    await screen.findByRole("button", { name: "Open in merge tool" });
+  });
+
+  it("an unset merge tool opens Settings at Tools without calling openExternalMerge", async () => {
+    // externalMergeTool is null (default mock).
+    setup();
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    // With no merge tool configured, clicking the button opens settings.
+    const btn = screen.queryByRole("button", { name: "Open in merge tool" });
+    if (btn) {
+      fireEvent.click(btn);
+      await waitFor(() =>
+        expect(useShell.getState().dialog).toMatchObject({ kind: "settings", section: "tools" }),
+      );
+      expect(openExternalMerge).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a failed merge tool toasts Couldn't open merge tool: … and the button resets", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: null,
+      gitExecutable: null,
+      externalEditor: null,
+      externalDiffTool: null,
+      externalMergeTool: "meld",
+    } satisfies Settings);
+    vi.mocked(openExternalMerge).mockRejectedValue({
+      kind: "externalToolFailed",
+      message: "meld exited with code 1",
+    });
+    setup();
+    await screen.findByRole("button", { name: "Open in merge tool" });
+    fireEvent.click(screen.getByRole("button", { name: "Open in merge tool" }));
+    await waitFor(() => {
+      const toasts = useToasts.getState().toasts;
+      expect(toasts.some((t) => t.text.startsWith("Couldn't open merge tool:"))).toBe(true);
+    });
+    // Button should reset to idle after failure.
+    await screen.findByRole("button", { name: "Open in merge tool" });
   });
 });

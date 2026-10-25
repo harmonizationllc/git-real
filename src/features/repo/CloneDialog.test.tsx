@@ -4,13 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkGitCli,
   cloneRepo,
+  getSettings,
   hostingListAccounts,
   hostingListMyRepos,
   listRecent,
   onCloneProgress,
   pickFolder,
 } from "../../lib/ipc";
-import type { OpenedRepo, Progress, UnlistenFn } from "../../lib/ipc";
+import type { OpenedRepo, Progress, Settings, UnlistenFn } from "../../lib/ipc";
 import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { hostedRepo, hostedRepoPage, hostingAccount } from "../../test/hostingFixtures";
@@ -21,6 +22,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   checkGitCli: vi.fn(),
   cloneRepo: vi.fn(),
+  getSettings: vi.fn(),
   onCloneProgress: vi.fn(),
   pickFolder: vi.fn(),
   listRecent: vi.fn(),
@@ -59,6 +61,13 @@ beforeEach(() => {
     version: "2.43.0",
     error: null,
   });
+  vi.mocked(getSettings).mockResolvedValue({
+    defaultCloneDir: null,
+    gitExecutable: null,
+    externalEditor: null,
+    externalDiffTool: null,
+    externalMergeTool: null,
+  } satisfies Settings);
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
@@ -1338,5 +1347,70 @@ describe("CloneDialog Escape in the repository search", () => {
     fireEvent.keyDown(url, { key: "Escape", isComposing: true });
     expect(url).toHaveValue("https://example.com/r.git");
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Task 15: CloneDialog seeds the destination from defaultCloneDir.
+describe("CloneDialog default clone directory (GR-14)", () => {
+  it("seeds the destination from defaultCloneDir when settings load", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: "/home/u/projects",
+      gitExecutable: null,
+      externalEditor: null,
+      externalDiffTool: null,
+      externalMergeTool: null,
+    } satisfies Settings);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    // After the settings query resolves, the destination field should start with the default dir.
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    // Without picking a folder, the destination preview should reference defaultCloneDir.
+    await waitFor(() => {
+      expect(screen.queryByText(/\/home\/u\/projects\//)).not.toBeNull();
+    });
+  });
+
+  it("does not overwrite a folder the user picked when settings load later", async () => {
+    // Settings loads after the user has already picked a folder.
+    let resolveSettings!: (s: Settings) => void;
+    vi.mocked(getSettings).mockImplementation(
+      () =>
+        new Promise<Settings>((res) => {
+          resolveSettings = res;
+        }),
+    );
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await user.type(await screen.findByLabelText("Repository URL"), URL_A);
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    await screen.findByText("Destination: /home/u/src/b");
+    // Now settings arrive with a different default.
+    act(() =>
+      resolveSettings({
+        defaultCloneDir: "/other/dir",
+        gitExecutable: null,
+        externalEditor: null,
+        externalDiffTool: null,
+        externalMergeTool: null,
+      }),
+    );
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    // The user's picked folder must not be overwritten.
+    expect(screen.getByText("Destination: /home/u/src/b")).toBeInTheDocument();
+  });
+
+  it("passes the current directory as defaultPath to the picker", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      defaultCloneDir: "/home/u/projects",
+      gitExecutable: null,
+      externalEditor: null,
+      externalDiffTool: null,
+      externalMergeTool: null,
+    } satisfies Settings);
+    const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
+    await screen.findByLabelText("Repository URL");
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await user.click(screen.getByRole("button", { name: "Choose folder" }));
+    await waitFor(() =>
+      expect(pickFolder).toHaveBeenCalledWith(expect.any(String), "/home/u/projects"),
+    );
   });
 });

@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useShell } from "../lib/store/shell";
 import { TabBar } from "./TabBar";
 
 const tab = (id: number, name: string): RepoTab => ({
@@ -9,6 +10,10 @@ const tab = (id: number, name: string): RepoTab => ({
   summary: { path: `/r/${name}`, name, headBranch: "main", isBare: false },
 });
 const tabs = [tab(1, "alpha"), tab(2, "beta")];
+
+beforeEach(() => {
+  useShell.setState({ dialog: null, repoActions: null });
+});
 
 function setup(activeId: number | null = 1, list: RepoTab[] = tabs) {
   const onActivate = vi.fn();
@@ -74,5 +79,30 @@ describe("TabBar interaction", () => {
     const { user, onActivate } = setup();
     await user.click(screen.getByRole("button", { name: "Start screen" }));
     expect(onActivate).toHaveBeenCalledExactlyOnceWith(null);
+  });
+});
+
+// Task 15: the two shell-dialog buttons land after the Start screen button.
+describe("TabBar shell buttons (GR-14)", () => {
+  it("renders Command palette and Settings buttons with their titles after Start screen", () => {
+    setup();
+    const palette = screen.getByRole("button", { name: "Command palette" });
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect(palette).toBeInTheDocument();
+    expect(settings).toBeInTheDocument();
+    expect(palette).toHaveAttribute("title", "Command palette (Ctrl+K)");
+    expect(settings).toHaveAttribute("title", "Settings (Ctrl+,)");
+  });
+
+  it("the Command palette button opens the palette dialog on the shell store", async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Command palette" }));
+    expect(useShell.getState().dialog).toEqual({ kind: "palette" });
+  });
+
+  it("the Settings button opens the settings dialog on the shell store", async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
   });
 });
