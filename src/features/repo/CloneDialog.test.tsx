@@ -984,6 +984,37 @@ describe("CloneDialog accounts", () => {
     expect(screen.getByRole("tab", { name: "From account" })).toHaveFocus();
   });
 
+  // W1: the restore runs while the clone box is inert (jsdom ignores inert), so the opener
+  // cannot take focus in the real app; the From account tab must, whether or not the opener is
+  // still mounted.
+  describe.each([
+    [
+      "Escape",
+      () =>
+        fireEvent.keyDown(screen.getByRole("dialog", { name: "Hosting accounts" }), {
+          key: "Escape",
+        }),
+    ],
+    ["Close", () => fireEvent.click(screen.getByRole("button", { name: "Close" }))],
+  ])("closing the nested accounts dialog with %s", (_how, close) => {
+    it("should focus the From account tab and keep the clone dialog on it", async () => {
+      const onClose = vi.fn();
+      const { user } = renderWithProviders(<CloneDialog open onClose={onClose} />);
+      await user.click(await screen.findByRole("tab", { name: "From account" }));
+      await user.click(await screen.findByRole("button", { name: "Hosting accounts…" }));
+      await screen.findByRole("dialog", { name: "Hosting accounts" });
+      close();
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Hosting accounts" })).not.toBeInTheDocument(),
+      );
+      const tab = screen.getByRole("tab", { name: "From account" });
+      expect(document.activeElement).toBe(tab);
+      expect(tab).toHaveAttribute("aria-selected", "true");
+      expect(dialogBox()).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
   it("should open the accounts dialog preset to the account from Reconnect", async () => {
     vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount({ needsReconnect: true })]);
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
