@@ -1,7 +1,7 @@
 import { hostingListPullRequests } from "../../lib/ipc";
 import type { AppError, PullRequest, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { usePagedQuery } from "./usePagedQuery";
+import { fullPage, usePagedQuery } from "./usePagedQuery";
 
 export interface UsePullRequests {
   pullRequests: PullRequest[] | undefined;
@@ -21,8 +21,9 @@ export interface UsePullRequests {
 export function usePullRequests(repoId: RepoId, enabled: boolean): UsePullRequests {
   const { items, ...rest } = usePagedQuery(
     queryKeys.pullRequests(repoId),
-    (page) => hostingListPullRequests(repoId, page),
+    (page) => hostingListPullRequests(repoId, page).then(fullPage),
     enabled,
+    (i) => i.number,
   );
   return { pullRequests: items, ...rest };
 }

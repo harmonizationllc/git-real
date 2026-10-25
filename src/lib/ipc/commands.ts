@@ -17,6 +17,7 @@ import type {
   FileDiff,
   FileHistoryEntry,
   GitCliInfo,
+  HostedRepoPage,
   HostedRepoInfo,
   HostingAccount,
   HostingProvider,
@@ -499,6 +500,19 @@ export function hostingRepoInfo(id: RepoId): Promise<HostedRepoInfo> {
 /** One page (1-based, 50 per page) of open issues matching `query` (all when blank), newest update first. */
 export function hostingListIssues(id: RepoId, query: string, page: number): Promise<Issue[]> {
   return invoke<Issue[]>("hosting_list_issues", { id, query, page });
+}
+
+/**
+ * One page (1-based, 50 per page) of the repositories `accountId` can clone, matching `query` by
+ * name (all when blank), newest update first. `hasMore` comes from the raw page, before unusable
+ * rows were dropped.
+ */
+export function hostingListMyRepos(
+  accountId: string,
+  query: string,
+  page: number,
+): Promise<HostedRepoPage> {
+  return invoke<HostedRepoPage>("hosting_list_my_repos", { accountId, query, page });
 }
 
 /** Commits ahead of `origin/<target>` and the title and description prefill. */

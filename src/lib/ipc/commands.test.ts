@@ -44,6 +44,7 @@ import {
   hostingDisconnect,
   hostingListAccounts,
   hostingListIssues,
+  hostingListMyRepos,
   hostingListPullRequests,
   hostingPullRequestDraft,
   hostingRepoContext,
@@ -1373,6 +1374,35 @@ describe("GR-13b hosting command wrappers", () => {
     expect(calls[0]?.args).toEqual({ id: 3, query: "", page: 1 });
   });
 
+  it("hostingListMyRepos sends accountId, query and page and returns the page with its hasMore", async () => {
+    const repo = {
+      fullName: "octo/git-real",
+      name: "git-real",
+      owner: "octo",
+      description: "A Git client",
+      private: false,
+      updatedAt: 1792864800,
+      httpsUrl: "https://github.com/octo/git-real.git",
+      sshUrl: "git@github.com:octo/git-real.git",
+      webUrl: "https://github.com/octo/git-real",
+    };
+    const calls = mockWith({ repos: [repo], hasMore: true });
+    const result = await hostingListMyRepos("github:github.com:octo", "git", 2);
+    expect(calls).toEqual([
+      {
+        cmd: "hosting_list_my_repos",
+        args: { accountId: "github:github.com:octo", query: "git", page: 2 },
+      },
+    ]);
+    expect(result).toEqual({ repos: [repo], hasMore: true });
+  });
+
+  it("hostingListMyRepos sends an empty query as an empty string", async () => {
+    const calls = mockWith({ repos: [], hasMore: false });
+    await hostingListMyRepos("gitlab:gitlab.com:octo", "", 1);
+    expect(calls[0]?.args).toEqual({ accountId: "gitlab:gitlab.com:octo", query: "", page: 1 });
+  });
+
   it("hostingPullRequestDraft sends id and target and returns the draft", async () => {
     const draft = { title: "Add thing", body: "Body", ahead: 1 };
     const calls = mockWith(draft);
@@ -1422,6 +1452,7 @@ describe("GR-13b hosting command wrappers", () => {
   it.each([
     ["hostingRepoInfo", () => hostingRepoInfo(3)],
     ["hostingListIssues", () => hostingListIssues(3, "q", 1)],
+    ["hostingListMyRepos", () => hostingListMyRepos("github:github.com:octo", "q", 1)],
     ["hostingPullRequestDraft", () => hostingPullRequestDraft(3, "main")],
     ["hostingCreatePullRequest", () => hostingCreatePullRequest(3, request)],
   ])("%s rejects with the backend AppError", async (_name, call) => {

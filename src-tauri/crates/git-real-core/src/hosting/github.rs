@@ -8,7 +8,10 @@ use super::http::{
     Request, Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json,
     unexpected,
 };
-use super::model::{CiState, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo};
+use super::model::{
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, UserInfo,
+};
 use super::provider::{Provider, RepoRef};
 use crate::error::GitError;
 use crate::token::Token;
@@ -70,8 +73,8 @@ struct WireRepoInfo {
 }
 
 #[derive(Deserialize)]
-struct WireSearch {
-    items: Vec<WireIssue>,
+struct WireSearch<T> {
+    items: Vec<T>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +93,19 @@ struct WireIssue {
 #[derive(Deserialize)]
 struct WireLabel {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct WireMyRepo {
+    full_name: String,
+    name: String,
+    owner: WireLogin,
+    description: Option<String>,
+    private: bool,
+    updated_at: String,
+    clone_url: String,
+    ssh_url: Option<String>,
+    html_url: String,
 }
 
 pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<UserInfo, GitError> {
@@ -178,7 +194,7 @@ pub fn list_issues(
         repo.provider.api_base(&repo.host),
         percent_encode(&q)
     );
-    let found: WireSearch = send_json(t, &get(url, token, &HEADERS), token, &repo.host)?;
+    let found: WireSearch<WireIssue> = send_json(t, &get(url, token, &HEADERS), token, &repo.host)?;
     found
         .items
         .into_iter()
@@ -194,6 +210,36 @@ pub fn list_issues(
             })
         })
         .collect()
+}
+
+/// A blank query (after dropping scope qualifiers) lists every repository the account owns,
+/// collaborates on or reaches through an organization; otherwise the search API matches names
+/// among the account's own repositories.
+pub fn list_my_repos(
+    t: &dyn Transport,
+    account: &Account,
+    token: &Token,
+    query: &str,
+    page: u32,
+) -> Result<HostedRepoPage, GitError> {
+    let base = Provider::GitHub.api_base(&account.host);
+    let host = &account.host;
+    let query = strip_repo_qualifiers(issue_query(query));
+    let repos: Vec<WireMyRepo> = if query.is_empty() {
+        let url = format!(
+            "{base}/user/repos?affiliation=owner,collaborator,organization_member&sort=updated&direction=desc&per_page=50&page={page}"
+        );
+        send_json(t, &get(url, token, &HEADERS), token, host)?
+    } else {
+        let q = format!("{query} in:name user:{}", account.username);
+        let url = format!(
+            "{base}/search/repositories?q={}&sort=updated&order=desc&per_page=50&page={page}",
+            percent_encode(&q)
+        );
+        let found: WireSearch<WireMyRepo> = send_json(t, &get(url, token, &HEADERS), token, host)?;
+        found.items
+    };
+    HostedRepoPage::from_raw(repos, |r| convert_repo(r, host))
 }
 
 pub fn create_pull_request(
@@ -262,4 +308,20 @@ fn convert(p: WirePull, host: &str) -> Result<PullRequest, GitError> {
         updated_at: parse_timestamp(&p.updated_at).ok_or_else(|| unexpected(host))?,
         web_url: p.html_url,
     })
+}
+
+/// `Ok(None)` when the clone URL is unusable, so the row is left out.
+fn convert_repo(r: WireMyRepo, host: &str) -> Result<Option<HostedRepo>, GitError> {
+    Ok(HostedRepo {
+        full_name: r.full_name,
+        name: r.name,
+        owner: r.owner.login,
+        description: r.description,
+        private: r.private,
+        updated_at: parse_timestamp(&r.updated_at).ok_or_else(|| unexpected(host))?,
+        https_url: r.clone_url,
+        ssh_url: r.ssh_url,
+        web_url: r.html_url,
+    }
+    .sanitized())
 }

@@ -517,6 +517,28 @@ export interface Issue {
   webUrl: string;
 }
 
+/** A repository the account can clone, from the clone dialog's browser. */
+export interface HostedRepo {
+  fullName: string;
+  name: string;
+  /** The user, organization, group path or workspace the repository belongs to. */
+  owner: string;
+  description: string | null;
+  private: boolean;
+  /** Epoch seconds. */
+  updatedAt: number;
+  httpsUrl: string;
+  sshUrl: string | null;
+  webUrl: string;
+}
+
+/** One page of the account's repositories. */
+export interface HostedRepoPage {
+  repos: HostedRepo[];
+  /** The provider returned a full raw page (before unusable rows were dropped), so there may be more. */
+  hasMore: boolean;
+}
+
 /** A pull request to open: `sourceBranch` into `targetBranch`, both on the hosted repository. */
 export interface NewPullRequest {
   title: string;

@@ -131,6 +131,11 @@ impl HostingStore {
         self.lock().clone()
     }
 
+    /// The account with `id` ([`Account::id`]).
+    pub fn account(&self, id: &str) -> Option<Account> {
+        self.lock().iter().find(|a| a.id == id).cloned()
+    }
+
     pub fn find(&self, provider: Provider, host: &str) -> Option<Account> {
         self.lock()
             .iter()

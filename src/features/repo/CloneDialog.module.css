@@ -55,3 +55,36 @@
   flex-direction: column;
   gap: 12px;
 }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  padding: 4px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.hint {
+  /* Sits 4px under the URL field, as inside a .field, despite the form's 12px gap. */
+  margin: -8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.9em;
+}
+
+/* Always mounted as a live region; empty, it takes no space (display: none would hide it from
+   assistive technology). */
+.hint:empty {
+  margin-top: -12px;
+}

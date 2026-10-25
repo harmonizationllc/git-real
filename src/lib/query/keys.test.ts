@@ -571,3 +571,38 @@ describe("GR-13b hosting query keys", () => {
     ]).toEqual([true, true]);
   });
 });
+
+// Contract: GR-13c key. The account's repository list sits under 'hosting' (outside any repo
+// prefix), so connect/disconnect invalidate it and watcher events never cost a provider call.
+describe("GR-13c myRepos query key", () => {
+  it("should define myRepos(accountId, query) as ['hosting', 'myRepos', accountId, query]", () => {
+    expect(queryKeys.myRepos("github:github.com:octo", "git")).toEqual([
+      "hosting",
+      "myRepos",
+      "github:github.com:octo",
+      "git",
+    ]);
+  });
+
+  it("should give myRepos a different key per query", () => {
+    expect(queryKeys.myRepos("a", "x")).not.toEqual(queryKeys.myRepos("a", "y"));
+  });
+
+  it("should give myRepos a different key per account", () => {
+    expect(queryKeys.myRepos("a", "x")).not.toEqual(queryKeys.myRepos("b", "x"));
+  });
+
+  it("should not refresh myRepos when repo(id) is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.myRepos("a", ""), []);
+    await qc.invalidateQueries({ queryKey: queryKeys.repo(1) });
+    expect(qc.getQueryState(queryKeys.myRepos("a", ""))?.isInvalidated).toBe(false);
+  });
+
+  it("should refresh myRepos when the hosting prefix is invalidated", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData(queryKeys.myRepos("a", ""), []);
+    await qc.invalidateQueries({ queryKey: ["hosting"] });
+    expect(qc.getQueryState(queryKeys.myRepos("a", ""))?.isInvalidated).toBe(true);
+  });
+});

@@ -15,8 +15,8 @@ use git_real_core::{Credentials, PullRequestDraft, PushTarget, RepoSession};
 use git_real_lib::commands::hosting::{
     CreatePrRequest, hosting_checkout_pull_request_inner, hosting_connect_inner,
     hosting_create_pull_request_inner, hosting_disconnect_inner, hosting_list_accounts_inner,
-    hosting_list_issues_inner, hosting_list_pull_requests_inner, hosting_pull_request_draft_inner,
-    hosting_repo_context_inner, hosting_repo_info_inner,
+    hosting_list_issues_inner, hosting_list_my_repos_inner, hosting_list_pull_requests_inner,
+    hosting_pull_request_draft_inner, hosting_repo_context_inner, hosting_repo_info_inner,
 };
 use git_real_lib::commands::remote::{NetworkAuth, fetch_inner, list_remotes_inner};
 use git_real_lib::error::AppErrorKind;
@@ -1191,6 +1191,208 @@ fn list_issues_of_an_unknown_repo_is_unknown_repo() {
     )
     .unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
+}
+
+// GR-13c: the account's own repositories. The command takes an account id, not a repository.
+const MY_ACCOUNT_ID: &str = "github:github.com:octo";
+
+fn connected_store() -> (TempDir, HostingStore) {
+    let (dir, store, _tokens) = hosting_store();
+    store
+        .connect(github_account("octo"), &Token::new(SECRET).unwrap())
+        .unwrap();
+    (dir, store)
+}
+
+#[test]
+fn list_my_repos_uses_the_account_token_and_pages() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(
+        200,
+        r#"[{"full_name":"octo/r","name":"r","owner":{"login":"octo"},"description":null,"private":true,"updated_at":"2026-10-24T18:00:00Z","clone_url":"https://github.com/octo/r.git","html_url":"https://github.com/octo/r"}]"#,
+    );
+
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 0).unwrap();
+
+    let req = &t.requests()[0];
+    let auth: Vec<_> = req
+        .headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.clone())
+        .collect();
+    assert_eq!(auth, [format!("Bearer {SECRET}")]);
+    assert!(req.url.ends_with("&page=1"), "{}", req.url);
+    assert_eq!(
+        page.repos
+            .iter()
+            .map(|r| r.full_name.as_str())
+            .collect::<Vec<_>>(),
+        ["octo/r"]
+    );
+}
+
+// Fix 1: the command returns the wire page; `has_more` comes from the raw row count.
+#[test]
+fn list_my_repos_returns_a_page_with_has_more_for_a_full_raw_page() {
+    let (_dir, store) = connected_store();
+    let row = |i: usize, url: &str| {
+        format!(
+            r#"{{"full_name":"octo/r{i}","name":"r{i}","owner":{{"login":"octo"}},"private":false,"updated_at":"2026-10-24T18:00:00Z","clone_url":"{url}","html_url":"https://github.com/octo/r{i}"}}"#
+        )
+    };
+    let rows: Vec<String> = (0..50)
+        .map(|i| {
+            if i == 0 {
+                row(i, "http://github.com/octo/r0.git")
+            } else {
+                row(i, &format!("https://github.com/octo/r{i}.git"))
+            }
+        })
+        .collect();
+    let t = FakeTransport::new().reply(200, &format!("[{}]", rows.join(",")));
+
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+
+    assert_eq!((page.repos.len(), page.has_more), (49, true));
+}
+
+#[test]
+fn list_my_repos_reports_no_more_for_a_short_page() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(200, "[]");
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+    assert!(!page.has_more);
+}
+
+#[test]
+fn list_my_repos_passes_the_query_and_page_through() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(200, r#"{"items":[]}"#);
+    hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "git", 3).unwrap();
+    let url = &t.requests()[0].url;
+    assert!(
+        url.starts_with(
+            "https://api.github.com/search/repositories?q=git%20in%3Aname%20user%3Aocto"
+        ) && url.ends_with("&page=3"),
+        "{url}"
+    );
+}
+
+#[test]
+fn list_my_repos_with_an_unknown_account_is_no_hosting_account() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new();
+    let err =
+        hosting_list_my_repos_inner(&store, &t, "gitlab:gitlab.com:nobody", "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+#[test]
+fn list_my_repos_with_no_accounts_at_all_is_no_hosting_account() {
+    let (_dir, store, _tokens) = hosting_store();
+    let t = FakeTransport::new();
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+#[test]
+fn list_my_repos_marks_the_account_for_reconnect_on_401() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingAuth, true)
+    );
+}
+
+#[test]
+fn list_my_repos_does_not_leak_the_token_in_an_error() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(401, r#"{"message":"Bad credentials"}"#);
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert!(!err.message.contains(SECRET), "{}", err.message);
+}
+
+// HostingStore::account looks an account up by its id.
+#[test]
+fn store_account_finds_a_connected_account_by_id() {
+    let (_dir, store) = connected_store();
+    assert_eq!(
+        store.account(MY_ACCOUNT_ID).map(|a| a.username),
+        Some("octo".to_owned())
+    );
+}
+
+#[test]
+fn store_account_returns_none_for_an_unknown_id() {
+    let (_dir, store) = connected_store();
+    assert!(store.account("github:github.com:other").is_none());
+}
+
+#[test]
+fn store_account_is_gone_after_a_disconnect() {
+    let (_dir, store) = connected_store();
+    hosting_disconnect_inner(&store, MY_ACCOUNT_ID).unwrap();
+    assert!(store.account(MY_ACCOUNT_ID).is_none());
+}
+
+#[test]
+fn list_my_repos_after_a_disconnect_is_no_hosting_account() {
+    let (_dir, store) = connected_store();
+    hosting_disconnect_inner(&store, MY_ACCOUNT_ID).unwrap();
+    let t = FakeTransport::new();
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+// The account is listed but its token is gone from the keychain: no request goes out.
+#[test]
+fn list_my_repos_without_a_stored_token_is_no_hosting_account() {
+    let (_dir, store, tokens) = hosting_store();
+    store
+        .connect(github_account("octo"), &Token::new(SECRET).unwrap())
+        .unwrap();
+    tokens.map.lock().unwrap().clear();
+    let t = FakeTransport::new();
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, t.requests().is_empty()),
+        (AppErrorKind::NoHostingAccount, true)
+    );
+}
+
+#[test]
+fn list_my_repos_rate_limited_is_hosting_rate_limited_and_keeps_the_account_usable() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply_with(403, &[("x-ratelimit-remaining", "0")], "{}");
+    let err = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert_eq!(
+        (err.kind, store.accounts()[0].needs_reconnect),
+        (AppErrorKind::HostingRateLimited, false)
+    );
+}
+
+// Decision D5: the command does not pre-check `needs_reconnect`; the UI gates, and a fresh token
+// may have been stored meanwhile.
+#[test]
+fn list_my_repos_still_asks_the_provider_for_an_account_flagged_for_reconnect() {
+    let (_dir, store) = connected_store();
+    let t = FakeTransport::new().reply(401, "{}").reply(200, "[]");
+    hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
+    assert!(store.accounts()[0].needs_reconnect);
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+    assert_eq!((page.repos.len(), t.requests().len()), (0, 2));
 }
 
 // The draft is a local git read: no transport, no account.

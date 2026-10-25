@@ -1,0 +1,19 @@
+{
+  "values": [
+    {
+      "full_name": "ws/site",
+      "name": "site",
+      "workspace": { "slug": "ws" },
+      "description": "Docs site",
+      "is_private": true,
+      "updated_on": "2026-10-22T07:00:00.000000+00:00",
+      "links": {
+        "clone": [
+          { "name": "https", "href": "https://octo@bitbucket.org/ws/site.git" },
+          { "name": "ssh", "href": "git@bitbucket.org:ws/site.git" }
+        ],
+        "html": { "href": "https://bitbucket.org/ws/site" }
+      }
+    }
+  ]
+}

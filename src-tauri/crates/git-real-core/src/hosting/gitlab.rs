@@ -6,7 +6,10 @@ use serde_json::json;
 use super::http::{
     Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json, unexpected,
 };
-use super::model::{CiState, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo};
+use super::model::{
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, UserInfo,
+};
 use super::provider::{Provider, RepoRef};
 use crate::error::GitError;
 use crate::token::Token;
@@ -54,6 +57,25 @@ struct WireIssue {
     labels: Vec<String>,
     updated_at: String,
     web_url: String,
+}
+
+#[derive(Deserialize)]
+struct WireMyProject {
+    path_with_namespace: String,
+    path: String,
+    namespace: WireNamespace,
+    description: Option<String>,
+    /// `public`, `internal` or `private`; anything but `public` counts as private.
+    visibility: Option<String>,
+    last_activity_at: String,
+    http_url_to_repo: String,
+    ssh_url_to_repo: Option<String>,
+    web_url: String,
+}
+
+#[derive(Deserialize)]
+struct WireNamespace {
+    full_path: String,
 }
 
 pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<UserInfo, GitError> {
@@ -135,6 +157,26 @@ pub fn list_issues(
         .collect()
 }
 
+/// Every project the account is a member of, `query` matched by GitLab's `search`.
+pub fn list_my_repos(
+    t: &dyn Transport,
+    account: &Account,
+    token: &Token,
+    query: &str,
+    page: u32,
+) -> Result<HostedRepoPage, GitError> {
+    let mut url = format!(
+        "{}/projects?membership=true&order_by=last_activity_at&sort=desc&per_page=50&page={page}",
+        Provider::GitLab.api_base(&account.host)
+    );
+    let query = issue_query(query);
+    if !query.is_empty() {
+        url = format!("{url}&search={}", percent_encode(query));
+    }
+    let projects: Vec<WireMyProject> = send_json(t, &get(url, token, &[]), token, &account.host)?;
+    HostedRepoPage::from_raw(projects, |p| convert_repo(p, &account.host))
+}
+
 pub fn create_pull_request(
     t: &dyn Transport,
     repo: &RepoRef,
@@ -180,4 +222,20 @@ fn convert(m: WireMergeRequest, host: &str) -> Result<PullRequest, GitError> {
         updated_at: parse_timestamp(&m.updated_at).ok_or_else(|| unexpected(host))?,
         web_url: m.web_url,
     })
+}
+
+/// `Ok(None)` when the clone URL is unusable, so the row is left out.
+fn convert_repo(p: WireMyProject, host: &str) -> Result<Option<HostedRepo>, GitError> {
+    Ok(HostedRepo {
+        full_name: p.path_with_namespace,
+        name: p.path,
+        owner: p.namespace.full_path,
+        description: p.description,
+        private: p.visibility.as_deref() != Some("public"),
+        updated_at: parse_timestamp(&p.last_activity_at).ok_or_else(|| unexpected(host))?,
+        https_url: p.http_url_to_repo,
+        ssh_url: p.ssh_url_to_repo,
+        web_url: p.web_url,
+    }
+    .sanitized())
 }

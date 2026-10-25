@@ -1,0 +1,34 @@
+[
+  {
+    "full_name": "octo/git-real",
+    "name": "git-real",
+    "owner": { "login": "octo" },
+    "description": "A Git client",
+    "private": false,
+    "updated_at": "2026-10-24T18:00:00Z",
+    "clone_url": "https://github.com/octo/git-real.git",
+    "ssh_url": "git@github.com:octo/git-real.git",
+    "html_url": "https://github.com/octo/git-real"
+  },
+  {
+    "full_name": "octo/secret",
+    "name": "secret",
+    "owner": { "login": "octo" },
+    "description": null,
+    "private": true,
+    "updated_at": "2026-10-23T12:00:00Z",
+    "clone_url": "https://github.com/octo/secret.git",
+    "html_url": "https://github.com/octo/secret"
+  },
+  {
+    "full_name": "octo/evil",
+    "name": "evil",
+    "owner": { "login": "octo" },
+    "description": "Bad clone link",
+    "private": false,
+    "updated_at": "2026-10-22T12:00:00Z",
+    "clone_url": "javascript:alert(1)",
+    "ssh_url": "git@github.com:octo/evil.git",
+    "html_url": "https://github.com/octo/evil"
+  }
+]

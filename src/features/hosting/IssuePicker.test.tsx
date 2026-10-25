@@ -45,6 +45,12 @@ async function renderPicker(over: { provider?: HostingProvider } = {}, settle = 
   return { onPick, onClose, ...view };
 }
 
+// Freezes the clock after the picker has settled: nothing advances unless a test advances it, so
+// the debounce edges (299 ms / 300 ms) cannot drift under machine load.
+const freezeClock = () => {
+  vi.useRealTimers();
+  vi.useFakeTimers();
+};
 const input = () => screen.getByLabelText("Search issues");
 const options = () => screen.getAllByRole("option").map((o) => o.textContent);
 const press = (key: string) => fireEvent.keyDown(input(), { key });
@@ -169,6 +175,7 @@ describe("IssuePicker requests", () => {
 
   it("requests once after the debounce", async () => {
     await renderPicker();
+    freezeClock();
     vi.mocked(hostingListIssues).mockClear();
     type("cra");
     await wait(100);
@@ -178,11 +185,12 @@ describe("IssuePicker requests", () => {
     await wait(299);
     expect(hostingListIssues).not.toHaveBeenCalled();
     await wait(1);
-    await waitFor(() => expect(hostingListIssues).toHaveBeenCalledExactlyOnceWith(1, "crash", 1));
+    expect(hostingListIssues).toHaveBeenCalledExactlyOnceWith(1, "crash", 1);
   });
 
   it("does not request on a keystroke before the debounce elapses", async () => {
     await renderPicker();
+    freezeClock();
     vi.mocked(hostingListIssues).mockClear();
     type("c");
     await wait(250);
@@ -309,6 +317,58 @@ describe("IssuePicker closing", () => {
     const { onClose } = await renderPicker();
     press("Escape");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // Fix 6: Escape clears a non-empty search first and only an Escape on an empty field closes.
+  it("empties the field and stays open on Escape with text", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    press("Escape");
+    expect(input()).toHaveValue("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes on a second Escape once the field is empty", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    press("Escape");
+    press("Escape");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("clears a whitespace-only field on Escape instead of closing", async () => {
+    const { onClose } = await renderPicker();
+    type("   ");
+    press("Escape");
+    expect(input()).toHaveValue("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("neither clears nor closes on an Escape that cancels an IME composition", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    fireEvent.keyDown(input(), { key: "Escape", isComposing: true });
+    expect(input()).toHaveValue("bug");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("neither clears nor closes on an Escape with keyCode 229 (WebKit after a composition)", async () => {
+    const { onClose } = await renderPicker();
+    type("bug");
+    fireEvent.keyDown(input(), { key: "Escape", keyCode: 229 });
+    expect(input()).toHaveValue("bug");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("returns to the full list after Escape clears a debounced search", async () => {
+    await renderPicker();
+    type("bug");
+    await wait(300);
+    await screen.findByText("bug");
+    press("Escape");
+    await wait(300);
+    await waitFor(() => expect(hostingListIssues).toHaveBeenLastCalledWith(1, "", 1));
+    expect(options()).toHaveLength(3);
   });
 
   it("does not call onClose on another key", async () => {
