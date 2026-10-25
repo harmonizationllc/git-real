@@ -150,15 +150,14 @@ describe("CommandPalette filtering", () => {
   });
 });
 
-// Contract: ArrowDown/Up, Home and End move aria-activedescendant.
+// Contract: ArrowDown/Up, Home and End move aria-activedescendant on the combobox input.
 describe("CommandPalette keyboard navigation", () => {
-  it("ArrowDown moves aria-activedescendant", async () => {
+  it("ArrowDown moves aria-activedescendant on the combobox", async () => {
     setup();
     const input = await screen.findByRole("combobox", { name: "Search commands" });
-    const listbox = screen.getByRole("listbox");
-    const initialId = listbox.getAttribute("aria-activedescendant");
+    const initialId = input.getAttribute("aria-activedescendant");
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    const newId = listbox.getAttribute("aria-activedescendant");
+    const newId = input.getAttribute("aria-activedescendant");
     expect(newId).not.toBe(initialId);
   });
 
@@ -171,7 +170,7 @@ describe("CommandPalette keyboard navigation", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Home" });
     const options = within(listbox).getAllByRole("option");
-    const activeId = listbox.getAttribute("aria-activedescendant");
+    const activeId = input.getAttribute("aria-activedescendant");
     if (options.length > 0 && activeId) {
       expect(options[0].id).toBe(activeId);
     }
@@ -183,7 +182,7 @@ describe("CommandPalette keyboard navigation", () => {
     const listbox = screen.getByRole("listbox");
     fireEvent.keyDown(input, { key: "End" });
     const options = within(listbox).getAllByRole("option");
-    const activeId = listbox.getAttribute("aria-activedescendant");
+    const activeId = input.getAttribute("aria-activedescendant");
     if (options.length > 0 && activeId) {
       expect(options[options.length - 1].id).toBe(activeId);
     }
@@ -192,15 +191,25 @@ describe("CommandPalette keyboard navigation", () => {
   it("ArrowUp moves aria-activedescendant to the previous item", async () => {
     setup();
     const input = await screen.findByRole("combobox", { name: "Search commands" });
-    const listbox = screen.getByRole("listbox");
     // Navigate down twice to reach index 2.
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    const idAtIndex2 = listbox.getAttribute("aria-activedescendant");
+    const idAtIndex2 = input.getAttribute("aria-activedescendant");
     // Navigate up once — should move back to index 1.
     fireEvent.keyDown(input, { key: "ArrowUp" });
-    const idAfterUp = listbox.getAttribute("aria-activedescendant");
+    const idAfterUp = input.getAttribute("aria-activedescendant");
     expect(idAfterUp).not.toBe(idAtIndex2);
+  });
+
+  // RED (M1): aria-activedescendant must live on the combobox input only; the listbox must not
+  // carry it or assistive technologies will announce the active option twice.
+  it("aria-activedescendant is on the combobox only, not on the listbox", async () => {
+    setup();
+    const input = await screen.findByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.getAttribute("aria-activedescendant")).not.toBeNull();
+    expect(listbox.getAttribute("aria-activedescendant")).toBeNull();
   });
 });
 
@@ -338,6 +347,75 @@ describe("CommandPalette — no network hooks (Review Focus 4)", () => {
     expect(listBranches).not.toHaveBeenCalled();
     expect(listRemotes).not.toHaveBeenCalled();
     expect(getOperationState).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (B1): every rendered group is reachable as role="group" with the group name, and the
+// visible label div carries aria-hidden="true" so AT does not read the name twice.
+describe("CommandPalette group accessibility", () => {
+  it("the Actions group is accessible as role=group with name Actions", async () => {
+    setup();
+    await screen.findByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox");
+    const actionsGroup = within(listbox).getByRole("group", { name: "Actions" });
+    expect(actionsGroup).toBeInTheDocument();
+  });
+
+  it("the visual group label has aria-hidden=true so it is not read twice", async () => {
+    setup();
+    await screen.findByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox");
+    const actionsGroup = within(listbox).getByRole("group", { name: "Actions" });
+    const labelDiv = actionsGroup.querySelector("[aria-hidden='true']");
+    expect(labelDiv).not.toBeNull();
+    expect(labelDiv?.textContent).toBe("Actions");
+  });
+
+  it("Recent repositories group is accessible as role=group when recents exist", async () => {
+    vi.mocked(listRecent).mockResolvedValue([
+      {
+        path: "/r/repo1",
+        name: "repo1",
+        headBranch: "main",
+        isBare: false,
+        lastOpened: Date.now(),
+      },
+    ]);
+    setup();
+    await screen.findByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox");
+    await waitFor(() => {
+      expect(
+        within(listbox).getByRole("group", { name: "Recent repositories" }),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+// Contract: Enter on an empty result list is a no-op (does not crash or close).
+describe("CommandPalette Enter on empty list", () => {
+  it("Enter when no commands match does nothing", async () => {
+    const { onClose } = setup();
+    const input = await screen.findByRole("combobox", { name: "Search commands" });
+    fireEvent.change(input, { target: { value: "xyzzy12345nomatches" } });
+    await screen.findByText("No matching commands");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a whitespace-only query is treated as empty — all commands show but no mark
+// elements are rendered (highlight returns plain text for empty trimmed query).
+describe("CommandPalette whitespace query", () => {
+  it("whitespace-only query shows options without any mark highlights", async () => {
+    setup();
+    const input = await screen.findByRole("combobox", { name: "Search commands" });
+    fireEvent.change(input, { target: { value: "  " } });
+    // query.trim() === "" → highlight returns plain text → no <mark> elements.
+    expect(document.querySelectorAll("mark").length).toBe(0);
+    // Options are still shown (all commands pass through for empty query).
+    const listbox = screen.getByRole("listbox");
+    expect(within(listbox).getAllByRole("option").length).toBeGreaterThan(0);
   });
 });
 

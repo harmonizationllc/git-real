@@ -337,6 +337,21 @@ describe("SettingsDialog Git section — unavailable", () => {
     await screen.findByRole("heading", { name: "Settings" });
     await screen.findByText("Configured Git executable not found: /usr/local/bin/git");
   });
+
+  // Contract (M2): the probe error must use role="alert" so screen readers announce it
+  // urgently. The "Saved" indicator uses role="status" (polite) — the two must not be swapped.
+  it("the probe error element has role=alert not role=status", async () => {
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: "/usr/local/bin/git",
+      version: null,
+      error: "Configured Git executable not found: /usr/local/bin/git",
+    });
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Configured Git executable not found: /usr/local/bin/git");
+  });
 });
 
 // Contract: invalid Git executable shows Not a Git executable: … and is not stored.
