@@ -25,7 +25,8 @@
 
 .label,
 .close,
-.plus {
+.plus,
+.shell {
   background: none;
   border: 0;
   color: inherit;
@@ -33,9 +34,18 @@
   cursor: pointer;
 }
 
+.shell {
+  margin-left: auto;
+}
+
+.shell + .shell {
+  margin-left: 0;
+}
+
 .label,
 .close,
-.plus {
+.plus,
+.shell {
   padding: 6px 8px;
 }
 

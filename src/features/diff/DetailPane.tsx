@@ -84,6 +84,9 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
       onHistory={() => showHistory(repoId, file.path)}
       onClose={close}
       blameDisabledReason={blameable ? undefined : STASH_BLAME_REASON}
+      repoId={repoId}
+      scope={file.scope}
+      isStash={file.source === "stash"}
     />
   );
 

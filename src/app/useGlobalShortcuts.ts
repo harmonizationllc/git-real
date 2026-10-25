@@ -20,8 +20,12 @@ export function useGlobalShortcuts(actions: ShellActions): void {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('[role="dialog"]') !== null) return;
       const shell = useShell.getState();
+      // A non-shell dialog (clone, remotes, confirm, …) suppresses every global shortcut. While a
+      // shell dialog is the only one open, its single slot still accepts the palette/shortcuts/
+      // settings chords so one can switch between them; the rest stay suppressed.
+      const dialogMounted = document.querySelector('[role="dialog"]') !== null;
+      if (dialogMounted && shell.dialog === null) return;
       if (matchesShortcut(e, "palette")) {
         e.preventDefault();
         shell.open({ kind: "palette" });
@@ -31,6 +35,9 @@ export function useGlobalShortcuts(actions: ShellActions): void {
       } else if (matchesShortcut(e, "settings")) {
         e.preventDefault();
         shell.open({ kind: "settings" });
+      } else if (shell.dialog !== null) {
+        // A shell dialog is open: only the three switching chords above act.
+        return;
       } else if (matchesShortcut(e, "openRepo")) {
         e.preventDefault();
         actionsRef.current.openRepo();

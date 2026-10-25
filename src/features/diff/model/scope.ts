@@ -1,4 +1,4 @@
-import type { DiffScope } from "../../../lib/ipc";
+import type { DiffScope, ExternalDiffScope } from "../../../lib/ipc";
 
 /** A commit scope: a committed diff, never staged, unstaged or discarded. */
 export type CommitScope = Extract<DiffScope, { commit: string }>;
@@ -11,3 +11,7 @@ export const commitOf = (s: DiffScope): string | null => (typeof s === "string" 
 
 /** True for a commit scope, which offers no hunk actions. */
 export const isReadOnly = (s: DiffScope): s is CommitScope => typeof s !== "string";
+
+/** Maps a `DiffScope` to the wire `ExternalDiffScope` an external diff tool is launched with. */
+export const externalScope = (s: DiffScope): ExternalDiffScope =>
+  typeof s === "string" ? { kind: s } : { kind: "commit", oid: s.commit };

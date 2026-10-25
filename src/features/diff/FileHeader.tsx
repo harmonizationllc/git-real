@@ -1,5 +1,9 @@
 import { useId } from "react";
+import { openExternalDiff, openInEditor } from "../../lib/ipc";
+import type { DiffScope, RepoId } from "../../lib/ipc";
 import type { CentreView } from "../../lib/store/workspace";
+import { useExternalTool } from "../settings/useExternalTool";
+import { externalScope } from "./model/scope";
 import styles from "./FileHeader.module.css";
 
 export interface FileHeaderProps {
@@ -11,6 +15,10 @@ export interface FileHeaderProps {
   onClose(): void;
   /** Disables the Blame option; shown as its title. */
   blameDisabledReason?: string;
+  repoId: RepoId;
+  scope: DiffScope;
+  /** A stash file has no working-tree path, so it offers no external tools. */
+  isStash: boolean;
 }
 
 const VIEW_LABELS: Record<CentreView, string> = { diff: "Diff", blame: "Blame" };
@@ -24,8 +32,16 @@ export function FileHeader({
   onHistory,
   onClose,
   blameDisabledReason,
+  repoId,
+  scope,
+  isStash,
 }: FileHeaderProps) {
   const groupName = useId();
+  const editor = useExternalTool("editor");
+  const diff = useExternalTool("diff");
+  // The editor edits the working tree, so it is offered only for a working-tree scope.
+  const canEditInPlace = !isStash && typeof scope === "string";
+  const canExternalDiff = !isStash;
   return (
     <div className={styles.root}>
       <span className={styles.path}>{oldPath ? `${oldPath} → ${path}` : path}</span>
@@ -47,6 +63,19 @@ export function FileHeader({
           );
         })}
       </div>
+      {canEditInPlace && (
+        <button type="button" onClick={() => void editor.run(() => openInEditor(path))}>
+          Open in editor
+        </button>
+      )}
+      {canExternalDiff && (
+        <button
+          type="button"
+          onClick={() => void diff.run(() => openExternalDiff(repoId, path, externalScope(scope)))}
+        >
+          External diff
+        </button>
+      )}
       <button type="button" aria-label="Show file history" onClick={onHistory}>
         History
       </button>

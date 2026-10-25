@@ -4,6 +4,8 @@ import { Toasts } from "../components/Toasts";
 import { CloneDialog } from "../features/repo/CloneDialog";
 import { StartScreen } from "../features/repo/StartScreen";
 import { useOpenRepo } from "../features/repo/useOpenRepo";
+import { CommandPalette } from "../features/palette/CommandPalette";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { ShortcutsDialog } from "../features/settings/ShortcutsDialog";
 import { pickFolder } from "../lib/ipc";
 import { queryClient } from "../lib/query/client";
@@ -63,6 +65,12 @@ function AppShell(): React.JSX.Element {
         )}
       </main>
       <CloneDialog open={cloneOpen} onClose={() => setCloneOpen(false)} />
+      {dialog?.kind === "settings" && (
+        <SettingsDialog section={dialog.section} onClose={closeDialog} fallbackFocus={rootRef} />
+      )}
+      {dialog?.kind === "palette" && (
+        <CommandPalette actions={actions} onClose={closeDialog} fallbackFocus={rootRef} />
+      )}
       {dialog?.kind === "shortcuts" && (
         <ShortcutsDialog onClose={closeDialog} fallbackFocus={rootRef} />
       )}

@@ -1,8 +1,10 @@
 import { Compartment, Transaction, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { openExternalMerge } from "../../../lib/ipc";
 import type { AppError, ConflictSide, RepoId } from "../../../lib/ipc";
 import { useWorkspace } from "../../../lib/store/workspace";
+import { useExternalTool } from "../../settings/useExternalTool";
 import { useBranches } from "../../branches/useBranches";
 import { languageFor, loadLanguage } from "../../diff/model/highlight";
 import { HIGHLIGHT_LIMIT } from "../../diff/model/limits";
@@ -70,6 +72,20 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
   const name = path.slice(path.lastIndexOf("/") + 1);
   const close = () => useWorkspace.getState().select(repoId, null);
 
+  // The external merge tool, shared by the loading, placeholder and editable toolbars. Unset opens
+  // Settings; the button stays busy while the tool is open.
+  const mergeTool = useExternalTool("merge");
+  const [mergeToolRunning, setMergeToolRunning] = useState(false);
+  const openMergeTool = async () => {
+    setMergeToolRunning(true);
+    try {
+      await mergeTool.run(() => openExternalMerge(repoId, path));
+    } finally {
+      setMergeToolRunning(false);
+    }
+  };
+  const onOpenMergeTool = () => void openMergeTool();
+
   // Bytes already in hand win over a later refetch error, so a flaky refetch keeps the editor.
   if (decoded !== null && typeof decoded !== "string") {
     return (
@@ -81,17 +97,22 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
         crlf={decoded.crlf}
         labels={labels}
         onClose={close}
+        onOpenMergeTool={onOpenMergeTool}
+        mergeToolRunning={mergeToolRunning}
       />
     );
   }
 
-  const shell = (
+  // The merge tool is offered once the file is known not to be editable here, not while it loads.
+  const shell = (withMergeTool: boolean) => (
     <ConflictToolbar
       path={path}
       remaining={null}
       canPickAll={false}
       labels={labels}
       pending={false}
+      onOpenMergeTool={withMergeTool ? onOpenMergeTool : undefined}
+      mergeToolRunning={withMergeTool ? mergeToolRunning : undefined}
       onClose={close}
     />
   );
@@ -101,7 +122,7 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
   if (reason === null) {
     return (
       <div className={styles.root}>
-        {shell}
+        {shell(false)}
         <div className={styles.empty}>
           <p role="status">Loading {name}…</p>
         </div>
@@ -115,7 +136,7 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
   };
   return (
     <div className={styles.root}>
-      {shell}
+      {shell(true)}
       {integration.error && (
         <RepoError error={integration.error} path={null} onDismiss={integration.clearError} />
       )}
@@ -146,9 +167,20 @@ interface EditableConflictProps {
   crlf: boolean;
   labels: BlockLabels;
   onClose(): void;
+  onOpenMergeTool(): void;
+  mergeToolRunning: boolean;
 }
 
-function EditableConflict({ repoId, path, source, crlf, labels, onClose }: EditableConflictProps) {
+function EditableConflict({
+  repoId,
+  path,
+  source,
+  crlf,
+  labels,
+  onClose,
+  onOpenMergeTool,
+  mergeToolRunning,
+}: EditableConflictProps) {
   const viewRef = useRef<EditorView | null>(null);
   const writer = useResolutionWriter(repoId, path, crlf);
   // Mount-time values: later changes go through the compartments, never a new extension list.
@@ -239,6 +271,8 @@ function EditableConflict({ repoId, path, source, crlf, labels, onClose }: Edita
         onKeepAll={() => pickAll(view(), "ours")}
         onTakeAll={() => pickAll(view(), "theirs")}
         onMarkResolved={() => void markResolved()}
+        onOpenMergeTool={onOpenMergeTool}
+        mergeToolRunning={mergeToolRunning}
         onClose={onClose}
       />
       {writer.error && <RepoError error={writer.error} path={null} onDismiss={writer.clearError} />}

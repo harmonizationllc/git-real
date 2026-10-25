@@ -26,6 +26,7 @@ import type { HeadState, RepoId } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
 import { matchesShortcut } from "../lib/shortcuts";
 import { KEY_STEP, REFS_MIN, SIDEBAR_MIN, clampWidths, maxWidth } from "./layout";
@@ -107,6 +108,25 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Publish the active pane's repository actions for the command palette, with stable callbacks
+  // backed by syncRef so only a gate or the path re-publishes. Cleared when the pane unmounts.
+  useEffect(() => {
+    useShell.getState().publishRepoActions({
+      repoId: tab.id,
+      path,
+      gates: {
+        fetch: sync.gates.fetch,
+        pull: sync.gates.pull,
+        push: sync.gates.push,
+      },
+      fetch: () => syncRef.current.fetch(),
+      pull: () => syncRef.current.pull(),
+      push: () => syncRef.current.push(),
+      fileHistory: () => setPicker(true),
+    });
+    return () => useShell.getState().publishRepoActions(null);
+  }, [tab.id, path, sync.gates.fetch, sync.gates.pull, sync.gates.push]);
 
   // Measured body width; 0 until the first observation, which leaves the stored widths unclamped.
   const [container, setContainer] = useState(0);

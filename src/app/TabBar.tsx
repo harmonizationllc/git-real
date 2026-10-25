@@ -1,5 +1,7 @@
 import type { RepoId } from "../lib/ipc";
+import { useShell } from "../lib/store/shell";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { formatKeys, shortcut } from "../lib/shortcuts";
 import styles from "./TabBar.module.css";
 
 export interface TabBarProps {
@@ -46,6 +48,24 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
         onClick={() => onActivate(null)}
       >
         <span aria-hidden="true">+</span>
+      </button>
+      <button
+        type="button"
+        aria-label="Command palette"
+        title={`Command palette (${formatKeys(shortcut("palette").keys)})`}
+        className={styles.shell}
+        onClick={() => useShell.getState().open({ kind: "palette" })}
+      >
+        <span aria-hidden="true">⌘</span>
+      </button>
+      <button
+        type="button"
+        aria-label="Settings"
+        title={`Settings (${formatKeys(shortcut("settings").keys)})`}
+        className={styles.shell}
+        onClick={() => useShell.getState().open({ kind: "settings" })}
+      >
+        <span aria-hidden="true">⚙</span>
       </button>
     </nav>
   );

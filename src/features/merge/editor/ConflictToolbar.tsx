@@ -15,6 +15,10 @@ export interface ConflictToolbarProps {
   onKeepAll?(): void;
   onTakeAll?(): void;
   onMarkResolved?(): void;
+  /** Launches the external merge tool; the button shows on both toolbars when given. */
+  onOpenMergeTool?(): void;
+  /** The external merge tool is open, so the button is busy and disabled. */
+  mergeToolRunning?: boolean;
   onClose(): void;
 }
 
@@ -41,6 +45,8 @@ export function ConflictToolbar({
   onKeepAll,
   onTakeAll,
   onMarkResolved,
+  onOpenMergeTool,
+  mergeToolRunning,
   onClose,
 }: ConflictToolbarProps) {
   const close = (
@@ -48,11 +54,17 @@ export function ConflictToolbar({
       Close
     </button>
   );
+  const mergeToolButton = onOpenMergeTool && (
+    <button type="button" disabled={mergeToolRunning} onClick={onOpenMergeTool}>
+      {mergeToolRunning ? "Merge tool open…" : "Open in merge tool"}
+    </button>
+  );
   if (remaining === null) {
     return (
       <div className={styles.root}>
         <span className={styles.path}>{path}</span>
         <span className={styles.spacer} />
+        {mergeToolButton}
         {close}
       </div>
     );
@@ -80,6 +92,7 @@ export function ConflictToolbar({
       <button type="button" disabled={reason !== undefined} title={reason} onClick={onMarkResolved}>
         Mark resolved
       </button>
+      {mergeToolButton}
       {close}
     </div>
   );
