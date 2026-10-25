@@ -4,16 +4,16 @@ import { AccountsDialog } from "../hosting/AccountsDialog";
 import { RecentList } from "./RecentList";
 import { RepoError } from "./RepoError";
 import styles from "./StartScreen.module.css";
-import { useOpenRepo } from "./useOpenRepo";
+import type { UseOpenRepo } from "./useOpenRepo";
 import { useRecentRepos } from "./useRecentRepos";
 
-export function StartScreen({ onClone }: { onClone(): void }) {
+export function StartScreen({ opener, onClone }: { opener: UseOpenRepo; onClone(): void }) {
   const headingId = useId();
   const { recents, isLoading, remove } = useRecentRepos();
-  const { open, init, error, errorPath, clearError } = useOpenRepo();
+  const { open, init, error, errorPath, clearError } = opener;
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const pickThen = async (title: string, action: (path: string) => Promise<void>) => {
+  const pickThen = async (title: string, action: (path: string) => Promise<boolean>) => {
     const path = await pickFolder(title);
     if (path !== null) await action(path);
   };
