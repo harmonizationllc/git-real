@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import type { Ref } from "react";
+import { matchesShortcut } from "../../lib/shortcuts";
 import { insertIssueRef } from "./issueRef";
 import { SUBJECT_LIMIT } from "./limits";
 import styles from "./MessageEditor.module.css";
@@ -29,15 +30,6 @@ export type IssueRefInserter = (text: string) => void;
 
 type Field = "subject" | "body";
 
-/** Ctrl/Cmd+Shift+I outside an IME composition; Caps Lock can flip the key's case. */
-const isLinkChord = (e: React.KeyboardEvent): boolean =>
-  (e.ctrlKey || e.metaKey) &&
-  e.shiftKey &&
-  // The physical key too, so the chord works on non-Latin layouts.
-  (e.key.toLowerCase() === "i" || e.code === "KeyI") &&
-  !e.nativeEvent.isComposing &&
-  e.keyCode !== 229;
-
 /**
  * Ctrl/Cmd+Enter submits; plain Enter runs `onPlainEnter` when given, else keeps its default.
  * An Enter that confirms an IME composition is left untouched in both fields.
@@ -48,7 +40,7 @@ function handleEnter(
   onPlainEnter: (() => void) | null,
 ): void {
   if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
-  if (e.ctrlKey || e.metaKey) {
+  if (matchesShortcut(e, "commit")) {
     e.preventDefault();
     onSubmit();
   } else if (onPlainEnter !== null) {
@@ -109,7 +101,7 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
   });
 
   const onKeyDown = (e: React.KeyboardEvent, field: Field, onPlainEnter: (() => void) | null) => {
-    if (onLinkIssue && !disabled && isLinkChord(e)) {
+    if (onLinkIssue && !disabled && matchesShortcut(e, "linkIssue")) {
       // Consumed here, so RepoPane's window shortcuts and the webview never see it.
       e.preventDefault();
       trigger(onLinkIssue, field);
