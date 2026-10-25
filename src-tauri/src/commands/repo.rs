@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use git_real_core::git_cli;
 use git_real_core::remote::clone::clone;
-use git_real_core::{ProgressSink, RecentEntry, RepoSession, RepoSummary};
+use git_real_core::{GitError, ProgressSink, RecentEntry, RepoSession, RepoSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -26,19 +26,27 @@ pub struct OpenedRepo {
     pub summary: RepoSummary,
 }
 
-/// Whether the system git CLI was found, and where.
+/// Whether the system git CLI was found and verified, where, its version, and
+/// the failure reason when it could not be verified.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCliInfo {
     pub available: bool,
     pub path: Option<String>,
+    pub version: Option<String>,
+    pub error: Option<String>,
 }
 
 impl GitCliInfo {
-    pub fn from_located(located: Option<PathBuf>) -> Self {
+    /// Builds the info from a located path and the result of verifying it.
+    /// `available` is true only when `version` succeeded; `path` is the located
+    /// path even when verification failed, and `error` carries the reason.
+    pub fn from_probe(path: Option<PathBuf>, version: Result<String, GitError>) -> Self {
         Self {
-            available: located.is_some(),
-            path: located.map(|p| p.to_string_lossy().into_owned()),
+            available: version.is_ok(),
+            path: path.map(|p| p.to_string_lossy().into_owned()),
+            version: version.as_ref().ok().cloned(),
+            error: version.as_ref().err().map(ToString::to_string),
         }
     }
 }
@@ -100,7 +108,12 @@ pub fn remove_recent_inner(recent: &RecentStore, path: &str) -> Vec<RecentEntry>
 }
 
 pub fn check_git_cli_inner() -> GitCliInfo {
-    GitCliInfo::from_located(git_cli::locate().ok())
+    let located = git_cli::locate().ok();
+    let version = match &located {
+        Some(path) => git_cli::verify(path),
+        None => Err(GitError::GitCliMissing),
+    };
+    GitCliInfo::from_probe(located, version)
 }
 
 /// Starts a watcher emitting [`REPO_CHANGED`] for `id`, unless one already runs.

@@ -3,6 +3,7 @@ pub mod error;
 pub mod events;
 pub mod hosting_store;
 pub mod recent_store;
+pub mod settings_store;
 pub mod state;
 pub mod watcher;
 
@@ -14,6 +15,7 @@ use tauri::Manager;
 
 use crate::hosting_store::{HostingStore, KeyringTokenStore};
 use crate::recent_store::RecentStore;
+use crate::settings_store::SettingsStore;
 use crate::state::{RepoRegistry, WatcherRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,6 +35,9 @@ pub fn run() {
                 dir.join("hosting_accounts.json"),
                 Box::new(KeyringTokenStore),
             )));
+            let settings = Arc::new(SettingsStore::load(dir.join("settings.json")));
+            settings.apply_git_override();
+            app.manage(settings);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,6 +48,11 @@ pub fn run() {
             commands::repo::list_recent,
             commands::repo::remove_recent,
             commands::repo::check_git_cli,
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            commands::tools::open_in_editor,
+            commands::tools::open_external_diff,
+            commands::tools::open_external_merge,
             commands::worktree::get_status,
             commands::worktree::get_file_diff,
             commands::worktree::get_file_content,
