@@ -150,10 +150,12 @@ export function CommandPalette({ actions, onClose, fallbackFocus }: CommandPalet
           className={styles.list}
         >
           {grouped.map(({ group, rows }) => (
-            <li key={group} role="presentation" className={styles.group}>
-              <div className={styles.groupLabel}>{group}</div>
+            <li key={group} role="group" aria-label={group} className={styles.group}>
+              <div aria-hidden="true" className={styles.groupLabel}>
+                {group}
+              </div>
               <ul role="presentation" className={styles.groupList}>
-                {rows.map(({ item, matched }) => {
+                {rows.map(({ item }) => {
                   index += 1;
                   const i = index;
                   const disabled = item.disabledReason !== null;
@@ -169,13 +171,11 @@ export function CommandPalette({ actions, onClose, fallbackFocus }: CommandPalet
                       onClick={() => run(item)}
                     >
                       <span className={styles.optionLabel}>
-                        {matched === "label" ? highlight(item.label, query.trim()) : item.label}
+                        {highlight(item.label, query.trim())}
                       </span>
                       {item.detail !== undefined && (
                         <span className={styles.optionDetail}>
-                          {matched === "detail"
-                            ? highlight(item.detail, query.trim())
-                            : item.detail}
+                          {highlight(item.detail, query.trim())}
                         </span>
                       )}
                     </li>

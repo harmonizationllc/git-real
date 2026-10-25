@@ -40,9 +40,9 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
     // Focus the first control of the chosen section, else the first control of the dialog. The
     // dialog element itself is never a focus target, so it needs no tabIndex.
     const dialog = dialogRef.current;
-    const scope =
-      (section ? dialog?.querySelector<HTMLElement>(`[data-section="${section}"]`) : dialog) ??
-      dialog;
+    const scope = section
+      ? dialog?.querySelector<HTMLElement>(`[data-section="${section}"]`)
+      : dialog;
     const first = scope?.querySelector<HTMLElement>("input, button, [tabindex]");
     first?.focus();
     first?.scrollIntoView?.({ block: "nearest" });
@@ -351,7 +351,7 @@ function GitSettings() {
           </p>
         ) : (
           git.data.error && (
-            <p role="status" className={styles.value}>
+            <p role="alert" className={styles.value}>
               {git.data.error}
             </p>
           )
