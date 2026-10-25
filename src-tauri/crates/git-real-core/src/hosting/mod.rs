@@ -17,8 +17,8 @@ pub use crate::model::CheckoutPrOutcome;
 pub use crate::token::Token;
 pub use http::{Method, Request, Response, Transport};
 pub use model::{
-    Account, CiState, HostedRepo, HostedRepoInfo, Issue, NewPullRequest, PullRequest, RepoContext,
-    UserInfo,
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, RepoContext, UserInfo,
 };
 pub use provider::{Provider, RepoRef};
 
@@ -98,14 +98,14 @@ pub fn list_issues(
 
 /// One page (1-based, 50 per page) of the repositories `account` can clone, matching `query`
 /// by name (all of them when blank), newest update first. Rows with an unusable clone URL are
-/// left out.
+/// left out; `has_more` still reflects the raw page.
 pub fn list_my_repos(
     t: &dyn Transport,
     account: &Account,
     token: &Token,
     query: &str,
     page: u32,
-) -> Result<Vec<HostedRepo>, GitError> {
+) -> Result<HostedRepoPage, GitError> {
     match account.provider {
         Provider::GitHub => github::list_my_repos(t, account, token, query, page),
         Provider::GitLab => gitlab::list_my_repos(t, account, token, query, page),

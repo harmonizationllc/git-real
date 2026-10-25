@@ -9,7 +9,8 @@ use super::http::{
     unexpected,
 };
 use super::model::{
-    Account, CiState, HostedRepo, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo,
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, UserInfo,
 };
 use super::provider::{Provider, RepoRef};
 use crate::error::GitError;
@@ -220,7 +221,7 @@ pub fn list_my_repos(
     token: &Token,
     query: &str,
     page: u32,
-) -> Result<Vec<HostedRepo>, GitError> {
+) -> Result<HostedRepoPage, GitError> {
     let base = Provider::GitHub.api_base(&account.host);
     let host = &account.host;
     let query = strip_repo_qualifiers(issue_query(query));
@@ -238,10 +239,7 @@ pub fn list_my_repos(
         let found: WireSearch<WireMyRepo> = send_json(t, &get(url, token, &HEADERS), token, host)?;
         found.items
     };
-    repos
-        .into_iter()
-        .filter_map(|r| convert_repo(r, host).transpose())
-        .collect()
+    HostedRepoPage::from_raw(repos, |r| convert_repo(r, host))
 }
 
 pub fn create_pull_request(

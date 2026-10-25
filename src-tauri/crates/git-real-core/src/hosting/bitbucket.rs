@@ -8,7 +8,8 @@ use super::http::{
     Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json, unexpected,
 };
 use super::model::{
-    Account, CiState, HostedRepo, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo,
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, UserInfo,
 };
 use super::provider::{Provider, RepoRef, is_plain_segment};
 use crate::error::GitError;
@@ -239,7 +240,7 @@ pub fn list_my_repos(
     token: &Token,
     query: &str,
     page: u32,
-) -> Result<Vec<HostedRepo>, GitError> {
+) -> Result<HostedRepoPage, GitError> {
     let mut url = format!(
         "{}/repositories?role=member&sort=-updated_on&pagelen=50&page={page}",
         Provider::Bitbucket.api_base(&account.host)
@@ -255,10 +256,7 @@ pub fn list_my_repos(
         );
     }
     let list: WirePage<WireMyRepo> = send_json(t, &get(url, token, &[]), token, &account.host)?;
-    list.values
-        .into_iter()
-        .filter_map(|r| convert_repo(r, &account.host).transpose())
-        .collect()
+    HostedRepoPage::from_raw(list.values, |r| convert_repo(r, &account.host))
 }
 
 pub fn create_pull_request(
@@ -339,7 +337,11 @@ fn convert_repo(r: WireMyRepo, host: &str) -> Result<Option<HostedRepo>, GitErro
             .find(|l| l.name == name)
             .map(|l| l.href.clone())
     };
-    let https_url = href("https").ok_or_else(|| unexpected(host))?;
+    let updated_at = parse_timestamp(&r.updated_on).ok_or_else(|| unexpected(host))?;
+    // One repository without an https link must not hide the rest of the page.
+    let Some(https_url) = href("https") else {
+        return Ok(None);
+    };
     let ssh_url = href("ssh");
     Ok(HostedRepo {
         full_name: r.full_name,
@@ -347,7 +349,7 @@ fn convert_repo(r: WireMyRepo, host: &str) -> Result<Option<HostedRepo>, GitErro
         owner: r.workspace.slug,
         description: r.description,
         private: r.is_private,
-        updated_at: parse_timestamp(&r.updated_on).ok_or_else(|| unexpected(host))?,
+        updated_at,
         https_url,
         ssh_url,
         web_url: r.links.html.href,

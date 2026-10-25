@@ -7,7 +7,8 @@ use super::http::{
     Transport, get, issue_query, parse_timestamp, percent_encode, post_json, send_json, unexpected,
 };
 use super::model::{
-    Account, CiState, HostedRepo, HostedRepoInfo, Issue, NewPullRequest, PullRequest, UserInfo,
+    Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
+    PullRequest, UserInfo,
 };
 use super::provider::{Provider, RepoRef};
 use crate::error::GitError;
@@ -163,7 +164,7 @@ pub fn list_my_repos(
     token: &Token,
     query: &str,
     page: u32,
-) -> Result<Vec<HostedRepo>, GitError> {
+) -> Result<HostedRepoPage, GitError> {
     let mut url = format!(
         "{}/projects?membership=true&order_by=last_activity_at&sort=desc&per_page=50&page={page}",
         Provider::GitLab.api_base(&account.host)
@@ -173,10 +174,7 @@ pub fn list_my_repos(
         url = format!("{url}&search={}", percent_encode(query));
     }
     let projects: Vec<WireMyProject> = send_json(t, &get(url, token, &[]), token, &account.host)?;
-    projects
-        .into_iter()
-        .filter_map(|p| convert_repo(p, &account.host).transpose())
-        .collect()
+    HostedRepoPage::from_raw(projects, |p| convert_repo(p, &account.host))
 }
 
 pub fn create_pull_request(

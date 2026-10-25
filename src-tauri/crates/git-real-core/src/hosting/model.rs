@@ -3,7 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::provider::{Provider, RepoRef, host_port};
+use crate::error::GitError;
 use crate::remote::host::strip_user;
+
+/// Rows per provider page; every list request asks for this many.
+pub(crate) const PAGE_SIZE: usize = 50;
 
 /// The account a token belongs to, as the provider reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,6 +155,31 @@ impl HostedRepo {
     }
 }
 
+/// One page of the account's repositories.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostedRepoPage {
+    pub repos: Vec<HostedRepo>,
+    /// The provider returned a full raw page (50 rows before sanitising), so there may be more.
+    pub has_more: bool,
+}
+
+impl HostedRepoPage {
+    /// One raw provider page: `has_more` from the raw row count, before any row is dropped.
+    pub(crate) fn from_raw<W>(
+        raw: Vec<W>,
+        convert: impl FnMut(W) -> Result<Option<HostedRepo>, GitError>,
+    ) -> Result<Self, GitError> {
+        let has_more = raw.len() == PAGE_SIZE;
+        let repos = raw
+            .into_iter()
+            .map(convert)
+            .filter_map(Result::transpose)
+            .collect::<Result<_, _>>()?;
+        Ok(Self { repos, has_more })
+    }
+}
+
 /// `https://<host[:port]>/<path>` with any `user@` dropped; `None` for another scheme, a bad
 /// host, an empty path, or any whitespace or control character.
 fn clean_https_url(url: &str) -> Option<String> {
@@ -162,19 +191,17 @@ fn clean_https_url(url: &str) -> Option<String> {
 }
 
 /// `user@host:path` (`[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:` then a non-empty path) or an `ssh://`
-/// URL with a non-empty host and a non-empty path after it; neither the user nor the host may
-/// start with `-` (git would read it as an ssh option), and no whitespace or control character
-/// anywhere.
+/// URL whose host and optional port are validated as for `https_url` and with a non-empty path
+/// after them; the user may not start with `-` (git would read it as an ssh option), and no
+/// whitespace or control character anywhere.
 fn clean_ssh_url(url: String) -> Option<String> {
     if has_space_or_control(&url) {
         return None;
     }
     let ok = if let Some(rest) = url.strip_prefix("ssh://") {
         rest.split_once('/').is_some_and(|(authority, path)| {
-            let host = strip_user(authority);
             !authority.starts_with('-')
-                && !host.is_empty()
-                && !host.starts_with('-')
+                && host_port(strip_user(authority)).is_some()
                 && !path.is_empty()
         })
     } else {

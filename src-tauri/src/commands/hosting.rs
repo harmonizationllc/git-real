@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use git_real_core::hosting::provider::{detect, validate_host};
 use git_real_core::hosting::{
-    self, Account, CheckoutPlan, CheckoutPrOutcome, HostedRepo, HostedRepoInfo, Issue,
+    self, Account, CheckoutPlan, CheckoutPrOutcome, HostedRepoInfo, HostedRepoPage, Issue,
     NewPullRequest, Provider, PullRequest, RepoContext, RepoRef, Token, Transport,
 };
 use git_real_core::{Credentials, GitError, PullRequestDraft, PushTarget};
@@ -149,7 +149,7 @@ pub fn hosting_list_my_repos_inner(
     account_id: &str,
     query: &str,
     page: u32,
-) -> Result<Vec<HostedRepo>, AppError> {
+) -> Result<HostedRepoPage, AppError> {
     let account = store
         .account(account_id)
         .ok_or(GitError::NoHostingAccount)?;
@@ -333,7 +333,7 @@ pub async fn hosting_list_my_repos(
     account_id: String,
     query: String,
     page: u32,
-) -> Result<Vec<HostedRepo>, AppError> {
+) -> Result<HostedRepoPage, AppError> {
     let hosting = Arc::clone(hosting.inner());
     let transport = Arc::clone(transport.inner());
     run_blocking(move || {
