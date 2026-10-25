@@ -1377,12 +1377,19 @@ fn clone_urls_are_sanitized_before_they_can_reach_git() {
     );
     // Fix 7: an `ssh://` port is non-empty ASCII digits, so it can never read as an ssh option.
     assert_eq!(ssh("ssh://h:22/p.git").as_deref(), Some("ssh://h:22/p.git"));
+    assert_eq!(
+        ssh("ssh://h:65535/p.git").as_deref(),
+        Some("ssh://h:65535/p.git")
+    );
     for bad in [
         "ssh://git@h:-oX/p",
         "ssh://git@h:/p",
         "ssh://git@h:2a/p.git",
         "ssh://git@h:0/p",
         "ssh://git@h:99999/p",
+        "ssh://git@[::1]/p.git",
+        "ssh://git@[::1]:22/p.git",
+        "ssh://git@h:65536/p.git",
         "ssh://h:-oProxyCommand=x/p",
         "ssh://h:/p",
         "ssh://git@h:\u{663}/p.git",

@@ -536,6 +536,30 @@ describe("RepoBrowser search Escape", () => {
     expect(search()).toHaveValue("");
     expect(parentKey).not.toHaveBeenCalled();
   });
+
+  // An Escape that cancels an IME composition belongs to the composition: it must not clear the
+  // field, and it is not stopped here.
+  it("keeps the text on an Escape that cancels an IME composition", async () => {
+    const parentKey = await renderInsideParent();
+    type("found");
+    fireEvent.keyDown(search(), { key: "Escape", isComposing: true });
+    expect(search()).toHaveValue("found");
+    expect(parentKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the text on an Escape with keyCode 229 (WebKit after a composition)", async () => {
+    const parentKey = await renderInsideParent();
+    type("found");
+    fireEvent.keyDown(search(), { key: "Escape", keyCode: 229 });
+    expect(search()).toHaveValue("found");
+    expect(parentKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("still prevents Enter during an IME composition so the clone form is not submitted", async () => {
+    await renderBrowser();
+    type("found");
+    expect(fireEvent.keyDown(search(), { key: "Enter", isComposing: true })).toBe(false);
+  });
 });
 
 // Contract: 50 per page; Show more loads the next page and keeps the loaded ones.
