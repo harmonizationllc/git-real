@@ -12,8 +12,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use git_real_core::git_cli::set_configured_path;
 use git_real_core::ExternalDiffScope;
+use git_real_core::git_cli::set_configured_path;
 use git_real_lib::commands::tools::{
     open_external_diff_inner, open_external_merge_inner, open_in_editor_inner,
 };
@@ -318,7 +318,10 @@ fn open_in_editor_with_a_configured_editor_returns_ok() {
     };
 
     let (_sdir, spath) = common::temp_file_path("settings.json");
-    let store = store_with_editor(spath, editor_path.to_str().unwrap());
+    // Invoke via "sh <path>" so the kernel execs /bin/sh rather than the freshly-written
+    // script file, preventing ETXTBSY when a parallel test's fork inherits the write fd.
+    let editor_cmd = format!("sh {}", editor_path.display());
+    let store = store_with_editor(spath, &editor_cmd);
 
     open_in_editor_inner(&store, "/some/file.rs").unwrap();
 }

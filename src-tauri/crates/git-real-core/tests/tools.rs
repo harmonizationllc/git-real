@@ -93,7 +93,10 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
         p
     };
 
-    let cmd = format!("{} --wait", editor_path.display());
+    // Use "sh <script>" so the kernel execs /bin/sh (already in memory) rather than
+    // the freshly-written file, preventing ETXTBSY when a parallel test's fork
+    // inherits the write fd from the just-created script.
+    let cmd = format!("sh {} --wait", editor_path.display());
     let file_path = PathBuf::from("/some/file");
     open_in_editor(&cmd, &file_path).unwrap();
 

@@ -31,11 +31,27 @@ fn fake_git_script(dir: &std::path::Path) -> PathBuf {
 }
 
 /// Writes a non-git executable in `dir` that emits `hello`.
+/// Probes the script after writing (same pattern as `common::fake_git`) so a
+/// concurrent fork in another test thread cannot trigger ETXTBSY.
 fn non_git_script(dir: &std::path::Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
     let path = dir.join("fake_nongit");
-    std::fs::write(&path, "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::write(
+        &path,
+        "#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\necho hello\n",
+    )
+    .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for _ in 0..100 {
+        match Command::new(&path).env("FAKE_GIT_PROBE", "1").status() {
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("probing non_git_script failed: {e}"),
+            Ok(_) => break,
+        }
+    }
     path
 }
 

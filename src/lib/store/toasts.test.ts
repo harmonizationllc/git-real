@@ -120,4 +120,22 @@ describe("useToasts notify (GR-14)", () => {
     expect(texts).not.toContain("E0");
     expect(texts).toContain("E5");
   });
+
+  // RED test (GR-14 fix-round-1): when five errors exist and a success arrives, the
+  // success must be kept and the OLDEST EXISTING error must be dropped.
+  // The current capped() searches [...list, toast] so findIndex returns the incoming
+  // success (index 5) and splices it out — the arrival is silently lost.
+  it("drops the oldest error when five errors exist and a success arrives", () => {
+    const { notify } = useToasts.getState();
+    for (let i = 0; i < 5; i++) {
+      notify({ text: `E${i}`, variant: "error" });
+    }
+    notify({ text: "success", variant: "success" });
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    expect(texts).toHaveLength(MAX_TOASTS);
+    // The incoming success must be present.
+    expect(texts).toContain("success");
+    // The oldest existing error must have been dropped.
+    expect(texts).not.toContain("E0");
+  });
 });
