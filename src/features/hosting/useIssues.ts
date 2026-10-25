@@ -1,7 +1,7 @@
 import { hostingListIssues } from "../../lib/ipc";
 import type { AppError, Issue, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { usePagedQuery } from "./usePagedQuery";
+import { fullPage, usePagedQuery } from "./usePagedQuery";
 
 export interface UseIssues {
   issues: Issue[] | undefined;
@@ -21,7 +21,7 @@ export interface UseIssues {
 export function useIssues(repoId: RepoId, query: string, enabled: boolean): UseIssues {
   const { items, ...rest } = usePagedQuery(
     queryKeys.issues(repoId, query),
-    (page) => hostingListIssues(repoId, query, page),
+    (page) => hostingListIssues(repoId, query, page).then(fullPage),
     enabled,
     (i) => i.number,
   );

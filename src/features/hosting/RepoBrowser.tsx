@@ -26,20 +26,28 @@ export interface RepoBrowserProps {
   /** Opens the accounts dialog, which the parent renders outside its own dialog box. */
   onManageAccounts(preset?: AccountsPreset): void;
   disabled: boolean;
+  /** The chosen account's id; null (or an id no longer connected) means the first account. */
+  selectedAccountId: string | null;
+  onSelectAccount(id: string): void;
 }
 
 /**
  * The connected account's repositories, searchable and a page at a time, with the HTTPS/SSH
  * preference. It sits inside the clone form, so nothing in it submits that form.
  */
-export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserProps) {
+export function RepoBrowser({
+  onPick,
+  onManageAccounts,
+  disabled,
+  selectedAccountId,
+  onSelectAccount,
+}: RepoBrowserProps) {
   const pickerId = useId();
   const { accounts, error: accountsError, refetch: refetchAccounts } = useHostingAccounts();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   // The selection is derived: a disconnected account falls back to the first one, or to none.
-  const account = accounts?.find((a) => a.id === selectedId) ?? accounts?.[0] ?? null;
+  const account = accounts?.find((a) => a.id === selectedAccountId) ?? accounts?.[0] ?? null;
   const usable = account !== null && !account.needsReconnect;
   const list = useMyRepos(account?.id ?? null, debounced, usable);
   const form = useLayoutPrefs((s) => s.cloneUrlForm);
@@ -82,6 +90,23 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
     if (e.key === "Enter") e.preventDefault();
   };
 
+  // Escape clears a search first and stays here; on an empty one it reaches the dialog.
+  const onSearchKeyDown = (e: KeyboardEvent) => {
+    onEnterKeyDown(e);
+    // An Escape that cancels an IME composition belongs to the composition.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === "Escape" && query !== "") {
+      setQuery("");
+      e.stopPropagation();
+    }
+  };
+
+  const showMore = list.hasMore && (
+    <button type="button" disabled={list.loadingMore} onClick={list.loadMore}>
+      {list.loadingMore ? "Loading…" : "Show more"}
+    </button>
+  );
+
   const repos = list.repos;
   let body: React.ReactNode;
   if (list.error !== null && repos === undefined) {
@@ -90,10 +115,14 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
   } else if (repos === undefined) {
     body = <p role="status">Loading repositories…</p>;
   } else if (repos.length === 0) {
+    // A full raw page whose rows were all dropped is empty but may have more.
     body = (
-      <p className={styles.empty}>
-        {debounced === "" ? "No repositories" : "No repositories match"}
-      </p>
+      <>
+        <p className={styles.empty}>
+          {debounced === "" ? "No repositories" : "No repositories match"}
+        </p>
+        {showMore}
+      </>
     );
   } else {
     body = (
@@ -126,11 +155,7 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
         {list.error !== null && (
           <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
         )}
-        {list.hasMore && (
-          <button type="button" disabled={list.loadingMore} onClick={list.loadMore}>
-            {list.loadingMore ? "Loading…" : "Show more"}
-          </button>
-        )}
+        {showMore}
       </>
     );
   }
@@ -144,7 +169,7 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
             id={pickerId}
             value={account.id}
             disabled={disabled}
-            onChange={(e) => setSelectedId(e.target.value)}
+            onChange={(e) => onSelectAccount(e.target.value)}
           >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -172,7 +197,7 @@ export function RepoBrowser({ onPick, onManageAccounts, disabled }: RepoBrowserP
             autoComplete="off"
             disabled={disabled}
             className={styles.search}
-            onKeyDown={onEnterKeyDown}
+            onKeyDown={onSearchKeyDown}
             onChange={(e) => setQuery(e.target.value)}
           />
           <div

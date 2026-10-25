@@ -22,7 +22,8 @@ export function useMyRepos(accountId: string | null, query: string, enabled: boo
   const id = accountId ?? "";
   const { items, ...rest } = usePagedQuery(
     queryKeys.myRepos(id, query),
-    (page) => hostingListMyRepos(id, query, page),
+    (page) =>
+      hostingListMyRepos(id, query, page).then((p) => ({ items: p.repos, hasMore: p.hasMore })),
     enabled && accountId !== null,
     (r) => r.fullName,
   );

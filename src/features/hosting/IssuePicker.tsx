@@ -107,6 +107,12 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
   const onInputKeyDown = (e: KeyboardEvent) => {
     // A key that confirms an IME composition belongs to the composition, not to the list.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    // Escape clears a search first; on an empty one it reaches the wrapper, which closes.
+    if (e.key === "Escape" && query !== "") {
+      setQuery("");
+      e.stopPropagation();
+      return;
+    }
     const step = STEPS[e.key];
     if (step === undefined) return;
     // The input would otherwise move its caret, and there is no form to submit.

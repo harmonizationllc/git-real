@@ -77,7 +77,14 @@
 }
 
 .hint {
-  margin: 0;
+  /* Sits 4px under the URL field, as inside a .field, despite the form's 12px gap. */
+  margin: -8px 0 0;
   color: var(--color-text-muted);
   font-size: 0.9em;
+}
+
+/* Always mounted as a live region; empty, it takes no space (display: none would hide it from
+   assistive technology). */
+.hint:empty {
+  margin-top: -12px;
 }

@@ -49,10 +49,13 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const [tab, setTab] = useState<CloneSource>("url");
   // The repository the URL came from, until the user edits the field.
   const [picked, setPicked] = useState<HostedRepo | null>(null);
+  // The browser's account, kept here so it survives the browser unmounting on a tab switch.
+  const [accountId, setAccountId] = useState<string | null>(null);
   const form = useLayoutPrefs((s) => s.cloneUrlForm);
   const [prevForm, setPrevForm] = useState(form);
   // The accounts dialog is open (with its optional preset) when this is not null.
   const [accounts, setAccounts] = useState<{ preset?: AccountsPreset } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const accountTabRef = useRef<HTMLButtonElement>(null);
   // The URL field takes focus once it shows: on open, and after a pick.
@@ -69,10 +72,16 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
       focusUrl.current = false;
     }
     // After the commit that closed the accounts dialog, inert is gone: back to the opener while it
-    // can take focus, else to the From account tab (connecting an account removes the notice).
+    // is still in this box, else to the From account tab (connecting an account removes the
+    // notice; an opener recorded as the body was never in the box).
     if (accountsWereOpen.current && accounts === null) {
       const opener = accountsOpener.current;
-      const usable = opener !== null && opener.isConnected && !opener.matches(":disabled");
+      const box = boxRef.current as HTMLDivElement;
+      const usable =
+        opener !== null &&
+        box.contains(opener) &&
+        // Defensive: no opener can be disabled while the box is inert.
+        !opener.matches(":disabled");
       (usable ? opener : (accountTabRef.current as HTMLButtonElement)).focus();
     }
     accountsWereOpen.current = accounts !== null;
@@ -128,6 +137,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
         <div
           role="dialog"
           aria-modal="true"
+          ref={boxRef}
           aria-labelledby={headingId}
           className={styles.dialog}
           inert={accounts !== null}
@@ -171,20 +181,24 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
                       type="text"
                       value={url}
                       placeholder="https://github.com/owner/repo.git"
+                      aria-describedby={`${headingId}-url-hint`}
                       disabled={cloning}
                       onChange={(e) => {
                         setUrl(e.target.value);
                         setPicked(null);
                       }}
                     />
-                    {picked !== null && cloneUrlFor(picked, form).fellBack && (
-                      <p role="status" className={styles.hint}>
-                        This repository has no SSH URL; HTTPS was used
-                      </p>
-                    )}
                   </div>
                 )}
               </div>
+              {/* Always mounted and never hidden, so a screen reader announces the hint when its
+                  text appears; it shows under the URL field because the other panel is hidden. */}
+              <p role="status" id={`${headingId}-url-hint`} className={styles.hint}>
+                {tab === "url" &&
+                  picked !== null &&
+                  cloneUrlFor(picked, form).fellBack &&
+                  "This repository has no SSH URL; HTTPS was used"}
+              </p>
               <div
                 role="tabpanel"
                 id={cloneSourceIds(headingId, "account").panel}
@@ -199,6 +213,8 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
                       setAccounts({ preset });
                     }}
                     disabled={cloning}
+                    selectedAccountId={accountId}
+                    onSelectAccount={setAccountId}
                   />
                 )}
               </div>

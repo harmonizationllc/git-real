@@ -532,6 +532,13 @@ export interface HostedRepo {
   webUrl: string;
 }
 
+/** One page of the account's repositories. */
+export interface HostedRepoPage {
+  repos: HostedRepo[];
+  /** The provider returned a full raw page (before unusable rows were dropped), so there may be more. */
+  hasMore: boolean;
+}
+
 /** A pull request to open: `sourceBranch` into `targetBranch`, both on the hosted repository. */
 export interface NewPullRequest {
   title: string;
