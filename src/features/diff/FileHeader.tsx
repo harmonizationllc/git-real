@@ -64,7 +64,7 @@ export function FileHeader({
         })}
       </div>
       {canEditInPlace && (
-        <button type="button" onClick={() => void editor.run(() => openInEditor(path))}>
+        <button type="button" onClick={() => void editor.run(() => openInEditor(path, repoId))}>
           Open in editor
         </button>
       )}

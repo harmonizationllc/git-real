@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ExternalDiffScope, RepoId } from "./types";
 
-export function openInEditor(path: string): Promise<void> {
-  return invoke<void>("open_in_editor", { path });
+export function openInEditor(path: string, repoId?: RepoId): Promise<void> {
+  return invoke<void>("open_in_editor", { repoId: repoId ?? null, path });
 }
 
 export function openExternalDiff(

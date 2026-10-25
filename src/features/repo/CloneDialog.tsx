@@ -111,11 +111,11 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
 
   const choose = async () => {
     // Pass the current directory only when there is one, so the picker opens there.
-    const picked =
-      parentDir !== null
-        ? await pickFolder("Choose destination folder", parentDir)
-        : await pickFolder("Choose destination folder");
-    if (picked !== null) setParentDir(picked);
+    const args: [string, string?] =
+      parentDir !== null ? ["Choose destination folder", parentDir] : ["Choose destination folder"];
+    const picked = await pickFolder(...args);
+    if (picked === null) return;
+    setParentDir(picked);
   };
 
   const submit = async (e: FormEvent) => {

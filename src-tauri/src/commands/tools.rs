@@ -15,12 +15,36 @@ use crate::error::AppError;
 use crate::settings_store::SettingsStore;
 use crate::state::{RepoId, RepoRegistry};
 
-pub fn open_in_editor_inner(store: &SettingsStore, path: &str) -> Result<(), AppError> {
+pub fn open_in_editor_inner(
+    reg: &RepoRegistry,
+    store: &SettingsStore,
+    repo_id: Option<RepoId>,
+    path: &str,
+) -> Result<(), AppError> {
     let editor = store
         .get()
         .external_editor
         .ok_or_else(|| AppError::no_external_tool("editor"))?;
-    tools::open_in_editor(&editor, Path::new(path))?;
+    match repo_id {
+        Some(id) => {
+            // Read the working directory under the lock, then drop it before
+            // spawning, as the other tool handlers do.
+            let workdir = {
+                let session = reg.get(id).ok_or_else(|| AppError::unknown_repo(id))?;
+                let guard = session.lock().unwrap_or_else(PoisonError::into_inner);
+                guard.path().to_path_buf()
+            };
+            let full = workdir.join(path);
+            tools::open_in_editor(&editor, &full, Some(&workdir))?;
+        }
+        None => {
+            // The path is used unchanged; the editor runs in its parent
+            // directory when that directory exists.
+            let path = Path::new(path);
+            let cwd = path.parent().filter(|dir| dir.is_dir());
+            tools::open_in_editor(&editor, path, cwd)?;
+        }
+    }
     Ok(())
 }
 
@@ -70,11 +94,14 @@ pub fn open_external_merge_inner(
 
 #[tauri::command]
 pub async fn open_in_editor(
+    reg: State<'_, Arc<RepoRegistry>>,
     settings: State<'_, Arc<SettingsStore>>,
+    repo_id: Option<RepoId>,
     path: String,
 ) -> Result<(), AppError> {
+    let reg = Arc::clone(reg.inner());
     let store = Arc::clone(settings.inner());
-    run_blocking(move || open_in_editor_inner(&store, &path)).await
+    run_blocking(move || open_in_editor_inner(&reg, &store, repo_id, &path)).await
 }
 
 #[tauri::command]

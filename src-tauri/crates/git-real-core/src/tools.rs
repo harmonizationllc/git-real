@@ -150,8 +150,10 @@ pub fn split_command(cmd: &str) -> Result<Vec<String>, ToolError> {
     Ok(args)
 }
 
-/// Spawns an editor detached, appending `path` to the parsed command.
-pub fn open_in_editor(cmd: &str, path: &Path) -> Result<(), ToolError> {
+/// Spawns an editor detached, appending `path` to the parsed command. When
+/// `cwd` is given the editor runs in that directory, so a relative `path`
+/// resolves against it; otherwise the editor inherits this process's directory.
+pub fn open_in_editor(cmd: &str, path: &Path, cwd: Option<&Path>) -> Result<(), ToolError> {
     let argv = split_command(cmd)?;
     let program = argv[0].clone();
     let mut command = Command::new(&argv[0]);
@@ -161,6 +163,9 @@ pub fn open_in_editor(cmd: &str, path: &Path) -> Result<(), ToolError> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     // The child is dropped without waiting: the editor outlives this call.
     command.spawn().map_err(|e| ToolError::Spawn {
         program,
