@@ -1,8 +1,9 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, openExternalDiff, openInEditor } from "../../lib/ipc";
 import type { DiffScope, Settings } from "../../lib/ipc";
 import { queryClient } from "../../lib/query/client";
+import { queryKeys } from "../../lib/query/keys";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
 import type { CentreView } from "../../lib/store/workspace";
@@ -200,37 +201,37 @@ describe("CloseDiffButton", () => {
 // Task 15: external tool buttons in FileHeader.
 describe("FileHeader external tool buttons (GR-14)", () => {
   it("shows Open in editor and External diff for unstaged scope", async () => {
-    setup({ scope: "unstaged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ scope: "unstaged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     expect(screen.getByRole("button", { name: "Open in editor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
   });
 
   it("shows Open in editor and External diff for staged scope", async () => {
-    setup({ scope: "staged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ scope: "staged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     expect(screen.getByRole("button", { name: "Open in editor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
   });
 
   it("hides Open in editor for a commit scope but shows External diff", async () => {
-    setup({ scope: { commit: "deadbeef" } });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ scope: { commit: "deadbeef" } });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     expect(screen.queryByRole("button", { name: "Open in editor" })).toBeNull();
     expect(screen.getByRole("button", { name: "External diff" })).toBeInTheDocument();
   });
 
   it("hides both for a stash file", async () => {
-    setup({ isStash: true });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ isStash: true });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     expect(screen.queryByRole("button", { name: "Open in editor" })).toBeNull();
     expect(screen.queryByRole("button", { name: "External diff" })).toBeNull();
   });
 
   it("Open in editor calls openInEditor with the path and repoId when a tool is configured", async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
-    setup({ path: "src/a.ts", scope: "unstaged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ path: "src/a.ts", scope: "unstaged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
     await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/a.ts", 1));
   });
@@ -238,16 +239,16 @@ describe("FileHeader external tool buttons (GR-14)", () => {
   // R18: FileHeader receives repoId from DetailPane and passes it to openInEditor.
   it("Open in editor sends the repo id and the relative path", async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
-    setup({ path: "src/b.ts", repoId: 5, scope: "unstaged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ path: "src/b.ts", repoId: 5, scope: "unstaged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
     await waitFor(() => expect(openInEditor).toHaveBeenCalledWith("src/b.ts", 5));
   });
 
   it("External diff calls openExternalDiff with the external scope when a tool is configured", async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalDiffTool: "meld" });
-    setup({ repoId: 1, path: "src/a.ts", scope: "staged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ repoId: 1, path: "src/a.ts", scope: "staged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "External diff" }));
     await waitFor(() =>
       expect(openExternalDiff).toHaveBeenCalledWith(1, "src/a.ts", { kind: "staged" }),
@@ -255,8 +256,8 @@ describe("FileHeader external tool buttons (GR-14)", () => {
   });
 
   it("an unset editor opens Settings at Tools without a backend call", async () => {
-    setup({ scope: "unstaged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ scope: "unstaged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
     await waitFor(() =>
       expect(useShell.getState().dialog).toMatchObject({ kind: "settings", section: "tools" }),
@@ -270,8 +271,8 @@ describe("FileHeader external tool buttons (GR-14)", () => {
       kind: "externalToolFailed",
       message: "meld exited with code 1",
     });
-    setup({ scope: "unstaged" });
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { queryClient: qc } = setup({ scope: "unstaged" });
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "External diff" }));
     await waitFor(() => {
       const toasts = useToasts.getState().toasts;
