@@ -606,3 +606,18 @@ describe("GR-13c myRepos query key", () => {
     expect(qc.getQueryState(queryKeys.myRepos("a", ""))?.isInvalidated).toBe(true);
   });
 });
+
+// Contract (GR-14): a settings query key exists and is distinct from gitCli.
+describe("queryKeys settings (GR-14)", () => {
+  it("defines a settings key ['settings']", () => {
+    expect(queryKeys.settings).toEqual(["settings"]);
+  });
+
+  it("settings key is distinct from gitCli", () => {
+    expect(queryKeys.settings).not.toEqual(queryKeys.gitCli);
+  });
+
+  it("settings key is distinct from recent", () => {
+    expect(queryKeys.settings).not.toEqual(queryKeys.recent);
+  });
+});

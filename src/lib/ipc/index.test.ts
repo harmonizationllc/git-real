@@ -80,3 +80,17 @@ describe("ipc barrel", () => {
     expect("invoke" in ipc).toBe(false);
   });
 });
+
+// Contract (GR-14): the barrel re-exports the five new wrappers and pickFile.
+describe("ipc barrel GR-14 wrappers", () => {
+  it.each([
+    "getSettings",
+    "updateSettings",
+    "openInEditor",
+    "openExternalDiff",
+    "openExternalMerge",
+    "pickFile",
+  ])("barrel exposes %s as a function", (name) => {
+    expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
+  });
+});

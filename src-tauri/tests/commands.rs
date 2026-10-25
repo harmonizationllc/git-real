@@ -633,3 +633,70 @@ fn run_blocking_panic_error_has_a_message() {
 
     assert!(!result.unwrap_err().message.is_empty());
 }
+
+// --- GR-14 GitCliInfo::from_probe / version / error ---
+
+// Contract: check_git_cli reports the version string when the executable is available.
+// This test extends check_git_cli_reports_path_when_available with the version field.
+#[test]
+fn check_git_cli_reports_path_version_and_no_error_when_available() {
+    // Import from_probe which will be added by the developer.
+    use git_real_lib::commands::repo::check_git_cli_inner;
+
+    let info = check_git_cli_inner();
+
+    // When git is available, version must be Some and error must be None.
+    match git_cli::locate() {
+        Ok(_) => {
+            assert!(
+                info.available,
+                "available must be true when locate() succeeds"
+            );
+            assert!(
+                info.version.is_some(),
+                "version must be Some when git is found and verify succeeds"
+            );
+            assert!(
+                info.error.is_none(),
+                "error must be None when git is found successfully"
+            );
+        }
+        Err(_) => {
+            assert!(!info.available, "available must be false when locate() fails");
+        }
+    }
+}
+
+// Contract: from_probe fills available=false, path=Some, version=None, error=Some(msg)
+// when locate() found a path but verify() rejected it.
+#[cfg(unix)]
+#[test]
+fn from_probe_marks_unavailable_with_the_error_when_verify_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    use git_real_core::GitError;
+    use git_real_lib::commands::repo::GitCliInfo;
+
+    // Create a non-git executable (outputs "hello", not "git version …").
+    let dir = tempfile::tempdir().unwrap();
+    let non_git_path = dir.path().join("not_git");
+    std::fs::write(&non_git_path, "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::set_permissions(&non_git_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let verify_result = git_real_core::git_cli::verify(&non_git_path);
+    assert!(verify_result.is_err(), "verify must fail for a non-git binary");
+    let err_msg = verify_result.unwrap_err().to_string();
+
+    // from_probe(Some(path), Err(e)) must produce: available=false, path=Some, version=None, error=Some(msg)
+    let info = GitCliInfo::from_probe(
+        Some(non_git_path.clone()),
+        Err(GitError::GitCliInvalid { message: err_msg.clone() }),
+    );
+    assert_eq!(info.available, false);
+    assert_eq!(info.path, Some(non_git_path.to_string_lossy().into_owned()));
+    assert_eq!(info.version, None);
+    assert!(
+        info.error.is_some(),
+        "error field must be Some when verify fails"
+    );
+    assert_eq!(info.error.as_deref(), Some(err_msg.as_str()));
+}

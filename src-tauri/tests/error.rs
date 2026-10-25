@@ -1064,3 +1064,73 @@ fn hosting_error_payload_has_only_kind_and_message() {
         json!({ "kind": "hostingAuth", "message": "the provider rejected the token: token *** lacks scope" })
     );
 }
+
+// --- GR-14 new AppErrorKind variants (Review Focus 5) ---
+
+// Contract: the four new kinds serialise to their camelCase names.
+#[test]
+fn new_kinds_serialize_to_their_camel_case_names() {
+    use git_real_lib::error::AppErrorKind;
+    let cases = [
+        (AppErrorKind::InvalidSettings, "invalidSettings"),
+        (AppErrorKind::GitCliInvalid, "gitCliInvalid"),
+        (AppErrorKind::NoExternalTool, "noExternalTool"),
+        (AppErrorKind::ExternalToolFailed, "externalToolFailed"),
+    ];
+    for (kind, expected) in &cases {
+        let v = serde_json::to_value(kind).unwrap();
+        assert_eq!(v, json!(expected), "kind {:?} should serialise as {:?}", kind, expected);
+    }
+}
+
+// Contract: SettingsError::RelativePath maps to InvalidSettings.
+#[test]
+fn settings_error_maps_to_invalid_settings() {
+    use git_real_core::SettingsError;
+    use git_real_lib::error::{AppError, AppErrorKind};
+
+    let err = AppError::from(SettingsError::RelativePath("Git executable"));
+    assert_eq!(err.kind, AppErrorKind::InvalidSettings);
+    assert!(!err.message.is_empty());
+}
+
+// Contract: ToolError maps to ExternalToolFailed and carries the tool message.
+#[test]
+fn tool_error_maps_to_external_tool_failed_with_its_message() {
+    use git_real_core::ToolError;
+    use git_real_lib::error::{AppError, AppErrorKind};
+
+    let err = AppError::from(ToolError::Failed {
+        verb: "difftool",
+        code: Some(1),
+        message: "fatal: no such tool".into(),
+    });
+    assert_eq!(err.kind, AppErrorKind::ExternalToolFailed);
+    assert!(
+        err.message.contains("fatal: no such tool"),
+        "message should carry the tool error: {}",
+        err.message
+    );
+}
+
+// Contract: GitCliInvalid → AppErrorKind::GitCliInvalid;
+//           GitCliConfiguredMissing → AppErrorKind::GitCliMissing (existing kind).
+#[test]
+fn git_cli_invalid_and_configured_missing_map_to_their_kinds() {
+    use std::path::PathBuf;
+    use git_real_core::GitError;
+    use git_real_lib::error::{AppError, AppErrorKind};
+
+    let invalid = AppError::from(GitError::GitCliInvalid {
+        message: "exited with code 1".into(),
+    });
+    assert_eq!(invalid.kind, AppErrorKind::GitCliInvalid);
+
+    let missing = AppError::from(GitError::GitCliConfiguredMissing(PathBuf::from("/opt/git")));
+    assert_eq!(missing.kind, AppErrorKind::GitCliMissing);
+    assert!(
+        missing.message.contains("/opt/git"),
+        "message should name the configured path: {}",
+        missing.message
+    );
+}
