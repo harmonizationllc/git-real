@@ -1282,4 +1282,31 @@ describe("CloneDialog Escape in the repository search", () => {
     fireEvent.keyDown(screen.getByRole("tab", { name: "From account" }), { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // An Escape that cancels an IME composition belongs to the composition, not to the dialog.
+  it("should neither clear nor close on an Escape that cancels an IME composition", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.change(field, { target: { value: "git" } });
+    fireEvent.keyDown(field, { key: "Escape", isComposing: true });
+    expect(field).toHaveValue("git");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("should neither clear nor close on an Escape with keyCode 229 (WebKit after a composition)", async () => {
+    const { onClose, field } = await openSearch();
+    fireEvent.change(field, { target: { value: "git" } });
+    fireEvent.keyDown(field, { key: "Escape", keyCode: 229 });
+    expect(field).toHaveValue("git");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("should not close on an Escape that cancels an IME composition in the URL field", async () => {
+    const onClose = vi.fn();
+    renderWithProviders(<CloneDialog open onClose={onClose} />);
+    const url = await screen.findByLabelText("Repository URL");
+    fireEvent.change(url, { target: { value: "https://example.com/r.git" } });
+    fireEvent.keyDown(url, { key: "Escape", isComposing: true });
+    expect(url).toHaveValue("https://example.com/r.git");
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
