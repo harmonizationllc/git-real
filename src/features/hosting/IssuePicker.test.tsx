@@ -344,18 +344,20 @@ describe("IssuePicker closing", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("keeps the text on an Escape that cancels an IME composition", async () => {
-    await renderPicker();
+  it("neither clears nor closes on an Escape that cancels an IME composition", async () => {
+    const { onClose } = await renderPicker();
     type("bug");
     fireEvent.keyDown(input(), { key: "Escape", isComposing: true });
     expect(input()).toHaveValue("bug");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("keeps the text on an Escape with keyCode 229 (WebKit after a composition)", async () => {
-    await renderPicker();
+  it("neither clears nor closes on an Escape with keyCode 229 (WebKit after a composition)", async () => {
+    const { onClose } = await renderPicker();
     type("bug");
     fireEvent.keyDown(input(), { key: "Escape", keyCode: 229 });
     expect(input()).toHaveValue("bug");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("returns to the full list after Escape clears a debounced search", async () => {
