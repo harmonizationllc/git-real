@@ -9,8 +9,8 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use git_real_core::{
-    DiffRange, ExternalDiffScope, RepoSession, ToolError, EMPTY_TREE,
-    open_in_editor, open_external_diff, open_external_merge, split_command,
+    DiffRange, EMPTY_TREE, ExternalDiffScope, RepoSession, ToolError, open_external_diff,
+    open_external_merge, open_in_editor, split_command,
 };
 
 // ─── Fake-git helper ──────────────────────────────────────────────────────────
@@ -28,8 +28,7 @@ fn fake_git(dir: &Path) -> PathBuf {
 /// Reads the recorded argv from `<repo>/.git/argv.txt` (we pass `current_dir`
 /// = repo_path, but the script writes to `$PWD`).
 fn read_argv(dir: &Path) -> Vec<String> {
-    let text = std::fs::read_to_string(dir.join("argv.txt"))
-        .unwrap_or_default();
+    let text = std::fs::read_to_string(dir.join("argv.txt")).unwrap_or_default();
     text.lines()
         .filter(|l| !l.is_empty())
         .map(|l| l.to_owned())
@@ -46,14 +45,13 @@ fn split_command_table() {
         ("'a b' c", &["a b", "c"]),
         (r"a\ b", &["a b"]),
         (r#""a\"b""#, &["a\"b"]),
-        (r"'a\b'", &[r"a\b"]),   // inside single quotes, nothing escapes
-        (r#""""#, &[""]),         // explicit empty double-quoted arg
-        (r"\", &["\\"]),          // trailing lone backslash is literal
+        (r"'a\b'", &[r"a\b"]), // inside single quotes, nothing escapes
+        (r#""""#, &[""]),      // explicit empty double-quoted arg
+        (r"\", &["\\"]),       // trailing lone backslash is literal
     ];
     for (input, expected) in cases {
-        let got = split_command(input).unwrap_or_else(|e| {
-            panic!("split_command({:?}) → {:?}", input, e)
-        });
+        let got =
+            split_command(input).unwrap_or_else(|e| panic!("split_command({:?}) → {:?}", input, e));
         assert_eq!(
             got,
             expected.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
@@ -86,9 +84,7 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
 
     // Editor script: records its args and sleeps briefly so we can verify the
     // function returns before the process exits.
-    let script = format!(
-        "printf '%s\\n' \"$@\" > '{argv_file_str}'\nsleep 2\n"
-    );
+    let script = format!("printf '%s\\n' \"$@\" > '{argv_file_str}'\nsleep 2\n");
     let editor_path = {
         use std::os::unix::fs::PermissionsExt;
         let p = dir.path().join("fake_editor");
@@ -104,7 +100,10 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
     // The function returns immediately; wait up to 2 s for the argv file.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while !argv_file.exists() {
-        assert!(std::time::Instant::now() < deadline, "editor argv file never appeared");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor argv file never appeared"
+        );
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     let lines: Vec<String> = std::fs::read_to_string(&argv_file)
@@ -149,11 +148,20 @@ fn difftool_argv_for_unstaged() {
     let (git_dir, git) = make_fake_git_dir();
     let (_repo_dir, repo_path) = make_repo_dir();
     let range = DiffRange::Unstaged;
-    open_external_diff(&git, &repo_path, "meld \"$LOCAL\" \"$REMOTE\"", "a.txt", &range)
-        .unwrap();
+    open_external_diff(
+        &git,
+        &repo_path,
+        "meld \"$LOCAL\" \"$REMOTE\"",
+        "a.txt",
+        &range,
+    )
+    .unwrap();
     let argv = read_argv(&repo_path);
     // Expected: -c difftool.gitreal.cmd=<cmd> -c difftool.prompt=false difftool --tool=gitreal -- a.txt
-    assert!(argv.iter().any(|a| a.starts_with("-c") || a.contains("difftool.gitreal.cmd")));
+    assert!(
+        argv.iter()
+            .any(|a| a.starts_with("-c") || a.contains("difftool.gitreal.cmd"))
+    );
     assert!(argv.contains(&"difftool".to_string()));
     assert!(argv.contains(&"--tool=gitreal".to_string()));
     assert!(argv.contains(&"a.txt".to_string()));
@@ -225,9 +233,7 @@ fn difftool_failure_carries_the_last_stderr_line() {
     let behaviour = "echo 'fatal: no such tool' >&2; exit 1";
     let git = common::fake_git(
         dir.path(),
-        &format!(
-            "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\n{behaviour}"
-        ),
+        &format!("printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\n{behaviour}"),
     );
     let (_repo_dir, repo_path) = make_repo_dir();
     // Write the behaviour file so the script always exits 1 with the message
@@ -236,13 +242,21 @@ fn difftool_failure_carries_the_last_stderr_line() {
         "echo 'fatal: no such tool' >&2; exit 1",
     )
     .ok();
-    let err = open_external_diff(&git, &repo_path, "meld", "f.txt", &DiffRange::Unstaged)
-        .unwrap_err();
+    let err =
+        open_external_diff(&git, &repo_path, "meld", "f.txt", &DiffRange::Unstaged).unwrap_err();
     match &err {
-        ToolError::Failed { verb, code, message } => {
+        ToolError::Failed {
+            verb,
+            code,
+            message,
+        } => {
             assert_eq!(*verb, "difftool");
             assert_eq!(*code, Some(1));
-            assert!(message.contains("fatal: no such tool"), "message: {}", message);
+            assert!(
+                message.contains("fatal: no such tool"),
+                "message: {}",
+                message
+            );
         }
         other => panic!("expected Failed, got {:?}", other),
     }
@@ -255,13 +269,24 @@ fn difftool_failure_carries_the_last_stderr_line() {
 fn mergetool_argv_is_exact() {
     let (git_dir, git) = make_fake_git_dir();
     let (_repo_dir, repo_path) = make_repo_dir();
-    open_external_merge(&git, &repo_path, "meld \"$LOCAL\" \"$MERGED\"", "conflict.txt")
-        .unwrap();
+    open_external_merge(
+        &git,
+        &repo_path,
+        "meld \"$LOCAL\" \"$MERGED\"",
+        "conflict.txt",
+    )
+    .unwrap();
     let argv = read_argv(&repo_path);
     // Must include: -c mergetool.gitreal.cmd=<cmd> -c mergetool.gitreal.trustExitCode=true
     // -c mergetool.prompt=false -c mergetool.keepBackup=false mergetool --tool=gitreal -- <path>
-    assert!(argv.iter().any(|a| a.contains("mergetool.gitreal.trustExitCode=true")));
-    assert!(argv.iter().any(|a| a.contains("mergetool.keepBackup=false")));
+    assert!(
+        argv.iter()
+            .any(|a| a.contains("mergetool.gitreal.trustExitCode=true"))
+    );
+    assert!(
+        argv.iter()
+            .any(|a| a.contains("mergetool.keepBackup=false"))
+    );
     assert!(argv.contains(&"mergetool".to_string()));
     assert!(argv.contains(&"--tool=gitreal".to_string()));
     assert!(argv.contains(&"conflict.txt".to_string()));
@@ -276,10 +301,13 @@ fn mergetool_failure_without_stderr_names_the_exit_code() {
         "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\nexit 2",
     );
     let (_repo_dir, repo_path) = make_repo_dir();
-    let err =
-        open_external_merge(&git, &repo_path, "meld", "merge.txt").unwrap_err();
+    let err = open_external_merge(&git, &repo_path, "meld", "merge.txt").unwrap_err();
     match &err {
-        ToolError::Failed { verb, code, message } => {
+        ToolError::Failed {
+            verb,
+            code,
+            message,
+        } => {
             assert_eq!(*verb, "mergetool");
             assert_eq!(*code, Some(2));
             assert!(
@@ -297,24 +325,26 @@ fn mergetool_failure_without_stderr_names_the_exit_code() {
 
 #[test]
 fn first_parent_oid_is_none_for_a_root_commit_and_some_after() {
-    use git_real_core::GitError;
-
     let (_dir, path) = common::temp_repo_with_commit();
-    // Get the root commit OID.
-    let repo = git2::Repository::open(&path).unwrap();
-    let head = repo.head().unwrap().peel_to_commit().unwrap();
-    let root_oid = head.id().to_string();
-    drop(repo);
+    // Get the root commit OID — scope repo and head so they're dropped before we
+    // open the RepoSession (git2::Repository is not Sync; two handles to the same
+    // repo are fine but the head borrow must end first).
+    let root_oid = {
+        let repo = git2::Repository::open(&path).unwrap();
+        repo.head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id()
+            .to_string()
+    };
 
     let session = RepoSession::open(path.to_str().unwrap()).unwrap();
     let parent = session.first_parent_oid(&root_oid).unwrap();
     assert!(parent.is_none(), "root commit has no parent");
 
     // Add a second commit and verify its first parent is the root.
-    let second_oid = {
-        let s = common::commit_file(&path, "b.txt", "b\n", "second commit").to_string();
-        s
-    };
+    let second_oid = common::commit_file(&path, "b.txt", "b\n", "second commit").to_string();
     let session2 = RepoSession::open(path.to_str().unwrap()).unwrap();
     let parent2 = session2.first_parent_oid(&second_oid).unwrap();
     assert_eq!(parent2, Some(root_oid));
@@ -351,12 +381,21 @@ fn resolve_maps_each_scope() {
 
     // Commit → DiffRange::Commit
     let repo = git2::Repository::open(&path).unwrap();
-    let oid = repo.head().unwrap().peel_to_commit().unwrap().id().to_string();
+    let oid = repo
+        .head()
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id()
+        .to_string();
     drop(repo);
     let scope = ExternalDiffScope::Commit { oid: oid.clone() };
     let r3 = scope.resolve(&session).unwrap();
     match r3 {
-        DiffRange::Commit { oid: got_oid, parent } => {
+        DiffRange::Commit {
+            oid: got_oid,
+            parent,
+        } => {
             assert_eq!(got_oid, oid);
             // Root commit → parent is None
             assert!(parent.is_none());

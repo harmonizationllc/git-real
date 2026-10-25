@@ -67,7 +67,12 @@ beforeEach(() => {
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
-  vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
+  vi.mocked(checkGitCli).mockResolvedValue({
+    available: true,
+    path: "/usr/bin/git",
+    version: "2.43.0",
+    error: null,
+  });
   vi.mocked(onCloneProgress).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
   vi.mocked(listBranches).mockResolvedValue({

@@ -188,7 +188,7 @@ describe("command wrappers", () => {
   });
 
   it("checkGitCli sends check_git_cli with no arguments", async () => {
-    const info: GitCliInfo = { available: false, path: null };
+    const info: GitCliInfo = { available: false, path: null, version: null, error: null };
     const calls = mockWith(info);
     const result = await checkGitCli();
     expect(calls).toEqual([{ cmd: "check_git_cli", args: {} }]);

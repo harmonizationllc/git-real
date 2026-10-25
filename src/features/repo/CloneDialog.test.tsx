@@ -53,7 +53,12 @@ beforeEach(() => {
   vi.restoreAllMocks();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   unlisten = vi.fn();
-  vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
+  vi.mocked(checkGitCli).mockResolvedValue({
+    available: true,
+    path: "/usr/bin/git",
+    version: "2.43.0",
+    error: null,
+  });
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
@@ -96,7 +101,12 @@ describe("CloneDialog closed", () => {
 // Contract: git availability gates the form (checking, missing, fail-open on error).
 describe("CloneDialog git check", () => {
   it("should show the git-missing notice when checkGitCli reports unavailable", async () => {
-    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: null,
+      version: null,
+      error: "git: command not found",
+    });
     renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     expect(
       await screen.findByText("Git was not found on your PATH. Install Git to clone repositories."),
@@ -104,21 +114,36 @@ describe("CloneDialog git check", () => {
   });
 
   it("should offer only a Close button when git is missing", async () => {
-    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: null,
+      version: null,
+      error: "git: command not found",
+    });
     renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await screen.findByText(/Git was not found/);
     expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Close"]);
   });
 
   it("should not show the URL field when git is missing", async () => {
-    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: null,
+      version: null,
+      error: "git: command not found",
+    });
     renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await screen.findByText(/Git was not found/);
     expect(screen.queryByLabelText("Repository URL")).not.toBeInTheDocument();
   });
 
   it("should call onClose once when Close is clicked in the git-missing state", async () => {
-    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: null,
+      version: null,
+      error: "git: command not found",
+    });
     const onClose = vi.fn();
     const { user } = renderWithProviders(<CloneDialog open onClose={onClose} />);
     await user.click(await screen.findByRole("button", { name: "Close" }));
@@ -699,7 +724,12 @@ describe("CloneDialog source tabs", () => {
   });
 
   it("should not render the tabs when git is missing", async () => {
-    vi.mocked(checkGitCli).mockResolvedValue({ available: false, path: null });
+    vi.mocked(checkGitCli).mockResolvedValue({
+      available: false,
+      path: null,
+      version: null,
+      error: "git: command not found",
+    });
     renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await screen.findByText(/Git was not found/);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();

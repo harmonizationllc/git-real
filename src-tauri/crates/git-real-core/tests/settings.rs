@@ -5,7 +5,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use git_real_core::{Settings, SettingsError, SettingsFile, SettingsPatch, SETTINGS_VERSION};
+use git_real_core::{SETTINGS_VERSION, Settings, SettingsError, SettingsFile, SettingsPatch};
 
 fn abs(p: &str) -> PathBuf {
     PathBuf::from(p)
@@ -55,8 +55,7 @@ fn patch_absent_key_keeps_and_null_clears_and_value_sets() {
     assert_eq!(kept.external_editor.as_deref(), Some("code --wait"));
 
     // null → clear
-    let patch_clear: SettingsPatch =
-        serde_json::from_str(r#"{"externalEditor":null}"#).unwrap();
+    let patch_clear: SettingsPatch = serde_json::from_str(r#"{"externalEditor":null}"#).unwrap();
     let cleared = base.apply(&patch_clear).unwrap();
     assert!(cleared.external_editor.is_none());
 
@@ -98,8 +97,7 @@ fn apply_rejects_a_relative_clone_dir() {
 #[test]
 fn apply_rejects_a_relative_git_executable() {
     let base = Settings::default();
-    let patch: SettingsPatch =
-        serde_json::from_str(r#"{"gitExecutable":"relative/git"}"#).unwrap();
+    let patch: SettingsPatch = serde_json::from_str(r#"{"gitExecutable":"relative/git"}"#).unwrap();
     let err = base.apply(&patch).unwrap_err();
     assert_eq!(err, SettingsError::RelativePath("Git executable"));
 }
@@ -131,7 +129,10 @@ fn apply_accepts_an_existing_absolute_clone_dir() {
     );
     let patch: SettingsPatch = serde_json::from_str(&json).unwrap();
     let result = base.apply(&patch).unwrap();
-    assert_eq!(result.default_clone_dir, Some(abs(dir.path().to_str().unwrap())));
+    assert_eq!(
+        result.default_clone_dir,
+        Some(abs(dir.path().to_str().unwrap()))
+    );
 }
 
 // --- SettingsFile versioning ---

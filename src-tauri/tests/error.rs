@@ -1079,7 +1079,13 @@ fn new_kinds_serialize_to_their_camel_case_names() {
     ];
     for (kind, expected) in &cases {
         let v = serde_json::to_value(kind).unwrap();
-        assert_eq!(v, json!(expected), "kind {:?} should serialise as {:?}", kind, expected);
+        assert_eq!(
+            v,
+            json!(expected),
+            "kind {:?} should serialise as {:?}",
+            kind,
+            expected
+        );
     }
 }
 
@@ -1117,9 +1123,9 @@ fn tool_error_maps_to_external_tool_failed_with_its_message() {
 //           GitCliConfiguredMissing → AppErrorKind::GitCliMissing (existing kind).
 #[test]
 fn git_cli_invalid_and_configured_missing_map_to_their_kinds() {
-    use std::path::PathBuf;
     use git_real_core::GitError;
     use git_real_lib::error::{AppError, AppErrorKind};
+    use std::path::PathBuf;
 
     let invalid = AppError::from(GitError::GitCliInvalid {
         message: "exited with code 1".into(),

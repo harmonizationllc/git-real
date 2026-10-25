@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex};
 
 use git_real_core::git_cli::set_configured_path;
 use git_real_core::{ExternalDiffScope, RepoId};
-use git_real_lib::commands::settings::{update_settings_inner, get_settings_inner};
 use git_real_lib::commands::tools::{
     open_external_diff_inner, open_external_merge_inner, open_in_editor_inner,
 };
@@ -36,8 +35,7 @@ impl Drop for ResetConfigured {
 
 /// Creates a fake git that records argv in `$PWD/argv.txt`, plus optional
 /// behaviour via `$PWD/behaviour`.
-const ARGV_SCRIPT: &str =
-    "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\n[ -f \"$PWD/behaviour\" ] && . \"$PWD/behaviour\"\nexit 0";
+const ARGV_SCRIPT: &str = "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\n[ -f \"$PWD/behaviour\" ] && . \"$PWD/behaviour\"\nexit 0";
 
 fn fake_git_path(dir: &Path) -> PathBuf {
     let path = dir.join("git");
@@ -117,9 +115,15 @@ fn open_external_diff_runs_difftool_for_the_selected_scope() {
     open_external_diff_inner(&reg, &store, id, "README.md", &scope).unwrap();
 
     let argv_path = repo_path.join("argv.txt");
-    assert!(argv_path.exists(), "argv.txt must be written by the fake git");
+    assert!(
+        argv_path.exists(),
+        "argv.txt must be written by the fake git"
+    );
     let argv = fs::read_to_string(&argv_path).unwrap();
-    assert!(argv.contains("difftool"), "expected difftool in argv: {argv}");
+    assert!(
+        argv.contains("difftool"),
+        "expected difftool in argv: {argv}"
+    );
 }
 
 #[test]
@@ -136,7 +140,13 @@ fn open_external_diff_for_a_root_commit_uses_the_empty_tree() {
     let id = open_repo_in_registry(&reg, &repo_path);
 
     let repo = git2::Repository::open(&repo_path).unwrap();
-    let root_oid = repo.head().unwrap().peel_to_commit().unwrap().id().to_string();
+    let root_oid = repo
+        .head()
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .id()
+        .to_string();
     drop(repo);
 
     let (_sdir, spath) = common::temp_file_path("settings.json");
@@ -167,7 +177,8 @@ fn open_external_merge_without_a_tool_is_no_external_tool() {
     let err = open_external_merge_inner(&reg, &store, id, "conflict.txt").unwrap_err();
     assert_eq!(err.kind, AppErrorKind::NoExternalTool);
     assert!(
-        err.to_string().contains("no external merge tool is configured"),
+        err.to_string()
+            .contains("no external merge tool is configured"),
         "unexpected message: {}",
         err
     );
@@ -231,8 +242,7 @@ fn external_merge_does_not_hold_the_session_lock_while_the_tool_runs() {
     let git_dir = tempfile::tempdir().unwrap();
     let blocking_git = {
         // Block until $PWD/.git/go appears, then exit 0.
-        let script =
-            "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\nwhile [ ! -f \"$PWD/.git/go\" ]; do sleep 0.05; done\nexit 0";
+        let script = "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\nwhile [ ! -f \"$PWD/.git/go\" ]; do sleep 0.05; done\nexit 0";
         let path = git_dir.path().join("git");
         let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{script}\n");
         fs::write(&path, &body).unwrap();
@@ -272,7 +282,12 @@ fn external_merge_does_not_hold_the_session_lock_while_the_tool_runs() {
     let deadline2 = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
         // try_lock on the session — if this succeeds, the lock is free.
-        if reg.get(id).expect("repo still registered").try_lock().is_ok() {
+        if reg
+            .get(id)
+            .expect("repo still registered")
+            .try_lock()
+            .is_ok()
+        {
             break;
         }
         assert!(
@@ -285,4 +300,25 @@ fn external_merge_does_not_hold_the_session_lock_while_the_tool_runs() {
     // Unblock the fake git.
     fs::write(repo_path_clone.join(".git").join("go"), "").unwrap();
     handle.join().unwrap().unwrap();
+}
+
+/// Coverage gap: `open_in_editor_inner` with an editor configured returns Ok.
+/// (The core test `open_in_editor_appends_the_path_and_returns_before_the_tool_exits`
+/// covers the spawned-process side; this test pins the app-layer plumbing.)
+#[test]
+fn open_in_editor_with_a_configured_editor_returns_ok() {
+    let git_dir = tempfile::tempdir().unwrap();
+    // A fake editor that records its args and exits quickly.
+    let editor_path = {
+        let p = git_dir.path().join("fake_editor");
+        let body = "#!/bin/sh\nprintf '%s\\n' \"$@\" > /dev/null\nexit 0\n";
+        fs::write(&p, body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, editor_path.to_str().unwrap());
+
+    open_in_editor_inner(&store, "/some/file.rs").unwrap();
 }

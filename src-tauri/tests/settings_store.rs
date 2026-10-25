@@ -46,7 +46,11 @@ fn load_missing_corrupt_unreadable_and_unknown_version_yield_defaults() {
 
     // Unknown version (version 2)
     let (_dir4, path4) = common::temp_file_path("settings.json");
-    fs::write(&path4, r#"{"version":2,"settings":{"externalEditor":"code"}}"#).unwrap();
+    fs::write(
+        &path4,
+        r#"{"version":2,"settings":{"externalEditor":"code"}}"#,
+    )
+    .unwrap();
     let store4 = SettingsStore::load(path4.clone());
     assert_eq!(store4.get(), Default::default());
 }
@@ -76,7 +80,7 @@ fn update_persists_the_patch_and_round_trips() {
     assert_eq!(v["version"], 1);
     assert_eq!(v["settings"]["externalEditor"], "code --wait");
 
-    let mut tmp = path.clone();
+    let tmp = path.clone();
     let mut s = tmp.as_os_str().to_owned();
     s.push(".tmp");
     let tmp_path = PathBuf::from(s);
@@ -93,7 +97,10 @@ fn update_rejects_invalid_settings_without_saving() {
     let err = store.update(&patch).unwrap_err();
     use git_real_lib::error::AppErrorKind;
     assert_eq!(err.kind, AppErrorKind::InvalidSettings);
-    assert!(!path.exists(), "file must not be created on validation error");
+    assert!(
+        !path.exists(),
+        "file must not be created on validation error"
+    );
 }
 
 #[test]
@@ -224,4 +231,36 @@ fn make_non_git(dir: &std::path::Path) -> PathBuf {
     fs::write(&path, "#!/bin/sh\necho hello\n").unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     path
+}
+
+// ─── get_settings_inner / update_settings_inner wrappers ──────────────────────
+
+/// Coverage gap: `get_settings_inner` is a thin wrapper; exercise it end-to-end.
+#[test]
+fn get_settings_inner_returns_current_settings() {
+    use git_real_lib::commands::settings::get_settings_inner;
+
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+
+    let settings = get_settings_inner(&store);
+    assert_eq!(settings, git_real_core::Settings::default());
+}
+
+/// Coverage gap: `update_settings_inner` is a thin wrapper; exercise it end-to-end.
+#[test]
+fn update_settings_inner_persists_the_patch() {
+    use git_real_lib::commands::settings::{get_settings_inner, update_settings_inner};
+
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"externalEditor":"nano"}"#).unwrap();
+    let updated = update_settings_inner(&store, &patch).unwrap();
+    assert_eq!(updated.external_editor.as_deref(), Some("nano"));
+    assert_eq!(
+        get_settings_inner(&store).external_editor.as_deref(),
+        Some("nano")
+    );
 }

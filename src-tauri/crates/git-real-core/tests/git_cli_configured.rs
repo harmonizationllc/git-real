@@ -9,8 +9,8 @@ mod common;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use git_real_core::git_cli::{configured_path, locate, set_configured_path, verify};
 use git_real_core::GitError;
+use git_real_core::git_cli::{configured_path, locate, set_configured_path, verify};
 
 /// Serialises tests that touch the process-wide `CONFIGURED` static.
 static TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -70,7 +70,8 @@ fn locate_fails_with_the_configured_path_in_the_message_when_it_is_gone() {
         err
     );
     assert!(
-        err.to_string().starts_with("Configured Git executable not found: "),
+        err.to_string()
+            .starts_with("Configured Git executable not found: "),
         "unexpected message: {}",
         err
     );
