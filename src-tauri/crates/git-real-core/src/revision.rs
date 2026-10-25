@@ -14,6 +14,16 @@ pub(crate) fn resolve_commit<'r>(repo: &'r Repository, oid: &str) -> Result<Comm
     repo.find_commit(id).map_err(|_| not_found())
 }
 
+/// The first parent's oid of the commit named `oid`; `None` for a root commit.
+/// `CommitNotFound` when `oid` is not a commit in the repository.
+pub(crate) fn first_parent_oid(repo: &Repository, oid: &str) -> Result<Option<String>, GitError> {
+    let commit = resolve_commit(repo, oid)?;
+    if commit.parent_count() == 0 {
+        return Ok(None);
+    }
+    Ok(Some(commit.parent_id(0)?.to_string()))
+}
+
 /// The tree of `commit`'s first parent; `None` for a root commit.
 pub(crate) fn first_parent_tree<'r>(commit: &Commit<'r>) -> Result<Option<Tree<'r>>, GitError> {
     if commit.parent_count() == 0 {

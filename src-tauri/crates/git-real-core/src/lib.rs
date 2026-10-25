@@ -31,9 +31,15 @@ pub mod refs;
 pub mod remote;
 pub mod repo;
 mod revision;
+pub mod settings;
 pub mod stash;
 pub mod status;
 pub mod token;
+pub mod tools;
+
+/// Opaque handle the front end uses to refer to an open repository. Mirrors the
+/// app layer's `RepoId` so the external-tool commands can name it.
+pub type RepoId = u64;
 
 pub use error::GitError;
 pub use ignore::gitignore_pattern;
@@ -42,3 +48,8 @@ pub use progress::ProgressSink;
 pub use recent::RecentRepos;
 pub use remote::auth::Credentials;
 pub use repo::RepoSession;
+pub use settings::{SETTINGS_VERSION, Settings, SettingsError, SettingsFile, SettingsPatch};
+pub use tools::{
+    DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff, open_external_merge,
+    open_in_editor, split_command,
+};

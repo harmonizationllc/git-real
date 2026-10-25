@@ -67,6 +67,12 @@ impl RepoSession {
         &self.root
     }
 
+    /// The first parent's oid of the commit `oid`; `None` for a root commit.
+    /// `CommitNotFound` when `oid` is not a commit in this repository.
+    pub fn first_parent_oid(&self, oid: &str) -> Result<Option<String>, GitError> {
+        crate::revision::first_parent_oid(&self.repo, oid)
+    }
+
     /// The underlying repository, for sibling domain modules.
     pub(crate) fn repo(&self) -> &Repository {
         &self.repo
