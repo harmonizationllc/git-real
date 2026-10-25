@@ -1391,8 +1391,8 @@ fn list_my_repos_still_asks_the_provider_for_an_account_flagged_for_reconnect() 
     let t = FakeTransport::new().reply(401, "{}").reply(200, "[]");
     hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap_err();
     assert!(store.accounts()[0].needs_reconnect);
-    let repos = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
-    assert_eq!((repos.len(), t.requests().len()), (0, 2));
+    let page = hosting_list_my_repos_inner(&store, &t, MY_ACCOUNT_ID, "", 1).unwrap();
+    assert_eq!((page.repos.len(), t.requests().len()), (0, 2));
 }
 
 // The draft is a local git read: no transport, no account.
