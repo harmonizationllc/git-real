@@ -37,6 +37,10 @@ pub mod status;
 pub mod token;
 pub mod tools;
 
+/// Opaque handle the front end uses to refer to an open repository. Mirrors the
+/// app layer's `RepoId` so the external-tool commands can name it.
+pub type RepoId = u64;
+
 pub use error::GitError;
 pub use ignore::gitignore_pattern;
 pub use model::*;
