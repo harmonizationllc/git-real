@@ -373,13 +373,7 @@ describe("CommandPalette group accessibility", () => {
 
   it("Recent repositories group is accessible as role=group when recents exist", async () => {
     vi.mocked(listRecent).mockResolvedValue([
-      {
-        path: "/r/repo1",
-        name: "repo1",
-        headBranch: "main",
-        isBare: false,
-        lastOpened: Date.now(),
-      },
+      { path: "/r/repo1", name: "repo1", lastOpened: Date.now() },
     ]);
     setup();
     await screen.findByRole("combobox", { name: "Search commands" });
