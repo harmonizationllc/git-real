@@ -142,13 +142,7 @@ export function CommandPalette({ actions, onClose, fallbackFocus }: CommandPalet
           className={styles.input}
         />
         {flat.length === 0 && <p className={styles.empty}>No matching commands</p>}
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label="Commands"
-          aria-activedescendant={flat.length > 0 ? optionId(current) : undefined}
-          className={styles.list}
-        >
+        <ul id={listId} role="listbox" aria-label="Commands" className={styles.list}>
           {grouped.map(({ group, rows }) => (
             <li key={group} role="group" aria-label={group} className={styles.group}>
               <div aria-hidden="true" className={styles.groupLabel}>
