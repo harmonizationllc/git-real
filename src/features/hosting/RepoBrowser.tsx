@@ -101,7 +101,7 @@ export function RepoBrowser({
     }
   };
 
-  // A failed Show more keeps what loaded and offers a retry.
+  // A failed Show more keeps what loaded; the error's Dismiss refetches.
   const moreError = list.error !== null && (
     <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
   );

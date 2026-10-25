@@ -119,6 +119,8 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // An Escape that cancels an IME composition in any field belongs to the composition.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Escape" && !cloning) onClose();
   };
 
