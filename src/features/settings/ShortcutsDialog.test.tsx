@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 
@@ -27,9 +27,8 @@ describe("ShortcutsDialog rendering", () => {
   it("renders one table per group with the group as caption", () => {
     setup();
     for (const group of SHORTCUT_GROUPS) {
-      const caption = screen.getByText(group);
-      const table = caption.closest("table");
-      expect(table).toBeInTheDocument();
+      // Match by accessible name (caption) to avoid collision with same-named shortcut labels.
+      expect(screen.getByRole("table", { name: group })).toBeInTheDocument();
     }
     const tables = screen.getAllByRole("table");
     expect(tables).toHaveLength(SHORTCUT_GROUPS.length);
@@ -38,9 +37,11 @@ describe("ShortcutsDialog rendering", () => {
   it("lists every registry row once with formatted kbd parts", () => {
     setup();
     for (const s of SHORTCUTS) {
-      // Every shortcut label must appear.
-      expect(screen.getByText(s.label)).toBeInTheDocument();
-      // Every shortcut kbd string must appear as formatted parts.
+      // Scope the label search within the shortcut's group table to avoid collision with
+      // the dialog heading ("Keyboard shortcuts") and group captions ("Commit").
+      const table = screen.getByRole("table", { name: s.group });
+      expect(within(table).getAllByText(s.label).length).toBeGreaterThanOrEqual(1);
+      // Every shortcut kbd string must appear as formatted parts (anywhere in the dialog).
       const parts = formatKeyParts(s.keys);
       for (const part of parts) {
         const kbds = screen.getAllByText(part);
@@ -82,14 +83,33 @@ describe("ShortcutsDialog closing", () => {
 
   it("a composing Escape does not call onClose", () => {
     const { onClose } = setup();
+    // Use `isComposing: true` — the codebase pattern for composing Escape (not nativeEvent).
     fireEvent.keyDown(screen.getByRole("dialog"), {
       key: "Escape",
-      nativeEvent: { isComposing: true },
+      isComposing: true,
     } as unknown as KeyboardEventInit);
     // Fire with keyCode 229 as the IME sentinel.
     const e = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     Object.defineProperty(e, "keyCode", { value: 229 });
     screen.getByRole("dialog").dispatchEvent(e);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// Coverage: ShortcutsDialog.tsx line 49 — backdrop onClick branches.
+describe("ShortcutsDialog backdrop click", () => {
+  it("clicking the backdrop (target === currentTarget) calls onClose", () => {
+    const { onClose } = setup();
+    const dialog = screen.getByRole("dialog");
+    // The backdrop is the immediate parent of the dialog div.
+    const backdrop = dialog.parentElement!;
+    fireEvent.click(backdrop, { target: backdrop });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("clicking inside the dialog does not trigger the backdrop handler", () => {
+    const { onClose } = setup();
+    fireEvent.click(screen.getByRole("heading", { name: "Keyboard shortcuts" }));
     expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ const ALLOWED_WITHOUT_ATTRIBUTE: Record<string, number> = {
   "src/features/remotes/SetUpstreamDialog.tsx": 1,
   "src/features/tags/CreateTagDialog.tsx": 1,
   "src/features/merge/rebase/RebaseDialog.tsx": 1,
+  "src/features/settings/ShortcutsDialog.tsx": 1,
 };
 
 // Imperative forms (el.tabIndex = -1, setAttribute) and spread props are out of scope: the

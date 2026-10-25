@@ -321,7 +321,7 @@ describe("useCreatePullRequest PR toast variant (GR-14)", () => {
   it("the opened toast is a success variant", async () => {
     const view = render(null, ["origin"]);
     await act(async () => {
-      await view.result.current.create(input());
+      await view.result.current.submit(input());
     });
     const toast = useToasts.getState().toasts[0];
     expect(toast?.variant).toBe("success");

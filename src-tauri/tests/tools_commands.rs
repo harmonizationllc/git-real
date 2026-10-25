@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use git_real_core::git_cli::set_configured_path;
-use git_real_core::{ExternalDiffScope, RepoId};
+use git_real_core::ExternalDiffScope;
 use git_real_lib::commands::tools::{
     open_external_diff_inner, open_external_merge_inner, open_in_editor_inner,
 };
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::settings_store::SettingsStore;
-use git_real_lib::state::RepoRegistry;
+use git_real_lib::state::{RepoId, RepoRegistry};
 
 /// Serialises tests that touch the process-wide `CONFIGURED` static.
 static TEST_LOCK: Mutex<()> = Mutex::new(());

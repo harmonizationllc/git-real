@@ -74,8 +74,6 @@ function themeTokens(m: Map<string, string>): Map<string, string> {
 
 const lightTheme = themeTokens(rootMap);
 const mediaDarkTheme = themeTokens(mediaDarkMap);
-const attrDarkTheme = themeTokens(attrDarkMap);
-
 // Review Focus item 3 (plan § Task 7): token structure assertions.
 describe("tokens.css structure", () => {
   it("declares 38 theme tokens on :root plus --font-mono and --diff-font-size", () => {

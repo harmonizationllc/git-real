@@ -69,17 +69,6 @@ describe("useOpenRepo open failure", () => {
     expect(useRepoTabs.getState().tabs).toEqual([]);
   });
 
-  it("should resolve to undefined when open rejects", async () => {
-    vi.mocked(openRepo).mockRejectedValue(notARepo);
-    const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: Promise<void> | undefined;
-    await act(async () => {
-      outcome = result.current.open("/r");
-      await outcome;
-    });
-    await expect(outcome).resolves.toBeUndefined();
-  });
-
   it("should map a plain Error rejection to an io error with its message", async () => {
     vi.mocked(openRepo).mockRejectedValue(new Error("boom"));
     const { result } = renderHookWithProviders(() => useOpenRepo());
@@ -217,7 +206,7 @@ describe("useOpenRepo overlapping calls", () => {
       .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
       .mockResolvedValueOnce(opened("/b", 2));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let first!: Promise<void>;
+    let first!: Promise<boolean>;
     act(() => {
       first = result.current.open("/a");
     });

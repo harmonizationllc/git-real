@@ -8,7 +8,7 @@ import {
   pickFolder,
   removeRecent,
 } from "../../lib/ipc";
-import type { AppError, OpenedRepo, RecentEntry } from "../../lib/ipc";
+import type { OpenedRepo, RecentEntry } from "../../lib/ipc";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { StartScreen } from "./StartScreen";

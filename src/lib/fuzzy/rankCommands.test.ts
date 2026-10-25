@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rankCommands } from "./index";
-import type { Rankable, Ranked } from "./index";
+import type { Rankable } from "./index";
 
 // Contract: rankCommands scores items and returns Ranked<T> structs.
 

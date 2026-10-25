@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { useShell } from "../lib/store/shell";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../lib/query/client";
@@ -64,6 +65,7 @@ beforeEach(() => {
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   useCommitDraft.setState({ drafts: {} });
   useToasts.setState({ toasts: [] });
+  useShell.setState({ dialog: null, repoActions: null });
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
@@ -333,19 +335,48 @@ describe("App global shortcuts (GR-14)", () => {
     const { user } = renderApp();
     const appRoot = document.querySelector("[data-focus-target]") as HTMLElement | null;
     if (appRoot) appRoot.focus();
-    await user.keyboard("{Control>/}{/Control}");
+    await user.keyboard("{Control>}/{/Control}");
     await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
-  it("Ctrl+K opens the palette; opening Settings from it closes the palette", async () => {
+  // CommandPalette component arrives in Cycle 3. This test asserts the shell store state
+  // (per plan: useGlobalShortcuts tests assert the store) rather than a DOM dialog.
+  it("Ctrl+K sets the palette dialog on the shell store and Ctrl+, switches to settings", async () => {
     const { user } = renderApp();
-    await user.keyboard("{Control>k{/Control}");
-    await screen.findByRole("dialog", { name: "Command palette" });
-    // Opening settings should close the palette (single dialog slot).
-    await user.keyboard("{Escape}");
+    await user.keyboard("{Control>}k{/Control}");
+    expect(useShell.getState().dialog).toEqual({ kind: "palette" });
+    // Opening settings must close the palette (single-slot rule).
     await user.keyboard("{Control>},{/Control}");
-    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
+  });
+});
+
+// Coverage: App.tsx lines 42 (openRepo pickFolder branch) and 47 (openPath failure branch).
+describe("App openRepo and openPath actions (GR-14)", () => {
+  it("Ctrl+O calls the folder picker and skips openRepo when it returns null", async () => {
+    vi.mocked(pickFolder).mockResolvedValue(null);
+    const { user } = renderApp();
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(pickFolder).toHaveBeenCalledWith("Open repository"));
+    expect(openRepo).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+O opens the repo when the folder picker returns a path", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r/new");
+    vi.mocked(openRepo).mockResolvedValue(repo(99, "new"));
+    const { user } = renderApp();
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(useRepoTabs.getState().tabs.map((t) => t.id)).toContain(99));
+  });
+
+  it("openPath deactivates the active tab when opener.open returns false", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r/bad");
+    vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "not a repo" });
+    const { user } = renderApp(repo(1, "existing"));
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(useRepoTabs.getState().activeId).toBeNull());
   });
 });
