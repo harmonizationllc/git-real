@@ -58,10 +58,14 @@ export function useCreatePullRequest(
     if (result.status !== "ok") return null;
     const pr = result.value;
     const toasts = useToasts.getState();
-    toasts.show(openedToastText(pr.number), {
-      label: "Open in browser",
-      run: () =>
-        void openExternal(pr.webUrl).catch((e: unknown) => toasts.show(toAppError(e).message)),
+    toasts.notify({
+      text: openedToastText(pr.number),
+      variant: "success",
+      action: {
+        label: "Open in browser",
+        run: () =>
+          void openExternal(pr.webUrl).catch((e: unknown) => toasts.show(toAppError(e).message)),
+      },
     });
     return pr;
   };

@@ -4,6 +4,7 @@ import { cloneRepo, initRepo, openRepo, toAppError } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useToasts } from "../../lib/store/toasts";
 
 type OpenRequest =
   | { action: "open"; path: string }
@@ -11,8 +12,10 @@ type OpenRequest =
   | { action: "clone"; url: string; dest: string; cloneId: number };
 
 export interface UseOpenRepo {
-  open(path: string): Promise<void>;
-  init(path: string): Promise<void>;
+  /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
+  open(path: string): Promise<boolean>;
+  /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
+  init(path: string): Promise<boolean>;
   /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
   clone(url: string, dest: string, cloneId: number): Promise<boolean>;
   error: AppError | null;
@@ -45,6 +48,9 @@ export function useOpenRepo(): UseOpenRepo {
       const repo = await execute(req);
       openTab(repo);
       await queryClient.invalidateQueries({ queryKey: queryKeys.recent });
+      if (req.action === "clone") {
+        useToasts.getState().notify({ text: `Cloned ${repo.summary.name}`, variant: "success" });
+      }
       return true;
     } catch (e) {
       if (id === latestCall.current) {
@@ -55,12 +61,8 @@ export function useOpenRepo(): UseOpenRepo {
   };
 
   return {
-    open: async (path) => {
-      await run({ action: "open", path });
-    },
-    init: async (path) => {
-      await run({ action: "init", path });
-    },
+    open: (path) => run({ action: "open", path }),
+    init: (path) => run({ action: "init", path }),
     clone: (url, dest, cloneId) => run({ action: "clone", url, dest, cloneId }),
     error: failure?.error ?? null,
     errorPath: failure?.path ?? null,

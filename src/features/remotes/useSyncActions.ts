@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
+import { useToasts } from "../../lib/store/toasts";
 import { useBranches } from "../branches/useBranches";
 import { useOperationState } from "../merge/useOperationState";
 import { networkMessage } from "./networkMessage";
@@ -76,14 +77,29 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (result.status === "failed") setMessage(networkMessage(result.error));
   };
 
+  /** A completed push of `local`, announced as a success toast. */
+  const toastPushed = (local: string) =>
+    useToasts.getState().notify({ text: `Pushed ${local}`, variant: "success" });
+
   const fetch = () => {
     if (gates.fetch !== null) return;
-    void start("fetch", (c) => fetchAll(repoId, c)).then(report);
+    void start("fetch", (c) => fetchAll(repoId, c)).then((result) => {
+      report(result);
+      if (result.status === "ok") {
+        useToasts.getState().notify({ text: "Fetch complete", variant: "success" });
+      }
+    });
   };
 
   const pull = (mode?: PullMode) => {
     if (gates.pull !== null) return;
-    void start("pull", (c) => pullBranch(repoId, mode ?? defaultMode, c)).then(report);
+    void start("pull", (c) => pullBranch(repoId, mode ?? defaultMode, c)).then((result) => {
+      report(result);
+      // A pull that stops on conflicts is surfaced by the OperationBanner, not a toast.
+      if (result.status === "ok" && result.value === "completed") {
+        useToasts.getState().notify({ text: "Pull complete", variant: "success" });
+      }
+    });
   };
 
   const push = () => {
@@ -94,7 +110,10 @@ export function useSyncActions(repoId: RepoId): SyncActions {
         if (result.status === "failed" && result.error.kind === "noUpstream") {
           setPublishError(null);
           setPublishTo({ remotes: remoteNames, branch: local });
-        } else report(result);
+        } else {
+          report(result);
+          if (result.status === "ok") toastPushed(local);
+        }
       },
     );
   };
@@ -111,6 +130,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       }
       setPublishTo(null);
       report(result);
+      if (result.status === "ok") toastPushed(local);
     });
   };
 
@@ -127,6 +147,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       (result) => {
         setForcePush(null);
         report(result);
+        if (result.status === "ok") toastPushed(local);
       },
     );
   };
