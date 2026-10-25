@@ -17,8 +17,8 @@ export interface EditorPaneProps {
 const paneTheme = EditorView.theme({
   "&": { height: "100%", background: "var(--color-bg)", color: "var(--color-text)" },
   ".cm-scroller": {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "0.8125rem",
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--diff-font-size)",
     lineHeight: "1.4",
     overflow: "auto",
   },

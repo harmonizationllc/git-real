@@ -1,4 +1,7 @@
 :root {
+  color-scheme: light;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --diff-font-size: 13px;
   --color-bg: #f6f6f6;
   --color-surface: #ffffff;
   --color-text: #0f0f0f;
@@ -39,8 +42,10 @@
   --graph-lane-7: #6e7781;
 }
 
+/* Dark tokens apply when the system is dark and the user has not forced light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --color-bg: #1e1e1e;
     --color-surface: #2a2a2a;
     --color-text: #f6f6f6;
@@ -80,4 +85,47 @@
     --graph-lane-6: #f0883e;
     --graph-lane-7: #8b949e;
   }
+}
+
+/* A forced dark theme, regardless of the system preference. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #1e1e1e;
+  --color-surface: #2a2a2a;
+  --color-text: #f6f6f6;
+  --color-text-muted: #a0a0a0;
+  --color-border: #3a3a3a;
+  --color-accent: #4f8cff;
+  --color-danger: #f85149;
+  --color-surface-hover: #333333;
+  --color-added: #3fb950;
+  --color-removed: #f85149;
+  --color-modified: #d29922;
+  --color-warning: #d29922;
+  --color-on-accent: #0f0f0f;
+  --color-added-bg: #12261e;
+  --color-removed-bg: #2d1214;
+  --color-added-word-bg: #1f6f3a;
+  --color-removed-word-bg: #8c2b2b;
+  --color-hunk-bg: #22304a;
+  --color-line-selected: #4a3f14;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #79c0ff;
+  --syntax-comment: #8b949e;
+  --syntax-variable: #ffa657;
+  --syntax-type: #d2a8ff;
+  --syntax-function: #d2a8ff;
+  --syntax-operator: #79c0ff;
+  --syntax-punctuation: #c9d1d9;
+  --syntax-meta: #7ee787;
+  --syntax-invalid: #ff7b72;
+  --graph-lane-0: #4f8cff;
+  --graph-lane-1: #3fb950;
+  --graph-lane-2: #d29922;
+  --graph-lane-3: #f85149;
+  --graph-lane-4: #d2a8ff;
+  --graph-lane-5: #39c5cf;
+  --graph-lane-6: #f0883e;
+  --graph-lane-7: #8b949e;
 }

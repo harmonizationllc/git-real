@@ -34,7 +34,7 @@
   padding: 0 6px;
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1.5;
   user-select: none;
@@ -57,8 +57,8 @@
   text-align: center;
   color: var(--color-text-muted);
   /* Same metrics as the line content, so a changed row is no taller than a context row. */
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  font-size: var(--diff-font-size);
   line-height: 1.4;
 }
 
