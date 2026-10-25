@@ -1,11 +1,12 @@
 // Task 13: Failing tests for useExternalTool hook.
 // These tests import modules/symbols that do not exist yet — red phase.
 
-import { act } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, openExternalDiff, openExternalMerge, openInEditor } from "../../lib/ipc";
 import type { Settings } from "../../lib/ipc";
 import { queryClient } from "../../lib/query/client";
+import { queryKeys } from "../../lib/query/keys";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
@@ -49,10 +50,10 @@ describe("useExternalTool configured", () => {
     const { result: editorResult } = renderHookWithProviders(() => useExternalTool("editor"));
     const { result: diffResult } = renderHookWithProviders(() => useExternalTool("diff"));
     const { result: mergeResult } = renderHookWithProviders(() => useExternalTool("merge"));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
-    expect(editorResult.current.configured).toBe(true);
+    // Each hook has its own query client; wait for each that must be true after load.
+    await waitFor(() => expect(editorResult.current.configured).toBe(true));
+    await waitFor(() => expect(mergeResult.current.configured).toBe(true));
     expect(diffResult.current.configured).toBe(false);
-    expect(mergeResult.current.configured).toBe(true);
   });
 });
 
@@ -61,8 +62,9 @@ describe("useExternalTool run — unset tool", () => {
   it("run opens Settings at Tools and skips the call when unset", async () => {
     vi.mocked(getSettings).mockResolvedValue(makeSettings({ externalEditor: null }));
     const call = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderHookWithProviders(() => useExternalTool("editor"));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { result, queryClient: qc } = renderHookWithProviders(() => useExternalTool("editor"));
+    // Wait until settings is loaded (configured stays false since editor is null).
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     await act(() => result.current.run(call));
     expect(call).not.toHaveBeenCalled();
     expect(useShell.getState().dialog).toMatchObject({ kind: "settings", section: "tools" });
@@ -75,7 +77,7 @@ describe("useExternalTool run — configured tool", () => {
     vi.mocked(getSettings).mockResolvedValue(makeSettings({ externalEditor: "code --wait" }));
     const call = vi.fn().mockResolvedValue(undefined);
     const { result } = renderHookWithProviders(() => useExternalTool("editor"));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.configured).toBe(true));
     await act(() => result.current.run(call));
     expect(call).toHaveBeenCalledOnce();
     expect(useShell.getState().dialog).toBeNull();
@@ -89,7 +91,7 @@ describe("useExternalTool run — rejection", () => {
     const err = { kind: "externalToolFailed", message: "meld failed to start" };
     const call = vi.fn().mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useExternalTool("diff"));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.configured).toBe(true));
     await act(() => result.current.run(call));
     const toasts = useToasts.getState().toasts;
     expect(toasts).toHaveLength(1);
@@ -103,7 +105,7 @@ describe("useExternalTool run — rejection", () => {
     const err = { kind: "externalToolFailed", message: "error" };
     const call = vi.fn().mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useExternalTool("merge"));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.configured).toBe(true));
     await act(() => result.current.run(call));
     const toast = useToasts.getState().toasts[0];
     act(() => toast.action?.run());

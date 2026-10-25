@@ -55,6 +55,15 @@ describe("TextSetting commit behaviour", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  it("a composing Enter (keyCode 229) does not commit", () => {
+    const onCommit = vi.fn().mockResolvedValue(null);
+    const { input } = setup("initial", onCommit);
+    fireEvent.change(input, { target: { value: "changed" } });
+    // Simulate a composing Enter via the IME keyCode sentinel.
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it("maps an empty value to null on commit", async () => {
     const onCommit = vi.fn().mockResolvedValue(null);
     const { input } = setup("initial", onCommit);

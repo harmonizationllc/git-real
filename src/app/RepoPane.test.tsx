@@ -2036,4 +2036,18 @@ describe("RepoPane repoActions publication (GR-14)", () => {
     act(() => ra.fetch());
     await waitFor(() => expect(fetchAll).toHaveBeenCalled());
   });
+
+  it("published pull and push invoke sync and fileHistory opens the file history dialog", async () => {
+    await renderAndWaitForLoad();
+    await waitFor(() => expect(useShell.getState().repoActions).not.toBeNull());
+    const ra = useShell.getState().repoActions!;
+    // Invoke pull and push to cover their callback bodies (lines 124–125).
+    await act(async () => {
+      ra.pull();
+      ra.push();
+    });
+    // fileHistory sets picker to true, which shows the File history dialog (line 126).
+    act(() => ra.fileHistory());
+    await screen.findByRole("dialog", { name: "File history" });
+  });
 });

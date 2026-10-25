@@ -1,7 +1,7 @@
 // Task 13: Failing tests for useSettings hook.
 // These tests import modules/symbols that do not exist yet — red phase.
 
-import { act } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { checkGitCli, getSettings, updateSettings } from "../../lib/ipc";
 import type { AppError, Settings } from "../../lib/ipc";
@@ -41,7 +41,7 @@ beforeEach(() => {
 describe("useSettings query", () => {
   it("loads settings under the settings key", async () => {
     const { result } = renderHookWithProviders(() => useSettings());
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.settings).toBeDefined());
     expect(getSettings).toHaveBeenCalled();
     expect(result.current.settings).toEqual(defaultSettings);
     expect(result.current.error).toBeNull();

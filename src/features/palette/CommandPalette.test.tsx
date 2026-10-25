@@ -1,7 +1,8 @@
 // Task 14: Failing tests for CommandPalette component.
 // These tests import modules/symbols that do not exist yet — red phase.
 
-import { act, createRef, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { createRef } from "react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOperationState,
@@ -123,6 +124,30 @@ describe("CommandPalette filtering", () => {
       expect(marks.length).toBeGreaterThan(0);
     }
   });
+
+  it("highlights the detail field when the query matches detail but not label", async () => {
+    // Publish a gated Fetch with detail "No remote configured".
+    // Querying "remote" matches the detail but not the label "Fetch".
+    act(() => {
+      useShell.getState().publishRepoActions({
+        repoId: 1,
+        path: "/r/repo",
+        gates: { fetch: "No remote configured", pull: null, push: null },
+        fetch: vi.fn(),
+        pull: vi.fn(),
+        push: vi.fn(),
+        fileHistory: vi.fn(),
+      });
+    });
+    setup();
+    const input = await screen.findByRole("combobox", { name: "Search commands" });
+    fireEvent.change(input, { target: { value: "remote" } });
+    // "No remote configured" detail should be rendered with highlighted marks.
+    await waitFor(() => {
+      const marks = document.querySelectorAll("mark");
+      expect(marks.length).toBeGreaterThan(0);
+    });
+  });
 });
 
 // Contract: ArrowDown/Up, Home and End move aria-activedescendant.
@@ -162,6 +187,20 @@ describe("CommandPalette keyboard navigation", () => {
     if (options.length > 0 && activeId) {
       expect(options[options.length - 1].id).toBe(activeId);
     }
+  });
+
+  it("ArrowUp moves aria-activedescendant to the previous item", async () => {
+    setup();
+    const input = await screen.findByRole("combobox", { name: "Search commands" });
+    const listbox = screen.getByRole("listbox");
+    // Navigate down twice to reach index 2.
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const idAtIndex2 = listbox.getAttribute("aria-activedescendant");
+    // Navigate up once — should move back to index 1.
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    const idAfterUp = listbox.getAttribute("aria-activedescendant");
+    expect(idAfterUp).not.toBe(idAtIndex2);
   });
 });
 
@@ -299,6 +338,18 @@ describe("CommandPalette — no network hooks (Review Focus 4)", () => {
     expect(listBranches).not.toHaveBeenCalled();
     expect(listRemotes).not.toHaveBeenCalled();
     expect(getOperationState).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: clicking the backdrop closes the palette.
+describe("CommandPalette backdrop click", () => {
+  it("clicking the backdrop calls onClose", async () => {
+    const { onClose } = setup();
+    await screen.findByRole("dialog", { name: "Command palette" });
+    // The backdrop is the parent div wrapping the dialog element.
+    const backdrop = screen.getByRole("dialog", { name: "Command palette" }).parentElement!;
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
 

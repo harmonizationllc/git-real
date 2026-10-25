@@ -1,11 +1,12 @@
 // Task 14: Failing tests for useCommands hook.
 // These tests import modules/symbols that do not exist yet — red phase.
 
-import { act } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, listRecent, openInEditor } from "../../lib/ipc";
 import type { OpenedRepo, RecentRepo, Settings } from "../../lib/ipc";
 import { queryClient } from "../../lib/query/client";
+import { queryKeys } from "../../lib/query/keys";
 import { useAppearancePrefs } from "../../lib/store/appearancePrefs";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import type { ShellActions } from "../../lib/store/shell";
@@ -194,8 +195,9 @@ describe("useCommands Open repository in editor", () => {
       });
     });
     vi.mocked(openInEditor).mockResolvedValue(undefined);
-    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
+    // Wait until the settings query resolves so editor.configured becomes true.
+    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
     const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
     expect(editorCmd).toBeDefined();
     await act(() => editorCmd!.run());
@@ -212,5 +214,64 @@ describe("useCommands shortcut ids", () => {
     expect(openCmd?.shortcutId).toBe("openRepo");
     const cloneCmd = result.current.find((c) => c.label === "Clone repository…");
     expect(cloneCmd?.shortcutId).toBe("cloneRepo");
+  });
+});
+
+// Contract: run functions for always-actions update state correctly.
+describe("useCommands always-action run functions", () => {
+  it("Open settings run opens the settings dialog", async () => {
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    act(() => result.current.find((c) => c.label === "Open settings")!.run());
+    expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
+  });
+
+  it("Show keyboard shortcuts run opens the shortcuts dialog", async () => {
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    act(() => result.current.find((c) => c.label === "Show keyboard shortcuts")!.run());
+    expect(useShell.getState().dialog).toMatchObject({ kind: "shortcuts" });
+  });
+
+  it("Theme: Dark run changes the theme to dark", async () => {
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    act(() => result.current.find((c) => c.label === "Theme: Dark")!.run());
+    expect(useAppearancePrefs.getState().theme).toBe("dark");
+  });
+
+  it("Go to start screen run deactivates the current tab", async () => {
+    useRepoTabs.getState().openTab({
+      id: 1,
+      summary: { path: "/r/alpha", name: "alpha", headBranch: "main", isBare: false },
+    } as OpenedRepo);
+    act(() => useRepoTabs.getState().activate(1));
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    act(() => result.current.find((c) => c.label === "Go to start screen")!.run());
+    expect(useRepoTabs.getState().activeId).toBeNull();
+  });
+
+  it("Close repository tab run closes the active repository tab", async () => {
+    act(() => {
+      useShell.getState().publishRepoActions({
+        repoId: 99,
+        path: "/r/repo",
+        gates: { fetch: null, pull: null, push: null },
+        fetch: vi.fn(),
+        pull: vi.fn(),
+        push: vi.fn(),
+        fileHistory: vi.fn(),
+      });
+    });
+    useRepoTabs.getState().openTab({
+      id: 99,
+      summary: { path: "/r/repo", name: "repo", headBranch: "main", isBare: false },
+    } as OpenedRepo);
+    act(() => useRepoTabs.getState().activate(99));
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    act(() => result.current.find((c) => c.label === "Close repository tab")!.run());
+    expect(useRepoTabs.getState().tabs.find((t) => t.id === 99)).toBeUndefined();
   });
 });

@@ -1,7 +1,8 @@
 // Task 13: Failing tests for SettingsDialog.
 // These tests import modules/symbols that do not exist yet — red phase.
 
-import { act, createRef, fireEvent, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { checkGitCli, getSettings, pickFile, pickFolder, updateSettings } from "../../lib/ipc";
 import type { Settings } from "../../lib/ipc";
@@ -142,6 +143,40 @@ describe("SettingsDialog Font size", () => {
     expect(useAppearancePrefs.getState().diffFontSize).toBe(10);
     expect(input).toHaveValue(10);
   });
+
+  it("Font size Enter key commits the value", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    const input = screen.getByLabelText("Font size");
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    // 5 is below the minimum (10) so it clamps to 10.
+    expect(useAppearancePrefs.getState().diffFontSize).toBe(10);
+  });
+
+  it("Font size blur with an empty value resets to the stored size without changing it", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    const input = screen.getByLabelText("Font size");
+    const before = useAppearancePrefs.getState().diffFontSize;
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    // Empty string is not committed — stored size is unchanged.
+    expect(useAppearancePrefs.getState().diffFontSize).toBe(before);
+  });
+
+  it("a non-Enter key on the Font size input does not commit via the keyDown handler", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    const input = screen.getByLabelText("Font size");
+    const before = useAppearancePrefs.getState().diffFontSize;
+    // Use an out-of-range value so onChange does not call setSize immediately.
+    fireEvent.change(input, { target: { value: "1" } });
+    expect(useAppearancePrefs.getState().diffFontSize).toBe(before);
+    // Tab key is not Enter — the keyDown handler must not call commitSize.
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(useAppearancePrefs.getState().diffFontSize).toBe(before);
+  });
 });
 
 // Contract: renders the two-line diff font sample.
@@ -188,7 +223,7 @@ describe("SettingsDialog Clone section", () => {
       ...defaultSettings,
       defaultCloneDir: "/home/u/src",
     });
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     setup();
     await screen.findByRole("heading", { name: "Settings" });
     await act(async () => {
@@ -199,6 +234,63 @@ describe("SettingsDialog Clone section", () => {
     expect(screen.getByText("Saved")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(2000));
     vi.useRealTimers();
+  });
+
+  it("cancelling Choose folder… picker does not call updateSettings", async () => {
+    vi.mocked(pickFolder).mockResolvedValue(null);
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+    await waitFor(() => expect(pickFolder).toHaveBeenCalled());
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("a failed Choose folder… save toasts Couldn't save settings", async () => {
+    vi.mocked(updateSettings).mockRejectedValue({ kind: "io", message: "disk full" });
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+    await waitFor(() => {
+      expect(
+        useToasts.getState().toasts.some((t) => t.text === "Couldn't save settings: disk full"),
+      ).toBe(true);
+    });
+  });
+
+  it("saving twice quickly debounces the Saved indicator", async () => {
+    vi.mocked(updateSettings).mockResolvedValue({
+      ...defaultSettings,
+      defaultCloneDir: "/home/u/src",
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    // First save — timer.current is null, so the null branch is covered.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+    });
+    await act(() => Promise.resolve());
+    // Second save before the first timer fires — timer.current !== null (debounce branch).
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+    });
+    await act(() => Promise.resolve());
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(2000));
+    vi.useRealTimers();
+  });
+
+  it("Clear clears the default clone directory", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      ...defaultSettings,
+      defaultCloneDir: "/home/u/projects",
+    });
+    vi.mocked(updateSettings).mockResolvedValue({ ...defaultSettings, defaultCloneDir: null });
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    await waitFor(() => expect(screen.getByText("/home/u/projects")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ defaultCloneDir: null }));
   });
 });
 
@@ -290,6 +382,31 @@ describe("SettingsDialog Git browse and use PATH", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use PATH" }));
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ gitExecutable: null }));
   });
+
+  it("cancelling Browse… does not call updateSettings", async () => {
+    vi.mocked(pickFile).mockResolvedValue(null);
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
+    await waitFor(() => expect(pickFile).toHaveBeenCalled());
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("a non-gitCliInvalid error on the Git executable toasts Couldn't save settings", async () => {
+    vi.mocked(updateSettings).mockRejectedValue({ kind: "io", message: "permission denied" });
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    const gitInput = screen.getByLabelText("Git executable");
+    fireEvent.change(gitInput, { target: { value: "/custom/git" } });
+    fireEvent.keyDown(gitInput, { key: "Enter" });
+    await waitFor(() => {
+      expect(
+        useToasts
+          .getState()
+          .toasts.some((t) => t.text === "Couldn't save settings: permission denied"),
+      ).toBe(true);
+    });
+  });
 });
 
 // Contract: a failed save toasts Couldn't save settings: … and reverts.
@@ -333,6 +450,15 @@ describe("SettingsDialog keyboard shortcuts button", () => {
 
 // Contract: Close and Escape close; a composing Escape does not.
 describe("SettingsDialog closing", () => {
+  it("clicking the backdrop calls onClose", async () => {
+    const { onClose } = setup();
+    await screen.findByRole("dialog");
+    // The backdrop is the parent div that wraps the dialog element.
+    const backdrop = screen.getByRole("dialog").parentElement!;
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("Close calls onClose", async () => {
     const { onClose } = setup();
     await screen.findByRole("heading", { name: "Settings" });
