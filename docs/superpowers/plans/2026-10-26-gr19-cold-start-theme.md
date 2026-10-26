@@ -33,12 +33,14 @@
 ### Task 1: Pure mapping in core and `data-theme` in the init script
 
 **Files:**
+
 - Modify: `src-tauri/crates/git-real-core/src/settings.rs` (near `pub enum Theme`, line ~168)
 - Modify: `src-tauri/src/settings_store.rs:109-116` (`to_init_script`)
 - Test: `src-tauri/crates/git-real-core/tests/settings.rs`
 - Test: `src-tauri/tests/settings_store.rs`
 
 **Interfaces:**
+
 - Consumes: `git_real_core::settings::Theme { System, Light, Dark }` (exists).
 - Produces:
   - `pub const BG_DARK_RGB: (u8, u8, u8) = (30, 30, 30);` and `pub const BG_LIGHT_RGB: (u8, u8, u8) = (246, 246, 246);` in `git_real_core::settings`, each with a doc comment naming `src/styles/tokens.css --color-bg`.
@@ -111,6 +113,7 @@ git commit -m "feat(GR-19): theme background mapping and data-theme in the init 
 ### Task 2: Window background at launch and on theme changes
 
 **Files:**
+
 - Modify: `src-tauri/src/main_window.rs` (`build`, line ~41; new fns)
 - Modify: `src-tauri/src/commands/settings.rs` (`update_settings`, `update_settings_inner`)
 - Modify: `src-tauri/src/lib.rs:45-54` (`on_window_event`)
@@ -118,6 +121,7 @@ git commit -m "feat(GR-19): theme background mapping and data-theme in the init 
 - Test: `src-tauri/tests/settings_store.rs` (the `update_settings_inner` tests live here today)
 
 **Interfaces:**
+
 - Consumes: Task 1's `background_rgb`; `SettingsStore::get()`, `SettingsStore::update()`.
 - Produces, in `main_window`:
   - `pub fn background_color(theme: Theme, desktop: Option<tauri::Theme>) -> tauri::webview::Color` — `Color(r, g, b, 255)` from `background_rgb(theme, desktop == Some(tauri::Theme::Dark))`. `None` means "unknown", which maps to light.
@@ -197,10 +201,12 @@ git commit -m "feat(GR-19): window background from the stored theme before show,
 ### Task 3: Front-end idempotence test and ADR note
 
 **Files:**
+
 - Test: `src/app/applyAppearance.test.ts` (new case in `describe("applyAppearance theme attribute")`)
 - Modify: `docs/adr/0005-settings-owned-by-rust.md:28` (the "The main window is built in Rust" bullet)
 
 **Interfaces:**
+
 - Consumes: `applyAppearance(prefs, root?)` from `src/app/applyAppearance.ts` (unchanged).
 - Produces: nothing new in code; this task proves the front end does not fight the pre-applied attribute.
 
@@ -243,9 +249,11 @@ git commit -m "test(GR-19): pin applyAppearance idempotence; note first-frame th
 ### Task 4: Acceptance walk on the desktop and spec §8
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-10-26-gr19-cold-start-theme-design.md` (append `## 8. Walk results (YYYY-MM-DD)`)
 
 **Interfaces:**
+
 - Consumes: the harness attached to Jira GR-26 as `desktop-walk-harness.tar.gz` (also still in this session's scratchpad `walk19/`), spec §5 steps 1–5. Download via the Atlassian `downloadJiraIssueAttachment` operation (attachment id 10000) if the scratchpad copy is gone.
 
 - [ ] **Step 1: Build the release binary**

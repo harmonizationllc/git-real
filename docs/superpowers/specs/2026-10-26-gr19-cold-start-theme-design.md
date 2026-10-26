@@ -63,7 +63,7 @@ No alternative bindings are needed. `src/lib/shortcuts/index.ts` and
    matches the desktop scheme, which is why the GR-29 walk could not see it
    on this machine.
 
-Stored `theme: system` is unaffected by cause 2 (the CSS default *is* the
+Stored `theme: system` is unaffected by cause 2 (the CSS default _is_ the
 system scheme) but still shows cause 1.
 
 ## 2. Intent
