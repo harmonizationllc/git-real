@@ -81,6 +81,17 @@ function measure() {
   act(() => observer().fire([{ target: root(), height: 624 }, ...sectionEntries()]));
 }
 
+// Without a hosting context the pull requests and issues panels render nothing, so they measure 0.
+function measureWithZeroHostingSections() {
+  const heights = [200, 60, 150, 0, 0];
+  act(() =>
+    observer().fire([
+      { target: root(), height: 624 },
+      ...REFS_SECTIONS.map((s, i) => ({ target: content(s), height: heights[i] as number })),
+    ]),
+  );
+}
+
 async function renderColumn() {
   const result = renderWithProviders(
     <RefsColumn repoId={1} onOpenRemotes={vi.fn()} onCreatePullRequest={null} />,
@@ -148,6 +159,27 @@ describe("RefsColumn measurement", () => {
     measure();
     expect(wrapper("branches").style.height).toBe("318px");
     expect(wrapper("tags").style.height).toBe("150px");
+  });
+
+  it("should apply fitted heights once every target has reported, even at zero", async () => {
+    await renderColumn();
+    measureWithZeroHostingSections();
+    expect(wrapper("branches").style.height).toBe("390px");
+    expect(wrapper("tags").style.height).toBe("150px");
+    expect(wrapper("pullRequests").style.height).toBe("0px");
+  });
+
+  it("should render no handle for a section measured at zero", async () => {
+    await renderColumn();
+    measureWithZeroHostingSections();
+    expect(screen.queryByRole("separator", { name: "Resize Pull requests section" })).toBeNull();
+    for (const name of [
+      "Resize Branches section",
+      "Resize Stashes section",
+      "Resize Tags section",
+    ]) {
+      expect(handle(name)).toBeInTheDocument();
+    }
   });
 
   it("should ignore an entry for an unknown target", async () => {
