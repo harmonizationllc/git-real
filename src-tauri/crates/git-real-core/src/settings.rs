@@ -351,39 +351,38 @@ impl SettingsWarning {
 
 // --- The shared validator ----------------------------------------------------
 
-/// How [`Settings::normalise`] treats a value that fails validation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    /// Reading the file: fall back to the default and warn.
-    Load,
-    /// Applying a user change: reject.
-    Patch,
-}
+// The path leaves, in check order: (field in the file, label in the error).
+const GIT_EXECUTABLE: (&str, &str) = ("git.executable", "Git executable");
+const CLONE_DEFAULT_DIR: (&str, &str) = ("clone.defaultDir", "default clone directory");
 
 impl Settings {
-    /// Clamps numerics, trims strings, and checks that paths are absolute.
-    /// Only `Patch` mode can fail; `Load` mode warns and falls back instead.
-    /// Never checks that a path exists.
-    fn normalise(
-        mut self,
-        mode: Mode,
-        warnings: &mut Vec<SettingsWarning>,
-    ) -> Result<Settings, SettingsError> {
-        self.git.executable = absolute(
-            self.git.executable,
-            "git.executable",
-            "Git executable",
-            mode,
-            warnings,
-        )?;
-        self.clone.default_dir = absolute(
-            self.clone.default_dir,
-            "clone.defaultDir",
-            "default clone directory",
-            mode,
-            warnings,
-        )?;
+    /// Load mode's path check: a relative path is dropped to the default with
+    /// a warning. Infallible, so reading a file can never fail here. Never
+    /// checks that a path exists.
+    fn drop_relative_paths(mut self, warnings: &mut Vec<SettingsWarning>) -> Settings {
+        self.git.executable = absolute_or_default(self.git.executable, GIT_EXECUTABLE.0, warnings);
+        self.clone.default_dir =
+            absolute_or_default(self.clone.default_dir, CLONE_DEFAULT_DIR.0, warnings);
+        self
+    }
 
+    /// Patch mode's path check: a relative path is rejected. Never checks
+    /// that a path exists.
+    fn require_absolute_paths(&self) -> Result<(), SettingsError> {
+        for (path, (_, label)) in [
+            (&self.git.executable, GIT_EXECUTABLE),
+            (&self.clone.default_dir, CLONE_DEFAULT_DIR),
+        ] {
+            if path.as_ref().is_some_and(|p| !p.is_absolute()) {
+                return Err(SettingsError::RelativePath(label));
+            }
+        }
+        Ok(())
+    }
+
+    /// Clamps numerics and trims strings, warning on each clamp. Shared by
+    /// Load and Patch mode (Patch discards the warnings); infallible.
+    fn normalise(mut self, warnings: &mut Vec<SettingsWarning>) -> Settings {
         self.tools.editor = trimmed(self.tools.editor);
         self.tools.diff_tool = trimmed(self.tools.diff_tool);
         self.tools.merge_tool = trimmed(self.tools.merge_tool);
@@ -426,34 +425,28 @@ impl Settings {
             ));
             self.window = window;
         }
-        Ok(self)
+        self
     }
 }
 
-/// A relative path is dropped with a warning in `Load` mode and rejected in
-/// `Patch` mode. `label` names the field in the error.
-fn absolute(
+/// Drops a relative path to the default (`None`) with a warning on `field`.
+fn absolute_or_default(
     value: Option<PathBuf>,
     field: &str,
-    label: &'static str,
-    mode: Mode,
     warnings: &mut Vec<SettingsWarning>,
-) -> Result<Option<PathBuf>, SettingsError> {
+) -> Option<PathBuf> {
     match value {
-        Some(path) if !path.is_absolute() => match mode {
-            Mode::Load => {
-                warnings.push(SettingsWarning::new(
-                    field,
-                    format!(
-                        "{} is not an absolute path; using the default",
-                        path.display()
-                    ),
-                ));
-                Ok(None)
-            }
-            Mode::Patch => Err(SettingsError::RelativePath(label)),
-        },
-        other => Ok(other),
+        Some(path) if !path.is_absolute() => {
+            warnings.push(SettingsWarning::new(
+                field,
+                format!(
+                    "{} is not an absolute path; using the default",
+                    path.display()
+                ),
+            ));
+            None
+        }
+        other => other,
     }
 }
 
@@ -603,10 +596,8 @@ impl Settings {
             },
         };
 
-        match read.normalise(Mode::Load, &mut w) {
-            Ok(settings) => (settings, w),
-            Err(_) => unreachable!("Load mode falls back instead of rejecting"),
-        }
+        let settings = read.drop_relative_paths(&mut w).normalise(&mut w);
+        (settings, w)
     }
 }
 
@@ -691,7 +682,8 @@ impl Settings {
             set(&mut next.window.maximized, &p.maximized);
         }
 
-        let next = next.normalise(Mode::Patch, &mut Vec::new())?;
+        next.require_absolute_paths()?;
+        let next = next.normalise(&mut Vec::new());
 
         // Existence is a Patch-only check, and only for a value being set now.
         let sets_clone_dir = patch
@@ -714,8 +706,10 @@ impl Settings {
 pub const SETTINGS_VERSION: u32 = 2;
 
 /// The versioned settings file: `{ "version": 2, "settings": { … } }`.
-/// Serialise it with `serde_json::to_string_pretty` (two-space indent).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Serialise it with `serde_json::to_string_pretty` (two-space indent). It is
+/// deliberately not `Deserialize`: read a file with [`SettingsFile::parse`],
+/// which is lenient per field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SettingsFile {
     pub version: u32,
     pub settings: Settings,

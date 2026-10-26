@@ -51,27 +51,44 @@ pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWin
         .build()
 }
 
+/// The geometry to save on close, or `None` to save nothing. Fullscreen is
+/// not a stored state (spec §5), so a fullscreen close keeps the stored
+/// geometry as it is.
+pub fn close_geometry(
+    physical: (u32, u32),
+    scale: f64,
+    maximized: bool,
+    fullscreen: bool,
+    stored: &WindowGeometry,
+) -> Option<WindowGeometry> {
+    (!fullscreen).then(|| logical_geometry(physical, scale, maximized, stored))
+}
+
 /// Saves the window geometry. Never blocks the close.
 pub fn on_close_requested(window: &WebviewWindow, store: &SettingsStore) {
-    let (maximized, size, scale) = match (
+    let (fullscreen, maximized, size, scale) = match (
+        window.is_fullscreen(),
         window.is_maximized(),
         window.inner_size(),
         window.scale_factor(),
     ) {
-        (Ok(m), Ok(s), Ok(f)) => (m, s, f),
-        (m, s, f) => {
-            for e in [m.err(), s.err(), f.err()].into_iter().flatten() {
+        (Ok(fs), Ok(m), Ok(s), Ok(f)) => (fs, m, s, f),
+        (fs, m, s, f) => {
+            for e in [fs.err(), m.err(), s.err(), f.err()].into_iter().flatten() {
                 eprintln!("settings: cannot read window geometry: {e}");
             }
             return;
         }
     };
-    let geometry = logical_geometry(
+    let Some(geometry) = close_geometry(
         (size.width, size.height),
         scale,
         maximized,
+        fullscreen,
         &store.get().window,
-    );
+    ) else {
+        return;
+    };
     if let Err(e) = store.set_window(geometry) {
         eprintln!("settings: cannot save window geometry: {e}");
     }

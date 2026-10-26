@@ -43,7 +43,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Only the main window's geometry is stored.
             if let WindowEvent::CloseRequested { .. } = event
+                && window.label() == main_window::LABEL
                 && let Some(webview) = window.app_handle().get_webview_window(window.label())
             {
                 let store = window.state::<Arc<SettingsStore>>();

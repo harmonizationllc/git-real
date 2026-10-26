@@ -1,8 +1,9 @@
 //! Tests for the pure parts of `main_window`: the label and title, the
-//! geometry the window opens with, and the logical geometry saved on close.
+//! geometry the window opens with, the logical geometry saved on close, and
+//! the close decision that skips saving while fullscreen.
 
 use git_real_core::settings::{Settings, WindowGeometry};
-use git_real_lib::main_window::{LABEL, TITLE, initial_geometry, logical_geometry};
+use git_real_lib::main_window::{LABEL, TITLE, close_geometry, initial_geometry, logical_geometry};
 
 fn stored(width: u32, height: u32) -> WindowGeometry {
     WindowGeometry {
@@ -52,4 +53,39 @@ fn logical_geometry_keeps_the_stored_size_when_maximized() {
 fn logical_geometry_clamps_small_sizes() {
     let got = logical_geometry((100, 100), 1.0, false, &stored(1280, 800));
     assert_eq!(got, stored(960, 600));
+}
+
+#[test]
+fn logical_geometry_rounds_fractional_scale() {
+    let got = logical_geometry((1600, 1000), 1.25, false, &stored(1, 1));
+    assert_eq!(got, stored(1280, 800));
+}
+
+#[test]
+fn logical_geometry_treats_zero_scale_as_one() {
+    let got = logical_geometry((1280, 800), 0.0, false, &stored(1, 1));
+    assert_eq!(got, stored(1280, 800));
+}
+
+#[test]
+fn close_geometry_is_none_when_fullscreen() {
+    let stored = stored(1100, 700);
+    assert_eq!(
+        close_geometry((3840, 2160), 1.0, false, true, &stored),
+        None
+    );
+    assert_eq!(close_geometry((3840, 2160), 1.0, true, true, &stored), None);
+}
+
+#[test]
+fn close_geometry_is_the_logical_geometry_when_not_fullscreen() {
+    let stored = stored(1100, 700);
+    assert_eq!(
+        close_geometry((2560, 1600), 2.0, false, false, &stored),
+        Some(logical_geometry((2560, 1600), 2.0, false, &stored))
+    );
+    assert_eq!(
+        close_geometry((3840, 2160), 1.0, true, false, &stored),
+        Some(logical_geometry((3840, 2160), 1.0, true, &stored))
+    );
 }

@@ -7,9 +7,10 @@
 
 #![cfg(unix)]
 
+mod common;
+
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -45,36 +46,11 @@ impl Drop for Restore {
     }
 }
 
-/// Writes an executable `git` in `dir` that prints `git version 9.9.9`. Probes
-/// it after writing so a concurrent fork cannot cause ETXTBSY on first exec.
-fn fake_git(dir: &Path) -> PathBuf {
-    let path = dir.join("git");
-    fs::write(
-        &path,
-        "#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\necho git version 9.9.9\n",
-    )
-    .unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    for _ in 0..100 {
-        match std::process::Command::new(&path)
-            .env("FAKE_GIT_PROBE", "1")
-            .status()
-        {
-            Err(e) if e.raw_os_error() == Some(26) => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(e) => panic!("probing fake git failed: {e}"),
-            Ok(_) => break,
-        }
-    }
-    path
-}
-
 #[test]
 fn check_git_cli_reports_the_fallback_notice_when_the_configured_path_is_missing() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
-    let fake = fake_git(dir.path());
+    let fake = common::fake_git(dir.path());
     let _restore = Restore::set_path(dir.path());
     let missing = PathBuf::from("/nonexistent/path/to/git-9999");
     set_configured_path(Some(missing.clone()));
@@ -98,7 +74,7 @@ fn check_git_cli_reports_the_fallback_notice_when_the_configured_path_is_missing
 fn check_git_cli_has_no_notice_when_the_configured_path_is_used() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
-    let fake = fake_git(dir.path());
+    let fake = common::fake_git(dir.path());
     let empty = tempfile::tempdir().unwrap();
     let _restore = Restore::set_path(empty.path());
     set_configured_path(Some(fake.clone()));
@@ -114,7 +90,7 @@ fn check_git_cli_has_no_notice_when_the_configured_path_is_used() {
 fn check_git_cli_keeps_the_verify_error_when_the_path_git_is_broken() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
-    let broken = fake_git(dir.path());
+    let broken = common::fake_git(dir.path());
     fs::write(&broken, "#!/bin/sh\nexit 1\n").unwrap();
     let _restore = Restore::set_path(dir.path());
     set_configured_path(Some(PathBuf::from("/nonexistent/path/to/git-9999")));

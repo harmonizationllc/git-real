@@ -121,7 +121,48 @@ fn lenient_clamps_font_size_and_widths() {
     assert_eq!(s.layout.refs_width, 160);
     assert_eq!(s.layout.sidebar_width, 240);
     assert_eq!((s.window.width, s.window.height), (960, 600));
-    assert_eq!(warnings.len(), 4, "{warnings:?}");
+    let mut got = fields(&warnings);
+    got.sort_unstable();
+    assert_eq!(
+        got,
+        vec![
+            "appearance.diffFontSize",
+            "layout.refsWidth",
+            "layout.sidebarWidth",
+            "window"
+        ]
+    );
+}
+
+#[test]
+fn lenient_u32_overflow_and_negative_fall_back() {
+    for bad in [json!(4_294_967_296_u64), json!(-5)] {
+        let (s, warnings) = Settings::from_json_lenient(&json!({
+            "layout": {"refsWidth": bad}
+        }));
+        assert_eq!(s.layout.refs_width, 240, "{bad}");
+        assert_eq!(fields(&warnings), vec!["layout.refsWidth"], "{bad}");
+    }
+}
+
+#[test]
+fn lenient_non_object_section_falls_back() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": 5,
+        "diff": {"mode": "unified"}
+    }));
+    assert_eq!(s.layout, Settings::default().layout);
+    assert_eq!(s.diff.mode, DiffMode::Unified);
+    assert_eq!(fields(&warnings), vec!["layout"]);
+}
+
+#[test]
+fn lenient_null_on_non_nullable_leaf_falls_back() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "diff": {"mode": null}
+    }));
+    assert_eq!(s.diff.mode, DiffMode::Split);
+    assert_eq!(fields(&warnings), vec!["diff.mode"]);
 }
 
 #[test]
@@ -145,17 +186,24 @@ fn lenient_wrong_type_falls_back_per_field() {
     }
 }
 
+/// Load mode cannot fail: every relative form of either path leaf is dropped
+/// to the default with one warning per leaf, and a missing absolute path is
+/// kept (Load never checks existence).
 #[test]
-fn lenient_keeps_a_relative_path_out_but_a_missing_absolute_path_in() {
-    let (s, warnings) = Settings::from_json_lenient(&json!({
-        "clone": {"defaultDir": "rel/dir"},
-        "git": {"executable": "rel/git"}
-    }));
-    assert_eq!(s.clone.default_dir, None);
-    assert_eq!(s.git.executable, None);
-    let mut got = fields(&warnings);
-    got.sort_unstable();
-    assert_eq!(got, vec!["clone.defaultDir", "git.executable"]);
+fn lenient_relative_paths_never_panic() {
+    for rel in ["rel/dir", "", ".", "..", "./git", "~/git"] {
+        let (s, warnings) = Settings::from_json_lenient(&json!({
+            "clone": {"defaultDir": rel},
+            "git": {"executable": rel},
+            "layout": {"refsWidth": 300}
+        }));
+        assert_eq!(s.clone.default_dir, None, "{rel:?}");
+        assert_eq!(s.git.executable, None, "{rel:?}");
+        assert_eq!(s.layout.refs_width, 300, "{rel:?}");
+        let mut got = fields(&warnings);
+        got.sort_unstable();
+        assert_eq!(got, vec!["clone.defaultDir", "git.executable"], "{rel:?}");
+    }
 
     let (s, warnings) = Settings::from_json_lenient(&json!({
         "clone": {"defaultDir": "/definitely/missing"},

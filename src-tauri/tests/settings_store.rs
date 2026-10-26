@@ -113,7 +113,7 @@ fn update_verifies_a_changed_git_executable_and_pushes_the_override() {
     let _reset = ResetConfigured;
 
     let dir = tempfile::tempdir().unwrap();
-    let fake_git = common_fake_git(dir.path());
+    let fake_git = common::fake_git(dir.path());
 
     let (_sdir, path) = common::temp_file_path("settings.json");
     let store = SettingsStore::load(path.clone());
@@ -154,7 +154,7 @@ fn update_clearing_the_git_executable_resets_the_override() {
     let _reset = ResetConfigured;
 
     let dir = tempfile::tempdir().unwrap();
-    let fake_git = common_fake_git(dir.path());
+    let fake_git = common::fake_git(dir.path());
 
     let (_sdir, path) = common::temp_file_path("settings.json");
     let store = SettingsStore::load(path.clone());
@@ -178,7 +178,7 @@ fn apply_git_override_installs_the_stored_path() {
     let _reset = ResetConfigured;
 
     let dir = tempfile::tempdir().unwrap();
-    let fake_git = common_fake_git(dir.path());
+    let fake_git = common::fake_git(dir.path());
 
     let (_sdir, path) = common::temp_file_path("settings.json");
     // Write a settings file that has a git executable already.
@@ -220,15 +220,6 @@ fn update_reports_io_when_the_directory_is_unwritable() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-fn common_fake_git(dir: &std::path::Path) -> PathBuf {
-    let script = "echo git version 9.9.9";
-    let path = dir.join("git");
-    let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{script}\n");
-    fs::write(&path, body).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    path
-}
 
 fn make_non_git(dir: &std::path::Path) -> PathBuf {
     let path = dir.join("not_git");
@@ -321,6 +312,26 @@ fn set_window_writes_only_when_changed() {
         before, after,
         "an unchanged geometry must not rewrite the file"
     );
+}
+
+#[test]
+fn set_window_save_failure_leaves_memory_unchanged() {
+    use git_real_core::settings::WindowGeometry;
+
+    let dir = tempfile::tempdir().unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
+    let store = SettingsStore::load(dir.path().join("settings.json"));
+    let before = store.get().window;
+
+    let result = store.set_window(WindowGeometry {
+        width: 1000,
+        height: 700,
+        maximized: true,
+    });
+
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err(), "{result:?}");
+    assert_eq!(store.get().window, before);
 }
 
 #[test]
