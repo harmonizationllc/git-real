@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/git-real-core"]
+members = ["crates/git-real-core", "crates/git-real-bench"]
 resolver = "3"
 
 [package]

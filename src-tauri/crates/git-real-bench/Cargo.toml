@@ -1,0 +1,21 @@
+[package]
+name = "git-real-bench"
+version = "0.1.0"
+description = "Benchmark harness for Git Real: budgets on large repositories"
+authors = ["Jason Harmon <23158200+harmonizationllc@users.noreply.github.com>"]
+license = "GPL-3.0-only"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "git-real-bench"
+path = "src/main.rs"
+
+[dependencies]
+git-real-core = { path = "../git-real-core" }
+git2 = { version = "0.20", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
