@@ -225,6 +225,28 @@ describe("RefsColumn handles", () => {
     expect(tags).toHaveAttribute("aria-valuemax", "150");
   });
 
+  it("should bound the Branches handle by the column, not its content", async () => {
+    await renderColumn();
+    measure();
+    const branches = handle("Resize Branches section");
+    expect(branches).toHaveAttribute("aria-valuenow", "318");
+    expect(branches).toHaveAttribute("aria-valuemax", "396");
+  });
+
+  it("should persist an ArrowDown on the Branches handle", async () => {
+    await renderColumn();
+    measure();
+    fireEvent.keyDown(handle("Resize Branches section"), { key: "ArrowDown" });
+    expect(useSettings.getState().settings.layout.branchesHeight).toBe(334);
+  });
+
+  it("should persist an ArrowUp on the Branches handle", async () => {
+    await renderColumn();
+    measure();
+    fireEvent.keyDown(handle("Resize Branches section"), { key: "ArrowUp" });
+    expect(useSettings.getState().settings.layout.branchesHeight).toBe(302);
+  });
+
   it("should cap a handle's maximum at its section's content", async () => {
     await renderColumn();
     measure();

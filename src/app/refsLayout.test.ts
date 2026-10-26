@@ -53,6 +53,19 @@ describe("fitSections", () => {
     ]);
   });
 
+  it("should keep a stored Branches height above its content", () => {
+    expect(fitSections(600, [fixed(200, 300), auto(60), auto(150), auto(36), auto(36)])).toEqual([
+      300, 60, 150, 36, 36,
+    ]);
+  });
+
+  it("should let a stored Branches height squeeze the automatic sections", () => {
+    // prefs 782, over 182; only Tags has room (78) so it drops to 72 and Branches gives 104
+    expect(fitSections(600, [fixed(200, 500), auto(60), auto(150), auto(36), auto(36)])).toEqual([
+      396, 60, 72, 36, 36,
+    ]);
+  });
+
   it("should clamp a fixed height above the content to the content", () => {
     expect(fitSections(2000, [auto(100), auto(60), fixed(572, 900), auto(36), auto(36)])[2]).toBe(
       572,
