@@ -60,7 +60,7 @@ describe("AboutSettings render", () => {
   it("renders the check-on-startup checkbox checked by default", async () => {
     await setup();
     const checkbox = screen.getByRole("checkbox", {
-      name: /check for updates automatically/i,
+      name: /check for updates on startup/i,
     });
     expect(checkbox).toBeChecked();
   });
@@ -81,7 +81,7 @@ describe("AboutSettings checkbox", () => {
   it("unchecking disables checkOnStartup", async () => {
     await setup();
     const checkbox = screen.getByRole("checkbox", {
-      name: /check for updates automatically/i,
+      name: /check for updates on startup/i,
     });
     fireEvent.click(checkbox);
     expect(useUpdatePrefs.getState().checkOnStartup).toBe(false);
@@ -91,7 +91,7 @@ describe("AboutSettings checkbox", () => {
     useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), checkOnStartup: false }, true);
     await setup();
     const checkbox = screen.getByRole("checkbox", {
-      name: /check for updates automatically/i,
+      name: /check for updates on startup/i,
     });
     expect(checkbox).not.toBeChecked();
   });
@@ -162,7 +162,7 @@ describe("AboutSettings status", () => {
     expect(screen.getByRole("status").textContent).toMatch(/no releases published yet/i);
   });
 
-  it("shows a Release notes button and an alert when update is available", async () => {
+  it("shows a Release notes button and a status when update is available", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
     await setup();
     vi.mocked(checkForUpdate).mockResolvedValue({
@@ -172,7 +172,8 @@ describe("AboutSettings status", () => {
       url: "https://github.com/harmonizationllc/git-real/releases/tag/v1.0.0",
     });
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Release notes" })).toBeInTheDocument();
   });
 
@@ -202,7 +203,8 @@ describe("AboutSettings status", () => {
       url: null,
     });
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "Release notes" })).not.toBeInTheDocument();
   });
 
@@ -216,6 +218,21 @@ describe("AboutSettings status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent).toMatch(/rate limited/);
+  });
+
+  it("manual check leaves lastCheckedAt unchanged", async () => {
+    const { checkForUpdate } = await import("../../lib/ipc");
+    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: null }, true);
+    await setup();
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: "0.1.0",
+      available: false,
+      url: null,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(useUpdatePrefs.getState().lastCheckedAt).toBeNull();
   });
 });
 
