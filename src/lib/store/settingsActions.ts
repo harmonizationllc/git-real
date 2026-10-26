@@ -1,3 +1,4 @@
+import type { LayoutColumn } from "../../app/layout";
 import type { CloneUrlForm, DiffMode, SettingsPatch, ThemePref } from "../ipc";
 import {
   DIFF_FONT_MAX,
@@ -43,7 +44,7 @@ export function setSidebarWidth(width: number): void {
   setPref({ layout: { sidebarWidth: Math.round(width) } });
 }
 
-export function resetWidth(column: "refs" | "sidebar"): void {
+export function resetWidth(column: LayoutColumn): void {
   setPref({
     layout: column === "refs" ? { refsWidth: REFS_DEFAULT } : { sidebarWidth: SIDEBAR_DEFAULT },
   });

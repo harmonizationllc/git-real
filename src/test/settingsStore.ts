@@ -19,6 +19,7 @@ function apply(patch: SettingsPatch): Settings {
  * Puts the settings store and a stand-in backend back to the defaults. Call it in `beforeEach`,
  * after any `vi.resetAllMocks()`, from a file that mocks `../lib/ipc` with `updateSettings: vi.fn()`.
  * Calls made while resetting or seeding are not counted. It first drains edits a previous test left pending so they cannot land in this one.
+ * That drain awaits in-flight requests, so it would hang on a mocked `updateSettings` that never settles.
  */
 export async function resetSettings(): Promise<void> {
   await useSettings.getState().flush();

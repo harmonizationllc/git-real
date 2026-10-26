@@ -123,6 +123,24 @@ describe("bootstrapAppearance", () => {
     expect(getSettings).toHaveBeenCalledTimes(1);
   });
 
+  it("the uninstaller unsubscribes and removes both the pagehide and beforeunload listeners", async () => {
+    const { bootstrapAppearance, useSettings } = await load();
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const uninstall = bootstrapAppearance();
+    const added = (type: string) => add.mock.calls.filter(([t]) => t === type).map(([, fn]) => fn);
+    expect(added("pagehide")).toHaveLength(1);
+    expect(added("beforeunload")).toHaveLength(1);
+    uninstall();
+    expect(remove).toHaveBeenCalledWith("pagehide", added("pagehide")[0]);
+    expect(remove).toHaveBeenCalledWith("beforeunload", added("beforeunload")[0]);
+    // A change after uninstall is not applied to the page.
+    document.documentElement.setAttribute("data-theme", "marker");
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("marker");
+    await useSettings.getState().flush();
+  });
+
   it("stops following the store and drops the flush hook once uninstalled", async () => {
     const { bootstrapAppearance, useSettings } = await load();
     const add = vi.spyOn(window, "addEventListener");

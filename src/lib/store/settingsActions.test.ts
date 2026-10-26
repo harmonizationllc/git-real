@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../ipc";
+import { resetSettings } from "../../test/settingsStore";
 import { DEFAULT_SETTINGS, useSettings } from "./settings";
 import * as actions from "./settingsActions";
 
@@ -13,11 +14,10 @@ vi.mock(import("../ipc"), async (importOriginal) => ({
 
 const sent = vi.mocked(updateSettings);
 
-beforeEach(() => {
-  vi.useFakeTimers();
+beforeEach(async () => {
   sent.mockReset();
-  sent.mockResolvedValue(DEFAULT_SETTINGS);
-  useSettings.setState({ settings: DEFAULT_SETTINGS });
+  await resetSettings();
+  vi.useFakeTimers();
 });
 
 afterEach(async () => {

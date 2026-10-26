@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export function readInjectedSettings(): Settings {
   const injected = window.__GIT_REAL_SETTINGS__;
   // Rust guarantees the shape, so an object is trusted as-is.
-  return typeof injected === "object" && injected !== null
+  return typeof injected === "object" && injected !== null && !Array.isArray(injected)
     ? (injected as Settings)
     : DEFAULT_SETTINGS;
 }
@@ -57,7 +57,7 @@ interface SettingsState {
 let lastKnown: Settings = readInjectedSettings();
 
 interface PendingEdit {
-  patch: Record<string, unknown>;
+  patch: Partial<Settings[Section]>;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -147,6 +147,7 @@ export const useSettings = create<SettingsState>()(() => ({
   settings: lastKnown,
   setPref: (patch) => {
     for (const section of Object.keys(patch) as Section[]) {
+      if (Object.keys(patch[section] ?? {}).length === 0) continue;
       const prev = pending.get(section);
       if (prev) clearTimeout(prev.timer);
       pending.set(section, {

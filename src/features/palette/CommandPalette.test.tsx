@@ -6,17 +6,15 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOperationState,
-  getSettings,
   listBranches,
   listRecent,
   listRemotes,
   openInEditor,
   updateSettings,
 } from "../../lib/ipc";
-import type { Settings } from "../../lib/ipc";
 import { MAX_PALETTE_ROWS } from "../../lib/fuzzy";
 import { queryClient } from "../../lib/query/client";
-import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
+import { useSettings } from "../../lib/store/settings";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import type { ShellActions } from "../../lib/store/shell";
 import { useShell } from "../../lib/store/shell";
@@ -27,7 +25,6 @@ import { CommandPalette } from "./CommandPalette";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
-  getSettings: vi.fn(),
   updateSettings: vi.fn(),
   listRecent: vi.fn(),
   openInEditor: vi.fn(),
@@ -35,11 +32,6 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   listRemotes: vi.fn(),
   getOperationState: vi.fn(),
 }));
-
-const defaultSettings: Settings = {
-  ...DEFAULT_SETTINGS,
-  tools: { editor: null, diffTool: null, mergeTool: null },
-};
 
 function makeFallback() {
   const fallbackFocus = createRef<HTMLElement | null>();
@@ -73,7 +65,6 @@ beforeEach(async () => {
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useShell.setState({ dialog: null, repoActions: null });
   useToasts.setState({ toasts: [] });
-  vi.mocked(getSettings).mockResolvedValue(defaultSettings);
   vi.mocked(listRecent).mockResolvedValue([]);
 });
 

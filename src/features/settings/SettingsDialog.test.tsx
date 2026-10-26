@@ -285,6 +285,49 @@ describe("SettingsDialog Clone section", () => {
     expect(alert).toHaveTextContent("Directory not found: /home/u/gone");
   });
 
+  it.each([
+    { missing: false, alert: false },
+    { missing: true, alert: true },
+  ])(
+    "hides the alert while health is re-checked, then follows the answer (missing: $missing)",
+    async ({ missing, alert }) => {
+      vi.mocked(checkSettingsHealth).mockResolvedValue({ defaultCloneDirMissing: true });
+      await seedSettings({ clone: { defaultDir: "/home/u/gone" } });
+      await setup();
+      const clone = screen.getByRole("region", { name: "Clone" });
+      expect(await within(clone).findByRole("alert")).toBeInTheDocument();
+
+      let answer!: (h: { defaultCloneDirMissing: boolean }) => void;
+      vi.mocked(checkSettingsHealth).mockReturnValue(
+        new Promise((res) => {
+          answer = res;
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
+      await screen.findByText("Saved");
+      await waitFor(() => expect(checkSettingsHealth).toHaveBeenCalledTimes(2));
+      expect(within(clone).queryByRole("alert")).toBeNull();
+
+      await act(async () => answer({ defaultCloneDirMissing: missing }));
+      if (alert) {
+        expect(await within(clone).findByRole("alert")).toHaveTextContent(
+          "Directory not found: /home/u/src",
+        );
+      } else {
+        expect(within(clone).queryByRole("alert")).toBeNull();
+      }
+    },
+  );
+
+  it("re-checks health when a reconciled settings change swaps the clone directory", async () => {
+    await setup();
+    expect(checkSettingsHealth).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await seedSettings({ clone: { defaultDir: "/home/u/elsewhere" } });
+    });
+    await waitFor(() => expect(checkSettingsHealth).toHaveBeenCalledTimes(2));
+  });
+
   it("shows no Directory not found alert when the dir is not set", async () => {
     vi.mocked(checkSettingsHealth).mockResolvedValue({ defaultCloneDirMissing: true });
     await setup();
@@ -459,6 +502,31 @@ describe("SettingsDialog File section", () => {
     fireEvent.click(within(file).getByRole("button", { name: "Show in folder" }));
     await waitFor(() => expect(revealSettingsFile).toHaveBeenCalledOnce());
     expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("the path shows Locating… while pending, Unavailable on failure, the path on success", async () => {
+    let resolve!: (path: string) => void;
+    vi.mocked(settingsFilePath).mockReturnValue(
+      new Promise<string>((res) => {
+        resolve = res;
+      }),
+    );
+    const { fallbackFocus } = makeFallback();
+    renderWithProviders(<SettingsDialog onClose={vi.fn()} fallbackFocus={fallbackFocus} />);
+    const file = screen.getByRole("region", { name: "File" });
+    expect(within(file).getByText("Locating…")).toBeInTheDocument();
+    await act(async () => resolve(SETTINGS_PATH));
+    expect(await within(file).findByText(SETTINGS_PATH)).toBeInTheDocument();
+    expect(within(file).queryByText("Locating…")).toBeNull();
+  });
+
+  it("the path shows Unavailable when the lookup fails", async () => {
+    vi.mocked(settingsFilePath).mockRejectedValue({ kind: "io", message: "no home" });
+    const { fallbackFocus } = makeFallback();
+    renderWithProviders(<SettingsDialog onClose={vi.fn()} fallbackFocus={fallbackFocus} />);
+    const file = screen.getByRole("region", { name: "File" });
+    expect(await within(file).findByText("Unavailable")).toBeInTheDocument();
+    expect(within(file).queryByText("Locating…")).toBeNull();
   });
 
   it("a failed Show in folder toasts Couldn't open folder", async () => {

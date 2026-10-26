@@ -77,6 +77,12 @@ describe("readInjectedSettings", () => {
     }
   });
 
+  it("readInjectedSettings ignores an array global", async () => {
+    const { readInjectedSettings, DEFAULT_SETTINGS } = await load();
+    window.__GIT_REAL_SETTINGS__ = [] as unknown as Settings;
+    expect(readInjectedSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+
   it("the store starts from the injected settings at module load", async () => {
     const fixtureCopy = structuredClone(fixture) as Settings;
     const injected = withSection(fixtureCopy, "layout", { refsWidth: 300 });
@@ -160,6 +166,14 @@ describe("setPref", () => {
       text: "Couldn't save settings: disk full",
       variant: "error",
     });
+  });
+
+  it("setPref with an empty section arms no timer and sends nothing", async () => {
+    const { useSettings, updateSettings } = await load();
+    useSettings.getState().setPref({ layout: {}, diff: undefined });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 
   it("a rejection reverts to the last server-known value, not the defaults", async () => {
@@ -250,6 +264,34 @@ describe("one request at a time", () => {
     expect(updateSettings).toHaveBeenLastCalledWith({ layout: { refsWidth: 300 } });
     expect(useSettings.getState().settings).toEqual(widened);
     expect(toasts().map((t) => t.text)).toEqual(["Couldn't save settings: disk full"]);
+  });
+
+  it("a pending edit on a rejected section is still sent afterwards", async () => {
+    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    const saved = withSection(DEFAULT_SETTINGS, "layout", { sidebarWidth: 400 });
+    updateSettings.mockReturnValueOnce(first.promise).mockResolvedValueOnce(saved);
+    useSettings.getState().setPref({ layout: { refsWidth: 300 } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    // The same section is edited again while the first request is in flight.
+    useSettings.getState().setPref({ layout: { sidebarWidth: 400 } });
+    expect(useSettings.getState().settings.layout).toMatchObject({
+      refsWidth: 300,
+      sidebarWidth: 400,
+    });
+
+    first.reject({ kind: "io", message: "disk full" });
+    await settle();
+    // The rejected field reverts; the newer pending field stays on screen.
+    expect(useSettings.getState().settings.layout).toMatchObject({
+      refsWidth: DEFAULT_SETTINGS.layout.refsWidth,
+      sidebarWidth: 400,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenLastCalledWith({ layout: { sidebarWidth: 400 } });
+    expect(useSettings.getState().settings).toEqual(saved);
   });
 
   it("a reconcile reply read before a queued save keeps the queued value on screen", async () => {

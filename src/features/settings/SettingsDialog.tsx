@@ -212,7 +212,11 @@ function DiffSettings() {
 function CloneSettings() {
   const current = useSettings((s) => s.settings.clone.defaultDir);
   const queryClient = useQueryClient();
-  const health = useQuery({ queryKey: queryKeys.settingsHealth, queryFn: checkSettingsHealth });
+  // Keyed on the directory, so a change from anywhere (a save, a reconcile) re-checks it.
+  const health = useQuery({
+    queryKey: [...queryKeys.settingsHealth, current],
+    queryFn: checkSettingsHealth,
+  });
   const [saved, setSaved] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -251,7 +255,7 @@ function CloneSettings() {
       <div className={styles.field}>
         <span className={styles.label}>Default clone directory</span>
         <span className={styles.value}>{current ?? "Not set"}</span>
-        {health.data?.defaultCloneDirMissing && current !== null && (
+        {!health.isFetching && health.data?.defaultCloneDirMissing && current !== null && (
           <p role="alert" className={styles.value}>
             Directory not found: {current}
           </p>
@@ -390,7 +394,9 @@ function FileSettings() {
   return (
     <Section id="file" name="File">
       <div className={styles.field}>
-        <span className={styles.value}>{path.data}</span>
+        <span className={styles.value}>
+          {path.isPending ? "Locating…" : path.isError ? "Unavailable" : path.data}
+        </span>
         <span className={styles.row}>
           <button type="button" onClick={() => void reveal()}>
             Show in folder

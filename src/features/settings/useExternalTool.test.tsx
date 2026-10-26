@@ -1,6 +1,5 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { queryClient } from "../../lib/query/client";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
@@ -15,7 +14,6 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 beforeEach(async () => {
   vi.resetAllMocks();
   await resetSettings();
-  queryClient.clear();
   useShell.setState({ dialog: null, repoActions: null });
   useToasts.setState({ toasts: [] });
 });
