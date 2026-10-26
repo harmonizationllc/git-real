@@ -390,3 +390,35 @@ fn settings_health_serialises_camel_case() {
     .unwrap();
     assert_eq!(v, serde_json::json!({"defaultCloneDirMissing": true}));
 }
+
+// ─── ensure_file_exists (Show in folder on a fresh install) ──────────────────
+
+#[test]
+fn ensure_file_exists_creates_a_missing_file_with_the_current_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    // The config directory does not exist yet either, as on a fresh install.
+    let path = dir.path().join("config").join("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    store.ensure_file_exists().unwrap();
+
+    let text = fs::read_to_string(&path).unwrap();
+    let (settings, warnings) = git_real_core::SettingsFile::parse(&text).unwrap();
+    assert_eq!(settings, store.get());
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn ensure_file_exists_leaves_an_existing_file_untouched() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let original = r#"{"version":2,"settings":{"tools":{"editor":"vim"}}}"#;
+    fs::write(&path, original).unwrap();
+    let store = SettingsStore::load(path.clone());
+    let before = fs::metadata(&path).unwrap().modified().unwrap();
+
+    store.ensure_file_exists().unwrap();
+
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    let after = fs::metadata(&path).unwrap().modified().unwrap();
+    assert_eq!(before, after, "an existing file must not be rewritten");
+}

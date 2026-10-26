@@ -92,6 +92,17 @@ impl SettingsStore {
         &self.path
     }
 
+    /// Writes the current settings when the file does not exist yet (load never
+    /// creates it), so it can be revealed on a fresh install. An existing file
+    /// is left untouched.
+    pub fn ensure_file_exists(&self) -> io::Result<()> {
+        let guard = self.lock();
+        if self.path.exists() {
+            return Ok(());
+        }
+        self.save(&guard)
+    }
+
     /// A webview init script that sets `window.__GIT_REAL_SETTINGS__` to the
     /// current settings. Every `<` is written as a JSON unicode escape so no
     /// string value can close a `<script>` element.

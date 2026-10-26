@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use git_real_core::{Settings, SettingsPatch};
+use git_real_core::{GitError, Settings, SettingsPatch};
 use serde::Serialize;
 use tauri::State;
 
@@ -40,8 +40,10 @@ pub fn check_settings_health_inner(store: &SettingsStore) -> SettingsHealth {
     }
 }
 
-/// Shows the settings file in the system file manager.
+/// Shows the settings file in the system file manager, writing it first when it
+/// does not exist yet (the opener canonicalises the path, so it must exist).
 pub fn reveal_settings_file_inner(store: &SettingsStore) -> Result<(), AppError> {
+    store.ensure_file_exists().map_err(GitError::Io)?;
     tauri_plugin_opener::reveal_item_in_dir(store.path()).map_err(|e| AppError {
         kind: AppErrorKind::Io,
         message: e.to_string(),
