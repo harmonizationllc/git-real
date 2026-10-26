@@ -114,8 +114,10 @@ pub fn check_git_cli_inner() -> GitCliInfo {
         None => Err(GitError::GitCliMissing),
     };
     let mut info = GitCliInfo::from_probe(located.clone(), version);
-    // A configured path that is gone falls back to PATH; say so, keeping the probe result.
+    // A configured path that is gone falls back to PATH; say so, unless the PATH Git is
+    // itself unusable, in which case the probe's own error is the useful one.
     if let (Some(configured), Some(effective)) = (git_cli::configured_path(), located)
+        && info.available
         && configured != effective
     {
         info.error = Some(format!(

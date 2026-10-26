@@ -89,6 +89,16 @@ describe("layout setters", () => {
     expect(await patches()).toEqual([{ layout: { refsWidth: 300, sidebarWidth: 410 } }]);
   });
 
+  it("setRefsWidth rounds fractional widths", async () => {
+    actions.setRefsWidth(240.6);
+    expect(await patches()).toEqual([{ layout: { refsWidth: 241 } }]);
+  });
+
+  it("setSidebarWidth rounds fractional widths", async () => {
+    actions.setSidebarWidth(320.4);
+    expect(await patches()).toEqual([{ layout: { sidebarWidth: 320 } }]);
+  });
+
   it("resetWidth restores 240 / 320", async () => {
     actions.setRefsWidth(300);
     actions.setSidebarWidth(410);

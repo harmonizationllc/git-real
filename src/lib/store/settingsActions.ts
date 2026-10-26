@@ -34,12 +34,13 @@ export function setIgnoreWhitespace(ignoreWhitespace: boolean): void {
   setPref({ diff: { ignoreWhitespace } });
 }
 
-export function setRefsWidth(refsWidth: number): void {
-  setPref({ layout: { refsWidth } });
+// Rust takes whole pixels; drag handles can yield fractional widths on scaled displays.
+export function setRefsWidth(width: number): void {
+  setPref({ layout: { refsWidth: Math.round(width) } });
 }
 
-export function setSidebarWidth(sidebarWidth: number): void {
-  setPref({ layout: { sidebarWidth } });
+export function setSidebarWidth(width: number): void {
+  setPref({ layout: { sidebarWidth: Math.round(width) } });
 }
 
 export function resetWidth(column: "refs" | "sidebar"): void {

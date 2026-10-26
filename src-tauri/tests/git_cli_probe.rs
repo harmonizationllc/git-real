@@ -109,3 +109,22 @@ fn check_git_cli_has_no_notice_when_the_configured_path_is_used() {
     assert_eq!(info.path, Some(fake.to_string_lossy().into_owned()));
     assert_eq!(info.error, None);
 }
+
+#[test]
+fn check_git_cli_keeps_the_verify_error_when_the_path_git_is_broken() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let broken = fake_git(dir.path());
+    fs::write(&broken, "#!/bin/sh\nexit 1\n").unwrap();
+    let _restore = Restore::set_path(dir.path());
+    set_configured_path(Some(PathBuf::from("/nonexistent/path/to/git-9999")));
+
+    let info = check_git_cli_inner();
+
+    assert!(!info.available);
+    let error = info.error.expect("the probe error is kept");
+    assert!(
+        !error.starts_with("Configured Git executable not found"),
+        "notice hid the probe error: {error}"
+    );
+}
