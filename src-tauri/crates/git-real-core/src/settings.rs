@@ -1,5 +1,8 @@
-//! Persisted application settings: every user preference, grouped by section,
-//! in one versioned `settings.json` owned by the backend.
+//! Persisted application settings: every user preference plus the main
+//! window's size and maximized state, grouped by section in one version-2
+//! `settings.json` that the backend owns and injects into the page before
+//! first paint. Any other version, including GR-14's flat version 1, loads as
+//! defaults and is overwritten on the next save.
 //!
 //! Two ways in, one validator:
 //! - **Load** ([`Settings::from_json_lenient`]): a bad leaf falls back to its

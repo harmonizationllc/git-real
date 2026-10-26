@@ -38,6 +38,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 1: `locate()` falls back to PATH; the probe reports a notice
 
 **Files:**
+
 - Modify: `src-tauri/crates/git-real-core/src/git_cli.rs:59-72`
 - Modify: `src-tauri/crates/git-real-core/src/error.rs:143` (remove `GitCliConfiguredMissing`)
 - Modify: `src-tauri/src/error.rs:202` (remove the arm)
@@ -46,6 +47,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: `src-tauri/tests/commands.rs` (or the file that already tests `check_git_cli_inner`; `grep -rn check_git_cli_inner src-tauri/tests`)
 
 **Interfaces:**
+
 - Produces: `git_cli::locate() -> Result<PathBuf, GitError>` (unchanged signature; new behaviour), `GitCliInfo { available, path, version, error }` unchanged shape, `error` now also carries the fallback notice while `available` is `true`.
 
 - [ ] **Step 1: Rewrite the failing core tests** in `git_cli_configured.rs`: replace `locate_fails_with_the_configured_path_in_the_message_when_it_is_gone` with
@@ -67,11 +69,13 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 2: Nested `Settings` v2 in `git-real-core`
 
 **Files:**
+
 - Modify: `src-tauri/crates/git-real-core/src/settings.rs` (rewrite)
 - Create: `src/lib/store/settingsDefaults.json` (shared defaults fixture; the TS test in Task 5 reads the same file)
 - Test: `src-tauri/crates/git-real-core/tests/settings.rs` (rewrite)
 
 **Interfaces:**
+
 - Produces (all `pub`, all `Serialize + Deserialize + Clone + PartialEq + Eq + Debug`, `rename_all = "camelCase"`, `Default` matching the spec §3 JSON):
   - `Settings { git: GitSettings, clone: CloneSettings, tools: ToolSettings, appearance: AppearanceSettings, diff: DiffSettings, layout: LayoutSettings, updates: UpdateSettings, window: WindowGeometry }`
   - `GitSettings { executable: Option<PathBuf> }`; `CloneSettings { default_dir: Option<PathBuf>, url_form: CloneUrlForm }`; `ToolSettings { editor: Option<String>, diff_tool: Option<String>, merge_tool: Option<String> }`; `AppearanceSettings { theme: Theme, diff_font_family: Option<String>, diff_font_size: u32 }`; `DiffSettings { mode: DiffMode, ignore_whitespace: bool }`; `LayoutSettings { refs_width: u32, sidebar_width: u32, tags_collapsed: bool, pull_requests_collapsed: bool, issues_collapsed: bool }`; `UpdateSettings { check_on_startup: bool }`; `WindowGeometry { width: u32, height: u32, maximized: bool }`
@@ -106,6 +110,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 3: `SettingsStore` v2: warnings, geometry, init script, path; commands
 
 **Files:**
+
 - Modify: `src-tauri/src/settings_store.rs`
 - Modify: `src-tauri/src/commands/settings.rs` (add `reveal_settings_file`, `check_settings_health`)
 - Modify: `src-tauri/src/commands/tools.rs:24-27,58-61,80-83` (`.tools.editor` etc.)
@@ -113,6 +118,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: `src-tauri/tests/settings_store.rs` (update + extend), `src-tauri/tests/tools_commands.rs` (nested field access in fixtures)
 
 **Interfaces:**
+
 - Consumes: Task 2 types.
 - Produces:
   - `SettingsStore::load(path: PathBuf) -> Self` (logs each `SettingsWarning` as `settings: {field}: {message}`; version ≠ 2 logs `settings: ignoring version {n} in {path}`).
@@ -139,12 +145,14 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 4: Main window built in Rust with restored geometry and the init script
 
 **Files:**
+
 - Create: `src-tauri/src/main_window.rs`
 - Modify: `src-tauri/src/lib.rs` (`pub mod main_window;` `setup` builds the window; `on_window_event`)
 - Modify: `src-tauri/tauri.conf.json` (`app.windows: []`)
 - Test: `src-tauri/tests/main_window.rs`
 
 **Interfaces:**
+
 - Consumes: `SettingsStore::{get, set_window, to_init_script}`, `WindowGeometry`, `WINDOW_MIN`, `WINDOW_DEFAULT` from Task 2/3.
 - Produces:
   - `pub const LABEL: &str = "main";` `pub const TITLE: &str = "Git Real";`
@@ -164,6 +172,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 5: Front-end settings store and IPC types
 
 **Files:**
+
 - Modify: `src/lib/ipc/types.ts:131-141`
 - Modify: `src/lib/ipc/settings.ts` (add `revealSettingsFile`, `checkSettingsHealth`)
 - Modify: `src/lib/query/keys.ts` (replace `settings` with `settingsHealth: ["settingsHealth"]`)
@@ -172,6 +181,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: `src/lib/store/settings.test.ts`, `src/lib/store/settingsActions.test.ts`, `src/lib/ipc/settings.test.ts` (extend if it exists)
 
 **Interfaces:**
+
 - Produces in `types.ts`: `ThemePref`, `DiffMode`, `CloneUrlForm` (string unions), `Settings` nested exactly as spec §3, `SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> }`, `SettingsHealth { defaultCloneDirMissing: boolean }`.
 - Produces in `ipc/settings.ts`: `revealSettingsFile(): Promise<void>` (`invoke("reveal_settings_file")`), `checkSettingsHealth(): Promise<SettingsHealth>`.
 - Produces in `store/settings.ts`:
@@ -205,6 +215,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 6: Migrate layout, diff and clone-form consumers; delete `layoutPrefs` and `diffPrefs`
 
 **Files:**
+
 - Modify: `src/app/layout.ts:1-3` (import `LayoutColumn` type locally: `export type LayoutColumn = "refs" | "sidebar"`; re-export `REFS_DEFAULT`, `SIDEBAR_DEFAULT` from `../lib/store/settings`)
 - Modify: `src/app/RepoPane.tsx:27,54-58`
 - Modify: `src/features/diff/DetailPane.tsx:4,61`, `DiffViewer.tsx:4`, `DiffToolbar.tsx:3`, `model/rows.ts:2` (type import → `../../lib/ipc`)
@@ -214,6 +225,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: the consumers' existing tests (`RepoPane.test.tsx`, `layout.test.ts`, `DetailPane*.test.tsx`, `DiffToolbar.test.tsx`, `DiffViewer.test.tsx`, `TagsPanel.test.tsx`, `PullRequestsPanel.test.tsx`, `IssuesPanel.test.tsx`, `CloneDialog.test.tsx`, `RepoBrowser.test.tsx`)
 
 **Interfaces:**
+
 - Consumes: `useSettings`, actions from Task 5. Pattern: `const refsWidth = useSettings((s) => s.settings.layout.refsWidth)`; `onChange={setRefsWidth}`; `onClick={() => setTagsCollapsed(!collapsed)}`.
 - Test reset pattern (replaces `useLayoutPrefs.setState(…)`): `useSettings.setState({ settings: DEFAULT_SETTINGS })` in `beforeEach`; `vi.mock("../../lib/ipc")` already present in most of these files gets `updateSettings: vi.fn().mockImplementation(async () => useSettings.getState().settings)`.
 
@@ -228,6 +240,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 7: Migrate appearance, palette and update-check consumers; `updateState`; bootstrap from the injected settings
 
 **Files:**
+
 - Modify: `src/app/applyAppearance.ts` (own `DEFAULT_MONO`; `bootstrapAppearance()` applies `useSettings.getState().settings.appearance`, subscribes to `useSettings`, calls `installFlushOnPagehide()` and `void useSettings.getState().reconcile()`)
 - Modify: `src/main.tsx` (unchanged call; verify)
 - Modify: `src/features/palette/useCommands.ts:4-5,37-38`
@@ -238,6 +251,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: `src/app/applyAppearance.test.ts`, `src/app/useUpdateCheck.test.ts`, `src/features/palette/useCommands.test.tsx`, `CommandPalette.test.tsx`, `src/features/settings/AboutSettings.test.tsx`; create `src/lib/store/updateState.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 5. `bootstrapAppearance(): () => void` keeps its name and return.
 - Produces: `useUpdateState` store as above.
 
@@ -252,6 +266,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 8: Settings dialog on the store: nested fields, Git notice, clone-dir alert, File section; remove the react-query hook
 
 **Files:**
+
 - Modify: `src/features/settings/SettingsDialog.tsx`
 - Modify: `src/features/settings/useExternalTool.ts:1-5,16-20,30-31` (`settings.tools[key]`, keys `editor | diffTool | mergeTool`)
 - Modify: `src/features/repo/CloneDialog.tsx:75` (`useSettings((s) => s.settings.clone.defaultDir)`)
@@ -262,6 +277,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 - Test: `src/features/settings/SettingsDialog.test.tsx`, `useExternalTool.test.tsx`, `CloneDialog.test.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 5 store (`save` for Git/clone/tools, actions for appearance), `checkGitCli`, `checkSettingsHealth`, `revealSettingsFile`, `queryKeys.settingsHealth`, `queryKeys.gitCli`.
 - Behaviour pinned:
   - `GitSettings`: `save` → `useSettings.getState().save({ git: { executable: next } })`; on success `invalidateQueries(queryKeys.gitCli)`; `gitCliInvalid` → inline `Not a Git executable: ‹message›` (unchanged). Render: when `git.data.available` show `Using ‹path› (git version ‹v›)`; **additionally** when `git.data.error` is non-null render `<p role="alert">{error}</p>` regardless of `available`.
@@ -280,6 +296,7 @@ Inputs the spec implies but no test would otherwise exercise, each pinned to a t
 ### Task 9: Docs and acceptance
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-10-26-gr29-single-settings-file-design.md` (status → implemented; record any deviation)
 - Modify: `src-tauri/crates/git-real-core/src/settings.rs` module doc (remove "Appearance preferences live in the front end's localStorage").
 

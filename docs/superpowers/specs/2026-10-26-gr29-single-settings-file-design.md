@@ -99,22 +99,22 @@ it (grouping is my call; GR-14's five fields were flat):
 
 Field sources and rules:
 
-| Section / field | Comes from | Validation / normalisation |
-| --- | --- | --- |
-| `git.executable` | v1 `gitExecutable` | unchanged: absolute path, verified with `git --version` before store |
-| `clone.defaultDir` | v1 `defaultCloneDir` | unchanged: absolute, existing directory |
-| `clone.urlForm` | `layoutPrefs.cloneUrlForm` | `"https" \| "ssh"` |
-| `tools.*` | v1 `externalEditor`, `externalDiffTool`, `externalMergeTool` | unchanged: trimmed, empty → null |
-| `appearance.theme` | `appearancePrefs.theme` | `"system" \| "light" \| "dark"` |
-| `appearance.diffFontFamily` | `appearancePrefs.diffFontFamily` | trimmed, empty → null |
-| `appearance.diffFontSize` | `appearancePrefs.diffFontSize` | integer, clamped 10–24 |
-| `diff.mode` | `diffPrefs.mode` | `"split" \| "unified"` |
-| `diff.ignoreWhitespace` | `diffPrefs.ignoreWhitespace` | bool |
-| `layout.refsWidth`, `layout.sidebarWidth` | `layoutPrefs` | integer px; clamped to the same bounds the split handles enforce today (builder reads them from `SplitHandle`/`layoutPrefs`), default 240 / 320 |
-| `layout.*Collapsed` | `layoutPrefs` | bool |
-| `updates.checkOnStartup` | `updatePrefs.checkOnStartup` | bool |
-| `window.width`, `window.height` | new | logical px, integers, at least the configured minimum (960 × 600) |
-| `window.maximized` | new | bool |
+| Section / field                           | Comes from                                                   | Validation / normalisation                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git.executable`                          | v1 `gitExecutable`                                           | unchanged: absolute path, verified with `git --version` before store                                                                            |
+| `clone.defaultDir`                        | v1 `defaultCloneDir`                                         | unchanged: absolute, existing directory                                                                                                         |
+| `clone.urlForm`                           | `layoutPrefs.cloneUrlForm`                                   | `"https" \| "ssh"`                                                                                                                              |
+| `tools.*`                                 | v1 `externalEditor`, `externalDiffTool`, `externalMergeTool` | unchanged: trimmed, empty → null                                                                                                                |
+| `appearance.theme`                        | `appearancePrefs.theme`                                      | `"system" \| "light" \| "dark"`                                                                                                                 |
+| `appearance.diffFontFamily`               | `appearancePrefs.diffFontFamily`                             | trimmed, empty → null                                                                                                                           |
+| `appearance.diffFontSize`                 | `appearancePrefs.diffFontSize`                               | integer, clamped 10–24                                                                                                                          |
+| `diff.mode`                               | `diffPrefs.mode`                                             | `"split" \| "unified"`                                                                                                                          |
+| `diff.ignoreWhitespace`                   | `diffPrefs.ignoreWhitespace`                                 | bool                                                                                                                                            |
+| `layout.refsWidth`, `layout.sidebarWidth` | `layoutPrefs`                                                | integer px; clamped to the same bounds the split handles enforce today (builder reads them from `SplitHandle`/`layoutPrefs`), default 240 / 320 |
+| `layout.*Collapsed`                       | `layoutPrefs`                                                | bool                                                                                                                                            |
+| `updates.checkOnStartup`                  | `updatePrefs.checkOnStartup`                                 | bool                                                                                                                                            |
+| `window.width`, `window.height`           | new                                                          | logical px, integers, at least the configured minimum (960 × 600)                                                                               |
+| `window.maximized`                        | new                                                          | bool                                                                                                                                            |
 
 **Not moved, my call:** `updatePrefs.lastCheckedAt` (epoch ms of the last
 update check). It is bookkeeping, not a preference, and moving it would
