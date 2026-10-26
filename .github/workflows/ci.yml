@@ -144,7 +144,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/git-real-bench
-          key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}
+          key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs') }}
       - name: Prepare fixtures
         run: |
           src-tauri/target/release/git-real-bench prepare synthetic ~/.cache/git-real-bench/synthetic
