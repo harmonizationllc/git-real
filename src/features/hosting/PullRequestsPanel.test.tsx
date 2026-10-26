@@ -7,9 +7,11 @@ import {
   hostingListPullRequests,
   hostingRepoContext,
   openExternal,
+  updateSettings,
 } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
   hostingAccount,
   hostingError,
@@ -23,6 +25,7 @@ import { PullRequestsPanel } from "./PullRequestsPanel";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   hostingRepoContext: vi.fn(),
   hostingListPullRequests: vi.fn(),
   hostingCheckoutPullRequest: vi.fn(),
@@ -33,10 +36,11 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 
 const twoPrs = () => [pullRequest(12), pullRequest(9, { fromFork: true })];
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   localStorage.clear();
-  useLayoutPrefs.setState({ pullRequestsCollapsed: false });
+  await seedSettings({ layout: { pullRequestsCollapsed: false } });
   vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
   vi.mocked(hostingListPullRequests).mockResolvedValue(twoPrs());
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
@@ -275,7 +279,21 @@ describe("PullRequestsPanel collapse", () => {
     await user.click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(true);
+    expect(useSettings.getState().settings.layout.pullRequestsCollapsed).toBe(true);
+  });
+
+  it("sends the pullRequestsCollapsed change to the backend once the save delay passes", async () => {
+    await renderPanel();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(toggle());
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({
+      layout: { pullRequestsCollapsed: true },
+    });
   });
 
   it("expanding again shows the list and stores false", async () => {
@@ -283,11 +301,11 @@ describe("PullRequestsPanel collapse", () => {
     await user.click(toggle());
     await user.click(toggle());
     expect(await screen.findAllByRole("listitem")).toHaveLength(2);
-    expect(useLayoutPrefs.getState().pullRequestsCollapsed).toBe(false);
+    expect(useSettings.getState().settings.layout.pullRequestsCollapsed).toBe(false);
   });
 
   it("does not fetch while collapsed and fetches once expanded", async () => {
-    useLayoutPrefs.setState({ pullRequestsCollapsed: true });
+    await seedSettings({ layout: { pullRequestsCollapsed: true } });
     const { user } = renderWithProviders(
       <PullRequestsPanel repoId={1} onCreatePullRequest={null} />,
     );

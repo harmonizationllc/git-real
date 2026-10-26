@@ -1,6 +1,6 @@
-import type { LayoutColumn } from "../lib/store/layoutPrefs";
+export type LayoutColumn = "refs" | "sidebar";
 
-export { REFS_DEFAULT, SIDEBAR_DEFAULT } from "../lib/store/layoutPrefs";
+export { REFS_DEFAULT, SIDEBAR_DEFAULT } from "../lib/store/settings";
 
 export const REFS_MIN = 160;
 export const SIDEBAR_MIN = 240;

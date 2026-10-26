@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileDiff } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/store/diffPrefs";
+import type { DiffMode } from "../../lib/ipc";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { DiffToolbar } from "./DiffToolbar";
 

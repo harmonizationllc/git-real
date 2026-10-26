@@ -1,8 +1,9 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostingListAccounts, hostingListMyRepos } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { hostingListAccounts, hostingListMyRepos, updateSettings } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
   hostedRepo,
   hostedRepoPage,
@@ -16,6 +17,7 @@ import { RepoBrowser } from "./RepoBrowser";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   hostingListAccounts: vi.fn(),
   hostingListMyRepos: vi.fn(),
 }));
@@ -25,11 +27,12 @@ const LAB = "gitlab:gitlab.example.com:octo2";
 
 // The clock advances by itself so react-query and waitFor still settle; the debounce is driven
 // with advanceTimersByTimeAsync. user-event hangs under fake timers, so events are fired directly.
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.resetAllMocks();
+  await resetSettings();
   localStorage.clear();
-  useLayoutPrefs.setState({ cloneUrlForm: "https" });
+  await seedSettings({ clone: { urlForm: "https" } });
   vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
   vi.mocked(hostingListMyRepos).mockImplementation((_id, query) =>
     Promise.resolve(
@@ -679,18 +682,25 @@ describe("RepoBrowser picking", () => {
   it("stores ssh in the preference when SSH is chosen", async () => {
     await renderBrowser();
     fireEvent.click(radio("SSH"));
-    expect(useLayoutPrefs.getState().cloneUrlForm).toBe("ssh");
+    expect(useSettings.getState().settings.clone.urlForm).toBe("ssh");
+  });
+
+  it("sends the chosen form to the backend once the save delay passes", async () => {
+    await renderBrowser();
+    fireEvent.click(radio("SSH"));
+    await wait(300);
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ clone: { urlForm: "ssh" } });
   });
 
   it("stores https again when HTTPS is chosen after SSH", async () => {
     await renderBrowser();
     fireEvent.click(radio("SSH"));
     fireEvent.click(radio("HTTPS"));
-    expect(useLayoutPrefs.getState().cloneUrlForm).toBe("https");
+    expect(useSettings.getState().settings.clone.urlForm).toBe("https");
   });
 
   it("shows SSH selected when the stored preference is ssh", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await renderBrowser();
     expect(radio("SSH")).toBeChecked();
   });

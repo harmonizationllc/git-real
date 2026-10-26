@@ -4,7 +4,7 @@ import type { FormEvent, KeyboardEvent } from "react";
 import { checkGitCli, onCloneProgress, pickFolder } from "../../lib/ipc";
 import type { HostedRepo, Progress, UnlistenFn } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings as useSettingsStore } from "../../lib/store/settings";
 import { AccountsDialog } from "../hosting/AccountsDialog";
 import type { AccountsPreset } from "../hosting/AccountsDialog";
 import { cloneUrlFor } from "../hosting/cloneUrlFor";
@@ -53,7 +53,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const [picked, setPicked] = useState<HostedRepo | null>(null);
   // The browser's account, kept here so it survives the browser unmounting on a tab switch.
   const [accountId, setAccountId] = useState<string | null>(null);
-  const form = useLayoutPrefs((s) => s.cloneUrlForm);
+  const form = useSettingsStore((s) => s.settings.clone.urlForm);
   const [prevForm, setPrevForm] = useState(form);
   // The accounts dialog is open (with its optional preset) when this is not null.
   const [accounts, setAccounts] = useState<{ preset?: AccountsPreset } | null>(null);
