@@ -28,10 +28,10 @@ const LABELS: Record<ResizableSection, string> = {
   pullRequests: "Resize Pull requests section",
 };
 
-/** The column root's content height and each section's content height; 0 until observed. */
+/** The column root's content height and each section's content height; null until reported. */
 interface Measured {
-  root: number;
-  naturals: number[];
+  root: number | null;
+  naturals: Array<number | null>;
 }
 
 /**
@@ -47,8 +47,8 @@ export function RefsColumn({
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [measured, setMeasured] = useState<Measured>({
-    root: 0,
-    naturals: REFS_SECTIONS.map(() => 0),
+    root: null,
+    naturals: REFS_SECTIONS.map(() => null),
   });
 
   // One observer for the root and every content wrapper. Entries for any other target (or none)
@@ -71,11 +71,14 @@ export function RefsColumn({
     return () => ro.disconnect();
   }, []);
 
-  // Until the root and every section have reported, the wrappers keep their flex fallback.
-  const ready = measured.root > 0 && measured.naturals.every((h) => h > 0);
-  const container = ready ? measured.root - (REFS_SECTIONS.length - 1) * SPLIT_HANDLE_WIDTH : 0;
+  // Until the root and every section have reported (zero counts), the wrappers keep their flex
+  // fallback. A section without content (no hosting account) reports 0 and takes no space.
+  const ready = measured.root !== null && measured.naturals.every((h) => h !== null);
+  const container = ready
+    ? (measured.root as number) - (REFS_SECTIONS.length - 1) * SPLIT_HANDLE_WIDTH
+    : 0;
   const inputs: SectionInput[] = REFS_SECTIONS.map((section, i) => ({
-    natural: measured.naturals[i] as number,
+    natural: measured.naturals[i] ?? 0,
     fixed: section === "issues" ? null : layout[`${section}Height`],
   }));
   const heights = fitSections(container, inputs);
@@ -111,12 +114,13 @@ export function RefsColumn({
               {panels[section]}
             </div>
           </div>
-          {section !== "issues" && (
+          {/* A section measured at 0 has nothing to resize, so it gets no handle of its own. */}
+          {section !== "issues" && measured.naturals[i] !== 0 && (
             <SplitHandle
               label={LABELS[section]}
               orientation="horizontal"
               value={ready ? (heights[i] as number) : (layout[`${section}Height`] ?? 0)}
-              min={ready ? sectionFloor(measured.naturals[i] as number) : 0}
+              min={ready ? sectionFloor(inputs[i]!.natural) : 0}
               max={ready ? maxSectionHeight(container, inputs, i) : Infinity}
               step={KEY_STEP}
               onChange={(px) => setSectionHeight(section, px)}
