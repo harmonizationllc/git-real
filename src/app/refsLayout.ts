@@ -48,15 +48,19 @@ export function fitSections(container: number, sections: SectionInput[]): number
   return heights;
 }
 
-/** The tallest a section may be dragged: the container less every other section's floor. */
+/**
+ * The tallest a section may be dragged: the container less every other section's floor, but never
+ * below the section's own floor.
+ */
 export function maxSectionHeight(
   container: number,
   sections: SectionInput[],
   index: number,
 ): number {
   if (container <= 0) return Infinity;
-  return sections.reduce(
-    (max, s, i) => (i === index ? max : max - sectionFloor(s.natural)),
+  const max = sections.reduce(
+    (rest, s, i) => (i === index ? rest : rest - sectionFloor(s.natural)),
     container,
   );
+  return Math.max(sectionFloor((sections[index] as SectionInput).natural), max);
 }

@@ -52,7 +52,8 @@ export function RefsColumn({
   });
 
   // One observer for the root and every content wrapper. Entries for any other target (or none)
-  // are ignored, and a batch is applied in one functional update, so it causes one render.
+  // are ignored, and a batch is applied in one functional update, so it causes one render; a batch
+  // of ignored entries keeps the previous state, so it causes none.
   useEffect(() => {
     const ro = new ResizeObserver((entries) => {
       const root = entries.filter((e) => e.target === rootRef.current);
@@ -61,6 +62,7 @@ export function RefsColumn({
         return index === -1 ? [] : [{ index, height: e.contentRect.height }];
       });
       setMeasured((prev) => {
+        if (root.length === 0 && sections.length === 0) return prev;
         const naturals = [...prev.naturals];
         for (const { index, height } of sections) naturals[index] = height;
         return { root: root.at(-1)?.contentRect.height ?? prev.root, naturals };
@@ -72,16 +74,17 @@ export function RefsColumn({
   }, []);
 
   // Until the root and every section have reported (zero counts), the wrappers keep their flex
-  // fallback. A section without content (no hosting account) reports 0 and takes no space.
+  // fallback. A section without content (no hosting account) reports 0, takes no space and gets
+  // no handle of its own; each rendered handle's track is taken from the container.
   const ready = measured.root !== null && measured.naturals.every((h) => h !== null);
-  const container = ready
-    ? (measured.root as number) - (REFS_SECTIONS.length - 1) * SPLIT_HANDLE_WIDTH
-    : 0;
+  const hasHandle = REFS_SECTIONS.map((s, i) => s !== "issues" && measured.naturals[i] !== 0);
+  const tracks = hasHandle.filter(Boolean).length * SPLIT_HANDLE_WIDTH;
+  const container = ready ? (measured.root as number) - tracks : 0;
   const inputs: SectionInput[] = REFS_SECTIONS.map((section, i) => ({
     natural: measured.naturals[i] ?? 0,
     fixed: section === "issues" ? null : layout[`${section}Height`],
   }));
-  const heights = fitSections(container, inputs);
+  const heights = fitSections(container, inputs).map(Math.round);
 
   const panels: Record<RefsSection, ReactNode> = {
     branches: (
@@ -114,16 +117,23 @@ export function RefsColumn({
               {panels[section]}
             </div>
           </div>
-          {/* A section measured at 0 has nothing to resize, so it gets no handle of its own. */}
-          {section !== "issues" && measured.naturals[i] !== 0 && (
+          {section !== "issues" && hasHandle[i] && (
             <SplitHandle
               label={LABELS[section]}
               orientation="horizontal"
               value={ready ? (heights[i] as number) : (layout[`${section}Height`] ?? 0)}
               min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-              max={ready ? maxSectionHeight(container, inputs, i) : Infinity}
+              // Capped at the content, so an inert (collapsed or empty) section cannot be dragged.
+              max={
+                ready
+                  ? Math.min(maxSectionHeight(container, inputs, i), inputs[i]!.natural)
+                  : Infinity
+              }
               step={KEY_STEP}
-              onChange={(px) => setSectionHeight(section, px)}
+              // Nothing is stored before measuring, or when the value would not change.
+              onChange={(px) => {
+                if (ready && px !== heights[i]) setSectionHeight(section, px);
+              }}
               onReset={() => setSectionHeight(section, null)}
             />
           )}
