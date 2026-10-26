@@ -67,6 +67,7 @@ pub enum AppErrorKind {
     GitCliInvalid,
     NoExternalTool,
     ExternalToolFailed,
+    UpdateCheckFailed,
 }
 
 /// What the UI needs to act on a network failure; stderr stays in `message`.
@@ -200,6 +201,7 @@ impl From<GitError> for AppError {
             // The configured path is gone; the UI treats it like a missing CLI.
             GitError::GitCliConfiguredMissing(_) => AppErrorKind::GitCliMissing,
             GitError::GitCliInvalid { .. } => AppErrorKind::GitCliInvalid,
+            GitError::UpdateCheckFailed { .. } => AppErrorKind::UpdateCheckFailed,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

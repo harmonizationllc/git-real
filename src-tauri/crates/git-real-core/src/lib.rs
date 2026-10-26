@@ -50,3 +50,4 @@ pub use tools::{
     DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff, open_external_merge,
     open_in_editor, split_command,
 };
+pub use update::{UpdateInfo, Version};

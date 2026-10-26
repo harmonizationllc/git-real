@@ -12,6 +12,7 @@ pub mod settings;
 pub mod stash;
 pub mod tags;
 pub mod tools;
+pub mod update;
 pub mod worktree;
 
 use std::sync::PoisonError;

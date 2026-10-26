@@ -1,8 +1,182 @@
 //! Update check domain: `Version`, `UpdateInfo`, `check_for_update`.
 //!
-//! RED PHASE (GR-15 Cycle 1, Task 1): this file contains only the test module.
-//! The developer creates all public items in the outer module; the tests below
-//! reference them via `super::` and will fail to compile until they exist.
+//! One unauthenticated GET of a provider's "latest release" endpoint, over the
+//! shared [`Transport`] port, turned into an [`UpdateInfo`] the UI can act on.
+//! All failures are [`GitError::UpdateCheckFailed`]; a 404 is not a failure but
+//! "no release published yet".
+
+use std::cmp::Ordering;
+
+use serde::Serialize;
+
+use crate::error::GitError;
+use crate::hosting::http::{Method, Request, Transport};
+
+/// A release version: `MAJOR.MINOR.PATCH` with an optional `-PRE` suffix, with
+/// or without a leading `v`/`V`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Version {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    /// Everything after the first `-`; never empty when present.
+    pub pre: Option<String>,
+}
+
+impl Version {
+    /// Parses `MAJOR.MINOR.PATCH[-PRE]`, trimming surrounding whitespace and
+    /// stripping at most one leading `v`/`V`. The triple must be exactly three
+    /// decimal integers; a `-PRE` suffix (anything after the first `-`) must be
+    /// non-empty. Build metadata (`+…`), extra segments, and non-numeric parts
+    /// are rejected.
+    pub fn parse(s: &str) -> Option<Version> {
+        let s = s.trim();
+        let s = s
+            .strip_prefix('v')
+            .or_else(|| s.strip_prefix('V'))
+            .unwrap_or(s);
+        let (core, pre) = match s.split_once('-') {
+            Some((core, pre)) if !pre.is_empty() => (core, Some(pre.to_owned())),
+            Some(_) => return None,
+            None => (s, None),
+        };
+        let mut parts = core.split('.');
+        let major = parse_u64(parts.next()?)?;
+        let minor = parse_u64(parts.next()?)?;
+        let patch = parse_u64(parts.next()?)?;
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(Version {
+            major,
+            minor,
+            patch,
+            pre,
+        })
+    }
+}
+
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.major, self.minor, self.patch)
+            .cmp(&(other.major, other.minor, other.patch))
+            .then_with(|| match (&self.pre, &other.pre) {
+                (None, None) => Ordering::Equal,
+                // A pre-release sorts below the same triple without one.
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(a), Some(b)) => a.cmp(b),
+            })
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// A non-empty run of ASCII digits as a `u64`.
+fn parse_u64(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// What the UI needs to decide whether to prompt an update (serde camelCase).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    /// The running version, as given to [`check_for_update`].
+    pub current: String,
+    /// The latest release's tag without a leading `v`; `None` when none exists.
+    pub latest: Option<String>,
+    /// Whether `latest` is newer than `current`.
+    pub available: bool,
+    /// The latest release's `html_url`; `None` when none exists.
+    pub url: Option<String>,
+}
+
+/// The GitHub "latest release" API version header value.
+const GITHUB_API_VERSION: &str = "2022-11-28";
+
+/// One GET of the "latest release" endpoint at `api_url`, comparing the tag it
+/// returns with `current`. 200 → parsed; 404 → no release yet (`available`
+/// false, `latest`/`url` `None`); anything else, or a transport failure, or an
+/// unexpected body → [`GitError::UpdateCheckFailed`].
+pub fn check_for_update(
+    transport: &dyn Transport,
+    current: &str,
+    api_url: &str,
+) -> Result<UpdateInfo, GitError> {
+    let req = Request {
+        method: Method::Get,
+        url: api_url.to_owned(),
+        headers: vec![
+            (
+                "Accept".to_owned(),
+                "application/vnd.github+json".to_owned(),
+            ),
+            (
+                "X-GitHub-Api-Version".to_owned(),
+                GITHUB_API_VERSION.to_owned(),
+            ),
+        ],
+        body: None,
+    };
+    let resp = transport.send(&req).map_err(|e| failed(e.to_string()))?;
+    match resp.status {
+        200 => parse_release(&resp.body, current),
+        404 => Ok(UpdateInfo {
+            current: current.to_owned(),
+            latest: None,
+            available: false,
+            url: None,
+        }),
+        403 if resp.header("x-ratelimit-remaining") == Some("0") => {
+            Err(failed("GitHub answered 403 (rate limited)".to_owned()))
+        }
+        status => Err(failed(format!("GitHub answered {status}"))),
+    }
+}
+
+/// Turns a 200 body into an [`UpdateInfo`], or an `UpdateCheckFailed` with a
+/// reason when the body is not the shape expected or a tag does not parse.
+fn parse_release(body: &str, current: &str) -> Result<UpdateInfo, GitError> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| failed("unexpected response".to_owned()))?;
+    let tag = value
+        .get("tag_name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| failed("unexpected response".to_owned()))?;
+    let url = value
+        .get("html_url")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| failed("unexpected response".to_owned()))?;
+    let current_version = Version::parse(current)
+        .ok_or_else(|| failed(format!("unrecognised current version {current}")))?;
+    let latest_version =
+        Version::parse(tag).ok_or_else(|| failed(format!("unrecognised release tag {tag}")))?;
+    Ok(UpdateInfo {
+        current: current.to_owned(),
+        latest: Some(strip_leading_v(tag).to_owned()),
+        available: latest_version > current_version,
+        url: Some(url.to_owned()),
+    })
+}
+
+/// The tag with at most one leading `v`/`V` removed.
+fn strip_leading_v(tag: &str) -> &str {
+    tag.strip_prefix('v')
+        .or_else(|| tag.strip_prefix('V'))
+        .unwrap_or(tag)
+}
+
+/// Shorthand for the one error this module produces.
+fn failed(message: String) -> GitError {
+    GitError::UpdateCheckFailed { message }
+}
 
 #[cfg(test)]
 mod tests {

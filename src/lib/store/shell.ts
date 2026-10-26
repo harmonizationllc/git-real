@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { RepoId } from "../ipc";
 
-export type SettingsSection = "appearance" | "diff" | "clone" | "tools" | "git";
+export type SettingsSection = "appearance" | "diff" | "clone" | "tools" | "git" | "about";
 
 export type ShellDialog =
   | null

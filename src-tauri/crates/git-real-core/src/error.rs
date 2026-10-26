@@ -145,6 +145,9 @@ pub enum GitError {
     /// (e.g. `exited with code 1` or `unexpected output: hello`).
     #[error("{message}")]
     GitCliInvalid { message: String },
+    /// The in-app update check could not complete; `message` says why.
+    #[error("update check failed: {message}")]
+    UpdateCheckFailed { message: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

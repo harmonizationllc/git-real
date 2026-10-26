@@ -99,13 +99,26 @@ export type AppErrorKind =
   | "invalidSettings"
   | "gitCliInvalid"
   | "noExternalTool"
-  | "externalToolFailed";
+  | "externalToolFailed"
+  | "updateCheckFailed";
 
 export interface AppError {
   kind: AppErrorKind;
   message: string;
   /** Present on `networkFailed` only. */
   network?: NetworkErrorInfo;
+}
+
+/** The result of the in-app update check (mirrors the Rust `UpdateInfo`). */
+export interface UpdateInfo {
+  /** The running version. */
+  current: string;
+  /** The latest release's tag without a leading `v`; null when none exists. */
+  latest: string | null;
+  /** Whether `latest` is newer than `current`. */
+  available: boolean;
+  /** The latest release's web URL; null when none exists. */
+  url: string | null;
 }
 
 export interface GitCliInfo {
