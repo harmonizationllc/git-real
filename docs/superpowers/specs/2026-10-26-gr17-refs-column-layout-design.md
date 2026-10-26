@@ -99,13 +99,19 @@ inside a `section` wrapper (`overflow: auto`, inline `height` from
 | `Resize Tags section`          | Tags          | `layout.tagsHeight`         |
 | `Resize Pull requests section` | Pull requests | `layout.pullRequestsHeight` |
 
-Handle contract: `value` is the rendered height; `min` is the section's
-floor; `max` is `maxSectionHeight`; `step` is `KEY_STEP` (16); ArrowDown and
-ArrowUp move it; double-click resets the stored height to `null`.
+Handle contract: `value` is the rendered height, rounded to whole pixels;
+`min` is the section's floor; `max` is the smaller of `maxSectionHeight` and
+the section's content height, so a handle under a section that cannot grow
+(collapsed, empty) refuses to move instead of storing a preference that
+would cap the section later; `step` is `KEY_STEP` (16); ArrowDown and
+ArrowUp move it; double-click resets the stored height to `null`. A change
+that leaves the rendered height where it is, or that arrives before the
+column is measured, stores nothing (ruled at the final review on
+2026-10-26).
 
 Measurement: one `ResizeObserver` per `RefsColumn` observes the column root
-(container = its content height minus the four handle tracks of
-`SPLIT_HANDLE_WIDTH` each) and each section's content wrapper (its natural
+(container = its content height minus one `SPLIT_HANDLE_WIDTH` track per
+handle actually rendered) and each section's content wrapper (its natural
 height). Entries whose target is unknown are ignored. Until the root and
 every wrapper have reported at least once, no inline heights are set and the
 wrappers fall back to `flex: 0 1 auto; min-height: 0`, so a test without
