@@ -1,30 +1,28 @@
-// GR-15 Cycle 1, Task 4 – tests for the About settings section.
-//
-// RED PHASE: `./AboutSettings` does not exist yet; every test in this file
-// fails at module resolution time. `appVersion`, `checkForUpdate` are not
-// yet exported from `../../lib/ipc`.
-
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../lib/query/client";
-import { useUpdatePrefs } from "../../lib/store/updatePrefs"; // RED: module missing
+import { updateSettings } from "../../lib/ipc";
+import { useUpdateState } from "../../lib/store/updateState";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useToasts } from "../../lib/store/toasts";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import type { UpdateInfo } from "../../lib/ipc";
-import { AboutSettings } from "./AboutSettings"; // RED: module missing
+import { AboutSettings } from "./AboutSettings";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   appVersion: vi.fn(),
   checkForUpdate: vi.fn(),
+  updateSettings: vi.fn(),
   openExternal: vi.fn(),
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   queryClient.clear();
   useToasts.setState({ toasts: [] });
-  useUpdatePrefs.setState(useUpdatePrefs.getInitialState(), true);
+  useUpdateState.setState(useUpdateState.getInitialState(), true);
 });
 
 afterEach(() => {
@@ -76,19 +74,27 @@ describe("AboutSettings render", () => {
   });
 });
 
-// Contract: the checkbox reflects and updates useUpdatePrefs.
+// Contract: the checkbox reflects and saves updates.checkOnStartup.
 describe("AboutSettings checkbox", () => {
-  it("unchecking disables checkOnStartup", async () => {
+  it("unchecking saves checkOnStartup=false after the pause", async () => {
     await setup();
     const checkbox = screen.getByRole("checkbox", {
       name: /check for updates on startup/i,
     });
-    fireEvent.click(checkbox);
-    expect(useUpdatePrefs.getState().checkOnStartup).toBe(false);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(checkbox);
+      expect(checkbox).not.toBeChecked();
+      expect(updateSettings).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledWith({ updates: { checkOnStartup: false } });
   });
 
   it("reflects an already-disabled preference", async () => {
-    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), checkOnStartup: false }, true);
+    await seedSettings({ updates: { checkOnStartup: false } });
     await setup();
     const checkbox = screen.getByRole("checkbox", {
       name: /check for updates on startup/i,
@@ -222,7 +228,7 @@ describe("AboutSettings status", () => {
 
   it("manual check leaves lastCheckedAt unchanged", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
-    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: null }, true);
+    useUpdateState.setState({ ...useUpdateState.getInitialState(), lastCheckedAt: null }, true);
     await setup();
     vi.mocked(checkForUpdate).mockResolvedValue({
       current: "0.1.0",
@@ -232,7 +238,7 @@ describe("AboutSettings status", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
-    expect(useUpdatePrefs.getState().lastCheckedAt).toBeNull();
+    expect(useUpdateState.getState().lastCheckedAt).toBeNull();
   });
 });
 

@@ -2,7 +2,8 @@ import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { PullRequest, RepoId } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { setPullRequestsCollapsed } from "../../lib/store/settingsActions";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
@@ -32,7 +33,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const bodyId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
-  const collapsed = useLayoutPrefs((s) => s.pullRequestsCollapsed);
+  const collapsed = useSettings((s) => s.settings.layout.pullRequestsCollapsed);
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const list = usePullRequests(repoId, !collapsed && usable);
@@ -151,7 +152,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
             className={styles.toggle}
             aria-expanded={!collapsed}
             aria-controls={bodyId}
-            onClick={() => useLayoutPrefs.getState().setPullRequestsCollapsed(!collapsed)}
+            onClick={() => setPullRequestsCollapsed(!collapsed)}
           >
             {prCountLabel(listed ? (prs as PullRequest[]).length : null, list.hasMore)}
           </button>

@@ -1,8 +1,8 @@
 import { toAppError } from "../../lib/ipc";
 import type { Settings } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
-import { useSettings } from "./useSettings";
 
 export type ExternalTool = "editor" | "diff" | "merge";
 
@@ -13,10 +13,11 @@ export const TOOL_LABEL: Record<ExternalTool, string> = {
   merge: "merge tool",
 };
 
-const SETTING_KEY: Record<ExternalTool, keyof Settings> = {
-  editor: "externalEditor",
-  diff: "externalDiffTool",
-  merge: "externalMergeTool",
+/** The `settings.tools` field that holds each tool's command line. */
+const SETTING_KEY: Record<ExternalTool, keyof Settings["tools"]> = {
+  editor: "editor",
+  diff: "diffTool",
+  merge: "mergeTool",
 };
 
 export interface UseExternalTool {
@@ -27,8 +28,8 @@ export interface UseExternalTool {
 
 /** Shared launch path for the editor, diff and merge entry points. */
 export function useExternalTool(tool: ExternalTool): UseExternalTool {
-  const { settings } = useSettings();
-  const configured = settings != null && settings[SETTING_KEY[tool]] !== null;
+  const command = useSettings((s) => s.settings.tools[SETTING_KEY[tool]]);
+  const configured = typeof command === "string";
 
   const openTools = () => useShell.getState().open({ kind: "settings", section: "tools" });
 

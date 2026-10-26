@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useMemo, useRef } from "react";
 import type { FileDiff, HunkAction, HunkSelection } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/store/diffPrefs";
+import type { DiffMode } from "../../lib/ipc";
 import { HunkHeader } from "./HunkHeader";
 import type { HighlightMap } from "./model/highlight";
 import { buildRows, type DiffRow } from "./model/rows";

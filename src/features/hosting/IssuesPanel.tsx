@@ -1,7 +1,8 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { Issue, RepoId } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { setIssuesCollapsed } from "../../lib/store/settingsActions";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
 import type { AccountsPreset } from "./AccountsDialog";
@@ -31,7 +32,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   const bodyId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
-  const collapsed = useLayoutPrefs((s) => s.issuesCollapsed);
+  const collapsed = useSettings((s) => s.settings.layout.issuesCollapsed);
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const repoInfo = useRepoInfo(repoId, !collapsed && usable);
@@ -161,7 +162,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
             className={styles.toggle}
             aria-expanded={!collapsed}
             aria-controls={bodyId}
-            onClick={() => useLayoutPrefs.getState().setIssuesCollapsed(!collapsed)}
+            onClick={() => setIssuesCollapsed(!collapsed)}
           >
             {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore)}
           </button>

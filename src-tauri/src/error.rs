@@ -198,8 +198,6 @@ impl From<GitError> for AppError {
             GitError::NoHostingAccount => AppErrorKind::NoHostingAccount,
             GitError::InvalidHostingHost(_) => AppErrorKind::InvalidHostingHost,
             GitError::InvalidToken => AppErrorKind::InvalidToken,
-            // The configured path is gone; the UI treats it like a missing CLI.
-            GitError::GitCliConfiguredMissing(_) => AppErrorKind::GitCliMissing,
             GitError::GitCliInvalid { .. } => AppErrorKind::GitCliInvalid,
             GitError::UpdateCheckFailed { .. } => AppErrorKind::UpdateCheckFailed,
             GitError::Git2(_) => AppErrorKind::Git,

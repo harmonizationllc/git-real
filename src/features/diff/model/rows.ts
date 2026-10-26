@@ -1,5 +1,5 @@
 import type { FileDiff } from "../../../lib/ipc";
-import type { DiffMode } from "../../../lib/store/diffPrefs";
+import type { DiffMode } from "../../../lib/ipc";
 import { pairLines } from "./pairing";
 
 export type DiffRow =

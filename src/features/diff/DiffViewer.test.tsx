@@ -2,7 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DiffScope } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/store/diffPrefs";
+import type { DiffMode } from "../../lib/ipc";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { DiffViewer } from "./DiffViewer";
 import type { HighlightMap } from "./model/highlight";

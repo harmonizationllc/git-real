@@ -8,9 +8,11 @@ import {
   listBranches,
   listTags,
   pushTag,
+  updateSettings,
 } from "../../lib/ipc";
 import type { BranchList, TagList } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
 import { oidOf, shortOf } from "../../test/graphFixtures";
 import { authError, networkError } from "../../test/remoteFixtures";
@@ -20,6 +22,7 @@ import { TagsPanel } from "./TagsPanel";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   listTags: vi.fn(),
   createTag: vi.fn(),
   deleteTag: vi.fn(),
@@ -45,11 +48,12 @@ const onMain = (): BranchList => ({
   remotes: [],
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   localStorage.clear();
   useWorkspace.setState({ refsFilter: {}, selectedCommit: {}, selectedStash: {} });
-  useLayoutPrefs.setState({ tagsCollapsed: true });
+  await seedSettings({ layout: { tagsCollapsed: true } });
   vi.mocked(listTags).mockResolvedValue(threeTags());
   vi.mocked(listBranches).mockResolvedValue(onMain());
   vi.mocked(createTag).mockResolvedValue(undefined);
@@ -61,7 +65,7 @@ beforeEach(() => {
 
 /** Renders the panel; `expanded` sets the stored preference first and waits for the list. */
 async function renderPanel(expanded = true) {
-  if (expanded) useLayoutPrefs.setState({ tagsCollapsed: false });
+  if (expanded) await seedSettings({ layout: { tagsCollapsed: false } });
   const view = renderWithProviders(<TagsPanel repoId={1} />);
   if (expanded) await screen.findByRole("list", { name: "Tag list" });
   return view;
@@ -88,7 +92,7 @@ describe("TagsPanel collapse", () => {
     await user.click(toggle());
     expect(await screen.findByRole("list", { name: "Tag list" })).toBeInTheDocument();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
-    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
+    expect(useSettings.getState().settings.layout.tagsCollapsed).toBe(false);
   });
 
   it("clicking again collapses and stores true", async () => {
@@ -96,7 +100,19 @@ describe("TagsPanel collapse", () => {
     await user.click(toggle());
     expect(screen.queryByRole("list", { name: "Tag list" })).toBeNull();
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(true);
+    expect(useSettings.getState().settings.layout.tagsCollapsed).toBe(true);
+  });
+
+  it("sends the tagsCollapsed change to the backend once the save delay passes", async () => {
+    await renderPanel(false);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(toggle());
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ layout: { tagsCollapsed: false } });
   });
 
   it("should start expanded when the stored preference is expanded", async () => {
@@ -127,7 +143,7 @@ describe("TagsPanel list", () => {
   it("should show Loading tags… while expanded and loading", async () => {
     vi.mocked(listTags).mockReturnValue(new Promise(() => undefined));
     await renderPanel(false);
-    useLayoutPrefs.setState({ tagsCollapsed: false });
+    await seedSettings({ layout: { tagsCollapsed: false } });
     expect(await screen.findByText("Loading tags…")).toBeInTheDocument();
   });
 
@@ -140,14 +156,14 @@ describe("TagsPanel list", () => {
   it("should render the list error alert without a data-variant", async () => {
     vi.mocked(listTags).mockRejectedValueOnce({ kind: "io", message: "list broke" });
     renderWithProviders(<TagsPanel repoId={1} />);
-    useLayoutPrefs.setState({ tagsCollapsed: false });
+    await seedSettings({ layout: { tagsCollapsed: false } });
     expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
   });
 
   it("should show the list error with Retry while expanded", async () => {
     vi.mocked(listTags).mockRejectedValueOnce({ kind: "io", message: "list broke" });
     const { user } = renderWithProviders(<TagsPanel repoId={1} />);
-    useLayoutPrefs.setState({ tagsCollapsed: false });
+    await seedSettings({ layout: { tagsCollapsed: false } });
     expect(await screen.findByRole("alert")).toHaveTextContent("list broke");
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("list", { name: "Tag list" })).toBeInTheDocument();
@@ -166,7 +182,7 @@ describe("TagsPanel list", () => {
   it("should show No tags for an empty list", async () => {
     vi.mocked(listTags).mockResolvedValue(tagList());
     renderWithProviders(<TagsPanel repoId={1} />);
-    useLayoutPrefs.setState({ tagsCollapsed: false });
+    await seedSettings({ layout: { tagsCollapsed: false } });
     expect(await screen.findByText("No tags")).toBeInTheDocument();
     expect(toggle()).toHaveTextContent("Tags (0)");
   });
@@ -189,7 +205,7 @@ describe("TagsPanel filtering", () => {
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(toggle()).toHaveTextContent("Tags (1 of 3)");
     expect(within(screen.getByRole("list")).getAllByRole("listitem")).toHaveLength(1);
-    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(true);
+    expect(useSettings.getState().settings.layout.tagsCollapsed).toBe(true);
   });
 
   it("should flip the stored preference when toggled while filtering", async () => {
@@ -197,7 +213,7 @@ describe("TagsPanel filtering", () => {
     const { user } = renderWithProviders(<TagsPanel repoId={1} />);
     await screen.findByRole("list", { name: "Tag list" });
     await user.click(toggle());
-    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(false);
+    expect(useSettings.getState().settings.layout.tagsCollapsed).toBe(false);
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
   });
 
@@ -207,7 +223,7 @@ describe("TagsPanel filtering", () => {
     await screen.findByRole("list", { name: "Tag list" });
     await user.click(toggle());
     await user.click(toggle());
-    expect(useLayoutPrefs.getState().tagsCollapsed).toBe(true);
+    expect(useSettings.getState().settings.layout.tagsCollapsed).toBe(true);
     useWorkspace.getState().setRefsFilter(1, "");
     await waitFor(() => expect(toggle()).toHaveAttribute("aria-expanded", "false"));
   });

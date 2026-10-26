@@ -128,17 +128,38 @@ export interface GitCliInfo {
   error: string | null;
 }
 
-/** The backend settings the Settings dialog edits; appearance lives in localStorage. */
+export type ThemePref = "system" | "light" | "dark";
+
+export type DiffMode = "split" | "unified";
+
+/** Which of a hosted repository's clone URLs the clone dialog fills in. */
+export type CloneUrlForm = "https" | "ssh";
+
+/** Every user preference, as Rust stores it in settings.json (version 2, nested). */
 export interface Settings {
-  defaultCloneDir: string | null;
-  gitExecutable: string | null;
-  externalEditor: string | null;
-  externalDiffTool: string | null;
-  externalMergeTool: string | null;
+  git: { executable: string | null };
+  clone: { defaultDir: string | null; urlForm: CloneUrlForm };
+  tools: { editor: string | null; diffTool: string | null; mergeTool: string | null };
+  appearance: { theme: ThemePref; diffFontFamily: string | null; diffFontSize: number };
+  diff: { mode: DiffMode; ignoreWhitespace: boolean };
+  layout: {
+    refsWidth: number;
+    sidebarWidth: number;
+    tagsCollapsed: boolean;
+    pullRequestsCollapsed: boolean;
+    issuesCollapsed: boolean;
+  };
+  updates: { checkOnStartup: boolean };
+  window: { width: number; height: number; maximized: boolean };
 }
 
-/** A partial settings update: a present key with `null` clears, a value sets, an absent key keeps. */
-export type SettingsPatch = Partial<Settings>;
+/** A nested partial update: a present leaf with `null` clears, a value sets, an absent one keeps. */
+export type SettingsPatch = { [S in keyof Settings]?: Partial<Settings[S]> };
+
+/** Problems with the stored settings the app warns about. */
+export interface SettingsHealth {
+  defaultCloneDirMissing: boolean;
+}
 
 /** Which diff an external diff tool should show. */
 export type ExternalDiffScope =

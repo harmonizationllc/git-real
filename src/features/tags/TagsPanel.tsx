@@ -3,7 +3,8 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { copyText, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, TagEntry } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { setTagsCollapsed } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterTags, isFiltering } from "../branches/branchFilter";
 import { useBranches } from "../branches/useBranches";
@@ -41,7 +42,7 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const actions = useTagActions(repoId);
   const { branches } = useBranches(repoId);
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
-  const collapsed = useLayoutPrefs((s) => s.tagsCollapsed);
+  const collapsed = useSettings((s) => s.settings.layout.tagsCollapsed);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [creating, setCreating] = useState(false);
@@ -163,7 +164,7 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
             className={styles.toggle}
             aria-expanded={expanded}
             aria-controls={bodyId}
-            onClick={() => useLayoutPrefs.getState().setTagsCollapsed(!collapsed)}
+            onClick={() => setTagsCollapsed(!collapsed)}
           >
             {tagCountLabel(shown.length, list?.tags.length ?? 0, filtering)}
           </button>

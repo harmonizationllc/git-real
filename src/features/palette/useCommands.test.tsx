@@ -3,21 +3,21 @@
 
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSettings, listRecent, openInEditor } from "../../lib/ipc";
-import type { OpenedRepo, RecentRepo, Settings } from "../../lib/ipc";
+import { listRecent, openInEditor, updateSettings } from "../../lib/ipc";
+import type { OpenedRepo, RecentRepo } from "../../lib/ipc";
 import { queryClient } from "../../lib/query/client";
-import { queryKeys } from "../../lib/query/keys";
-import { useAppearancePrefs } from "../../lib/store/appearancePrefs";
+import { useSettings } from "../../lib/store/settings";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import type { ShellActions } from "../../lib/store/shell";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useCommands } from "./useCommands";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
-  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   listRecent: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -30,35 +30,26 @@ const recentRepo = (path: string, name: string): RecentRepo => ({
   lastOpened: Date.now(),
 });
 
-const defaultSettings: Settings = {
-  defaultCloneDir: null,
-  gitExecutable: null,
-  externalEditor: null,
-  externalDiffTool: null,
-  externalMergeTool: null,
-};
-
 const stubActions = (): ShellActions => ({
   openRepo: vi.fn(),
   cloneRepo: vi.fn(),
   openPath: vi.fn(),
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   queryClient.clear();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useShell.setState({ dialog: null, repoActions: null });
   useToasts.setState({ toasts: [] });
-  useAppearancePrefs.setState(useAppearancePrefs.getInitialState(), true);
-  vi.mocked(getSettings).mockResolvedValue(defaultSettings);
   vi.mocked(listRecent).mockResolvedValue([]);
 });
 
 // Contract: lists the eight always-actions in order with the active theme marked Current.
 describe("useCommands always-actions", () => {
   it("lists the eight always-actions in order with the active theme marked Current", async () => {
-    useAppearancePrefs.setState({ ...useAppearancePrefs.getInitialState(), theme: "system" });
+    await seedSettings({ appearance: { theme: "light" } });
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     await waitFor(() =>
       expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
@@ -74,9 +65,9 @@ describe("useCommands always-actions", () => {
     expect(labels).toContain("Go to start screen");
     // The active theme is marked Current.
     const systemCmd = result.current.find((c) => c.label === "Theme: System");
-    expect(systemCmd?.detail).toBe("Current");
+    expect(systemCmd?.detail).not.toBe("Current");
     const lightCmd = result.current.find((c) => c.label === "Theme: Light");
-    expect(lightCmd?.detail).not.toBe("Current");
+    expect(lightCmd?.detail).toBe("Current");
   });
 });
 
@@ -187,7 +178,7 @@ describe("useCommands Open recent", () => {
 // Contract: Open repository in editor calls openInEditor with the repository path.
 describe("useCommands Open repository in editor", () => {
   it("Open repository in editor calls openInEditor with the repository path through useExternalTool", async () => {
-    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
+    await seedSettings({ tools: { editor: "code" } });
     act(() => {
       useShell.getState().publishRepoActions({
         repoId: 1,
@@ -200,9 +191,7 @@ describe("useCommands Open repository in editor", () => {
       });
     });
     vi.mocked(openInEditor).mockResolvedValue(undefined);
-    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
-    // Wait until the settings query resolves so editor.configured becomes true.
-    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
     expect(editorCmd).toBeDefined();
     await act(() => editorCmd!.run());
@@ -212,7 +201,7 @@ describe("useCommands Open repository in editor", () => {
   // R18: the palette uses the absolute repository path with no repoId argument.
   // FileHeader and DetailPane pass repoId; the palette passes the absolute path directly.
   it("the editor command still sends the absolute repo path with no repo id", async () => {
-    vi.mocked(getSettings).mockResolvedValue({ ...defaultSettings, externalEditor: "code" });
+    await seedSettings({ tools: { editor: "code" } });
     act(() => {
       useShell.getState().publishRepoActions({
         repoId: 1,
@@ -225,8 +214,7 @@ describe("useCommands Open repository in editor", () => {
       });
     });
     vi.mocked(openInEditor).mockResolvedValue(undefined);
-    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
-    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
     await act(() => editorCmd!.run());
     // Called with the absolute path only — no second repoId argument.
@@ -286,13 +274,20 @@ describe("useCommands always-action run functions", () => {
     expect(useShell.getState().dialog).toMatchObject({ kind: "shortcuts" });
   });
 
-  it("Theme: Dark run changes the theme to dark", async () => {
+  it("Theme: Dark run saves the dark theme after the pause", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     await waitFor(() =>
       expect(result.current.find((c) => c.label === "Theme: Dark")).toBeDefined(),
     );
-    act(() => result.current.find((c) => c.label === "Theme: Dark")!.run());
-    expect(useAppearancePrefs.getState().theme).toBe("dark");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      act(() => result.current.find((c) => c.label === "Theme: Dark")!.run());
+      expect(useSettings.getState().settings.appearance.theme).toBe("dark");
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ appearance: { theme: "dark" } });
   });
 
   it("Go to start screen run deactivates the current tab", async () => {

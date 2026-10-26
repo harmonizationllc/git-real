@@ -15,6 +15,46 @@ use git_real_lib::state::RepoRegistry;
 use git2::{Repository, Signature};
 use tempfile::TempDir;
 
+/// The `errno` for "text file busy". Executing a file that another thread's
+/// fork still holds open for writing fails with it, so a freshly written
+/// fake executable is retried until it runs.
+#[cfg(unix)]
+const ETXTBSY: i32 = 26;
+
+/// Writes an executable `git` in `dir` that prints `git version 9.9.9`.
+#[cfg(unix)]
+pub fn fake_git(dir: &Path) -> PathBuf {
+    fake_git_script(dir, "echo git version 9.9.9")
+}
+
+/// Writes an executable `git` in `dir` that runs the shell `script`. Probes it
+/// after writing (with `FAKE_GIT_PROBE` set, which exits before `script`) until
+/// it stops failing with `ETXTBSY`, so a concurrent fork cannot break the
+/// first real exec.
+#[cfg(unix)]
+pub fn fake_git_script(dir: &Path, script: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join("git");
+    let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{script}\n");
+    std::fs::write(&path, body).expect("write fake git");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+        .expect("make fake git executable");
+    for _ in 0..100 {
+        match std::process::Command::new(&path)
+            .env("FAKE_GIT_PROBE", "1")
+            .status()
+        {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("probing fake git failed: {e}"),
+            Ok(_) => break,
+        }
+    }
+    path
+}
+
 /// Creates a temp repo with a single commit containing `README.md`.
 /// The returned `TempDir` must be kept alive for the repo to exist.
 pub fn temp_repo_with_commit() -> (TempDir, PathBuf) {

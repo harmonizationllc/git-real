@@ -7,9 +7,11 @@ import {
   hostingRepoContext,
   hostingRepoInfo,
   openExternal,
+  updateSettings,
 } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
   hostingAccount,
   hostingError,
@@ -24,6 +26,7 @@ import { IssuesPanel } from "./IssuesPanel";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   hostingRepoContext: vi.fn(),
   hostingRepoInfo: vi.fn(),
   hostingListIssues: vi.fn(),
@@ -36,10 +39,11 @@ const twoIssues = () => [issue(12), issue(9, { labels: ["ui", "help wanted"] })]
 const manyIssues = (n: number, start = 100) =>
   Array.from({ length: n }, (_, i) => issue(start - i));
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   localStorage.clear();
-  useLayoutPrefs.setState({ issuesCollapsed: false });
+  await seedSettings({ layout: { issuesCollapsed: false } });
   vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
   vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
   vi.mocked(hostingListIssues).mockResolvedValue(twoIssues());
@@ -94,7 +98,7 @@ describe("IssuesPanel visibility", () => {
 // Contract (Review Focus 5): the section starts collapsed and a collapsed section calls no provider.
 describe("IssuesPanel collapse", () => {
   const collapsedPanel = async () => {
-    useLayoutPrefs.setState(useLayoutPrefs.getInitialState());
+    await resetSettings();
     const view = renderWithProviders(<IssuesPanel repoId={1} />);
     await screen.findByRole("button", { name: /^Issues/ });
     return view;
@@ -137,7 +141,19 @@ describe("IssuesPanel collapse", () => {
     const { user } = await collapsedPanel();
     await user.click(toggle());
     expect(await screen.findAllByRole("listitem")).toHaveLength(2);
-    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(false);
+    expect(useSettings.getState().settings.layout.issuesCollapsed).toBe(false);
+  });
+
+  it("sends the issuesCollapsed change to the backend once the save delay passes", async () => {
+    await collapsedPanel();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(toggle());
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ layout: { issuesCollapsed: false } });
   });
 
   it("collapsing hides the list, sets aria-expanded false and stores the flag", async () => {
@@ -146,7 +162,7 @@ describe("IssuesPanel collapse", () => {
     await user.click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(useLayoutPrefs.getState().issuesCollapsed).toBe(true);
+    expect(useSettings.getState().settings.layout.issuesCollapsed).toBe(true);
   });
 });
 
@@ -419,7 +435,7 @@ describe("IssuesPanel refresh", () => {
   });
 
   it("is disabled while the section is collapsed", async () => {
-    useLayoutPrefs.setState({ issuesCollapsed: true });
+    await seedSettings({ layout: { issuesCollapsed: true } });
     renderWithProviders(<IssuesPanel repoId={1} />);
     await screen.findByRole("button", { name: /^Issues/ });
     expect(refresh()).toBeDisabled();

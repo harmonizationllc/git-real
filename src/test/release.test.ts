@@ -123,8 +123,6 @@ describe("bundle config", () => {
   const tauriConf = readJson("src-tauri/tauri.conf.json") as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bundle = tauriConf.bundle as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const app = tauriConf.app as any;
 
   // R7: targets stay ["deb", "rpm", "appimage"]
   it("targets are deb, rpm, appimage", () => {
@@ -182,9 +180,10 @@ describe("bundle config", () => {
     expect(fileExists("src-tauri/packaging/git-real.desktop")).toBe(true);
   });
 
-  it("window decorations are explicit", () => {
-    const windows = app.windows as Array<Record<string, unknown>>;
-    expect(windows[0].decorations).toBe(true);
+  it("window decorations are explicit in main_window.rs", () => {
+    // The main window is built in Rust (GR-29), so the explicit decorations
+    // that give Wayland/COSMIC server-side decorations live there.
+    expect(readText("src-tauri/src/main_window.rs")).toContain(".decorations(true)");
   });
 });
 

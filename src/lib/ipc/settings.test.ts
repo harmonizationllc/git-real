@@ -1,9 +1,8 @@
-// Task 5: Failing tests for settings IPC wrappers.
-// Imports reference modules/symbols that do not yet exist — red phase.
+// Settings IPC wrappers; GR-29 moved them to the nested version-2 shape.
 
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
-import { getSettings, updateSettings } from "./settings";
+import { checkSettingsHealth, getSettings, revealSettingsFile, updateSettings } from "./settings";
 import type { Settings, SettingsPatch } from "./types";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -28,11 +27,20 @@ afterEach(() => {
 });
 
 const defaultSettings: Settings = {
-  defaultCloneDir: null,
-  gitExecutable: null,
-  externalEditor: null,
-  externalDiffTool: null,
-  externalMergeTool: null,
+  git: { executable: null },
+  clone: { defaultDir: null, urlForm: "https" },
+  tools: { editor: null, diffTool: null, mergeTool: null },
+  appearance: { theme: "system", diffFontFamily: null, diffFontSize: 13 },
+  diff: { mode: "split", ignoreWhitespace: false },
+  layout: {
+    refsWidth: 240,
+    sidebarWidth: 320,
+    tagsCollapsed: true,
+    pullRequestsCollapsed: false,
+    issuesCollapsed: true,
+  },
+  updates: { checkOnStartup: true },
+  window: { width: 1280, height: 800, maximized: false },
 };
 
 // Contract: getSettings invokes get_settings with no arguments.
@@ -53,11 +61,11 @@ describe("getSettings", () => {
   });
 });
 
-// Contract: updateSettings sends the patch under the 'patch' key, including null values.
+// Contract: updateSettings sends the nested patch under the 'patch' key, including null values.
 describe("updateSettings", () => {
   it("sends the patch under patch (null keys included)", async () => {
     const calls = mockWith(defaultSettings);
-    const patch: SettingsPatch = { externalEditor: null, externalDiffTool: "meld" };
+    const patch: SettingsPatch = { tools: { editor: null, diffTool: "meld" } };
     const result = await updateSettings(patch);
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe("update_settings");
@@ -74,6 +82,36 @@ describe("updateSettings", () => {
   it("updateSettings rejection passes through", async () => {
     const err = { kind: "invalidSettings", message: "bad path" };
     mockThrowing(err);
-    await expect(updateSettings({ defaultCloneDir: "relative" })).rejects.toBe(err);
+    await expect(updateSettings({ clone: { defaultDir: "relative" } })).rejects.toBe(err);
+  });
+});
+
+// Contract (GR-29): revealSettingsFile invokes reveal_settings_file with no arguments.
+describe("revealSettingsFile", () => {
+  it("sends reveal_settings_file with no arguments and resolves to undefined", async () => {
+    const calls = mockWith(null);
+    await expect(revealSettingsFile()).resolves.toBeUndefined();
+    expect(calls).toEqual([{ cmd: "reveal_settings_file", args: {} }]);
+  });
+
+  it("revealSettingsFile rejection passes through", async () => {
+    const err = { kind: "io", message: "no file manager" };
+    mockThrowing(err);
+    await expect(revealSettingsFile()).rejects.toBe(err);
+  });
+});
+
+// Contract (GR-29): checkSettingsHealth invokes check_settings_health and returns its reply.
+describe("checkSettingsHealth", () => {
+  it("sends check_settings_health with no arguments", async () => {
+    const calls = mockWith({ defaultCloneDirMissing: true });
+    await expect(checkSettingsHealth()).resolves.toEqual({ defaultCloneDirMissing: true });
+    expect(calls).toEqual([{ cmd: "check_settings_health", args: {} }]);
+  });
+
+  it("checkSettingsHealth rejection passes through", async () => {
+    const err = { kind: "io", message: "disk error" };
+    mockThrowing(err);
+    await expect(checkSettingsHealth()).rejects.toBe(err);
   });
 });

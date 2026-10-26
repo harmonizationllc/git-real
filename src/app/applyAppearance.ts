@@ -1,6 +1,8 @@
-import { DEFAULT_MONO, useAppearancePrefs, type ThemePref } from "../lib/store/appearancePrefs";
+import type { ThemePref } from "../lib/ipc";
+import { installFlushOnPagehide, useSettings } from "../lib/store/settings";
 
-export { DEFAULT_MONO };
+/** The CSS `--font-mono` stack used when no diff font family is set. */
+export const DEFAULT_MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 export interface AppearanceSnapshot {
   theme: ThemePref;
@@ -22,8 +24,21 @@ export function applyAppearance(
   root.style.setProperty("--diff-font-size", `${prefs.diffFontSize}px`);
 }
 
-/** Applies the stored appearance now and on every later change; returns the unsubscribe. */
+/**
+ * Applies the injected appearance now, follows later settings changes, saves pending edits when the
+ * window goes away, and reconciles with the backend once; returns the uninstaller.
+ */
 export function bootstrapAppearance(): () => void {
-  applyAppearance(useAppearancePrefs.getState());
-  return useAppearancePrefs.subscribe((state) => applyAppearance(state));
+  applyAppearance(useSettings.getState().settings.appearance);
+  const unsubscribe = useSettings.subscribe((state, prev) => {
+    if (state.settings.appearance !== prev.settings.appearance) {
+      applyAppearance(state.settings.appearance);
+    }
+  });
+  const uninstallFlush = installFlushOnPagehide();
+  void useSettings.getState().reconcile();
+  return () => {
+    unsubscribe();
+    uninstallFlush();
+  };
 }

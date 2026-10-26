@@ -1,0 +1,38 @@
+{
+  "git": {
+    "executable": null
+  },
+  "clone": {
+    "defaultDir": null,
+    "urlForm": "https"
+  },
+  "tools": {
+    "editor": null,
+    "diffTool": null,
+    "mergeTool": null
+  },
+  "appearance": {
+    "theme": "system",
+    "diffFontFamily": null,
+    "diffFontSize": 13
+  },
+  "diff": {
+    "mode": "split",
+    "ignoreWhitespace": false
+  },
+  "layout": {
+    "refsWidth": 240,
+    "sidebarWidth": 320,
+    "tagsCollapsed": true,
+    "pullRequestsCollapsed": false,
+    "issuesCollapsed": true
+  },
+  "updates": {
+    "checkOnStartup": true
+  },
+  "window": {
+    "width": 1280,
+    "height": 800,
+    "maximized": false
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { checkForUpdate, openExternal } from "../lib/ipc";
-import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdatePrefs } from "../lib/store/updatePrefs";
+import { useSettings } from "../lib/store/settings";
+import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdateState } from "../lib/store/updateState";
 import { useToasts } from "../lib/store/toasts";
 
 /**
@@ -12,7 +13,8 @@ import { useToasts } from "../lib/store/toasts";
  */
 export function useUpdateCheck(): void {
   useEffect(() => {
-    const { checkOnStartup, lastCheckedAt } = useUpdatePrefs.getState();
+    const { checkOnStartup } = useSettings.getState().settings.updates;
+    const { lastCheckedAt } = useUpdateState.getState();
     if (!checkOnStartup) return;
     if (lastCheckedAt !== null && Date.now() - lastCheckedAt < CHECK_INTERVAL_MS) return;
 
@@ -26,7 +28,7 @@ export function useUpdateCheck(): void {
 async function runStartupCheck(): Promise<void> {
   try {
     const info = await checkForUpdate();
-    useUpdatePrefs.getState().markChecked(Date.now());
+    useUpdateState.getState().markChecked(Date.now());
     if (info.available) {
       const url = info.url;
       useToasts.getState().notify({
@@ -38,6 +40,6 @@ async function runStartupCheck(): Promise<void> {
     }
   } catch {
     // Failures are silent; still mark checked so we do not retry within the day.
-    useUpdatePrefs.getState().markChecked(Date.now());
+    useUpdateState.getState().markChecked(Date.now());
   }
 }

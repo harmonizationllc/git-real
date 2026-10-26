@@ -2,6 +2,7 @@ pub mod commands;
 pub mod error;
 pub mod events;
 pub mod hosting_store;
+pub mod main_window;
 pub mod recent_store;
 pub mod settings_store;
 pub mod state;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 
 use git_real_core::hosting::Transport;
 use git_real_core::hosting::ureq_transport::UreqTransport;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 use crate::hosting_store::{HostingStore, KeyringTokenStore};
 use crate::recent_store::RecentStore;
@@ -37,8 +38,19 @@ pub fn run() {
             )));
             let settings = Arc::new(SettingsStore::load(dir.join("settings.json")));
             settings.apply_git_override();
-            app.manage(settings);
+            app.manage(settings.clone());
+            main_window::build(app.handle(), &settings)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Only the main window's geometry is stored.
+            if let WindowEvent::CloseRequested { .. } = event
+                && window.label() == main_window::LABEL
+                && let Some(webview) = window.app_handle().get_webview_window(window.label())
+            {
+                let store = window.state::<Arc<SettingsStore>>();
+                main_window::on_close_requested(&webview, &store);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::repo::open_repo,
@@ -50,6 +62,9 @@ pub fn run() {
             commands::repo::check_git_cli,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::reveal_settings_file,
+            commands::settings::check_settings_health,
+            commands::settings::settings_file_path,
             commands::update::check_for_update,
             commands::tools::open_in_editor,
             commands::tools::open_external_diff,

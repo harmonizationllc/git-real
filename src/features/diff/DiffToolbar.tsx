@@ -1,6 +1,6 @@
 import { useId, useMemo } from "react";
 import type { FileDiff } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/store/diffPrefs";
+import type { DiffMode } from "../../lib/ipc";
 import { encodingNotice } from "./model/encoding";
 import { totalLines } from "./model/limits";
 import styles from "./DiffToolbar.module.css";

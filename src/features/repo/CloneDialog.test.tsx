@@ -4,15 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkGitCli,
   cloneRepo,
-  getSettings,
   hostingListAccounts,
   hostingListMyRepos,
   listRecent,
   onCloneProgress,
   pickFolder,
 } from "../../lib/ipc";
-import type { OpenedRepo, Progress, Settings, UnlistenFn } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
+import type { OpenedRepo, Progress, UnlistenFn } from "../../lib/ipc";
+import { setCloneUrlForm } from "../../lib/store/settingsActions";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { hostedRepo, hostedRepoPage, hostingAccount } from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -20,9 +20,9 @@ import { CloneDialog } from "./CloneDialog";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   checkGitCli: vi.fn(),
   cloneRepo: vi.fn(),
-  getSettings: vi.fn(),
   onCloneProgress: vi.fn(),
   pickFolder: vi.fn(),
   listRecent: vi.fn(),
@@ -50,8 +50,9 @@ const cloneFailed = { kind: "cloneFailed", message: "fatal: repository not found
 let push: (p: Progress) => void;
 let unlisten: ReturnType<typeof vi.fn>;
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   vi.restoreAllMocks();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   unlisten = vi.fn();
@@ -61,19 +62,12 @@ beforeEach(() => {
     version: "2.43.0",
     error: null,
   });
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  } satisfies Settings);
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
   vi.mocked(hostingListMyRepos).mockResolvedValue(hostedRepoPage([hostedRepo()]));
   localStorage.clear();
-  useLayoutPrefs.setState({ cloneUrlForm: "https" });
+  await seedSettings({ clone: { urlForm: "https" } });
   vi.mocked(onCloneProgress).mockImplementation(async (_id, handler) => {
     push = handler;
     return unlisten as unknown as UnlistenFn;
@@ -780,7 +774,7 @@ describe("CloneDialog repository pick", () => {
   });
 
   it("should fill the field with the SSH URL when SSH is preferred", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await pickFirst();
     expect(urlField()).toHaveValue("git@github.com:octo/git-real.git");
   });
@@ -830,7 +824,7 @@ describe("CloneDialog repository pick", () => {
 
   // Review Focus 3: SSH chosen for a repository with no SSH URL.
   it("should fall back to HTTPS with a hint when the repository has no SSH URL", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await pickFirst(hostedRepo({ sshUrl: null }));
     expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
     expect(screen.getByText(HINT)).toBeInTheDocument();
@@ -838,7 +832,7 @@ describe("CloneDialog repository pick", () => {
 
   // Review M4: the hint appears after the pick, so it must be announced.
   it("should announce the fallback hint as a status", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await pickFirst(hostedRepo({ sshUrl: null }));
     expect(screen.getByRole("status")).toHaveTextContent(HINT);
   });
@@ -894,7 +888,7 @@ describe("CloneDialog repository pick", () => {
     });
 
     it("should fill the very same node that existed on the From account tab when a pick falls back", async () => {
-      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await seedSettings({ clone: { urlForm: "ssh" } });
       const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
       expect(region()).toBe(before);
       expect(before).toHaveTextContent(HINT);
@@ -904,7 +898,7 @@ describe("CloneDialog repository pick", () => {
     });
 
     it("should have no hint text while the From account tab is active", async () => {
-      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await seedSettings({ clone: { urlForm: "ssh" } });
       vi.mocked(hostingListAccounts).mockResolvedValue([hostingAccount()]);
       const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
       await user.click(await screen.findByRole("tab", { name: "From account" }));
@@ -913,22 +907,22 @@ describe("CloneDialog repository pick", () => {
     });
 
     it("should empty the same status element, not remount it, when HTTPS is chosen again", async () => {
-      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await seedSettings({ clone: { urlForm: "ssh" } });
       const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
-      act(() => useLayoutPrefs.getState().setCloneUrlForm("https"));
+      act(() => setCloneUrlForm("https"));
       expect(region()).toBe(before);
       expect(before).toBeEmptyDOMElement();
     });
 
     it("should fill the same status element, not remount it, when SSH is chosen later", async () => {
       const { before } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
-      act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+      act(() => setCloneUrlForm("ssh"));
       expect(region()).toBe(before);
       expect(before).toHaveTextContent(HINT);
     });
 
     it("should empty the status region once the user types in the field", async () => {
-      useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+      await seedSettings({ clone: { urlForm: "ssh" } });
       const { user } = await pickFromAccountTab(hostedRepo({ sshUrl: null }));
       await user.type(urlField(), "x");
       expect(region()).toBeEmptyDOMElement();
@@ -936,7 +930,7 @@ describe("CloneDialog repository pick", () => {
   });
 
   it("should show no hint for SSH when the repository has an SSH URL", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await pickFirst();
     expect(screen.queryByText(HINT)).not.toBeInTheDocument();
   });
@@ -948,20 +942,20 @@ describe("CloneDialog repository pick", () => {
 
   it("should re-fill the field with the SSH URL when the preference changes to SSH", async () => {
     await pickFirst();
-    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    act(() => setCloneUrlForm("ssh"));
     expect(urlField()).toHaveValue("git@github.com:octo/git-real.git");
   });
 
   it("should re-fill the field with the HTTPS URL when the preference changes back", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     await pickFirst();
-    act(() => useLayoutPrefs.getState().setCloneUrlForm("https"));
+    act(() => setCloneUrlForm("https"));
     expect(urlField()).toHaveValue("https://github.com/octo/git-real.git");
   });
 
   it("should show the hint after the preference changes to SSH for a repository without one", async () => {
     await pickFirst(hostedRepo({ sshUrl: null }));
-    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    act(() => setCloneUrlForm("ssh"));
     expect(screen.getByText(HINT)).toBeInTheDocument();
   });
 
@@ -976,12 +970,12 @@ describe("CloneDialog repository pick", () => {
   it("should not re-fill once the user has typed in the field", async () => {
     const { user } = await pickFirst();
     await user.type(urlField(), "x");
-    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    act(() => setCloneUrlForm("ssh"));
     expect(urlField()).toHaveValue("https://github.com/octo/git-real.gitx");
   });
 
   it("should drop the hint once the user has typed in the field", async () => {
-    useLayoutPrefs.setState({ cloneUrlForm: "ssh" });
+    await seedSettings({ clone: { urlForm: "ssh" } });
     const { user } = await pickFirst(hostedRepo({ sshUrl: null }));
     await user.type(urlField(), "x");
     expect(screen.queryByText(HINT)).not.toBeInTheDocument();
@@ -990,7 +984,7 @@ describe("CloneDialog repository pick", () => {
   it("should not touch a typed URL when the preference changes without a pick", async () => {
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await user.type(await screen.findByLabelText("Repository URL"), URL_A);
-    act(() => useLayoutPrefs.getState().setCloneUrlForm("ssh"));
+    act(() => setCloneUrlForm("ssh"));
     expect(urlField()).toHaveValue(URL_A);
   });
 
@@ -1352,14 +1346,8 @@ describe("CloneDialog Escape in the repository search", () => {
 
 // Task 15: CloneDialog seeds the destination from defaultCloneDir.
 describe("CloneDialog default clone directory (GR-14)", () => {
-  it("seeds the destination from defaultCloneDir when settings load", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: "/home/u/projects",
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+  it("seeds the destination from settings.clone.defaultDir", async () => {
+    await seedSettings({ clone: { defaultDir: "/home/u/projects" } });
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     // After the settings query resolves, the destination field should start with the default dir.
     await user.type(await screen.findByLabelText("Repository URL"), URL_A);
@@ -1369,42 +1357,21 @@ describe("CloneDialog default clone directory (GR-14)", () => {
     });
   });
 
-  it("does not overwrite a folder the user picked when settings load later", async () => {
-    // Settings loads after the user has already picked a folder.
-    let resolveSettings!: (s: Settings) => void;
-    vi.mocked(getSettings).mockImplementation(
-      () =>
-        new Promise<Settings>((res) => {
-          resolveSettings = res;
-        }),
-    );
+  it("does not overwrite a folder the user picked when the default changes later", async () => {
+    // A default clone directory is saved after the user has already picked a folder.
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await user.type(await screen.findByLabelText("Repository URL"), URL_A);
     await user.click(screen.getByRole("button", { name: "Choose folder" }));
     await screen.findByText("Destination: /home/u/src/b");
     // Now settings arrive with a different default.
-    act(() =>
-      resolveSettings({
-        defaultCloneDir: "/other/dir",
-        gitExecutable: null,
-        externalEditor: null,
-        externalDiffTool: null,
-        externalMergeTool: null,
-      }),
-    );
+    await act(() => seedSettings({ clone: { defaultDir: "/other/dir" } }));
     await act(() => new Promise((r) => setTimeout(r, 0)));
     // The user's picked folder must not be overwritten.
     expect(screen.getByText("Destination: /home/u/src/b")).toBeInTheDocument();
   });
 
   it("passes the current directory as defaultPath to the picker", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: "/home/u/projects",
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ clone: { defaultDir: "/home/u/projects" } });
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await screen.findByLabelText("Repository URL");
     await act(() => new Promise((r) => setTimeout(r, 0)));
@@ -1418,13 +1385,7 @@ describe("CloneDialog default clone directory (GR-14)", () => {
   // (seeded from defaultCloneDir) was not covered.
   it("a cancelled picker leaves a set parentDir unchanged", async () => {
     const DIR = "/home/u/projects";
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: DIR,
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ clone: { defaultDir: DIR } });
     // The picker resolves null (user cancelled).
     vi.mocked(pickFolder).mockResolvedValue(null);
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);

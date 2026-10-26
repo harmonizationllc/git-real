@@ -1,5 +1,5 @@
 import type { HostedRepo } from "../../lib/ipc";
-import type { CloneUrlForm } from "../../lib/store/layoutPrefs";
+import type { CloneUrlForm } from "../../lib/ipc";
 
 /** The URL in the preferred form, and whether it fell back to HTTPS because the repo has no SSH URL. */
 export function cloneUrlFor(

@@ -70,27 +70,71 @@ fn locate_prefers_the_configured_path_when_it_is_a_file() {
     assert_eq!(result.unwrap(), fake);
 }
 
+/// Restores `PATH` on drop so a panicking test cannot leak its value.
+struct RestorePath(Option<std::ffi::OsString>);
+
+impl RestorePath {
+    /// Sets `PATH` to `value`, remembering the previous value.
+    fn set(value: &std::path::Path) -> Self {
+        let saved = std::env::var_os("PATH");
+        // SAFETY: callers hold `TEST_LOCK`, and every test in this binary that
+        // reads or writes the environment does too.
+        unsafe { std::env::set_var("PATH", value) };
+        Self(saved)
+    }
+}
+
+impl Drop for RestorePath {
+    fn drop(&mut self) {
+        // SAFETY: see `RestorePath::set`.
+        unsafe {
+            match &self.0 {
+                Some(v) => std::env::set_var("PATH", v),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+}
+
 #[test]
-fn locate_fails_with_the_configured_path_in_the_message_when_it_is_gone() {
+fn locate_falls_back_to_path_when_the_configured_file_is_gone() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _reset = ResetConfigured;
 
-    let missing = PathBuf::from("/nonexistent/path/to/git-9999");
-    set_configured_path(Some(missing.clone()));
+    let dir = tempfile::tempdir().unwrap();
+    let fake = fake_git_script(dir.path());
+    let _path = RestorePath::set(dir.path());
+    set_configured_path(Some(PathBuf::from("/nonexistent/path/to/git-9999")));
 
-    let err = locate().unwrap_err();
-    assert!(
-        matches!(&err, GitError::GitCliConfiguredMissing(p) if p == &missing),
-        "expected GitCliConfiguredMissing({:?}), got {:?}",
-        missing,
-        err
-    );
-    assert!(
-        err.to_string()
-            .starts_with("Configured Git executable not found: "),
-        "unexpected message: {}",
-        err
-    );
+    assert_eq!(locate().unwrap(), fake);
+}
+
+#[test]
+fn locate_fails_with_git_cli_missing_when_configured_is_gone_and_path_has_no_git() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let empty = tempfile::tempdir().unwrap();
+    let _path = RestorePath::set(empty.path());
+    set_configured_path(Some(PathBuf::from("/nonexistent/path/to/git-9999")));
+
+    assert!(matches!(locate(), Err(GitError::GitCliMissing)));
+}
+
+#[test]
+fn locate_returns_a_configured_regular_file_even_when_it_is_not_git() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let nongit = non_git_script(dir.path());
+    set_configured_path(Some(nongit.clone()));
+
+    assert_eq!(locate().unwrap(), nongit);
+    assert!(matches!(
+        verify(&nongit),
+        Err(GitError::GitCliInvalid { .. })
+    ));
 }
 
 #[test]
@@ -116,8 +160,8 @@ fn locate_falls_back_to_path_when_unset() {
     set_configured_path(None);
     assert_eq!(configured_path(), None);
 
-    // locate() should not panic or return GitCliConfiguredMissing; it may Ok or Err(GitCliMissing)
-    // depending on whether git is on PATH, but it must not return ConfiguredMissing.
+    // With nothing configured, locate() searches PATH: it is Ok or
+    // Err(GitCliMissing) depending on whether git is installed, never another error.
     match locate() {
         Ok(_) => {}
         Err(GitError::GitCliMissing) => {}

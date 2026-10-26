@@ -10,7 +10,7 @@ import {
   maxWidth,
 } from "./layout";
 import * as layoutModule from "./layout";
-import * as storeDefaults from "../lib/store/layoutPrefs";
+import * as storeDefaults from "../lib/store/settings";
 
 // Contract: the layout constants are pinned by the spec.
 describe("layout constants", () => {

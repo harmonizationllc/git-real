@@ -33,23 +33,15 @@ impl Drop for ResetConfigured {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Creates a fake git that records argv in `$PWD/argv.txt`, plus optional
-/// behaviour via `$PWD/behaviour`.
+/// The body of a fake git (see `common::fake_git_script`) that records argv
+/// in `$PWD/argv.txt`, plus optional behaviour via `$PWD/behaviour`.
 const ARGV_SCRIPT: &str = "printf '%s\\n' \"$@\" > \"$PWD/argv.txt\"\n[ -f \"$PWD/behaviour\" ] && . \"$PWD/behaviour\"\nexit 0";
-
-fn fake_git_path(dir: &Path) -> PathBuf {
-    let path = dir.join("git");
-    let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{ARGV_SCRIPT}\n");
-    fs::write(&path, &body).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    path
-}
 
 /// A `SettingsStore` backed by a temp file, with an external editor pre-set.
 fn store_with_editor(path: PathBuf, editor: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalEditor":"{editor}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"editor":"{editor}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
@@ -57,7 +49,7 @@ fn store_with_editor(path: PathBuf, editor: &str) -> SettingsStore {
 fn store_with_diff_tool(path: PathBuf, cmd: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalDiffTool":"{cmd}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"diffTool":"{cmd}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
@@ -65,7 +57,7 @@ fn store_with_diff_tool(path: PathBuf, cmd: &str) -> SettingsStore {
 fn store_with_merge_tool(path: PathBuf, cmd: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalMergeTool":"{cmd}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"mergeTool":"{cmd}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
@@ -102,7 +94,7 @@ fn open_external_diff_runs_difftool_for_the_selected_scope() {
     let _reset = ResetConfigured;
 
     let git_dir = tempfile::tempdir().unwrap();
-    let git = fake_git_path(git_dir.path());
+    let git = common::fake_git_script(git_dir.path(), ARGV_SCRIPT);
     set_configured_path(Some(git.clone()));
 
     let (_repo_dir, repo_path) = common::temp_repo_with_commit();
@@ -133,7 +125,7 @@ fn open_external_diff_for_a_root_commit_uses_the_empty_tree() {
     let _reset = ResetConfigured;
 
     let git_dir = tempfile::tempdir().unwrap();
-    let git = fake_git_path(git_dir.path());
+    let git = common::fake_git_script(git_dir.path(), ARGV_SCRIPT);
     set_configured_path(Some(git.clone()));
 
     let (_repo_dir, repo_path) = common::temp_repo_with_commit();

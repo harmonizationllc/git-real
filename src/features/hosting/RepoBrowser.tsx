@@ -1,8 +1,9 @@
 import { useEffect, useId, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { HostedRepo } from "../../lib/ipc";
-import { useLayoutPrefs } from "../../lib/store/layoutPrefs";
-import type { CloneUrlForm } from "../../lib/store/layoutPrefs";
+import type { CloneUrlForm } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
+import { setCloneUrlForm } from "../../lib/store/settingsActions";
 import { fullDate, relativeTime } from "../graph/model/relativeTime";
 import { useNow } from "../graph/useNow";
 import { NetworkError } from "../remotes/NetworkError";
@@ -50,8 +51,7 @@ export function RepoBrowser({
   const account = accounts?.find((a) => a.id === selectedAccountId) ?? accounts?.[0] ?? null;
   const usable = account !== null && !account.needsReconnect;
   const list = useMyRepos(account?.id ?? null, debounced, usable);
-  const form = useLayoutPrefs((s) => s.cloneUrlForm);
-  const setForm = useLayoutPrefs((s) => s.setCloneUrlForm);
+  const form = useSettings((s) => s.settings.clone.urlForm);
   const now = useNow();
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export function RepoBrowser({
                   value={value}
                   checked={form === value}
                   disabled={disabled}
-                  onChange={() => setForm(value)}
+                  onChange={() => setCloneUrlForm(value)}
                 />{" "}
                 {label}
               </label>

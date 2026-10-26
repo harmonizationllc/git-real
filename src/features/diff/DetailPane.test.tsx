@@ -4,12 +4,13 @@ import {
   applyHunk,
   getFileContent,
   getFileDiff,
-  getSettings,
   getStatus,
   openInEditor,
+  updateSettings,
 } from "../../lib/ipc";
-import type { AppError, FileDiff, Settings, StatusEntry } from "../../lib/ipc";
-import { useDiffPrefs } from "../../lib/store/diffPrefs";
+import type { AppError, FileDiff, StatusEntry } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
 import type { DiffScope } from "../../lib/ipc";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
@@ -20,11 +21,11 @@ import { FULL_DIFF_LINES } from "./model/limits";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   getFileDiff: vi.fn(),
   getFileContent: vi.fn(),
   applyHunk: vi.fn(),
   getStatus: vi.fn(),
-  getSettings: vi.fn(),
   openInEditor: vi.fn(),
 }));
 const conflictEditorMounts = vi.hoisted(() => ({ count: 0 }));
@@ -70,9 +71,10 @@ const diffRegion = () => screen.findByRole("region", { name: "Diff" });
 const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:1");
 const revokeObjectURL = vi.fn<(url: string) => void>();
 
-beforeEach(() => {
+beforeEach(async () => {
   conflictEditorMounts.count = 0;
   vi.resetAllMocks();
+  await resetSettings();
   createObjectURL.mockImplementation(() => "blob:1");
   Object.defineProperty(URL, "createObjectURL", {
     value: createObjectURL,
@@ -85,18 +87,11 @@ beforeEach(() => {
     writable: true,
   });
   useWorkspace.setState({ selected: {}, centreView: {}, historyPath: {} });
-  useDiffPrefs.setState({ mode: "split", ignoreWhitespace: false });
+  await seedSettings({ diff: { mode: "split", ignoreWhitespace: false } });
   vi.mocked(getFileDiff).mockImplementation((_id, path) => Promise.resolve(textDiff({ path })));
   vi.mocked(getFileContent).mockResolvedValue(new ArrayBuffer(2));
   vi.mocked(applyHunk).mockResolvedValue(undefined);
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  } satisfies Settings);
   vi.mocked(openInEditor).mockResolvedValue(undefined);
 });
 
@@ -179,7 +174,7 @@ describe("DetailPane no changes", () => {
   });
 
   it("should offer to turn off whitespace hiding when it is on", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockRejectedValue(noChanges);
     setup();
     await screen.findByText("No unstaged changes in a.ts");
@@ -187,16 +182,16 @@ describe("DetailPane no changes", () => {
   });
 
   it("should turn whitespace hiding off from the empty state", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockRejectedValue(noChanges);
     setup();
     await screen.findByText("No unstaged changes in a.ts");
     fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
-    expect(useDiffPrefs.getState().ignoreWhitespace).toBe(false);
+    expect(useSettings.getState().settings.diff.ignoreWhitespace).toBe(false);
   });
 
   it("should refetch without ignoreWhitespace after turning it off from the empty state", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockRejectedValue(noChanges);
     setup();
     await screen.findByText("No unstaged changes in a.ts");
@@ -373,7 +368,7 @@ describe("DetailPane disabled hunk actions", () => {
   });
 
   it("should disable every hunk button with the whitespace reason when whitespace is hidden", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     setup();
     await diffRegion();
     const buttons = screen.getAllByRole("button", { name: /hunk/ });
@@ -385,7 +380,7 @@ describe("DetailPane disabled hunk actions", () => {
   });
 
   it("should fetch with ignoreWhitespace true when the whitespace preference is on", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     setup();
     await diffRegion();
     expect(getFileDiff).toHaveBeenCalledWith(REPO, "a.ts", "unstaged", true, undefined);
@@ -765,7 +760,7 @@ describe("DetailPane view mode", () => {
   });
 
   it("should render empty cells again after switching back to side by side", async () => {
-    useDiffPrefs.setState({ mode: "unified" });
+    await seedSettings({ diff: { mode: "unified" } });
     const { container } = setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("radio", { name: "Side by side" }));
@@ -785,7 +780,20 @@ describe("DetailPane view mode", () => {
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
-    expect(useDiffPrefs.getState().mode).toBe("unified");
+    expect(useSettings.getState().settings.diff.mode).toBe("unified");
+  });
+
+  it("sends the mode change to the backend once the save delay passes", async () => {
+    setup();
+    await diffRegion();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ diff: { mode: "unified" } });
   });
 
   it("should not refetch the diff when the mode changes", async () => {
@@ -803,7 +811,7 @@ describe("DetailPane disabled reason text", () => {
     "Hunk actions are unavailable for files decoded from UTF-16 or UTF-32; stage or discard the whole file from the Changes panel";
 
   it("should give every hunk button the exact whitespace reason", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     setup();
     await diffRegion();
     for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
@@ -823,7 +831,7 @@ describe("DetailPane disabled reason text", () => {
   });
 
   it("should prefer the whitespace reason over the decoded reason", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockResolvedValue(
       textDiff({ oldEncoding: "utf16Le", newEncoding: "utf16Le" }),
     );
@@ -847,7 +855,7 @@ describe("DetailPane disabled reason text", () => {
   });
 
   it("should re-enable the hunk buttons when the box is unticked again", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
@@ -869,7 +877,7 @@ describe("DetailPane disabled reason text", () => {
   });
 
   it("should not apply an action through a button disabled for whitespace", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
@@ -1141,7 +1149,7 @@ describe("DetailPane Close diff edges", () => {
   });
 
   it("should keep the whitespace control next to Close diff in the no-changes state", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "no changes" });
     setup();
     await screen.findByText("No unstaged changes in a.ts");
@@ -1288,13 +1296,7 @@ describe("DetailPane file header", () => {
 
   // R18: DetailPane passes its repoId to FileHeader so Open in editor sends the correct id.
   it("passes repoId to the header so Open in editor includes the repo id", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: null,
-      gitExecutable: null,
-      externalEditor: "code",
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ tools: { editor: "code" } });
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));
@@ -1571,11 +1573,11 @@ describe("DetailPane commit scope states", () => {
   });
 
   it("should show the whitespace control in the commit no-changes state when hiding whitespace", async () => {
-    useDiffPrefs.setState({ ignoreWhitespace: true });
+    await seedSettings({ diff: { ignoreWhitespace: true } });
     vi.mocked(getFileDiff).mockRejectedValue({ kind: "noChanges", message: "none" });
     commitSetup();
     fireEvent.click(await screen.findByRole("checkbox", { name: "Hide whitespace changes" }));
-    expect(useDiffPrefs.getState().ignoreWhitespace).toBe(false);
+    expect(useSettings.getState().settings.diff.ignoreWhitespace).toBe(false);
   });
 
   it("should show the header and the placeholder for a binary file in a commit", async () => {

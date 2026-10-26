@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
-import { useDiffPrefs } from "../../lib/store/diffPrefs";
+import { useSettings } from "../../lib/store/settings";
+import { setDiffMode, setIgnoreWhitespace } from "../../lib/store/settingsActions";
 import { useWorkspace, type SelectedFile } from "../../lib/store/workspace";
 import { BlameView } from "../history/BlameView";
 import { ConflictEditor } from "../merge/editor/ConflictEditor";
@@ -58,7 +59,8 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
   const view = blameable ? storedView : "diff";
   const setView = useWorkspace((s) => s.setCentreView);
   const showHistory = useWorkspace((s) => s.showHistory);
-  const { mode, ignoreWhitespace, setMode, setIgnoreWhitespace } = useDiffPrefs();
+  const mode = useSettings((s) => s.settings.diff.mode);
+  const ignoreWhitespace = useSettings((s) => s.settings.diff.ignoreWhitespace);
   const [maxLines, setMaxLines] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   // Blame needs no diff; a null file disables the query.
@@ -171,7 +173,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
         diff={diff}
         mode={mode}
         ignoreWhitespace={ignoreWhitespace}
-        onModeChange={setMode}
+        onModeChange={setDiffMode}
         onIgnoreWhitespaceChange={setIgnoreWhitespace}
         onLoadFull={() => setMaxLines(FULL_DIFF_LINES)}
       />

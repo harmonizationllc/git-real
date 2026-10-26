@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getFileDiff } from "../../lib/ipc";
-import { useDiffPrefs } from "../../lib/store/diffPrefs";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -12,6 +12,7 @@ import { DetailPane } from "./DetailPane";
 // (which needs layout) are faked.
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   getFileDiff: vi.fn(),
 }));
 vi.mock("@tanstack/react-virtual", () => import("../../test/mockVirtualizer"));
@@ -31,10 +32,11 @@ const setup = (path: string) => {
 
 const tokens = (container: HTMLElement) => container.querySelectorAll("[class*='tok-']");
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   useWorkspace.setState({ selected: {} });
-  useDiffPrefs.setState({ mode: "split", ignoreWhitespace: false });
+  await seedSettings({ diff: { mode: "split", ignoreWhitespace: false } });
 });
 
 // Contract: a diff of a known language ends up with syntax token classes in the viewer.

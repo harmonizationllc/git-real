@@ -113,7 +113,20 @@ pub fn check_git_cli_inner() -> GitCliInfo {
         Some(path) => git_cli::verify(path),
         None => Err(GitError::GitCliMissing),
     };
-    GitCliInfo::from_probe(located, version)
+    let mut info = GitCliInfo::from_probe(located.clone(), version);
+    // A configured path that is gone falls back to PATH; say so, unless the PATH Git is
+    // itself unusable, in which case the probe's own error is the useful one.
+    if let (Some(configured), Some(effective)) = (git_cli::configured_path(), located)
+        && info.available
+        && configured != effective
+    {
+        info.error = Some(format!(
+            "Configured Git executable not found: {}; using {}",
+            configured.display(),
+            effective.display()
+        ));
+    }
+    info
 }
 
 /// Starts a watcher emitting [`REPO_CHANGED`] for `id`, unless one already runs.

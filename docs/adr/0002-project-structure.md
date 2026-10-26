@@ -84,7 +84,7 @@ src/
     stash/          # stash/tags (GR-11)
     remotes/        # (GR-12)
     hosting/        # github/gitlab/bitbucket (GR-13)
-    settings/       # (GR-14)
+    settings/       # one Rust-owned `settings.json`, no front-end feature folder (ADR 0005)
   lib/
     ipc/
       commands.ts   # typed invoke wrappers — the ONLY place that imports @tauri-apps/api/core
@@ -121,7 +121,7 @@ git-real/
 - `git init` — done.
 - `Cargo.toml`: real `description`, `authors` (23158200+harmonizationllc@users.noreply.github.com), add `license`, `repository`.
 - `index.html` `<title>` and window `title`: "Git Real" not "Tauri + React + Typescript".
-- Window: default ~1280x800, set `minWidth`/`minHeight`, `resizable: true`. 800x600 is too small for a git client.
+- Window: default ~1280x800 with a 960x600 minimum. The main window is now built in Rust (`src-tauri/src/main_window.rs`), not declared in `tauri.conf.json` (ADR 0005). 800x600 is too small for a git client.
 - Add `@types/node` to devDeps and drop the `@ts-expect-error` hack in `vite.config.ts`.
 - Remove the demo `greet` command and the logo/greet `App.tsx` body — the first real task replaces them.
 - `bundle.targets`: scope to Linux (`["deb", "rpm", "appimage"]`) for the primary target rather than `"all"`, which tries mac/windows bundles. Revisit in GR-15.

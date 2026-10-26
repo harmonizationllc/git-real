@@ -35,7 +35,8 @@ import type { BranchList } from "../lib/ipc";
 import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
-import { useLayoutPrefs } from "../lib/store/layoutPrefs";
+import { useSettings } from "../lib/store/settings";
+import { resetSettings, seedSettings } from "../test/settingsStore";
 import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
@@ -76,6 +77,7 @@ vi.mock("../features/merge/OperationBanner", async () => {
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
+  updateSettings: vi.fn(),
   commit: vi.fn(),
   fetchAll: vi.fn(),
   getCommit: vi.fn(),
@@ -140,16 +142,14 @@ class StubResizeObserver {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   StubResizeObserver.instances = [];
   bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
-  useLayoutPrefs.setState({
-    refsWidth: 240,
-    sidebarWidth: 320,
-    tagsCollapsed: true,
-    issuesCollapsed: true,
+  await seedSettings({
+    layout: { refsWidth: 240, sidebarWidth: 320, tagsCollapsed: true, issuesCollapsed: true },
   });
   vi.mocked(listBranches).mockResolvedValue(branchList());
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
@@ -514,7 +514,7 @@ describe("RepoPane grid template", () => {
   });
 
   it("should follow widths changed in the store", async () => {
-    useLayoutPrefs.setState({ refsWidth: 200, sidebarWidth: 280 });
+    await seedSettings({ layout: { refsWidth: 200, sidebarWidth: 280 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     expect(body().style.gridTemplateColumns).toBe("200px auto 1fr auto 280px");
@@ -538,7 +538,7 @@ describe("RepoPane grid template", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(872));
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(320);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(320);
   });
 
   it("should give the handles the clamped value and maximum", async () => {
@@ -565,27 +565,27 @@ describe("RepoPane grid template", () => {
   });
 });
 
-// Contract: handles persist to layoutPrefs and reset to the defaults.
+// Contract: handles persist to the settings store and reset to the defaults.
 describe("RepoPane handles", () => {
-  it("should persist a keyboard resize of the branches column to layoutPrefs", async () => {
+  it("should persist a keyboard resize of the branches column to the settings store", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowRight" });
-    expect(useLayoutPrefs.getState().refsWidth).toBe(256);
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(256);
   });
 
   it("should leave the sidebar width alone when the branches column is resized", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowRight" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(320);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(320);
   });
 
-  it("should persist a keyboard resize of the changes column to layoutPrefs", async () => {
+  it("should persist a keyboard resize of the changes column to the settings store", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowLeft" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(336);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(336);
   });
 
   it("should update the grid template after a resize", async () => {
@@ -596,27 +596,27 @@ describe("RepoPane handles", () => {
   });
 
   it("should reset the branches column on double-click", async () => {
-    useLayoutPrefs.setState({ refsWidth: 300 });
+    await seedSettings({ layout: { refsWidth: 300 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.doubleClick(handle("Resize branches column"));
-    expect(useLayoutPrefs.getState().refsWidth).toBe(240);
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(240);
   });
 
   it("should reset the changes column on double-click", async () => {
-    useLayoutPrefs.setState({ sidebarWidth: 400 });
+    await seedSettings({ layout: { sidebarWidth: 400 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.doubleClick(handle("Resize changes column"));
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(320);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(320);
   });
 
   it("should not reset the other column on double-click", async () => {
-    useLayoutPrefs.setState({ refsWidth: 300, sidebarWidth: 400 });
+    await seedSettings({ layout: { refsWidth: 300, sidebarWidth: 400 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.doubleClick(handle("Resize branches column"));
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(400);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(400);
   });
 });
 
@@ -655,7 +655,7 @@ describe("RepoPane resize observer", () => {
 // Contract: stored widths below the minimums display clamped once the container is measured.
 describe("RepoPane minimum widths", () => {
   it("should display the minimums after an observation when the stored widths are smaller", async () => {
-    useLayoutPrefs.setState({ refsWidth: 100, sidebarWidth: 100 });
+    await seedSettings({ layout: { refsWidth: 100, sidebarWidth: 100 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(2000));
@@ -665,12 +665,12 @@ describe("RepoPane minimum widths", () => {
   });
 
   it("should leave the stored widths untouched while displaying the minimums", async () => {
-    useLayoutPrefs.setState({ refsWidth: 100, sidebarWidth: 100 });
+    await seedSettings({ layout: { refsWidth: 100, sidebarWidth: 100 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(2000));
-    expect(useLayoutPrefs.getState().refsWidth).toBe(100);
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(100);
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(100);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(100);
   });
 });
 
@@ -692,7 +692,7 @@ describe("RepoPane handle maximums", () => {
   });
 
   it("should grow the branches maximum when the sidebar is narrower", async () => {
-    useLayoutPrefs.setState({ refsWidth: 240, sidebarWidth: 260 });
+    await seedSettings({ layout: { refsWidth: 240, sidebarWidth: 260 } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     act(() => observer().fire(1000));
@@ -709,21 +709,21 @@ describe("RepoPane handle step", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(304);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(304);
   });
 
   it("should widen the changes column by 16 on ArrowLeft", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowLeft" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(336);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(336);
   });
 
   it("should move the branches column left by 16", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowLeft" });
-    expect(useLayoutPrefs.getState().refsWidth).toBe(224);
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(224);
   });
 });
 
@@ -862,14 +862,14 @@ describe("RepoPane handle sides", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize branches column"), { key: "ArrowRight" });
-    expect(useLayoutPrefs.getState().refsWidth).toBe(256);
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(256);
   });
 
   it("should narrow the changes column on ArrowRight", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     fireEvent.keyDown(handle("Resize changes column"), { key: "ArrowRight" });
-    expect(useLayoutPrefs.getState().sidebarWidth).toBe(304);
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(304);
   });
 
   it("should show the narrowed width in the grid template after ArrowRight", async () => {
