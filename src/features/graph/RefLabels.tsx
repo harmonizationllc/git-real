@@ -26,6 +26,7 @@ export function RefLabels({ refs }: RefLabelsProps) {
   const [fit, setFit] = useState<number | null>(null);
   const candidates = refs.slice(0, MAX_LABELS);
   const candidateCount = candidates.length;
+  const total = refs.length;
   // Re-measure when the candidates change, not on every new refs array.
   const candidateKey = candidates.map((l) => `${l.kind}:${l.name}`).join("\n");
 
@@ -45,7 +46,7 @@ export function RefLabels({ refs }: RefLabelsProps) {
       }
       const budget = parent.clientWidth - SUBJECT_RESERVE_PX - CELL_GAP_PX;
       const moreWidth = moreRef.current?.offsetWidth || MORE_PILL_PX;
-      setFit(fitLabels(widths, PILL_GAP_PX, budget, moreWidth));
+      setFit(fitLabels(widths, PILL_GAP_PX, budget, moreWidth, total));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -53,7 +54,7 @@ export function RefLabels({ refs }: RefLabelsProps) {
     return () => ro.disconnect();
     // candidateKey is the trigger; candidateCount follows from it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateKey]);
+  }, [candidateKey, total]);
 
   if (refs.length === 0) return null;
   const shown = Math.min(fit ?? candidateCount, candidateCount);

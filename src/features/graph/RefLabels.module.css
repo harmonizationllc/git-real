@@ -1,5 +1,6 @@
 /* Sized by its pills, which never shrink; RefLabels hides the trailing ones that do not fit. */
 .root {
+  position: relative;
   flex: none;
   display: inline-flex;
   gap: 4px;
