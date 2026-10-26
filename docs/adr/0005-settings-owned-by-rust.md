@@ -32,8 +32,9 @@ carried over.
   already uses the right theme, layout and diff settings.
   It also builds the window hidden, sets the window and webview background from the
   stored theme (desktop scheme via the settings portal for "system") and pre-applies
-  data-theme in the init script before showing it, so the first frame is already in the
-  right theme (GR-19).
+  `data-theme` in the init script before showing it, so the first frame is already in the
+  right theme (GR-19). After launch the page reports desktop colour-scheme changes to
+  Rust so the background keeps following them while the theme is `system`.
 - **No `localStorage` for preferences.** The four persist stores are deleted.
 - **`lastCheckedAt` stays in the browser.** The time of the last update check is
   bookkeeping, not a preference, and writing it to the file would rewrite the file

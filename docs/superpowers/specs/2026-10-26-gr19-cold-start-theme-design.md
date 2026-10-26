@@ -6,7 +6,7 @@ pass-through and theme flash" (Task, relates to GR-14).
 settings are injected before any page script).
 **Status:** open points settled by the owner on 2026-10-26 (§7); plan in
 `docs/superpowers/plans/2026-10-26-gr19-cold-start-theme.md`. Verification
-results are in §1; the fix starts at §2.
+results are in §1; walk results in §8.
 
 ## 1. What the verification found (2026-10-26)
 
@@ -174,15 +174,25 @@ which on GTK happens for a few frames of newly exposed area during a resize.
 If the user switches theme in Settings and later resizes, that sliver would
 be in the launch theme. So the colour follows the theme:
 
-- When a settings patch changes `appearance.theme`, Rust recomputes the
-  colour (asking `window.theme()` again if the new value is `system`) and
-  calls `set_background_color` on the main window.
-- When the stored theme is `system` and Tauri delivers
-  `WindowEvent::ThemeChanged`, Rust does the same.
+- When a settings patch changes `appearance.theme` to `dark` or `light`,
+  `update_settings` recomputes the colour and calls `set_background_color`
+  on the main window directly.
+- While the theme is `system`, the page reports the desktop scheme. In
+  `bootstrapAppearance()` a `matchMedia("(prefers-color-scheme: dark)")`
+  listener calls the `sync_window_background` command with the current
+  `matches` on every change, and a settings switch to `system` calls it once.
+  The command reads the stored theme and, when it is `system`, recolours the
+  window for the scheme the page reported. A recolour failure is only logged.
+  There is no startup sync: `build` already coloured the window from the
+  portal answer at creation, which is fresh at launch.
 
-Where exactly this hangs off the existing settings command and window-event
-plumbing is the builder's choice; it must not block the IPC thread and must
-not write to `settings.json`.
+There is no `WindowEvent::ThemeChanged` handler. On Linux `tao` delivers the
+portal's colour-scheme change to a dummy window id that `tauri-runtime-wry`
+drops, and `window.theme()` returns the answer cached at window creation, so
+neither can see a desktop flip after launch; the page's
+`prefers-color-scheme` does follow it.
+
+Neither path blocks the IPC thread or writes to `settings.json`.
 
 ### 3.4 Documentation
 
@@ -205,6 +215,16 @@ right theme. No new ADR.
 - Front end: an `applyAppearance` test that a pre-set `data-theme` equal to
   the stored theme is left untouched (no attribute removal/re-add), if no
   such test exists.
+- `git-real-core`: the two RGB constants match `--color-bg` in
+  `tokens.css` for `:root`, `:root[data-theme="dark"]` and the dark
+  `prefers-color-scheme` block (a drift test that reads the file).
+- `src-tauri`: `desktop_theme` maps the page's dark flag to
+  `tauri::Theme::Dark` / `Light`.
+- Front end: the `syncWindowBackground` IPC contract (command name,
+  `desktopDark` argument, rejection passes through), and in
+  `bootstrapAppearance()`: a scheme change syncs while on `system`, is
+  ignored on an explicit theme, a switch to `system` syncs once, and the
+  uninstaller removes the media-query listener.
 - Gate as in GR-29 §9: `npm run lint`, `npm run typecheck`, `npm test`,
   `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`,
   coverage unchanged at 100 %.
@@ -233,6 +253,8 @@ Re-run the §1 burst with the fixed release binary:
    check.)
 6. Switch theme in Settings, then resize by mouse: no sliver of the previous
    theme (owner; a visual check).
+7. Flip the desktop colour scheme while on `system`, then resize by mouse: no
+   sliver (owner).
 
 Results are recorded in a §8 of this document, as GR-29 did.
 
@@ -288,24 +310,25 @@ comparison. Window and focus checks used the WebKit remote inspector and the
 `/dev/uinput` keyboard. Stopping the app with `pkill` does not fire
 `CloseRequested`, so nothing here counts as a save-on-close test.
 
-| Step          | Checked                                                               | Observed                                                                                                                                                                                         | Result        |
-| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| 1 dark        | three cold starts, stored `dark`                                      | first mapped frame rgb(30,30,30) in all three (+568, +184, +232 ms); every later frame rgb(30,30,30) then rgb(34,34,34) once the app renders; max mean luminance 34; 0 % light pixels            | pass          |
-| 1 dark        | no white frame (baseline showed rgb(255,255,255) at +254 and +262 ms) | none in 3 runs (201 post-map frames)                                                                                                                                                             | pass          |
-| 2 light       | three cold starts, stored `light`, dark desktop                       | first mapped frame rgb(246,246,246) in all three (+240, +215, +217 ms); then rgb(245,245,245) / rgb(240,240,240); min mean luminance 240; 0 % dark pixels                                        | pass          |
-| 2 light       | no dark frame before the app script (baseline: white → dark → light)  | none in 3 runs (207 post-map frames)                                                                                                                                                             | pass          |
-| 3 system      | three cold starts, stored `system`, desktop dark                      | first mapped frame rgb(30,30,30) in all three (+299, +202, +240 ms); max mean luminance 34; 0 % light pixels; page reports `data-theme` absent, `prefers-color-scheme: dark`, body rgb(30,30,30) | pass          |
-| 4 restore     | hand-edited `window` 1100 × 650, not maximized                        | `innerWidth`/`innerHeight` 1100 × 650; `plugin:window\|is_maximized` → false; `data-theme="dark"`                                                                                                | pass          |
-| 4 restore     | hand-edited `maximized: true`                                         | `is_maximized` → true; viewport 3440 × 1347 on a 3440 × 1440 screen                                                                                                                              | pass          |
-| 4 focus       | keyboard focus on launch (both launches above)                        | `document.hasFocus()` true; a real Ctrl+K through `/dev/uinput` arrived as `Ctrl+KeyK` and opened the Command palette, both at 1100 × 650 and maximized                                          | pass          |
-| 4 resize/quit | resize by mouse, quit, relaunch keeps the size                        | —                                                                                                                                                                                                | left to owner |
-| 5 map time    | median launch → first mapped frame over three cold starts             | dark 232 ms, light 217 ms, system 240 ms (all nine: 232 ms); baseline re-analysed: 254, 262 ms (dark), 268, 340 ms (light); within one 50 ms sample of ~250 ms                                   | pass          |
-| 6 switch      | theme switch in Settings (real Ctrl+, then the radios)                | Light → `data-theme="light"`, body rgb(246,246,246); System → attribute removed, rgb(30,30,30); Dark → `data-theme="dark"`; `settings.json` followed each change (`update_settings` ran)         | pass          |
-| 6 switch      | no `settings: cannot update window background` error                  | app stderr empty after all three switches                                                                                                                                                        | pass          |
-| 6 sliver      | switch theme, then resize by mouse: no previous-theme sliver          | —                                                                                                                                                                                                | left to owner |
+| Step          | Checked                                                                           | Observed                                                                                                                                                                                                                                                    | Result        |
+| ------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 1 dark        | three cold starts, stored `dark`                                                  | first mapped frame rgb(30,30,30) in all three (+568, +184, +232 ms); every later frame rgb(30,30,30) then rgb(34,34,34) once the app renders; max mean luminance 34; 0 % light pixels                                                                       | pass          |
+| 1 dark        | no white frame (baseline showed rgb(255,255,255) at +254 and +262 ms)             | none in 3 runs                                                                                                                                                                                                                                              | pass          |
+| 2 light       | three cold starts, stored `light`, dark desktop                                   | first mapped frame rgb(246,246,246) in all three (+240, +215, +217 ms); then rgb(245,245,245) / rgb(240,240,240); min mean luminance 240; 0 % dark pixels                                                                                                   | pass          |
+| 2 light       | no dark frame before the app script (baseline: white → dark → light)              | none in 3 runs                                                                                                                                                                                                                                              | pass          |
+| 3 system      | three cold starts, stored `system`, desktop dark                                  | first mapped frame rgb(30,30,30) in all three (+299, +202, +240 ms); max mean luminance 34; 0 % light pixels; page reports `data-theme` absent, `prefers-color-scheme: dark`, body rgb(30,30,30)                                                            | pass          |
+| 4 restore     | hand-edited `window` 1100 × 650, not maximized                                    | `innerWidth`/`innerHeight` 1100 × 650; `plugin:window\|is_maximized` → false; `data-theme="dark"`                                                                                                                                                           | pass          |
+| 4 restore     | hand-edited `maximized: true`                                                     | `is_maximized` → true; viewport 3440 × 1347                                                                                                                                                                                                                 | pass          |
+| 4 focus       | keyboard focus on launch (both launches above)                                    | `document.hasFocus()` true; a real Ctrl+K through `/dev/uinput` arrived as `Ctrl+KeyK` and opened the Command palette, both at 1100 × 650 and maximized                                                                                                     | pass          |
+| 4 resize/quit | resize by mouse, quit, relaunch keeps the size                                    | —                                                                                                                                                                                                                                                           | left to owner |
+| 5 map time    | median launch → first mapped frame over three cold starts                         | dark 232 ms, light 217 ms, system 240 ms (all nine: 232 ms); baseline re-analysed: 254, 262 ms (dark), 268, 340 ms (light); within one 50 ms sample of ~250 ms                                                                                              | pass          |
+| 6 switch      | theme switch in Settings (real Ctrl+, then the radios)                            | Light → `data-theme="light"`, body rgb(246,246,246); System → attribute removed, rgb(30,30,30); Dark → `data-theme="dark"`; `settings.json` followed each change (`update_settings` ran); the native background cannot be observed while the page covers it | pass          |
+| 6 switch      | no `settings: cannot update window background` error                              | app stderr empty after all three switches                                                                                                                                                                                                                   | pass          |
+| 6 sliver      | switch theme, then resize by mouse: no previous-theme sliver                      | —                                                                                                                                                                                                                                                           | left to owner |
+| 7 desktop     | flip the desktop colour scheme while on `system`, then resize by mouse: no sliver | —                                                                                                                                                                                                                                                           | left to owner |
 
-The first dark start (+568 ms) was the first launch after the release build
-and is a cold page cache; the other eight starts fall between +184 and
+The first dark start (+568 ms) was the first launch after the release build,
+likely a cold page cache; the other eight starts fall between +184 and
 +299 ms. One baseline dark burst (+448 ms, first frame already the app's
 rgb(34,34,34)) missed the window's appearance and is left out of the
 baseline times.
@@ -315,3 +338,5 @@ baseline times.
 - Resize the window by mouse, quit, relaunch: the size is kept.
 - Switch theme in Settings, then resize by mouse: no sliver of the previous
   theme shows at the growing edge.
+- Flip the desktop colour scheme while the theme is `system`, then resize by
+  mouse: no sliver of the previous scheme shows at the growing edge.
