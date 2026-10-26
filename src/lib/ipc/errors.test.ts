@@ -267,6 +267,14 @@ describe("isAppError hosting kinds", () => {
   });
 });
 
+// Contract (GR-15): the update-check kind is recognised by the guard.
+// Both types.ts AND errors.ts must be updated — the KINDS Record enforces the sync.
+describe("isAppError GR-15 updateCheckFailed kind", () => {
+  it("recognises updateCheckFailed", () => {
+    expect(isAppError({ kind: "updateCheckFailed", message: "m" })).toBe(true);
+  });
+});
+
 // Contract (Review Focus 5): the four GR-14 error kinds are recognised by the guard.
 // Both types.ts AND errors.ts must be updated — the KINDS Record enforces the sync.
 describe("isAppError GR-14 kinds", () => {

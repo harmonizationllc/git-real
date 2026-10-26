@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
+import { AboutSettings } from "./AboutSettings";
 import { checkGitCli, pickFile, pickFolder, toAppError } from "../../lib/ipc";
 import type { Settings } from "../../lib/ipc";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -71,6 +72,7 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
         <CloneSettings />
         <ToolsSettings />
         <GitSettings />
+        <AboutSettings />
         <div className={styles.actions}>
           <button type="button" onClick={() => useShell.getState().open({ kind: "shortcuts" })}>
             Keyboard shortcuts…
@@ -85,7 +87,7 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
 }
 
 /** A titled section tagged with `data-section` so a `section` prop can focus and scroll to it. */
-function Section({
+export function Section({
   id,
   name,
   children,

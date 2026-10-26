@@ -235,6 +235,23 @@ describe("useCommands Open repository in editor", () => {
   });
 });
 
+// Contract (GR-15): Check for updates… opens Settings at the About section.
+describe("useCommands Check for updates", () => {
+  it("Check for updates… opens Settings at About", async () => {
+    const actions = stubActions();
+    const { result } = renderHookWithProviders(() => useCommands(actions));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
+    );
+    const cmd = result.current.find((c) => c.label === "Check for updates…");
+    expect(cmd).toBeDefined();
+    act(() => {
+      cmd!.run();
+    });
+    expect(useShell.getState().dialog).toEqual({ kind: "settings", section: "about" });
+  });
+});
+
 // Contract: shortcut ids are attached to the matching rows.
 describe("useCommands shortcut ids", () => {
   it("shortcut ids are attached to the matching rows", async () => {

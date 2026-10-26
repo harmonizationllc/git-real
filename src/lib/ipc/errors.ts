@@ -60,6 +60,7 @@ const KINDS: Record<AppErrorKind, true> = {
   gitCliInvalid: true,
   noExternalTool: true,
   externalToolFailed: true,
+  updateCheckFailed: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

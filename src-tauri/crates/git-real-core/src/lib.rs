@@ -36,6 +36,7 @@ pub mod stash;
 pub mod status;
 pub mod token;
 pub mod tools;
+pub mod update;
 
 pub use error::GitError;
 pub use ignore::gitignore_pattern;
@@ -49,3 +50,4 @@ pub use tools::{
     DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff, open_external_merge,
     open_in_editor, split_command,
 };
+pub use update::{UpdateInfo, Version};

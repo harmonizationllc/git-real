@@ -7,3 +7,5 @@ export * from "./clipboard";
 export * from "./opener";
 export * from "./settings";
 export * from "./tools";
+export * from "./update";
+export * from "./app";

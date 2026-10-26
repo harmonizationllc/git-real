@@ -77,6 +77,12 @@ export function useCommands(actions: ShellActions): Command[] {
     shortcutId: "shortcuts",
     run: () => useShell.getState().open({ kind: "shortcuts" }),
   });
+  push({
+    id: "checkForUpdates",
+    label: "Check for updates…",
+    group: "Actions",
+    run: () => useShell.getState().open({ kind: "settings", section: "about" }),
+  });
   for (const value of ["system", "light", "dark"] as const) {
     push({
       id: `theme-${value}`,

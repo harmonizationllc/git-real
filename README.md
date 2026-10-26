@@ -56,6 +56,47 @@ to the front end over typed IPC commands.
   [docs/adr](docs/adr). Feature designs and implementation plans live under
   [docs/superpowers](docs/superpowers).
 
+## Install
+
+Pre-built Linux packages are published on each release. Download the one for your
+distribution from the [GitHub Releases](https://github.com/harmonizationllc/git-real/releases)
+page (`<version>` is the release, for example `0.1.0`). The file names carry the product
+name with a space in it — `Git Real_<version>_amd64.deb` — so quote the path:
+
+- **Debian, Ubuntu, Pop!\_OS** — the `.deb`:
+
+  ```sh
+  sudo apt install "./Git Real_<version>_amd64.deb"
+  ```
+
+- **Fedora, RHEL, openSUSE** — the `.rpm`:
+
+  ```sh
+  sudo dnf install "./Git Real-<version>-1.x86_64.rpm"
+  ```
+
+- **Any distribution** — the AppImage, which installs nothing:
+
+  ```sh
+  chmod +x "Git Real_<version>_amd64.AppImage"
+  "./Git Real_<version>_amd64.AppImage"
+  ```
+
+The `.deb` recommends `git`, and you should have it on any install: every network
+operation (fetch, pull, push, clone over the network) and all commit signing shell out
+to the system `git` CLI, so Git Real needs it on your `PATH`.
+
+## Wayland and X11
+
+Git Real runs under both Wayland and X11. On COSMIC the window uses the compositor's
+server-side decorations, so it looks and resizes like any other COSMIC window. Two
+environment switches cover the stacks that need them:
+
+- `GDK_BACKEND=x11 git-real` forces the app to run under X11 (XWayland) instead of
+  Wayland.
+- `WEBKIT_DISABLE_DMABUF_RENDERER=1 git-real` works around a blank window seen on some
+  NVIDIA and Wayland driver combinations.
+
 ## Development
 
 Prerequisites:
@@ -72,7 +113,9 @@ Prerequisites:
     librsvg2-dev \
     libssl-dev \
     libxdo-dev \
-    pkg-config
+    pkg-config \
+    file \
+    patchelf
   ```
 
 Getting started:
@@ -107,6 +150,29 @@ kept at 100 % on the front end, and each change passes a code review and an
 architecture review before it is merged. The design and plan documents are checked in
 under `docs/superpowers` so the reasoning behind each feature travels with the code.
 
+## Releasing
+
+A release is cut from a tag. The three app version strings must agree, and the release
+workflow refuses a tag that does not match.
+
+1. Set the same `X.Y.Z` version in `package.json`, `src-tauri/tauri.conf.json`, and
+   `src-tauri/Cargo.toml`.
+2. Run `npm test` — a contract test checks that the three versions agree.
+3. Commit the version bump.
+4. Tag and push:
+
+   ```sh
+   git tag vX.Y.Z
+   git push origin main vX.Y.Z
+   ```
+
+The `Release` workflow then builds the `.deb`, `.rpm`, and AppImage and publishes a
+GitHub release carrying them, with generated release notes. A tag whose version differs
+from `tauri.conf.json` fails before anything is built. A pre-release tag contains a
+hyphen (for example `vX.Y.Z-beta.1`) and is marked as a pre-release; the in-app update
+check reads the latest non-prerelease release, so pre-releases do not prompt users to
+update.
+
 ## Project layout
 
 ```
@@ -121,8 +187,8 @@ docs/superpowers/    Feature design specs and implementation plans
 ## Status
 
 Git Real is at version 0.1.0 and under active development. The features above are
-implemented and tested; packaging for distribution and performance validation on very
-large repositories are still ahead.
+implemented and tested, and Linux packages are published on each release; performance
+validation on very large repositories is still ahead.
 
 ## License
 

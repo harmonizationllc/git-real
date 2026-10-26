@@ -17,6 +17,7 @@ import { closeRepoTab } from "./closeRepoTab";
 import { RepoPane } from "./RepoPane";
 import { TabBar } from "./TabBar";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
+import { useUpdateCheck } from "./useUpdateCheck";
 
 export default function App(): React.JSX.Element {
   return (
@@ -50,6 +51,7 @@ function AppShell(): React.JSX.Element {
     },
   };
   useGlobalShortcuts(actions);
+  useUpdateCheck();
 
   return (
     <div ref={rootRef} tabIndex={-1} data-focus-target className={styles.root}>

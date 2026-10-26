@@ -4,6 +4,7 @@ export const queryKeys = {
   recent: ["recent"] as const,
   gitCli: ["gitCli"] as const,
   settings: ["settings"] as const,
+  appVersion: ["appVersion"] as const,
   /** Prefix of every per-repo key: invalidating it refreshes all of that repo's queries. */
   repo: (id: RepoId) => ["repo", id] as const,
   status: (id: RepoId) => ["repo", id, "status"] as const,
