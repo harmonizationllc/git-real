@@ -243,8 +243,7 @@ mod tests {
         }
     }
 
-    const API_URL: &str =
-        "https://api.github.com/repos/harmonizationllc/git-real/releases/latest";
+    const API_URL: &str = "https://api.github.com/repos/harmonizationllc/git-real/releases/latest";
     const CURRENT: &str = "0.1.0";
 
     fn release_body(tag: &str, url: &str) -> String {
@@ -288,7 +287,10 @@ mod tests {
         use super::Version;
 
         assert!(Version::parse("1.2").is_none(), "1.2: missing patch");
-        assert!(Version::parse("1.2.3.4").is_none(), "1.2.3.4: extra segment");
+        assert!(
+            Version::parse("1.2.3.4").is_none(),
+            "1.2.3.4: extra segment"
+        );
         assert!(Version::parse("a.b.c").is_none(), "a.b.c: non-numeric");
         assert!(Version::parse("").is_none(), "empty string");
         assert!(
@@ -373,7 +375,10 @@ mod tests {
         match err {
             GitError::UpdateCheckFailed { message } => {
                 assert!(message.contains("403"), "status in message: {message}");
-                assert!(message.contains("rate limited"), "rate limited in message: {message}");
+                assert!(
+                    message.contains("rate limited"),
+                    "rate limited in message: {message}"
+                );
             }
             other => panic!("expected UpdateCheckFailed, got {other:?}"),
         }
@@ -406,7 +411,10 @@ mod tests {
 
         match err {
             GitError::UpdateCheckFailed { message } => {
-                assert!(message.contains("unexpected"), "unexpected in message: {message}");
+                assert!(
+                    message.contains("unexpected"),
+                    "unexpected in message: {message}"
+                );
             }
             other => panic!("expected UpdateCheckFailed, got {other:?}"),
         }
@@ -422,7 +430,10 @@ mod tests {
 
         match err {
             GitError::UpdateCheckFailed { message } => {
-                assert!(message.contains("unexpected"), "unexpected in message: {message}");
+                assert!(
+                    message.contains("unexpected"),
+                    "unexpected in message: {message}"
+                );
             }
             other => panic!("expected UpdateCheckFailed, got {other:?}"),
         }
@@ -444,7 +455,10 @@ mod tests {
                     message.contains("unrecognised release tag"),
                     "message: {message}"
                 );
-                assert!(message.contains("not-a-version"), "tag in message: {message}");
+                assert!(
+                    message.contains("not-a-version"),
+                    "tag in message: {message}"
+                );
             }
             other => panic!("expected UpdateCheckFailed, got {other:?}"),
         }

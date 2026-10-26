@@ -3,7 +3,7 @@
 // RED PHASE: `./useUpdateCheck` and `../lib/store/updatePrefs` do not exist
 // yet; every test in this file fails at module resolution time.
 
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdatePrefs } from "../lib/store/updatePrefs"; // RED
 import { useToasts } from "../lib/store/toasts";
@@ -40,17 +40,12 @@ describe("useUpdateCheck startup check", () => {
     });
     renderHook(() => useUpdateCheck());
     expect(vi.mocked(checkForUpdate)).not.toHaveBeenCalled();
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS);
-    });
-    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    expect(checkForUpdate).toHaveBeenCalledOnce();
   });
 
-  it("should not call checkForUpdate before STARTUP_DELAY_MS elapses", () => {
-    const { checkForUpdate } = vi.mocked(
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require("../lib/ipc"),
-    );
+  it("should not call checkForUpdate before STARTUP_DELAY_MS elapses", async () => {
+    const { checkForUpdate } = await import("../lib/ipc");
     renderHook(() => useUpdateCheck());
     act(() => {
       vi.advanceTimersByTime(STARTUP_DELAY_MS - 1);
@@ -61,8 +56,8 @@ describe("useUpdateCheck startup check", () => {
 
 // Contract: does nothing when checkOnStartup is false.
 describe("useUpdateCheck disabled", () => {
-  it("should not call checkForUpdate when checkOnStartup is false", () => {
-    const { checkForUpdate } = vi.mocked(require("../lib/ipc"));
+  it("should not call checkForUpdate when checkOnStartup is false", async () => {
+    const { checkForUpdate } = await import("../lib/ipc");
     useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), checkOnStartup: false }, true);
     renderHook(() => useUpdateCheck());
     act(() => {
@@ -74,13 +69,10 @@ describe("useUpdateCheck disabled", () => {
 
 // Contract: skips the check if lastCheckedAt is within CHECK_INTERVAL_MS.
 describe("useUpdateCheck skip recent", () => {
-  it("should not check if checked within the last 24 h", () => {
-    const { checkForUpdate } = vi.mocked(require("../lib/ipc"));
+  it("should not check if checked within the last 24 h", async () => {
+    const { checkForUpdate } = await import("../lib/ipc");
     const recent = Date.now() - CHECK_INTERVAL_MS + 1_000;
-    useUpdatePrefs.setState(
-      { ...useUpdatePrefs.getInitialState(), lastCheckedAt: recent },
-      true,
-    );
+    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: recent }, true);
     renderHook(() => useUpdateCheck());
     act(() => {
       vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
@@ -99,10 +91,8 @@ describe("useUpdateCheck skip recent", () => {
     const old = Date.now() - CHECK_INTERVAL_MS;
     useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: old }, true);
     renderHook(() => useUpdateCheck());
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
-    });
-    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    expect(checkForUpdate).toHaveBeenCalledOnce();
   });
 });
 
@@ -118,20 +108,11 @@ describe("useUpdateCheck toast on update", () => {
       url: "https://github.com/harmonizationllc/git-real/releases/tag/v1.0.0",
     });
     renderHook(() => useUpdateCheck());
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
-    });
-    await waitFor(() =>
-      expect(
-        useToasts
-          .getState()
-          .toasts.some((t) => t.text === "Git Real 1.0.0 is available"),
-      ).toBe(true),
-    );
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
     const toast = useToasts.getState().toasts.find((t) => t.text === "Git Real 1.0.0 is available");
     expect(toast).toBeDefined();
     // Must have a "Release notes" action.
-    expect(toast?.actions?.some((a) => a.label === "Release notes")).toBe(true);
+    expect(toast?.action?.label).toBe("Release notes");
   });
 
   it("should call markChecked after a successful check", async () => {
@@ -143,10 +124,8 @@ describe("useUpdateCheck toast on update", () => {
       url: null,
     });
     renderHook(() => useUpdateCheck());
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
-    });
-    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    expect(checkForUpdate).toHaveBeenCalledOnce();
     expect(useUpdatePrefs.getState().lastCheckedAt).not.toBeNull();
   });
 });
@@ -160,10 +139,8 @@ describe("useUpdateCheck failure handling", () => {
       message: "rate limited",
     });
     const { unmount } = renderHook(() => useUpdateCheck());
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
-    });
-    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    expect(checkForUpdate).toHaveBeenCalledOnce();
     // No error toast — failures are silently swallowed.
     expect(useToasts.getState().toasts).toHaveLength(0);
     unmount();
@@ -173,18 +150,16 @@ describe("useUpdateCheck failure handling", () => {
     const { checkForUpdate } = await import("../lib/ipc");
     vi.mocked(checkForUpdate).mockRejectedValue({ kind: "updateCheckFailed", message: "x" });
     renderHook(() => useUpdateCheck());
-    act(() => {
-      vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
-    });
-    await waitFor(() => expect(checkForUpdate).toHaveBeenCalledOnce());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    expect(checkForUpdate).toHaveBeenCalledOnce();
     expect(useUpdatePrefs.getState().lastCheckedAt).not.toBeNull();
   });
 });
 
 // Contract: unmounting clears the pending timer.
 describe("useUpdateCheck cleanup", () => {
-  it("should clear the startup timer on unmount before it fires", () => {
-    const { checkForUpdate } = vi.mocked(require("../lib/ipc"));
+  it("should clear the startup timer on unmount before it fires", async () => {
+    const { checkForUpdate } = await import("../lib/ipc");
     const { unmount } = renderHook(() => useUpdateCheck());
     unmount();
     act(() => {

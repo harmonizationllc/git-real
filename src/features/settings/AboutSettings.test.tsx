@@ -10,6 +10,7 @@ import { queryClient } from "../../lib/query/client";
 import { useUpdatePrefs } from "../../lib/store/updatePrefs"; // RED: module missing
 import { useToasts } from "../../lib/store/toasts";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import type { UpdateInfo } from "../../lib/ipc";
 import { AboutSettings } from "./AboutSettings"; // RED: module missing
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -100,7 +101,7 @@ describe("AboutSettings checkbox", () => {
 describe("AboutSettings manual check button", () => {
   it("shows Checking… while the check is in progress", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
-    let resolve!: (v: unknown) => void;
+    let resolve!: (v: UpdateInfo) => void;
     vi.mocked(checkForUpdate).mockReturnValue(
       new Promise((res) => {
         resolve = res;
@@ -116,7 +117,7 @@ describe("AboutSettings manual check button", () => {
 
   it("the button is disabled while Checking…", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
-    let resolve!: (v: unknown) => void;
+    let resolve!: (v: UpdateInfo) => void;
     vi.mocked(checkForUpdate).mockReturnValue(
       new Promise((res) => {
         resolve = res;
@@ -148,13 +149,13 @@ describe("AboutSettings status", () => {
 
   it("shows a Release notes button and an alert when update is available", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
+    await setup();
     vi.mocked(checkForUpdate).mockResolvedValue({
       current: "0.1.0",
       latest: "1.0.0",
       available: true,
       url: "https://github.com/harmonizationllc/git-real/releases/tag/v1.0.0",
     });
-    await setup();
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Release notes" })).toBeInTheDocument();
@@ -162,11 +163,11 @@ describe("AboutSettings status", () => {
 
   it("shows an alert with the error message when check fails", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
+    await setup();
     vi.mocked(checkForUpdate).mockRejectedValue({
       kind: "updateCheckFailed",
       message: "rate limited",
     });
-    await setup();
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent).toMatch(/rate limited/);
