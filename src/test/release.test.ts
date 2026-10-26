@@ -472,7 +472,7 @@ describe("bench workflow", () => {
         .filter(Boolean),
     }).toEqual({
       path: CACHE,
-      key: "git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}",
+      key: "git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs') }}",
       lines: [
         `${BENCH} prepare synthetic ${CACHE}/synthetic`,
         `${BENCH} prepare public-graph ${CACHE}/qemu-graph`,
@@ -536,9 +536,11 @@ describe("bench workflow", () => {
     }).toEqual({ synthetic: true, graph: true, worktree: true, run: true });
   });
 
-  it("cache key hashes the fixtures source", () => {
+  it("cache key hashes the fixtures source and the CLI defaults", () => {
     const cache = steps().find((s) => String(s.uses ?? "").startsWith("actions/cache@v4"));
     const key = String((cache?.with as Record<string, unknown> | undefined)?.key ?? "");
-    expect(key).toContain("hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs')");
+    expect(key).toContain(
+      "hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs')",
+    );
   });
 });
