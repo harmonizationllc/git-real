@@ -60,7 +60,9 @@ describe("useCommands always-actions", () => {
   it("lists the eight always-actions in order with the active theme marked Current", async () => {
     useAppearancePrefs.setState({ ...useAppearancePrefs.getInitialState(), theme: "system" });
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
+    );
     const labels = result.current.map((c) => c.label);
     expect(labels).toContain("Open repository…");
     expect(labels).toContain("Clone repository…");
@@ -97,7 +99,7 @@ describe("useCommands repo actions", () => {
       });
     });
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.find((c) => c.label === "Fetch")).toBeDefined());
     const labels = result.current.map((c) => c.label);
     expect(labels).toContain("Fetch");
     expect(labels).toContain("Pull");
@@ -120,7 +122,7 @@ describe("useCommands repo actions", () => {
       });
     });
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.find((c) => c.label === "Fetch")).toBeDefined());
     const fetchCmd = result.current.find((c) => c.label === "Fetch");
     const pushCmd = result.current.find((c) => c.label === "Push");
     const pullCmd = result.current.find((c) => c.label === "Pull");
@@ -144,7 +146,9 @@ describe("useCommands Switch to", () => {
     // Activate tab 1 so tab 2 should appear as "Switch to beta".
     act(() => useRepoTabs.getState().activate(1));
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Switch to beta")).toBeDefined(),
+    );
     const switchCmd = result.current.find((c) => c.label === "Switch to beta");
     expect(switchCmd).toBeDefined();
     const switchAlpha = result.current.find((c) => c.label === "Switch to alpha");
@@ -169,7 +173,8 @@ describe("useCommands Open recent", () => {
     } as OpenedRepo);
     const actions = stubActions();
     const { result } = renderHookWithProviders(() => useCommands(actions));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    // Wait for the listRecent query to resolve and "Open beta" to appear.
+    await waitFor(() => expect(result.current.find((c) => c.label === "Open beta")).toBeDefined());
     const openAlpha = result.current.find((c) => c.label === "Open alpha");
     const openBeta = result.current.find((c) => c.label === "Open beta");
     expect(openAlpha).toBeUndefined();
@@ -234,7 +239,9 @@ describe("useCommands Open repository in editor", () => {
 describe("useCommands shortcut ids", () => {
   it("shortcut ids are attached to the matching rows", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
+    );
     const openCmd = result.current.find((c) => c.label === "Open repository…");
     expect(openCmd?.shortcutId).toBe("openRepo");
     const cloneCmd = result.current.find((c) => c.label === "Clone repository…");
@@ -246,21 +253,27 @@ describe("useCommands shortcut ids", () => {
 describe("useCommands always-action run functions", () => {
   it("Open settings run opens the settings dialog", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open settings")).toBeDefined(),
+    );
     act(() => result.current.find((c) => c.label === "Open settings")!.run());
     expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
   });
 
   it("Show keyboard shortcuts run opens the shortcuts dialog", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Show keyboard shortcuts")).toBeDefined(),
+    );
     act(() => result.current.find((c) => c.label === "Show keyboard shortcuts")!.run());
     expect(useShell.getState().dialog).toMatchObject({ kind: "shortcuts" });
   });
 
   it("Theme: Dark run changes the theme to dark", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Theme: Dark")).toBeDefined(),
+    );
     act(() => result.current.find((c) => c.label === "Theme: Dark")!.run());
     expect(useAppearancePrefs.getState().theme).toBe("dark");
   });
@@ -272,7 +285,9 @@ describe("useCommands always-action run functions", () => {
     } as OpenedRepo);
     act(() => useRepoTabs.getState().activate(1));
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Go to start screen")).toBeDefined(),
+    );
     act(() => result.current.find((c) => c.label === "Go to start screen")!.run());
     expect(useRepoTabs.getState().activeId).toBeNull();
   });
@@ -295,7 +310,9 @@ describe("useCommands always-action run functions", () => {
     } as OpenedRepo);
     act(() => useRepoTabs.getState().activate(99));
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Close repository tab")).toBeDefined(),
+    );
     act(() => result.current.find((c) => c.label === "Close repository tab")!.run());
     expect(useRepoTabs.getState().tabs.find((t) => t.id === 99)).toBeUndefined();
   });

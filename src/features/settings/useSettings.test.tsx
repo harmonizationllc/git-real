@@ -49,7 +49,7 @@ describe("useSettings query", () => {
 
   it("exposes saving as false when idle", async () => {
     const { result } = renderHookWithProviders(() => useSettings());
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.settings).toBeDefined());
     expect(result.current.saving).toBe(false);
   });
 });
@@ -60,7 +60,7 @@ describe("useSettings update", () => {
     const updated: Settings = { ...defaultSettings, externalEditor: "code --wait" };
     vi.mocked(updateSettings).mockResolvedValue(updated);
     const { result, queryClient: qc } = renderHookWithProviders(() => useSettings());
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.settings).toBeDefined());
     await act(() => result.current.update({ externalEditor: "code --wait" }));
     const cached = qc.getQueryData<Settings>(queryKeys.settings);
     expect(cached).toEqual(updated);
@@ -69,7 +69,7 @@ describe("useSettings update", () => {
   it("update invalidates gitCli only when the patch has gitExecutable", async () => {
     vi.mocked(updateSettings).mockResolvedValue(defaultSettings);
     const { result, queryClient: qc } = renderHookWithProviders(() => useSettings());
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.settings).toBeDefined());
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
 
     // Patch without gitExecutable: gitCli must NOT be invalidated.
@@ -91,7 +91,7 @@ describe("useSettings update", () => {
     const err: AppError = { kind: "invalidSettings", message: "bad path" };
     vi.mocked(updateSettings).mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useSettings());
-    await act(() => new Promise((r) => setTimeout(r, 0)));
+    await waitFor(() => expect(result.current.settings).toBeDefined());
     await expect(act(() => result.current.update({ defaultCloneDir: "relative" }))).rejects.toBe(
       err,
     );

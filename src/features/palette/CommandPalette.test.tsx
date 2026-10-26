@@ -241,13 +241,11 @@ describe("CommandPalette Enter to run", () => {
     const { onClose } = setup();
     const input = await screen.findByRole("combobox", { name: "Search commands" });
     fireEvent.change(input, { target: { value: "Fetch" } });
-    await new Promise((r) => setTimeout(r, 0));
     const listbox = screen.getByRole("listbox");
-    const fetchOption = within(listbox).queryByRole("option", { name: /Fetch/ });
-    if (fetchOption) {
-      fireEvent.click(fetchOption);
-      expect(onClose).not.toHaveBeenCalled();
-    }
+    // Wait for the Fetch option to appear (the repo actions are in the shell store, no network).
+    const fetchOption = await within(listbox).findByRole("option", { name: /Fetch/ });
+    fireEvent.click(fetchOption);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -342,8 +340,12 @@ describe("CommandPalette — no network hooks (Review Focus 4)", () => {
       });
     });
     setup();
-    await screen.findByRole("combobox", { name: "Search commands" });
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait until repo-action options appear — confirms palette consumed the shell store.
+    // Network hooks must never be called to produce these commands.
+    const listbox = await screen.findByRole("listbox");
+    await waitFor(() =>
+      expect(within(listbox).queryByRole("option", { name: "Fetch" })).not.toBeNull(),
+    );
     expect(listBranches).not.toHaveBeenCalled();
     expect(listRemotes).not.toHaveBeenCalled();
     expect(getOperationState).not.toHaveBeenCalled();
