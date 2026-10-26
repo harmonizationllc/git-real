@@ -43,7 +43,7 @@ export function AboutSettings() {
           checked={checkOnStartup}
           onChange={(e) => setCheckOnStartup(e.target.checked)}
         />
-        Check for updates automatically
+        Check for updates on startup
       </label>
       <div className={styles.row}>
         <button type="button" disabled={busy} onClick={() => void check()}>
@@ -71,7 +71,7 @@ function CheckResult({ result }: { result: UpdateInfo }) {
   if (result.available) {
     const url = result.url;
     return (
-      <p role="alert" className={styles.value}>
+      <p role="status" className={styles.value}>
         Git Real {result.latest} is available
         {url !== null && (
           <button type="button" onClick={() => void openExternal(url)}>
