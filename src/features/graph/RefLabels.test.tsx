@@ -142,12 +142,16 @@ describe("RefLabels pill sizing", () => {
   it("should cap a pill at 24ch", () => {
     expect(rule(".pill")).toMatch(/max-width:\s*24ch/);
   });
+
+  it("should position the root so hidden pills cannot widen an ancestor", () => {
+    expect(rule(".root")).toMatch(/position:\s*relative/);
+  });
 });
 
 // Contract: pills are measured against the parent cell; trailing pills that do not fit are hidden and counted into +N.
 // Measurement stub: the component must read `parentElement.clientWidth` and each pill's `offsetWidth`.
 describe("RefLabels fit", () => {
-  const widths: Record<string, number> = { a: 40, b: 80, c: 40, d: 40 };
+  const widths: Record<string, number> = { a: 40, b: 80, c: 40 };
   let cellWidth = 0;
   let observers: StubResizeObserver[] = [];
 
@@ -220,6 +224,22 @@ describe("RefLabels fit", () => {
     const more = screen.getByText("+2");
     expect(more).toHaveAttribute("aria-label", "2 more: b, c");
     expect(more).toHaveAttribute("title", "b\nc");
+  });
+
+  it("should re-measure when a candidate name changes at the same count", () => {
+    cellWidth = 200;
+    const { rerender } = renderInCell();
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    // d has no entry in the width table, so it measures 0 (unmeasured): every candidate shows.
+    rerender(
+      <span data-testid="cell">
+        <RefLabels refs={[ref("branch", "a"), ref("branch", "b"), ref("tag", "d")]} />
+      </span>,
+    );
+    for (const name of ["a", "b", "d"]) {
+      expect(screen.getByTitle(name)).not.toHaveAttribute("data-hidden");
+    }
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
   });
 
   it("should keep a hidden pill's full name as its title", () => {
