@@ -1,4 +1,5 @@
 import type { LayoutColumn } from "../../app/layout";
+import type { ResizableSection } from "../../app/refsLayout";
 import type { CloneUrlForm, DiffMode, SettingsPatch, ThemePref } from "../ipc";
 import {
   DIFF_FONT_MAX,
@@ -42,6 +43,11 @@ export function setRefsWidth(width: number): void {
 
 export function setSidebarWidth(width: number): void {
   setPref({ layout: { sidebarWidth: Math.round(width) } });
+}
+
+/** Persists a refs section's dragged height; null returns it to automatic. */
+export function setSectionHeight(section: ResizableSection, height: number | null): void {
+  setPref({ layout: { [`${section}Height`]: height === null ? null : Math.round(height) } });
 }
 
 export function resetWidth(column: LayoutColumn): void {
