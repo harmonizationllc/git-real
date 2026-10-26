@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "../../test/graphFixtures";
 import { RefLabels } from "./RefLabels";
 
@@ -136,6 +136,119 @@ describe("RefLabels pill sizing", () => {
   });
 
   it("should declare the pill rule non-shrinking", () => {
-    expect(rule(".pill")).toMatch(/flex(-shrink)?:\s*(none|0)\b/);
+    expect(rule(".pill")).toMatch(/flex:\s*none/);
+  });
+
+  it("should cap a pill at 24ch", () => {
+    expect(rule(".pill")).toMatch(/max-width:\s*24ch/);
+  });
+});
+
+// Contract: pills are measured against the parent cell; trailing pills that do not fit are hidden and counted into +N.
+// Measurement stub: the component must read `parentElement.clientWidth` and each pill's `offsetWidth`.
+describe("RefLabels fit", () => {
+  const widths: Record<string, number> = { a: 40, b: 80, c: 40, d: 40 };
+  let cellWidth = 0;
+  let observers: StubResizeObserver[] = [];
+
+  class StubResizeObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+    constructor(public callback: ResizeObserverCallback) {
+      observers.push(this);
+    }
+    fire() {
+      this.callback([], this as unknown as ResizeObserver);
+    }
+  }
+
+  beforeEach(() => {
+    observers = [];
+    cellWidth = 0;
+    vi.stubGlobal("ResizeObserver", StubResizeObserver);
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return widths[this.textContent ?? ""] ?? 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.dataset.testid === "cell" ? cellWidth : 0;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+    Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+  });
+
+  const three = [ref("branch", "a"), ref("branch", "b"), ref("tag", "c")];
+  const renderInCell = (refs = three) =>
+    render(
+      <span data-testid="cell">
+        <RefLabels refs={refs} />
+      </span>,
+    );
+
+  it("should observe its parent cell", () => {
+    cellWidth = 200;
+    renderInCell();
+    const observed = observers.flatMap((o) => o.observe.mock.calls.map((c) => c[0]));
+    expect(observed).toContain(screen.getByTestId("cell"));
+  });
+
+  it("should show every pill while unmeasured", () => {
+    renderInCell();
+    for (const name of ["a", "b", "c"]) {
+      expect(screen.getByTitle(name)).not.toHaveAttribute("data-hidden");
+    }
+    expect(screen.queryByText(/^\+\d+$/)).toBeNull();
+  });
+
+  it("should hide trailing pills that do not fit and count them into +N", () => {
+    // budget = 200 - 64 - 6 = 130; three = 168 > 130; two + more = 164 > 130; so one.
+    cellWidth = 200;
+    renderInCell();
+    expect(screen.getByTitle("a")).not.toHaveAttribute("data-hidden");
+    expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
+    expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
+    const more = screen.getByText("+2");
+    expect(more).toHaveAttribute("aria-label", "2 more: b, c");
+    expect(more).toHaveAttribute("title", "b\nc");
+  });
+
+  it("should keep a hidden pill's full name as its title", () => {
+    cellWidth = 200;
+    renderInCell();
+    expect(screen.getByTitle("b")).toHaveTextContent("b");
+  });
+
+  it("should count labels beyond MAX_LABELS and labels that do not fit together", () => {
+    // budget = 235 - 64 - 6 = 165; three = 160 + 8 = 168 > 165; two + more = 40+80+36 + 8 = 164 fits -> 2.
+    // Hidden: c (does not fit) and d (beyond MAX_LABELS) -> +2.
+    cellWidth = 235;
+    renderInCell([...three, ref("tag", "d")]);
+    expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
+    expect(screen.getByText("+2")).toHaveAttribute("aria-label", "2 more: c, d");
+  });
+
+  it("should re-measure when the observer fires", () => {
+    renderInCell();
+    expect(screen.getByTitle("b")).not.toHaveAttribute("data-hidden");
+    cellWidth = 200;
+    act(() => observers.forEach((o) => o.fire()));
+    expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
+  });
+
+  it("should disconnect on unmount", () => {
+    cellWidth = 200;
+    const { unmount } = renderInCell();
+    unmount();
+    expect(observers.some((o) => o.disconnect.mock.calls.length > 0)).toBe(true);
   });
 });
