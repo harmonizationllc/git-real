@@ -2,7 +2,8 @@
 //! so the stored size and maximized flag apply before it shows and the
 //! settings init script runs before any page script.
 
-use git_real_core::settings::{Settings, WINDOW_MIN, WindowGeometry};
+use git_real_core::settings::{Settings, Theme, WINDOW_MIN, WindowGeometry, background_rgb};
+use tauri::webview::Color;
 use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::settings_store::SettingsStore;
@@ -38,17 +39,47 @@ pub fn logical_geometry(
     .clamp_to_min()
 }
 
+/// The window background for the stored `theme`. `desktop` is the desktop's
+/// colour scheme, `None` when unknown, which counts as light.
+pub fn background_color(theme: Theme, desktop: Option<tauri::Theme>) -> Color {
+    let (r, g, b) = background_rgb(theme, desktop == Some(tauri::Theme::Dark));
+    Color(r, g, b, 255)
+}
+
+/// Whether the window background follows the desktop's colour scheme.
+pub fn follows_desktop(theme: Theme) -> bool {
+    theme == Theme::System
+}
+
+/// Sets the window and webview background for `theme`. The desktop's colour
+/// scheme is only queried when the theme follows it.
+pub fn apply_background(window: &WebviewWindow, theme: Theme) -> tauri::Result<()> {
+    let desktop = if follows_desktop(theme) {
+        window.theme().ok()
+    } else {
+        None
+    };
+    window.set_background_color(Some(background_color(theme, desktop)))
+}
+
+/// Builds the main window hidden, sets its background from the stored theme,
+/// then shows it, so it never paints a frame in the wrong colour.
 pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWindow> {
-    let geometry = initial_geometry(&store.get());
-    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::default())
+    let settings = store.get();
+    let geometry = initial_geometry(&settings);
+    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::default())
         .title(TITLE)
         .inner_size(f64::from(geometry.width), f64::from(geometry.height))
         .min_inner_size(f64::from(WINDOW_MIN.0), f64::from(WINDOW_MIN.1))
         .maximized(geometry.maximized)
         .resizable(true)
         .decorations(true)
+        .visible(false)
         .initialization_script(store.to_init_script())
-        .build()
+        .build()?;
+    apply_background(&window, settings.appearance.theme)?;
+    window.show()?;
+    Ok(window)
 }
 
 /// The geometry to save on close, or `None` to save nothing. Fullscreen is

@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use git_real_core::{GitError, Settings, SettingsPatch};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use super::run_blocking;
 use crate::error::{AppError, AppErrorKind};
+use crate::main_window;
 use crate::settings_store::SettingsStore;
 
 pub fn get_settings_inner(store: &SettingsStore) -> Settings {
@@ -20,6 +21,11 @@ pub fn update_settings_inner(
     patch: &SettingsPatch,
 ) -> Result<Settings, AppError> {
     store.update(patch)
+}
+
+/// Whether an update changed the theme, so the window background must follow.
+pub fn theme_changed(before: &Settings, after: &Settings) -> bool {
+    before.appearance.theme != after.appearance.theme
 }
 
 /// Settings whose target is missing on disk, for the front end to flag.
@@ -64,11 +70,24 @@ pub async fn get_settings(settings: State<'_, Arc<SettingsStore>>) -> Result<Set
 
 #[tauri::command]
 pub async fn update_settings(
+    app: AppHandle,
     settings: State<'_, Arc<SettingsStore>>,
     patch: SettingsPatch,
 ) -> Result<Settings, AppError> {
     let store = Arc::clone(settings.inner());
-    run_blocking(move || update_settings_inner(&store, &patch)).await
+    let (before, next) = run_blocking(move || {
+        let before = store.get();
+        update_settings_inner(&store, &patch).map(|next| (before, next))
+    })
+    .await?;
+    // The settings are saved; a failure to recolour the window is only logged.
+    if theme_changed(&before, &next)
+        && let Some(window) = app.get_webview_window(main_window::LABEL)
+        && let Err(e) = main_window::apply_background(&window, next.appearance.theme)
+    {
+        eprintln!("settings: cannot update window background: {e}");
+    }
+    Ok(next)
 }
 
 #[tauri::command]
