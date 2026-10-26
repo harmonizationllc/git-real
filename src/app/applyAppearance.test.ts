@@ -44,6 +44,15 @@ describe("applyAppearance theme attribute", () => {
     applyAppearance({ theme: "dark", diffFontFamily: null, diffFontSize: 13 });
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
+
+  it("keeps a pre-applied data-theme equal to the stored theme without removing it", async () => {
+    const { applyAppearance } = await import("./applyAppearance");
+    document.documentElement.setAttribute("data-theme", "dark");
+    const remove = vi.spyOn(document.documentElement, "removeAttribute");
+    applyAppearance({ theme: "dark", diffFontFamily: null, diffFontSize: 13 });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(remove).not.toHaveBeenCalled();
+  });
 });
 
 describe("applyAppearance font tokens", () => {

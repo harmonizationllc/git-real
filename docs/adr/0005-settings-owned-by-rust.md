@@ -30,6 +30,10 @@ carried over.
   builder applies the stored size and maximized state, and attaches an initialization
   script that injects the settings before any page script runs, so the first paint
   already uses the right theme, layout and diff settings.
+  It also builds the window hidden, sets the window and webview background from the
+  stored theme (desktop scheme via the settings portal for "system") and pre-applies
+  data-theme in the init script before showing it, so the first frame is already in the
+  right theme (GR-19).
 - **No `localStorage` for preferences.** The four persist stores are deleted.
 - **`lastCheckedAt` stays in the browser.** The time of the last update check is
   bookkeeping, not a preference, and writing it to the file would rewrite the file
