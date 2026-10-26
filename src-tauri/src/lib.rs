@@ -50,6 +50,8 @@ pub fn run() {
             commands::repo::check_git_cli,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::reveal_settings_file,
+            commands::settings::check_settings_health,
             commands::update::check_for_update,
             commands::tools::open_in_editor,
             commands::tools::open_external_diff,

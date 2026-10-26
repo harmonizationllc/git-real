@@ -23,7 +23,8 @@ pub fn open_in_editor_inner(
 ) -> Result<(), AppError> {
     let editor = store
         .get()
-        .external_editor
+        .tools
+        .editor
         .ok_or_else(|| AppError::no_external_tool("editor"))?;
     match repo_id {
         Some(id) => {
@@ -57,7 +58,8 @@ pub fn open_external_diff_inner(
 ) -> Result<(), AppError> {
     let cmd = store
         .get()
-        .external_diff_tool
+        .tools
+        .diff_tool
         .ok_or_else(|| AppError::no_external_tool("diff tool"))?;
     // Resolve the scope and read the repo path under the lock, then drop it.
     let (repo_path, range) = {
@@ -79,7 +81,8 @@ pub fn open_external_merge_inner(
 ) -> Result<(), AppError> {
     let cmd = store
         .get()
-        .external_merge_tool
+        .tools
+        .merge_tool
         .ok_or_else(|| AppError::no_external_tool("merge tool"))?;
     // Read the repo path under the lock, then drop it before the tool runs.
     let repo_path = {

@@ -49,7 +49,7 @@ fn fake_git_path(dir: &Path) -> PathBuf {
 fn store_with_editor(path: PathBuf, editor: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalEditor":"{editor}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"editor":"{editor}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
@@ -57,7 +57,7 @@ fn store_with_editor(path: PathBuf, editor: &str) -> SettingsStore {
 fn store_with_diff_tool(path: PathBuf, cmd: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalDiffTool":"{cmd}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"diffTool":"{cmd}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
@@ -65,7 +65,7 @@ fn store_with_diff_tool(path: PathBuf, cmd: &str) -> SettingsStore {
 fn store_with_merge_tool(path: PathBuf, cmd: &str) -> SettingsStore {
     let store = SettingsStore::load(path);
     let patch: git_real_core::SettingsPatch =
-        serde_json::from_str(&format!(r#"{{"externalMergeTool":"{cmd}"}}"#)).unwrap();
+        serde_json::from_str(&format!(r#"{{"tools":{{"mergeTool":"{cmd}"}}}}"#)).unwrap();
     store.update(&patch).unwrap();
     store
 }
