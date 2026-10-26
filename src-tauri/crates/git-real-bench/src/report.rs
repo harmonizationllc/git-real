@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::budgets;
 use crate::measure::Measurement;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -33,29 +34,143 @@ pub struct Report {
     pub passed: bool,
 }
 
+pub const REPORT_VERSION: u32 = 1;
+
+const HEADER: [&str; 6] = [
+    "fixture",
+    "commits",
+    "files",
+    "open→first page",
+    "status",
+    "paging RSS growth",
+];
+
+/// Minimum column widths of the stdout table (spec §3.6); a longer cell widens its column.
+const MIN_WIDTHS: [usize; 6] = [15, 7, 8, 16, 9, 17];
+
+impl Host {
+    fn current() -> Host {
+        Host {
+            os: std::env::consts::OS.to_string(),
+            cpus: std::thread::available_parallelism().map_or(1, usize::from),
+        }
+    }
+}
+
+impl Budgets {
+    const CURRENT: Budgets = Budgets {
+        open_to_first_page_ms: budgets::OPEN_TO_FIRST_PAGE_MS,
+        status_ms: budgets::STATUS_MS,
+        paging_rss_growth_mb: budgets::PAGING_RSS_GROWTH_MB,
+    };
+
+    fn line(&self) -> String {
+        format!(
+            "budgets: open→first page {} ms, status {} ms, paging RSS growth {} MB",
+            self.open_to_first_page_ms, self.status_ms, self.paging_rss_growth_mb
+        )
+    }
+}
+
 impl Report {
     /// Builds the report: host from the environment, the budget constants, and
     /// `passed` from the results' `violations`.
     pub fn new(results: Vec<Measurement>) -> Report {
-        todo!()
+        let passed = results.iter().all(|m| m.violations.is_empty());
+        Report {
+            version: REPORT_VERSION,
+            host: Host::current(),
+            budgets: Budgets::CURRENT,
+            results,
+            passed,
+        }
     }
 
     /// The `--json` document.
     pub fn to_json(&self) -> String {
-        todo!()
+        let mut json = serde_json::to_string_pretty(self).expect("a report always serializes");
+        json.push('\n');
+        json
     }
 
     /// The stdout text: header, one row per result, the `budgets:` line, then the
     /// trailer (`PASS`; `FAIL` plus one line per violation; `INFO` under `no_assert`).
     pub fn text_table(&self, no_assert: bool) -> String {
-        todo!()
+        let header = HEADER.map(String::from);
+        let rows: Vec<[String; 6]> = self.results.iter().map(cells).collect();
+        let mut widths = MIN_WIDTHS;
+        for row in std::iter::once(&header).chain(&rows) {
+            for (width, cell) in widths.iter_mut().zip(row) {
+                *width = (*width).max(cell.chars().count());
+            }
+        }
+        let mut text = String::new();
+        for row in std::iter::once(&header).chain(&rows) {
+            text.push_str(&table_line(row, &widths));
+        }
+        text.push_str(&self.budgets.line());
+        text.push('\n');
+        if no_assert {
+            text.push_str("INFO\n");
+        } else if self.passed {
+            text.push_str("PASS\n");
+        } else {
+            text.push_str("FAIL\n");
+            for violation in self.results.iter().flat_map(|m| &m.violations) {
+                text.push_str(violation);
+                text.push('\n');
+            }
+        }
+        text
     }
 
     /// The `--summary` block: `### Git Real benchmarks`, a Markdown table with a
     /// `result` column (`pass` / `fail`; `info` for a violating row under `no_assert`).
     pub fn markdown(&self, no_assert: bool) -> String {
-        todo!()
+        let mut md = String::from("### Git Real benchmarks\n\n");
+        md.push_str(&format!("| {} | result |\n", HEADER.join(" | ")));
+        md.push_str("| --- | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        for m in &self.results {
+            let result = match (m.violations.is_empty(), no_assert) {
+                (true, _) => "pass",
+                (false, true) => "info",
+                (false, false) => "fail",
+            };
+            md.push_str(&format!("| {} | {result} |\n", cells(m).join(" | ")));
+        }
+        md.push('\n');
+        md.push_str(&self.budgets.line());
+        md.push('\n');
+        md
     }
+}
+
+/// One table row: label, commits, files, open→first page, status, RSS growth;
+/// `-` for an unavailable value.
+fn cells(m: &Measurement) -> [String; 6] {
+    [
+        m.label.clone(),
+        m.commits.to_string(),
+        or_dash(m.files, |n| n.to_string()),
+        format!("{} ms", m.open_to_first_page_ms),
+        or_dash(m.status_ms, |n| format!("{n} ms")),
+        or_dash(m.rss_growth_mb, |n| format!("{n} MB")),
+    ]
+}
+
+fn or_dash<T>(value: Option<T>, show: impl Fn(T) -> String) -> String {
+    value.map_or_else(|| "-".to_string(), show)
+}
+
+/// The label left-aligned, every other cell right-aligned; header and rows share it.
+fn table_line(cells: &[String; 6], widths: &[usize; 6]) -> String {
+    let [label, rest @ ..] = cells;
+    let mut line = format!("{label:<width$}", width = widths[0]);
+    for (cell, width) in rest.iter().zip(&widths[1..]) {
+        line.push_str(&format!(" {cell:>width$}"));
+    }
+    line.push('\n');
+    line
 }
 
 #[cfg(test)]

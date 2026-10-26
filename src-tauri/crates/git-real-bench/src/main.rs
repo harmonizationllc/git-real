@@ -1,6 +1,3 @@
-// RED phase: signatures only. The developer removes this allow once the bodies exist.
-#![allow(unused_variables, dead_code)]
-
 mod app;
 mod budgets;
 mod cli;

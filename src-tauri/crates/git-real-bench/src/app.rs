@@ -1,15 +1,25 @@
 //! Dispatch and exit-code mapping: 0 ok, 1 budget exceeded, 2 usage, 3 error.
 
+use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use crate::budgets;
+use crate::cli::{self, Command, USAGE};
+use crate::fixtures;
 use crate::git::BenchError;
-use crate::measure::Measurement;
+use crate::measure::{self, Measurement};
+use crate::report::Report;
+
+const EXIT_OK: i32 = 0;
+const EXIT_BUDGET: i32 = 1;
+const EXIT_USAGE: i32 = 2;
+const EXIT_ERROR: i32 = 3;
 
 /// Runs the program for `args` (after the program name); returns the exit code.
 /// Measures with `measure::measure`.
 pub fn run(args: &[String], out: &mut impl Write, err: &mut impl Write) -> i32 {
-    todo!()
+    run_with(args, out, err, &measure::measure)
 }
 
 /// `run` with the measurer injected so tests can hand in canned measurements.
@@ -20,7 +30,90 @@ pub fn run_with(
     err: &mut impl Write,
     measurer: &dyn Fn(&Path, &str) -> Result<Measurement, BenchError>,
 ) -> i32 {
-    todo!()
+    let code = dispatch(args, out, err, measurer);
+    // `process::exit` runs no destructors, so nothing buffered may be left behind.
+    let _ = out.flush();
+    let _ = err.flush();
+    code
+}
+
+fn dispatch(
+    args: &[String],
+    out: &mut impl Write,
+    err: &mut impl Write,
+    measurer: &dyn Fn(&Path, &str) -> Result<Measurement, BenchError>,
+) -> i32 {
+    let command = match cli::parse(args) {
+        Ok(command) => command,
+        Err(usage) => {
+            let _ = write!(err, "error: {usage}\n{USAGE}");
+            return EXIT_USAGE;
+        }
+    };
+    let outcome = match command {
+        Command::Help => {
+            let _ = write!(out, "{USAGE}");
+            Ok(EXIT_OK)
+        }
+        Command::Prepare { dir, spec } => fixtures::prepare(&dir, &spec, out).map(|()| EXIT_OK),
+        Command::Run {
+            repos,
+            json,
+            summary,
+            no_assert,
+        } => run_suite(&repos, json, summary, no_assert, out, measurer),
+    };
+    outcome.unwrap_or_else(|e| {
+        let _ = writeln!(err, "error: {e}");
+        EXIT_ERROR
+    })
+}
+
+/// Measures every repository in order (stopping at the first error, before any
+/// output), prints the table, then writes the requested report files.
+fn run_suite(
+    repos: &[PathBuf],
+    json: Option<PathBuf>,
+    summary: Option<PathBuf>,
+    no_assert: bool,
+    out: &mut impl Write,
+    measurer: &dyn Fn(&Path, &str) -> Result<Measurement, BenchError>,
+) -> Result<i32, BenchError> {
+    let mut results = Vec::with_capacity(repos.len());
+    for repo in repos {
+        let label = repo
+            .file_name()
+            .unwrap_or(repo.as_os_str())
+            .to_string_lossy();
+        let mut m = measurer(repo, &label)?;
+        m.violations = budgets::evaluate(&m)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        results.push(m);
+    }
+    let report = Report::new(results);
+    let _ = write!(out, "{}", report.text_table(no_assert));
+    if let Some(path) = json {
+        fs::write(&path, report.to_json()).map_err(|e| cannot_write(&path, e))?;
+    }
+    if let Some(path) = summary {
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .and_then(|mut file| file.write_all(report.markdown(no_assert).as_bytes()))
+            .map_err(|e| cannot_write(&path, e))?;
+    }
+    Ok(if no_assert || report.passed {
+        EXIT_OK
+    } else {
+        EXIT_BUDGET
+    })
+}
+
+fn cannot_write(path: &Path, e: std::io::Error) -> BenchError {
+    BenchError::new(format!("cannot write {}: {e}", path.display()))
 }
 
 #[cfg(test)]

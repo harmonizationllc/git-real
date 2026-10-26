@@ -1,10 +1,13 @@
 //! One cold measurement of a repository, in the spec's order (§3.4).
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use git_real_core::RepoSession;
 use serde::Serialize;
 
 use crate::git::BenchError;
+use crate::rss;
 
 /// Everything measured for one repository. Serializes camelCase; `None` is `null`.
 /// Durations are whole milliseconds. `violations` holds the rendered
@@ -34,7 +37,91 @@ pub struct Measurement {
 
 /// Measures `path`; failure to open is `cannot open <path>: <err>`.
 pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
-    todo!()
+    let span = Instant::now();
+
+    let started = Instant::now();
+    let mut session = RepoSession::open(path)
+        .map_err(|e| BenchError::new(format!("cannot open {}: {e}", path.display())))?;
+    let open_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    let summary = session.log_summary().map_err(bench_error)?;
+    let graph_build_ms = elapsed_ms(started);
+
+    let started = Instant::now();
+    serialized_page(&session, summary.generation, 0)?;
+    let first_page_ms = elapsed_ms(started);
+    let open_to_first_page_ms = elapsed_ms(span);
+
+    let rss_before_paging_mb = rss::current_rss_mb();
+    let started = Instant::now();
+    let mut start = 0;
+    while start < summary.total {
+        serialized_page(&session, summary.generation, start)?;
+        start += PAGE_SIZE;
+    }
+    let page_all_ms = elapsed_ms(started);
+    let rss_after_paging_mb = rss::current_rss_mb();
+    let rss_growth_mb = rss_after_paging_mb
+        .zip(rss_before_paging_mb)
+        .map(|(after, before)| after.saturating_sub(before));
+
+    let (status_ms, status_entries, files) = if session.summary().is_bare {
+        (None, None, None)
+    } else {
+        let started = Instant::now();
+        let status = session.status().map_err(bench_error)?;
+        let status_ms = elapsed_ms(started);
+        let files = git2::Repository::open(path)
+            .and_then(|repo| repo.index())
+            .map_err(bench_error)?
+            .len();
+        (Some(status_ms), Some(status.entries.len()), Some(files))
+    };
+
+    let started = Instant::now();
+    session.log_summary().map_err(bench_error)?;
+    let graph_refresh_ms = elapsed_ms(started);
+
+    Ok(Measurement {
+        label: label.to_string(),
+        path: path.to_path_buf(),
+        commits: summary.total,
+        files,
+        max_lanes: summary.max_lanes,
+        open_ms,
+        graph_build_ms,
+        first_page_ms,
+        open_to_first_page_ms,
+        page_all_ms,
+        rss_before_paging_mb,
+        rss_after_paging_mb,
+        rss_growth_mb,
+        status_ms,
+        status_entries,
+        graph_refresh_ms,
+        violations: Vec::new(),
+    })
+}
+
+/// Rows per `log_page` call, the graph panel's page size.
+const PAGE_SIZE: u32 = 500;
+
+/// One page fetched and serialized to JSON, as the IPC layer would send it.
+fn serialized_page(session: &RepoSession, generation: u64, start: u32) -> Result<(), BenchError> {
+    let page = session
+        .log_page(generation, start, PAGE_SIZE)
+        .map_err(bench_error)?;
+    serde_json::to_vec(&page).map_err(bench_error)?;
+    Ok(())
+}
+
+fn elapsed_ms(since: Instant) -> u128 {
+    since.elapsed().as_millis()
+}
+
+fn bench_error(e: impl std::fmt::Display) -> BenchError {
+    BenchError::new(e.to_string())
 }
 
 #[cfg(test)]
