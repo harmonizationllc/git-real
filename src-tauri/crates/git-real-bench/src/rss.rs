@@ -3,12 +3,16 @@
 /// The `VmRSS` line of a `/proc/<pid>/status` text, kB converted to MB
 /// (integer division by 1024). `None` when the line is absent or malformed.
 pub fn parse_vm_rss(status: &str) -> Option<u64> {
-    todo!()
+    let line = status.lines().find(|l| l.starts_with("VmRSS:"))?;
+    let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kb / 1024)
 }
 
 /// Current resident set size in MB; `None` when unreadable.
 pub fn current_rss_mb() -> Option<u64> {
-    todo!()
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| parse_vm_rss(&s))
 }
 
 #[cfg(test)]

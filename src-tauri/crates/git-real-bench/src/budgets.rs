@@ -21,14 +21,42 @@ pub struct Violation {
 /// `<label>: <metric> <value> exceeds <budget>`
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        write!(
+            f,
+            "{}: {} {} exceeds {}",
+            self.label, self.metric, self.value, self.budget
+        )
     }
 }
 
 /// One `Violation` per exceeded budget, in the order open-to-first-page, status,
 /// RSS growth. A value equal to its budget is not a violation; `None` metrics are skipped.
 pub fn evaluate(m: &Measurement) -> Vec<Violation> {
-    todo!()
+    let checks = [
+        (
+            "openToFirstPageMs",
+            Some(m.open_to_first_page_ms),
+            OPEN_TO_FIRST_PAGE_MS,
+        ),
+        ("statusMs", m.status_ms, STATUS_MS),
+        (
+            "rssGrowthMb",
+            m.rss_growth_mb.map(u128::from),
+            u128::from(PAGING_RSS_GROWTH_MB),
+        ),
+    ];
+    checks
+        .into_iter()
+        .filter_map(|(metric, value, budget)| {
+            let value = value.filter(|v| *v > budget)?;
+            Some(Violation {
+                label: m.label.clone(),
+                metric,
+                value,
+                budget,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

@@ -45,7 +45,100 @@ impl fmt::Display for UsageError {
 
 /// Parses the arguments after the program name.
 pub fn parse(args: &[String]) -> Result<Command, UsageError> {
-    todo!()
+    match args.first().map(String::as_str) {
+        Some("--help") if args.len() == 1 => Ok(Command::Help),
+        Some("prepare") => parse_prepare(&args[1..]),
+        Some("run") => parse_run(&args[1..]),
+        Some(other) => Err(UsageError(format!("unknown command {other}"))),
+        None => Err(UsageError("missing command".to_string())),
+    }
+}
+
+/// `<kind> <dir> [flags]`, flags anywhere after the kind.
+fn parse_prepare(args: &[String]) -> Result<Command, UsageError> {
+    let kind = args
+        .first()
+        .ok_or_else(|| UsageError("missing fixture kind".to_string()))?;
+    let allowed: &[&str] = match kind.as_str() {
+        "synthetic" => &["--commits", "--files"],
+        "public-graph" => &["--url", "--commits"],
+        "public-worktree" => &["--url"],
+        other => return Err(UsageError(format!("unknown fixture kind {other}"))),
+    };
+    let mut dirs = Vec::new();
+    let (mut commits, mut files, mut url) = (DEFAULT_COMMITS, DEFAULT_FILES, DEFAULT_URL);
+    let mut rest = args[1..].iter();
+    while let Some(arg) = rest.next() {
+        if !arg.starts_with("--") {
+            dirs.push(arg);
+            continue;
+        }
+        if !allowed.contains(&arg.as_str()) {
+            return Err(unknown_flag(arg));
+        }
+        let value = flag_value(arg, rest.next())?;
+        match arg.as_str() {
+            "--commits" => commits = count(arg, value)?,
+            "--files" => files = count(arg, value)?,
+            _ => url = value,
+        }
+    }
+    let dir = match dirs.as_slice() {
+        [dir] => PathBuf::from(dir),
+        [] => return Err(UsageError("missing <dir>".to_string())),
+        _ => return Err(UsageError("expected exactly one <dir>".to_string())),
+    };
+    let url = url.to_string();
+    let spec = match kind.as_str() {
+        "synthetic" => FixtureSpec::Synthetic { commits, files },
+        "public-graph" => FixtureSpec::PublicGraph { url, commits },
+        _ => FixtureSpec::PublicWorktree { url },
+    };
+    Ok(Command::Prepare { dir, spec })
+}
+
+/// `<repo>... [--json <file>] [--summary <file>] [--no-assert]`, flags anywhere.
+fn parse_run(args: &[String]) -> Result<Command, UsageError> {
+    let (mut repos, mut json, mut summary, mut no_assert) = (Vec::new(), None, None, false);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--json" => json = Some(PathBuf::from(flag_value(arg, rest.next())?)),
+            "--summary" => summary = Some(PathBuf::from(flag_value(arg, rest.next())?)),
+            "--no-assert" => no_assert = true,
+            flag if flag.starts_with("--") => return Err(unknown_flag(flag)),
+            repo => repos.push(PathBuf::from(repo)),
+        }
+    }
+    if repos.is_empty() {
+        return Err(UsageError("missing <repo>".to_string()));
+    }
+    Ok(Command::Run {
+        repos,
+        json,
+        summary,
+        no_assert,
+    })
+}
+
+fn unknown_flag(flag: &str) -> UsageError {
+    UsageError(format!("unknown flag {flag}"))
+}
+
+fn flag_value<'a>(flag: &str, value: Option<&'a String>) -> Result<&'a str, UsageError> {
+    value
+        .map(String::as_str)
+        .ok_or_else(|| UsageError(format!("{flag} needs a value")))
+}
+
+/// A positive count: `0` would leave nothing to build (and `c % files` undefined).
+fn count(flag: &str, value: &str) -> Result<u32, UsageError> {
+    match value.parse::<u32>() {
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(UsageError(format!(
+            "{flag} needs a positive number, got {value}"
+        ))),
+    }
 }
 
 #[cfg(test)]
