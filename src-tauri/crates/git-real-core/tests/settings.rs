@@ -14,6 +14,11 @@ const FIXTURE: &str = concat!(
     "/../../../src/lib/store/settingsDefaults.json"
 );
 
+const TOKENS_CSS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../src/styles/tokens.css"
+);
+
 fn patch(json: Value) -> SettingsPatch {
     serde_json::from_value(json).unwrap()
 }
@@ -34,6 +39,46 @@ fn background_rgb_matches_tokens_css() {
     assert_eq!(background_rgb(Theme::Light, true), (246, 246, 246));
     assert_eq!(background_rgb(Theme::System, true), (30, 30, 30));
     assert_eq!(background_rgb(Theme::System, false), (246, 246, 246));
+}
+
+/// The `--color-bg` value inside the block whose header line is `header`
+/// (compared after trimming, so indentation inside `@media` does not matter).
+fn color_bg_in(css: &str, header: &str) -> (u8, u8, u8) {
+    let mut lines = css.lines().skip_while(|l| l.trim() != header.trim());
+    assert!(
+        lines.next().is_some(),
+        "no block header {header:?} in tokens.css"
+    );
+    for line in lines {
+        let line = line.trim();
+        if line.starts_with('}') {
+            break;
+        }
+        if let Some(hex) = line
+            .strip_prefix("--color-bg:")
+            .and_then(|v| v.trim().strip_suffix(';'))
+            .and_then(|v| v.trim().strip_prefix('#'))
+        {
+            let n = u32::from_str_radix(hex, 16).unwrap();
+            return ((n >> 16) as u8, (n >> 8) as u8, n as u8);
+        }
+    }
+    panic!("no --color-bg in block {header:?}");
+}
+
+#[test]
+fn background_constants_match_tokens_css() {
+    use git_real_core::settings::{BG_DARK_RGB, BG_LIGHT_RGB};
+    let css = std::fs::read_to_string(TOKENS_CSS).unwrap();
+    assert_eq!(color_bg_in(&css, ":root {"), BG_LIGHT_RGB);
+    assert_eq!(
+        color_bg_in(&css, r#":root[data-theme="dark"] {"#),
+        BG_DARK_RGB
+    );
+    assert_eq!(
+        color_bg_in(&css, r#":root:not([data-theme="light"]) {"#),
+        BG_DARK_RGB
+    );
 }
 
 // --- Defaults ---

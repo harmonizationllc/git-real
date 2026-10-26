@@ -8,6 +8,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  syncWindowBackground: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -19,7 +20,10 @@ beforeEach(() => {
   document.documentElement.style.removeProperty("--diff-font-size");
 });
 
+const realMatchMedia = window.matchMedia;
+
 afterEach(() => {
+  window.matchMedia = realMatchMedia;
   delete window.__GIT_REAL_SETTINGS__;
   vi.restoreAllMocks();
   vi.resetModules();
@@ -87,6 +91,31 @@ async function load(reply?: { theme: "system" | "light" | "dark" }) {
   vi.mocked(updateSettings).mockResolvedValue(DEFAULT_SETTINGS);
   const { bootstrapAppearance } = await import("./applyAppearance");
   return { getSettings, DEFAULT_SETTINGS, useSettings, bootstrapAppearance };
+}
+
+/**
+ * Installs a fake `window.matchMedia` whose single query records `change` listeners.
+ * `removeEventListener` really detaches, so `fire(matches)` reaches only listeners still attached.
+ */
+function fakeMatchMedia(initial = false) {
+  const listeners = new Set<() => void>();
+  const mql = {
+    matches: initial,
+    addEventListener: vi.fn((type: string, fn: () => void) => {
+      if (type === "change") listeners.add(fn);
+    }),
+    removeEventListener: vi.fn((type: string, fn: () => void) => {
+      if (type === "change") listeners.delete(fn);
+    }),
+  };
+  window.matchMedia = vi.fn(() => mql) as unknown as typeof window.matchMedia;
+  return {
+    mql,
+    fire(matches: boolean) {
+      mql.matches = matches;
+      for (const fn of [...listeners]) fn();
+    },
+  };
 }
 
 describe("bootstrapAppearance", () => {
@@ -161,5 +190,71 @@ describe("bootstrapAppearance", () => {
     useSettings.getState().setPref({ appearance: { theme: "dark" } });
     expect(document.documentElement.getAttribute("data-theme")).not.toBe("dark");
     await useSettings.getState().flush();
+  });
+
+  it("syncs the window background when the desktop scheme changes while the theme is system", async () => {
+    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+    window.__GIT_REAL_SETTINGS__ = {
+      ...DEFAULT_SETTINGS,
+      appearance: { ...DEFAULT_SETTINGS.appearance, theme: "system" },
+    };
+    const media = fakeMatchMedia();
+    const { bootstrapAppearance } = await load();
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    expect(window.matchMedia).toHaveBeenCalledWith("(prefers-color-scheme: dark)");
+    media.fire(true);
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    expect(syncWindowBackground).toHaveBeenCalledWith(true);
+  });
+
+  it("ignores desktop scheme changes while the theme is explicit", async () => {
+    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+    window.__GIT_REAL_SETTINGS__ = {
+      ...DEFAULT_SETTINGS,
+      appearance: { ...DEFAULT_SETTINGS.appearance, theme: "dark" },
+    };
+    const media = fakeMatchMedia();
+    const { bootstrapAppearance } = await load({ theme: "dark" });
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    media.fire(true);
+    expect(syncWindowBackground).not.toHaveBeenCalled();
+  });
+
+  it("syncs once when the theme switches to system", async () => {
+    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+    window.__GIT_REAL_SETTINGS__ = {
+      ...DEFAULT_SETTINGS,
+      appearance: { ...DEFAULT_SETTINGS.appearance, theme: "dark" },
+    };
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    expect(syncWindowBackground).toHaveBeenCalledWith(false);
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    await useSettings.getState().flush();
+  });
+
+  it("the uninstaller removes the media-query listener", async () => {
+    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+    window.__GIT_REAL_SETTINGS__ = {
+      ...DEFAULT_SETTINGS,
+      appearance: { ...DEFAULT_SETTINGS.appearance, theme: "system" },
+    };
+    const media = fakeMatchMedia();
+    const { bootstrapAppearance } = await load();
+    const { syncWindowBackground } = await import("../lib/ipc");
+    const uninstall = bootstrapAppearance();
+    const added = media.mql.addEventListener.mock.calls.find(([type]) => type === "change")?.[1];
+    expect(added).toEqual(expect.any(Function));
+    uninstall();
+    expect(media.mql.removeEventListener).toHaveBeenCalledWith("change", added);
+    media.fire(true);
+    expect(syncWindowBackground).not.toHaveBeenCalled();
   });
 });

@@ -4,8 +4,8 @@
 
 use git_real_core::settings::{Settings, WindowGeometry};
 use git_real_lib::main_window::{
-    LABEL, TITLE, background_color, close_geometry, follows_desktop, initial_geometry,
-    logical_geometry,
+    LABEL, TITLE, background_color, close_geometry, desktop_theme, follows_desktop,
+    initial_geometry, logical_geometry,
 };
 
 #[test]
@@ -125,4 +125,10 @@ fn close_geometry_is_the_logical_geometry_when_not_fullscreen() {
         close_geometry((3840, 2160), 1.0, true, false, &stored),
         Some(logical_geometry((3840, 2160), 1.0, true, &stored))
     );
+}
+
+#[test]
+fn desktop_theme_maps_the_page_flag() {
+    assert_eq!(desktop_theme(true), tauri::Theme::Dark);
+    assert_eq!(desktop_theme(false), tauri::Theme::Light);
 }
