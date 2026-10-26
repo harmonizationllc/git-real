@@ -12,7 +12,6 @@ use std::sync::Arc;
 
 use git_real_core::hosting::Transport;
 use git_real_core::hosting::ureq_transport::UreqTransport;
-use git_real_core::settings::Theme;
 use tauri::{Manager, WindowEvent};
 
 use crate::hosting_store::{HostingStore, KeyringTokenStore};
@@ -44,29 +43,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != main_window::LABEL {
-                return;
-            }
-            let webview = || window.app_handle().get_webview_window(window.label());
-            let store = window.state::<Arc<SettingsStore>>();
-            match event {
-                // Only the main window's geometry is stored.
-                WindowEvent::CloseRequested { .. } => {
-                    if let Some(webview) = webview() {
-                        main_window::on_close_requested(&webview, &store);
-                    }
-                }
-                // The system theme follows the desktop's colour scheme.
-                WindowEvent::ThemeChanged(_)
-                    if main_window::follows_desktop(store.get().appearance.theme) =>
-                {
-                    if let Some(webview) = webview()
-                        && let Err(e) = main_window::apply_background(&webview, Theme::System)
-                    {
-                        eprintln!("settings: cannot update window background: {e}");
-                    }
-                }
-                _ => {}
+            // Only the main window's geometry is stored.
+            if let WindowEvent::CloseRequested { .. } = event
+                && window.label() == main_window::LABEL
+                && let Some(webview) = window.app_handle().get_webview_window(window.label())
+            {
+                let store = window.state::<Arc<SettingsStore>>();
+                main_window::on_close_requested(&webview, &store);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -79,6 +62,7 @@ pub fn run() {
             commands::repo::check_git_cli,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::sync_window_background,
             commands::settings::reveal_settings_file,
             commands::settings::check_settings_health,
             commands::settings::settings_file_path,

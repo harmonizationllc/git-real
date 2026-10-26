@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use git_real_core::settings::Theme;
 use git_real_core::{GitError, Settings, SettingsPatch};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -81,13 +82,41 @@ pub async fn update_settings(
     })
     .await?;
     // The settings are saved; a failure to recolour the window is only logged.
+    // A switch to `system` is left to `sync_window_background`, which the page
+    // calls with the desktop's real colour scheme.
     if theme_changed(&before, &next)
+        && !main_window::follows_desktop(next.appearance.theme)
         && let Some(window) = app.get_webview_window(main_window::LABEL)
-        && let Err(e) = main_window::apply_background(&window, next.appearance.theme)
+        && let Err(e) = main_window::apply_background(&window, next.appearance.theme, None)
     {
         eprintln!("settings: cannot update window background: {e}");
     }
     Ok(next)
+}
+
+/// Recolours the window for the desktop colour scheme the page reports, while
+/// the theme follows the desktop. On Linux the window's own theme is cached at
+/// creation, so the page is the source of truth after launch. A recolour
+/// failure is only logged.
+#[tauri::command]
+pub async fn sync_window_background(
+    app: AppHandle,
+    settings: State<'_, Arc<SettingsStore>>,
+    desktop_dark: bool,
+) -> Result<(), AppError> {
+    let store = Arc::clone(settings.inner());
+    let theme = run_blocking(move || Ok(store.get().appearance.theme)).await?;
+    if main_window::follows_desktop(theme)
+        && let Some(window) = app.get_webview_window(main_window::LABEL)
+        && let Err(e) = main_window::apply_background(
+            &window,
+            Theme::System,
+            Some(main_window::desktop_theme(desktop_dark)),
+        )
+    {
+        eprintln!("settings: cannot update window background: {e}");
+    }
+    Ok(())
 }
 
 #[tauri::command]

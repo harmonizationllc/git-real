@@ -51,13 +51,28 @@ pub fn follows_desktop(theme: Theme) -> bool {
     theme == Theme::System
 }
 
-/// Sets the window and webview background for `theme`. The desktop's colour
-/// scheme is only queried when the theme follows it.
-pub fn apply_background(window: &WebviewWindow, theme: Theme) -> tauri::Result<()> {
-    let desktop = if follows_desktop(theme) {
+/// The desktop colour scheme the page reports through `prefers-color-scheme`.
+pub fn desktop_theme(desktop_dark: bool) -> tauri::Theme {
+    if desktop_dark {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    }
+}
+
+/// Sets the window and webview background for `theme`. `desktop` is the
+/// desktop's colour scheme when the caller knows it; when it is `None` and the
+/// theme follows the desktop, the window is asked. That answer is only fresh
+/// at creation on Linux, so later changes come from the page.
+pub fn apply_background(
+    window: &WebviewWindow,
+    theme: Theme,
+    desktop: Option<tauri::Theme>,
+) -> tauri::Result<()> {
+    let desktop = if follows_desktop(theme) && desktop.is_none() {
         window.theme().ok()
     } else {
-        None
+        desktop
     };
     window.set_background_color(Some(background_color(theme, desktop)))
 }
@@ -78,7 +93,7 @@ pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWin
         .initialization_script(store.to_init_script())
         .build()?;
     // A wrong-coloured first frame is better than a window that never shows.
-    if let Err(e) = apply_background(&window, settings.appearance.theme) {
+    if let Err(e) = apply_background(&window, settings.appearance.theme, None) {
         eprintln!("settings: cannot set window background: {e}");
     }
     window.show()?;

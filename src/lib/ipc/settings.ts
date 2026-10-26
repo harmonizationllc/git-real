@@ -22,3 +22,8 @@ export function checkSettingsHealth(): Promise<SettingsHealth> {
 export function settingsFilePath(): Promise<string> {
   return invoke<string>("settings_file_path");
 }
+
+/** Tells Rust the desktop colour scheme the page sees, so the window background follows it on `system`. */
+export async function syncWindowBackground(desktopDark: boolean): Promise<void> {
+  await invoke("sync_window_background", { desktopDark });
+}
