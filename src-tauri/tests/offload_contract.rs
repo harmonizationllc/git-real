@@ -194,3 +194,51 @@ fn registered_names_take_the_last_path_segment() {
         vec!["get_log_page".to_string(), "open_repo".to_string()]
     );
 }
+
+// Negative cases: what the scanner must flag or tolerate.
+#[test]
+fn scanner_flags_a_handler_that_mentions_run_blocking_without_calling_it() {
+    let source =
+        "#[tauri::command]\npub async fn lazy() -> u8 {\n    let f = run_blocking;\n    1\n}\n";
+    assert_eq!(bare_handlers(source), vec!["lazy".to_string()]);
+}
+
+#[test]
+fn scanner_flags_an_unterminated_final_handler_without_run_blocking() {
+    let source = "#[tauri::command]\npub async fn cut_off() -> u8 {\n    1";
+    assert_eq!(bare_handlers(source), vec!["cut_off".to_string()]);
+}
+
+#[test]
+fn scanner_accepts_an_unterminated_final_handler_that_wraps() {
+    let source = "#[tauri::command]\npub async fn ok() -> u8 {\n    run_blocking(|| 1).await";
+    assert!(bare_handlers(source).is_empty());
+}
+
+#[test]
+fn scanner_flags_only_the_bare_one_when_a_wrapped_follows_a_bare() {
+    let source = "#[tauri::command]\npub fn first() {\n    inner()\n}\n\n#[tauri::command]\npub async fn second() {\n    run_blocking(|| ()).await\n}\n";
+    assert_eq!(bare_handlers(source), vec!["first".to_string()]);
+}
+
+#[test]
+fn scanner_reports_two_consecutive_bare_handlers() {
+    let source = "#[tauri::command]\npub fn a() {\n}\n#[tauri::command]\npub fn b() {\n}\n";
+    assert_eq!(
+        bare_handlers(source),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+#[test]
+fn registered_names_accept_a_list_without_a_trailing_comma() {
+    let lib = "generate_handler![commands::a::one, two]";
+    let names: Vec<String> = registered_names(lib).into_iter().collect();
+    assert_eq!(names, vec!["one".to_string(), "two".to_string()]);
+}
+
+#[test]
+#[should_panic(expected = "generate_handler!")]
+fn registered_names_panic_without_a_generate_handler_invocation() {
+    registered_names("fn main() {}");
+}

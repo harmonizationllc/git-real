@@ -163,3 +163,102 @@ fn prepare_twice_reports_cached() {
     let again = bench(&args);
     assert!(String::from_utf8_lossy(&again.stdout).contains("(cached)"));
 }
+
+#[test]
+fn prepare_on_a_foreign_directory_exits_three_and_leaves_it_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let foreign = tmp.path().join("mine");
+    std::fs::create_dir(&foreign).unwrap();
+    std::fs::write(foreign.join("keep.txt"), "x").unwrap();
+    let out = bench(&["prepare", "synthetic", path_str(&foreign)]);
+    assert_eq!(
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).starts_with("error: "),
+            foreign.join("keep.txt").exists(),
+        ),
+        (Some(3), true, true)
+    );
+}
+
+#[test]
+fn run_no_assert_ends_stdout_with_info() {
+    if !git_available() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = tmp.path().join("bench-synthetic");
+    bench(&[
+        "prepare",
+        "synthetic",
+        path_str(&fixture),
+        "--commits",
+        "30",
+        "--files",
+        "5",
+    ]);
+    let ran = bench(&["run", path_str(&fixture), "--no-assert"]);
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    assert_eq!(
+        (ran.status.code(), stdout.lines().last()),
+        (Some(0), Some("INFO"))
+    );
+}
+
+#[test]
+fn run_on_a_non_repo_after_a_good_repo_prints_no_table_and_writes_no_json() {
+    if !git_available() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = tmp.path().join("bench-synthetic");
+    bench(&[
+        "prepare",
+        "synthetic",
+        path_str(&fixture),
+        "--commits",
+        "30",
+        "--files",
+        "5",
+    ]);
+    let json = tmp.path().join("out.json");
+    let ran = bench(&[
+        "run",
+        path_str(&fixture),
+        path_str(tmp.path()),
+        "--json",
+        path_str(&json),
+    ]);
+    assert_eq!(
+        (ran.status.code(), ran.stdout.is_empty(), json.exists()),
+        (Some(3), true, false)
+    );
+}
+
+#[test]
+fn unwritable_json_exits_three_after_printing_the_table() {
+    if !git_available() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = tmp.path().join("bench-synthetic");
+    bench(&[
+        "prepare",
+        "synthetic",
+        path_str(&fixture),
+        "--commits",
+        "30",
+        "--files",
+        "5",
+    ]);
+    let json = tmp.path().join("missing").join("out.json");
+    let ran = bench(&["run", path_str(&fixture), "--json", path_str(&json)]);
+    assert_eq!(
+        (
+            ran.status.code(),
+            String::from_utf8_lossy(&ran.stdout).contains("budgets:"),
+            String::from_utf8_lossy(&ran.stderr).starts_with("error: cannot write "),
+        ),
+        (Some(3), true, true)
+    );
+}

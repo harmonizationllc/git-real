@@ -276,6 +276,125 @@ mod tests {
         assert_eq!(o.out.lines().last(), Some("INFO"));
     }
 
+    #[test]
+    fn no_assert_prints_the_violation_line_before_the_info_trailer() {
+        let o = drive(&argv(&["run", "/x/synthetic", "--no-assert"]), &over_budget);
+        let lines: Vec<&str> = o.out.lines().collect();
+        assert_eq!(
+            &lines[lines.len() - 2..],
+            ["synthetic: openToFirstPageMs 3412 exceeds 3000", "INFO"]
+        );
+    }
+
+    #[test]
+    fn no_assert_prints_no_fail_line() {
+        let o = drive(&argv(&["run", "/x/synthetic", "--no-assert"]), &over_budget);
+        assert!(!o.out.lines().any(|l| l == "FAIL"));
+    }
+
+    #[test]
+    fn one_violating_repo_among_several_exits_1() {
+        let measurer = |p: &Path, label: &str| {
+            if label == "slow" {
+                over_budget(p, label)
+            } else {
+                fine(p, label)
+            }
+        };
+        let o = drive(&argv(&["run", "/x/fast", "/x/slow", "/x/other"]), &measurer);
+        let lines: Vec<&str> = o.out.lines().collect();
+        assert_eq!(
+            (o.code, &lines[lines.len() - 2..]),
+            (
+                1,
+                &["FAIL", "slow: openToFirstPageMs 3412 exceeds 3000"][..]
+            )
+        );
+    }
+
+    #[test]
+    fn a_failing_second_repo_stops_the_run_before_any_output() {
+        let measurer = |p: &Path, label: &str| {
+            if label == "broken" {
+                Err(BenchError::new("cannot open broken: boom"))
+            } else {
+                fine(p, label)
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let json = tmp.path().join("out.json");
+        let o = drive(
+            &argv(&[
+                "run",
+                "/x/ok",
+                "/x/broken",
+                "--json",
+                &json.display().to_string(),
+            ]),
+            &measurer,
+        );
+        assert_eq!(
+            (o.code, o.out.as_str(), json.exists()),
+            (3, "", false),
+            "stderr was {:?}",
+            o.err
+        );
+    }
+
+    // The real measurer over a worktree fixture and a bare one in one invocation.
+    #[test]
+    fn run_over_a_worktree_and_a_bare_repository_reports_nulls_for_the_bare_one() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let work = crate::test_support::build_synthetic(tmp.path(), "work", 30, 5);
+        let bare = crate::test_support::build_bare_graph(tmp.path(), "bare", 4);
+        let json = tmp.path().join("out.json");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = run(
+            &argv(&[
+                "run",
+                &work.display().to_string(),
+                &bare.display().to_string(),
+                "--json",
+                &json.display().to_string(),
+                "--no-assert",
+            ]),
+            &mut out,
+            &mut err,
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+        let (w, b) = (&v["results"][0], &v["results"][1]);
+        assert_eq!(
+            (
+                code,
+                w["label"].as_str(),
+                w["files"].as_u64(),
+                w["statusMs"].is_null(),
+                b["label"].as_str(),
+                b["commits"].as_u64(),
+                b["files"].is_null(),
+                b["statusMs"].is_null(),
+                b["statusEntries"].is_null(),
+            ),
+            (
+                0,
+                Some("work"),
+                Some(5),
+                false,
+                Some("bare"),
+                Some(4),
+                true,
+                true,
+                true
+            ),
+            "stderr was {:?}",
+            String::from_utf8_lossy(&err)
+        );
+    }
+
     // Report files.
     #[test]
     fn json_report_is_written_and_parses() {

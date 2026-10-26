@@ -129,6 +129,69 @@ mod tests {
         assert!(!stderr.trim().is_empty(), "got {err:?}");
     }
 
+    // run_git_with_input: stdin reaches git, failures keep the arguments and stderr.
+    #[test]
+    fn input_reaches_git_on_stdin() {
+        if !git_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let out = run_git_with_input(&["hash-object", "--stdin"], dir.path(), b"hello\n").unwrap();
+        // The well-known object id of "hello\n".
+        assert_eq!(out.trim(), "ce013625030ba8dba906f756967f9e9ca394464a");
+    }
+
+    #[test]
+    fn input_failure_names_the_arguments_and_stderr() {
+        if !git_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let err = run_git_with_input(&["fast-import", "--quiet"], dir.path(), b"garbage\n")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.starts_with("git fast-import --quiet failed: ") && err.len() > 32,
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn git_exiting_early_with_a_large_unread_input_does_not_hang_or_hide_stderr() {
+        if !git_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let big = vec![b'x'; 4 * 1024 * 1024];
+        let err = run_git_with_input(&["update-ref", "--stdin"], dir.path(), &big)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.starts_with("git update-ref --stdin failed: "),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_working_directory_is_a_failed_command() {
+        if !git_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone");
+        let plain = run_git(&["--version"], &gone).unwrap_err().to_string();
+        let fed = run_git_with_input(&["--version"], &gone, b"")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            plain.starts_with("git --version failed: ")
+                && fed.starts_with("git --version failed: "),
+            "got {plain:?} / {fed:?}"
+        );
+    }
+
     // The shared opt-out policy (same as git-real-core's test helper).
     #[test]
     fn git_available_honours_opt_out() {

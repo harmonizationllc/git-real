@@ -1109,4 +1109,257 @@ mod tests {
         let _ = prepare(&dir, &spec, &mut Vec::new());
         assert!(!marker_path(&dir).exists());
     }
+
+    // Cadence edges of the stream.
+    #[test]
+    fn stream_topic_starting_at_the_last_index_is_one_commit_kept_unmerged() {
+        let s = stream(40, 7);
+        assert!(
+            s.contains("topic-1 change 1\n")
+                && !s.contains("topic-1 change 2")
+                && s.ends_with("reset refs/heads/topic-1\nfrom :40\ndone\n"),
+            "tail was {:?}",
+            &s[s.len().saturating_sub(60)..]
+        );
+    }
+
+    #[test]
+    fn stream_topic_cut_off_mid_way_keeps_its_ref_at_the_last_commit() {
+        let s = stream(43, 7);
+        assert!(
+            s.ends_with("reset refs/heads/topic-1\nfrom :43\ndone\n"),
+            "tail was {:?}",
+            &s[s.len().saturating_sub(60)..]
+        );
+    }
+
+    #[test]
+    fn stream_tag_on_a_topic_index_points_at_the_main_tip_not_the_topic_commit() {
+        let s = stream(2000, 7);
+        let tag = s.find("reset refs/tags/v0.1\nfrom :1999\n").expect("tag");
+        let topic = s.find("topic-50 change 1").expect("topic commit 2000");
+        assert!(
+            tag < topic,
+            "the tag precedes the topic commit it shares an index with"
+        );
+    }
+
+    #[test]
+    fn stream_tags_exactly_the_multiples_of_2000() {
+        let s = stream(4000, 7);
+        assert_eq!(s.matches("reset refs/tags/").count(), 2);
+    }
+
+    #[test]
+    fn stream_with_one_file_touches_that_file_every_commit() {
+        let s = stream(6, 1);
+        assert!(!s.contains("file00001.txt") && s.contains("dir000/sub0/file00000.txt"));
+    }
+
+    #[test]
+    fn stream_with_the_minimum_two_commits_has_main_commit_and_done() {
+        let s = stream(2, 3);
+        assert!(s.contains("commit 2\n") && s.ends_with("done\n"));
+    }
+
+    #[test]
+    fn prepare_synthetic_2000_commits_tags_the_main_tip_and_keeps_every_commit() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        ready(&dir, &synthetic(2000, 7));
+        let repo = git2::Repository::open(&dir).unwrap();
+        let tagged = repo
+            .revparse_single("refs/tags/v0.1")
+            .unwrap()
+            .peel_to_commit()
+            .unwrap();
+        let mut walk = repo.revwalk().unwrap();
+        walk.push_glob("refs/*").unwrap();
+        let reachable = walk.count();
+        assert_eq!(
+            (
+                tagged.summary().map(str::to_string),
+                repo.find_reference("refs/heads/topic-50").is_ok(),
+                reachable,
+            ),
+            (Some("commit 1999".to_string()), true, 2000)
+        );
+    }
+
+    #[test]
+    fn prepare_synthetic_with_more_than_100_files_modifies_exactly_100() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        ready(&dir, &synthetic(30, 150));
+        let repo = git2::Repository::open(&dir).unwrap();
+        let mut opts = git2::StatusOptions::new();
+        opts.include_untracked(true).recurse_untracked_dirs(true);
+        assert_eq!(repo.statuses(Some(&mut opts)).unwrap().len(), 200);
+    }
+
+    // Marker mismatch on every parameter of every kind.
+    fn graph(url: &str, commits: u32) -> FixtureSpec {
+        FixtureSpec::PublicGraph {
+            url: url.to_string(),
+            commits,
+        }
+    }
+
+    #[test]
+    fn marker_mismatch_on_different_public_graph_commits() {
+        assert!(!Marker::new(&graph("u", 5), "h").matches(&graph("u", 6)));
+    }
+
+    #[test]
+    fn marker_mismatch_on_different_public_graph_url() {
+        assert!(!Marker::new(&graph("u", 5), "h").matches(&graph("v", 5)));
+    }
+
+    #[test]
+    fn marker_mismatch_between_graph_and_worktree_of_the_same_url() {
+        let worktree = FixtureSpec::PublicWorktree {
+            url: "u".to_string(),
+        };
+        assert!(!Marker::new(&graph("u", 5), "h").matches(&worktree));
+    }
+
+    #[test]
+    fn marker_mismatch_between_synthetic_and_graph_with_equal_numbers() {
+        assert!(!Marker::new(&synthetic(5, 5), "h").matches(&graph("u", 5)));
+    }
+
+    #[test]
+    fn prepare_refuses_a_public_graph_whose_commits_differ_and_keeps_it() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let (url, _) = make_source_repo(&tmp.path().join("src.git"), 8);
+        let dir = tmp.path().join("g");
+        ready(&dir, &graph(&url, 5));
+        let err = prepare(&dir, &graph(&url, 6), &mut Vec::new());
+        assert!(
+            err.is_err() && git2::Repository::open(&dir).is_ok(),
+            "must refuse and keep the fixture"
+        );
+    }
+
+    // Marker file problems.
+    #[test]
+    fn prepare_refuses_a_marker_with_another_version_and_keeps_the_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        std::fs::create_dir(&dir).unwrap();
+        let mut marker = Marker::new(&synthetic(30, 5), "abc");
+        marker.version = MARKER_VERSION + 1;
+        write_marker(&dir, &marker).unwrap();
+        let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("exists but is not a matching fixture") && dir.exists(),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_refuses_a_directory_whose_marker_is_garbage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(marker_path(&dir), "not json").unwrap();
+        let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new());
+        assert!(err.is_err() && dir.exists());
+    }
+
+    #[test]
+    fn marker_path_without_a_parent_appends_to_the_whole_path() {
+        assert_eq!(marker_path(Path::new("/")), PathBuf::from("/.fixture.json"));
+    }
+
+    #[test]
+    fn write_marker_failure_names_the_marker_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("no-such-parent").join("fx");
+        let err = write_marker(&dir, &Marker::new(&synthetic(1, 1), "h"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.starts_with(&format!("cannot write {}: ", marker_path(&dir).display())),
+            "got {err:?}"
+        );
+    }
+
+    // Error paths of prepare.
+    #[test]
+    fn prepare_rejects_a_directory_that_is_not_utf8() {
+        use std::os::unix::ffi::OsStrExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(std::ffi::OsStr::from_bytes(b"fx-\xff\xfe"));
+        let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new())
+            .unwrap_err()
+            .to_string();
+        assert!(err.ends_with("is not valid UTF-8"), "got {err:?}");
+    }
+
+    #[test]
+    fn prepare_of_an_empty_source_fails_and_removes_the_partial_directory() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("empty.git");
+        git2::Repository::init_bare(&source).unwrap();
+        let dir = tmp.path().join("g");
+        let spec = graph(&format!("file://{}", source.display()), 5);
+        let err = prepare(&dir, &spec, &mut Vec::new());
+        assert!(
+            err.is_err() && !dir.exists() && !marker_path(&dir).exists(),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn prepare_reports_a_marker_write_failure_after_a_successful_build() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        // A directory squatting on the marker's name makes the write fail.
+        std::fs::create_dir(marker_path(&dir)).unwrap();
+        let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new())
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("cannot write "), "got {err:?}");
+    }
+
+    struct FailingOut;
+    impl Write for FailingOut {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("closed"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn prepare_cached_reports_a_failing_output_stream() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("fx");
+        ready(&dir, &synthetic(30, 5));
+        let mut out = FailingOut;
+        let err = prepare(&dir, &synthetic(30, 5), &mut out);
+        assert!(err.is_err(), "a write failure must surface, got {err:?}");
+    }
 }

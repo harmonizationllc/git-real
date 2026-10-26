@@ -94,7 +94,8 @@ impl Report {
     }
 
     /// The stdout text: header, one row per result, the `budgets:` line, then the
-    /// trailer (`PASS`; `FAIL` plus one line per violation; `INFO` under `no_assert`).
+    /// trailer (`PASS`; `FAIL` plus one line per violation; one line per violation then
+    /// `INFO` under `no_assert`).
     pub fn text_table(&self, no_assert: bool) -> String {
         let header = HEADER.map(String::from);
         let rows: Vec<[String; 6]> = self.results.iter().map(cells).collect();
@@ -110,16 +111,19 @@ impl Report {
         }
         text.push_str(&self.budgets.line());
         text.push('\n');
+        if self.passed && !no_assert {
+            text.push_str("PASS\n");
+            return text;
+        }
+        if !no_assert {
+            text.push_str("FAIL\n");
+        }
+        for violation in self.results.iter().flat_map(|m| &m.violations) {
+            text.push_str(violation);
+            text.push('\n');
+        }
         if no_assert {
             text.push_str("INFO\n");
-        } else if self.passed {
-            text.push_str("PASS\n");
-        } else {
-            text.push_str("FAIL\n");
-            for violation in self.results.iter().flat_map(|m| &m.violations) {
-                text.push_str(violation);
-                text.push('\n');
-            }
         }
         text
     }
@@ -484,6 +488,48 @@ mod tests {
     fn text_has_no_fail_line_under_no_assert() {
         let text = failing().text_table(true);
         assert!(!text.lines().any(|l| l == "FAIL"));
+    }
+
+    #[test]
+    fn text_lists_violation_lines_before_info_under_no_assert() {
+        let lines: Vec<String> = failing()
+            .text_table(true)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        let n = lines.len();
+        assert_eq!(
+            (lines[n - 2].as_str(), lines[n - 1].as_str()),
+            ("synthetic: openToFirstPageMs 3412 exceeds 3000", "INFO")
+        );
+    }
+
+    #[test]
+    fn text_lists_every_violation_of_every_row_under_no_assert() {
+        let mut a = sample_measurement("a");
+        a.violations = vec!["a: one".to_string(), "a: two".to_string()];
+        let mut b = sample_measurement("b");
+        b.violations = vec!["b: three".to_string()];
+        let text = Report::new(vec![a, b]).text_table(true);
+        let tail: Vec<&str> = text.lines().rev().take(4).collect();
+        assert_eq!(tail, vec!["INFO", "b: three", "a: two", "a: one"]);
+    }
+
+    #[test]
+    fn text_table_widens_the_label_column_for_a_long_label() {
+        let long = "bench-public-worktree-qemu";
+        let text = Report::new(vec![sample_measurement(long)]).text_table(false);
+        let lines: Vec<&str> = text.lines().collect();
+        // The label column grows to the label; every other column keeps its
+        // alignment, so header and row end at the same offset.
+        assert_eq!(
+            (
+                lines[1].starts_with(long),
+                lines[0].chars().count() == lines[1].chars().count(),
+                lines[0].chars().count() > MIN_WIDTHS.iter().sum::<usize>() + 5,
+            ),
+            (true, true, true)
+        );
     }
 
     #[test]

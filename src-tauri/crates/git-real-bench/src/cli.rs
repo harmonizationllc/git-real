@@ -397,6 +397,100 @@ mod tests {
         assert!(parse(&argv(&["prepare", "synthetic", "d", "--commits"])).is_err());
     }
 
+    #[test]
+    fn rejects_help_with_extra_arguments() {
+        assert!(parse(&argv(&["--help", "run"])).is_err());
+    }
+
+    #[test]
+    fn rejects_two_directories() {
+        let err = parse(&argv(&["prepare", "synthetic", "a", "b"])).unwrap_err();
+        assert_eq!(err.to_string(), "expected exactly one <dir>");
+    }
+
+    #[test]
+    fn rejects_a_zero_commit_count() {
+        let err = parse(&argv(&["prepare", "synthetic", "d", "--commits", "0"])).unwrap_err();
+        assert_eq!(err.to_string(), "--commits needs a positive number, got 0");
+    }
+
+    #[test]
+    fn rejects_a_zero_file_count() {
+        let err = parse(&argv(&["prepare", "synthetic", "d", "--files", "0"])).unwrap_err();
+        assert_eq!(err.to_string(), "--files needs a positive number, got 0");
+    }
+
+    #[test]
+    fn rejects_a_zero_public_graph_commit_count() {
+        assert!(parse(&argv(&["prepare", "public-graph", "d", "--commits", "0"])).is_err());
+    }
+
+    #[test]
+    fn rejects_a_non_numeric_file_count() {
+        assert!(parse(&argv(&["prepare", "synthetic", "d", "--files", "many"])).is_err());
+    }
+
+    #[test]
+    fn rejects_a_count_beyond_u32() {
+        assert!(
+            parse(&argv(&[
+                "prepare",
+                "synthetic",
+                "d",
+                "--commits",
+                "4294967296"
+            ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_commits_on_public_worktree() {
+        let err = parse(&argv(&[
+            "prepare",
+            "public-worktree",
+            "d",
+            "--commits",
+            "5",
+        ]))
+        .unwrap_err();
+        assert_eq!(err.to_string(), "unknown flag --commits");
+    }
+
+    #[test]
+    fn rejects_files_on_public_graph() {
+        assert!(parse(&argv(&["prepare", "public-graph", "d", "--files", "5"])).is_err());
+    }
+
+    #[test]
+    fn rejects_a_url_flag_missing_its_value() {
+        let err = parse(&argv(&["prepare", "public-worktree", "d", "--url"])).unwrap_err();
+        assert_eq!(err.to_string(), "--url needs a value");
+    }
+
+    #[test]
+    fn rejects_a_summary_flag_missing_its_value() {
+        let err = parse(&argv(&["run", "a", "--summary"])).unwrap_err();
+        assert_eq!(err.to_string(), "--summary needs a value");
+    }
+
+    #[test]
+    fn rejects_a_prepare_flag_on_run() {
+        assert!(parse(&argv(&["run", "a", "--commits", "5"])).is_err());
+    }
+
+    #[test]
+    fn rejects_run_with_only_flags_and_no_repo() {
+        let err = parse(&argv(&["run", "--no-assert", "--json", "o.json"])).unwrap_err();
+        assert_eq!(err.to_string(), "missing <repo>");
+    }
+
+    #[test]
+    fn rejects_prepare_without_a_kind() {
+        let err = parse(&argv(&["prepare"])).unwrap_err();
+        assert_eq!(err.to_string(), "missing fixture kind");
+    }
+
     // USAGE documents the whole surface.
     #[test]
     fn usage_text_lists_every_subcommand() {
