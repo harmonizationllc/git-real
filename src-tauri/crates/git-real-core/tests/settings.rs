@@ -447,3 +447,67 @@ fn window_clamp_to_min() {
         (1280, 800)
     );
 }
+
+// Contract: the four section heights are optional leaves, clamped to SECTION_HEIGHT_MIN, null meaning automatic.
+#[test]
+fn layout_section_heights_default_to_none() {
+    let d = Settings::default();
+    assert_eq!(d.layout.branches_height, None);
+    assert_eq!(d.layout.stashes_height, None);
+    assert_eq!(d.layout.tags_height, None);
+    assert_eq!(d.layout.pull_requests_height, None);
+    assert_eq!(git_real_core::settings::SECTION_HEIGHT_MIN, 72);
+}
+
+#[test]
+fn lenient_section_heights_absent_null_wrong_type_and_small() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({"layout": {}}));
+    assert_eq!(s.layout.tags_height, None);
+    assert!(warnings.is_empty(), "{warnings:?}");
+
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"tagsHeight": null, "stashesHeight": "300", "branchesHeight": 10, "pullRequestsHeight": 200}
+    }));
+    assert_eq!(s.layout.tags_height, None);
+    assert_eq!(s.layout.stashes_height, None);
+    assert_eq!(s.layout.branches_height, Some(72));
+    assert_eq!(s.layout.pull_requests_height, Some(200));
+    let mut got = fields(&warnings);
+    got.sort_unstable();
+    assert_eq!(got, vec!["layout.branchesHeight", "layout.stashesHeight"]);
+}
+
+#[test]
+fn patch_section_height_absent_keeps_null_clears_value_sets_and_clamps() {
+    let mut base = Settings::default();
+    base.layout.tags_height = Some(300);
+
+    let kept = base
+        .apply(&patch(json!({"layout": {"refsWidth": 250}})))
+        .unwrap();
+    assert_eq!(kept.layout.tags_height, Some(300));
+    let cleared = base
+        .apply(&patch(json!({"layout": {"tagsHeight": null}})))
+        .unwrap();
+    assert_eq!(cleared.layout.tags_height, None);
+    let set = base
+        .apply(&patch(json!({"layout": {"tagsHeight": 410}})))
+        .unwrap();
+    assert_eq!(set.layout.tags_height, Some(410));
+    let small = base
+        .apply(&patch(json!({"layout": {"branchesHeight": 5}})))
+        .unwrap();
+    assert_eq!(small.layout.branches_height, Some(72));
+}
+
+#[test]
+fn section_heights_round_trip_through_the_file_codec() {
+    let mut s = Settings::default();
+    s.layout.stashes_height = Some(120);
+    let text = serde_json::to_string_pretty(&SettingsFile::current(s.clone())).unwrap();
+    assert!(text.contains("\"stashesHeight\": 120"), "{text}");
+    assert!(text.contains("\"tagsHeight\": null"), "{text}");
+    let (back, warnings) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, s);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}

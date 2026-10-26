@@ -400,6 +400,14 @@ describe("TagsPanel copy", () => {
     expect(copyText).toHaveBeenCalledExactlyOnceWith("v1");
   });
 
+  it("renders the copy error alert in the panel variant", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard closed"));
+    const { user } = await renderPanel();
+    rightClick(row("v1"));
+    await user.click(menuItem("Copy name"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("a failed copy shows its error and dismisses", async () => {
     vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
     const { user } = await renderPanel();
