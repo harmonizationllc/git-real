@@ -159,6 +159,11 @@ Shape: question / options / selected / cost if wrong. **P** = person-grade
   tickets (signing, Flatpak, macOS) build on them.
 - **R15 (R)** README gains `Install`, `Releasing` and `Wayland and X11`
   sections; the Status paragraph drops "packaging … still ahead".
+- **R16 (R)** The desktop template carries `StartupWMClass={{exec}}`
+  because Tauri names the desktop file after the product name (`Git Real.desktop`)
+  while the Wayland `app_id` is the binary name (`git-real`); the key gives
+  docks and window managers an explicit match (added 2026-10-25 after the
+  local `.deb` build).
 
 ## 3. CI bundling (AC 1)
 
@@ -220,22 +225,24 @@ builds.
 CLI. `src-tauri/Cargo.toml` gains `repository = "https://github.com/harmonizationllc/git-real"`
 (ADR 0002 §3).
 
-On Linux the Tauri CLI renames the binary to the kebab-cased product name,
-so the binary, the desktop file and the icon are all `git-real`
-(`/usr/bin/git-real`, `/usr/share/applications/git-real.desktop`,
-`/usr/share/icons/hicolor/‹size›/apps/git-real.png`). Under Wayland GTK 3
-sets the `app_id` to the program name, so COSMIC matches the running window
-to that desktop file and shows the icon in the dock. Neither the rename
-rule nor the default template's variables can be verified locally (the
-bundler sources are not in the cargo registry; the CLI is the npm binary),
-so the developer confirms the names by building the `.deb` locally and
-listing it with `dpkg-deb -c`; if Tauri produces a different name, the
-template and this section follow Tauri, not the other way round.
+Verified by building the `.deb` locally (2026-10-25, Tauri CLI 2.12.3):
+the binary and the icons take the kebab-cased product name
+(`/usr/bin/git-real`, `/usr/share/icons/hicolor/{32x32,128x128,256x256@2,512x512}/apps/git-real.png`),
+the package is `git-real` with `Section: vcs`, `Recommends: git`,
+`Depends: libwebkit2gtk-4.1-0, libgtk-3-0`, but the desktop file takes the
+**product name**: `/usr/share/applications/Git Real.desktop`. Under Wayland
+GTK 3 sets the window's `app_id` to the program name, `git-real`, which is
+not the desktop-file id (`Git Real`). COSMIC's dock matches an `app_id`
+against the desktop entry's id, then `StartupWMClass`, then `Exec`/`Icon`
+heuristics, so the template adds `StartupWMClass={{exec}}` (routine ruling
+R16) to make the match explicit on COSMIC, GNOME and X11 window managers
+alike. The acceptance walk confirms the dock shows the icon for the
+running window.
 
 ### 4.2 Desktop template (`src-tauri/packaging/git-real.desktop`)
 
-Tauri's Handlebars template with two additions, `Keywords` (COSMIC's
-launcher searches it) and `StartupNotify`:
+Tauri's Handlebars template with three additions, `Keywords` (COSMIC's
+launcher searches it), `StartupNotify` and `StartupWMClass` (R16):
 
 ```ini
 [Desktop Entry]
@@ -250,6 +257,7 @@ Terminal=false
 Type=Application
 Keywords=git;vcs;version control;repository;commit;branch;
 StartupNotify=true
+StartupWMClass={{exec}}
 {{#if mime_type}}
 MimeType={{mime_type}}
 {{/if}}
@@ -544,14 +552,14 @@ CI). Plus the coverage agent's confirmation and the architect's approval.
 
 1. Push a tag `v0.1.0` (or bump to `0.1.1` first): the `Release` workflow
    publishes "Git Real v0.1.0" with a `.deb`, `.rpm` and `.AppImage`.
-2. `sudo apt install ./git-real_0.1.0_amd64.deb`; Super → type `git`: the
+2. `sudo apt install "./Git Real_0.1.0_amd64.deb"`; Super → type `git`: the
    launcher lists Git Real with the blue branch icon; launch it; the dock
    shows the same icon and title; the window has COSMIC's server-side
    decorations and resizes from every edge.
 3. `GDK_BACKEND=x11 git-real`: the window opens under XWayland with
    decorations; drag and drop into the Changes panel and clipboard copy
    work in both sessions.
-4. `chmod +x Git.Real_0.1.0_amd64.AppImage && ./Git.Real_0.1.0_amd64.AppImage`
+4. `chmod +x "Git Real_0.1.0_amd64.AppImage" && "./Git Real_0.1.0_amd64.AppImage"`
    starts without installing anything.
 5. Settings → About shows `Git Real 0.1.0`; `Check for updates` reports
    `You're up to date`. Publish a `v0.1.1` later, relaunch: after ten
