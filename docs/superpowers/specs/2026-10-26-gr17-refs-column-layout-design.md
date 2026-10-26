@@ -107,9 +107,13 @@ Measurement: one `ResizeObserver` per `RefsColumn` observes the column root
 (container = its content height minus the four handle tracks of
 `SPLIT_HANDLE_WIDTH` each) and each section's content wrapper (its natural
 height). Entries whose target is unknown are ignored. Until the root and
-every wrapper have reported a height above zero, no inline heights are set
-and the wrappers fall back to `flex: 0 1 auto; min-height: 0`, so a test
-without layout renders every section.
+every wrapper have reported at least once, no inline heights are set and the
+wrappers fall back to `flex: 0 1 auto; min-height: 0`, so a test without
+layout renders every section. A wrapper may report zero: the Pull requests
+and Issues panels render nothing for a repository without a hosting
+account, and such a section takes 0 px and renders no handle of its own
+(ruled during execution on 2026-10-26; the first draft required every
+height to be above zero, which never happened on a local-only repository).
 
 Panels lose their own sizing rules (`flex`, `max-height: 40%`, `min-height`,
 `overflow`, `border-top`): the wrapper scrolls and the handle draws the
