@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::{PoisonError, RwLock};
+use std::sync::{Mutex, PoisonError, RwLock};
 use std::thread;
 
 use crate::error::GitError;
@@ -56,15 +56,31 @@ pub fn command(git: &Path) -> Command {
     cmd
 }
 
-/// Finds the git executable: the configured override when set (an error when it
-/// no longer exists), otherwise the first `git` on `PATH`.
+/// The configured path last reported missing, so [`locate`] logs each distinct
+/// missing path once instead of on every call.
+static WARNED: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Logs (once per distinct path) that the configured executable is gone.
+fn warn_configured_missing(configured: &Path) {
+    let mut warned = WARNED.lock().unwrap_or_else(PoisonError::into_inner);
+    if warned.as_deref() != Some(configured) {
+        eprintln!(
+            "git: configured executable {} not found; using PATH",
+            configured.display()
+        );
+        *warned = Some(configured.to_path_buf());
+    }
+}
+
+/// Finds the git executable: the configured override when it is a file,
+/// otherwise the first `git` on `PATH`. A configured path that no longer exists
+/// is logged once and skipped rather than treated as an error.
 pub fn locate() -> Result<PathBuf, GitError> {
     if let Some(configured) = configured_path() {
-        return if configured.is_file() {
-            Ok(configured)
-        } else {
-            Err(GitError::GitCliConfiguredMissing(configured))
-        };
+        if configured.is_file() {
+            return Ok(configured);
+        }
+        warn_configured_missing(&configured);
     }
     env::var_os("PATH")
         .and_then(locate_in)

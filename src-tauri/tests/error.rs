@@ -1119,24 +1119,14 @@ fn tool_error_maps_to_external_tool_failed_with_its_message() {
     );
 }
 
-// Contract: GitCliInvalid → AppErrorKind::GitCliInvalid;
-//           GitCliConfiguredMissing → AppErrorKind::GitCliMissing (existing kind).
+// Contract: GitCliInvalid → AppErrorKind::GitCliInvalid.
 #[test]
-fn git_cli_invalid_and_configured_missing_map_to_their_kinds() {
+fn git_cli_invalid_maps_to_its_kind() {
     use git_real_core::GitError;
     use git_real_lib::error::{AppError, AppErrorKind};
-    use std::path::PathBuf;
 
     let invalid = AppError::from(GitError::GitCliInvalid {
         message: "exited with code 1".into(),
     });
     assert_eq!(invalid.kind, AppErrorKind::GitCliInvalid);
-
-    let missing = AppError::from(GitError::GitCliConfiguredMissing(PathBuf::from("/opt/git")));
-    assert_eq!(missing.kind, AppErrorKind::GitCliMissing);
-    assert!(
-        missing.message.contains("/opt/git"),
-        "message should name the configured path: {}",
-        missing.message
-    );
 }

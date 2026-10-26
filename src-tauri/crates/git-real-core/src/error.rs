@@ -138,9 +138,6 @@ pub enum GitError {
     InvalidHostingHost(String),
     #[error("the token is empty, longer than 4096 bytes, or contains a line break")]
     InvalidToken,
-    /// A configured git executable that no longer exists; carries the path.
-    #[error("Configured Git executable not found: {0}")]
-    GitCliConfiguredMissing(PathBuf),
     /// A path that is not a working git executable; `message` is the reason
     /// (e.g. `exited with code 1` or `unexpected output: hello`).
     #[error("{message}")]
