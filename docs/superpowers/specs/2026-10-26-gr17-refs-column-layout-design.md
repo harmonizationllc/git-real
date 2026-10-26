@@ -71,8 +71,13 @@ must default); any new dependency.
   `{ natural, fixed }` (`natural` = the measured height of its content,
   `fixed` = the stored height or `null` for automatic) returns one height per
   section:
-  1. `pref = fixed === null ? natural : clamp(fixed, floor, natural)`. A
-     stored height is a preferred size, never a source of blank space.
+  1. `pref = fixed === null ? natural : clamp(fixed, floor, natural)` for
+     the secondary sections: a stored height is a preferred size, never a
+     source of blank space. Branches (index 0) is the exception: its stored
+     height is a true height, `clamp(fixed, floor, ∞)`, because Branches
+     already holds the column's leftover above its content (corrected at the
+     final review on 2026-10-26; the first ruling capped it at its content
+     and snapped the handle whenever the column had spare room).
   2. If `Σ pref ≤ container`: Branches, when automatic, takes the leftover;
      otherwise the leftover stays at the end of the column.
   3. Otherwise the overflow is taken from the automatic sections in
@@ -100,10 +105,11 @@ inside a `section` wrapper (`overflow: auto`, inline `height` from
 | `Resize Pull requests section` | Pull requests | `layout.pullRequestsHeight` |
 
 Handle contract: `value` is the rendered height, rounded to whole pixels;
-`min` is the section's floor; `max` is the smaller of `maxSectionHeight` and
-the section's content height, so a handle under a section that cannot grow
-(collapsed, empty) refuses to move instead of storing a preference that
-would cap the section later; `step` is `KEY_STEP` (16); ArrowDown and
+`min` is the section's floor; `max` is `maxSectionHeight` for Branches and,
+for a secondary section, the smaller of `maxSectionHeight` and the section's
+content height, so a handle under a section that cannot grow (collapsed,
+empty) refuses to move instead of storing a preference that would cap the
+section later; `step` is `KEY_STEP` (16); ArrowDown and
 ArrowUp move it; double-click resets the stored height to `null`. A change
 that leaves the rendered height where it is, or that arrives before the
 column is measured, stores nothing (ruled at the final review on
