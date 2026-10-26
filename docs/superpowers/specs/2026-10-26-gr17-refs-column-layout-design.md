@@ -190,10 +190,16 @@ one object or two; the exact handle gradient for the horizontal orientation
 
 1. Open a repo with stashes and tags at 1280×800: Stashes with no entries is
    one header and "No stashes"; Tags expanded shows its rows; Branches fills
-   the rest.
+   the rest. Repeat on a repo with hundreds of branches and a few dozen
+   tags: judge whether the proportional split leaves Tags usable (final
+   review Minor 2; if not, the spec rule in §3.1 step 3 is the thing to
+   change, not the code).
 2. Collapse Tags: its rows' space goes to Branches. Expand it: back.
 3. Drag the Tags handle up and down; the column follows, nothing jumps.
-   Quit, relaunch: the Tags height is back.
+   Quit, relaunch: the Tags height is back. On a repo without stashes, drag
+   the Stashes handle: it refuses to move and nothing is stored. Drag the
+   Branches handle up with few branches: Branches shrinks and the blank
+   space moves to the column's end (by design for the primary section).
 4. Double-click the Tags handle: automatic again.
 5. Tab to a handle, press ArrowDown ×3 and ArrowUp ×3.
 6. Narrow the window until the centre is at its minimum: a commit with
