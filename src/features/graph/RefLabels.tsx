@@ -26,9 +26,11 @@ export function RefLabels({ refs }: RefLabelsProps) {
   const [fit, setFit] = useState<number | null>(null);
   const candidates = refs.slice(0, MAX_LABELS);
   const candidateCount = candidates.length;
+  // Re-measure when the candidates change, not on every new refs array.
+  const candidateKey = candidates.map((l) => `${l.kind}:${l.name}`).join("\n");
 
-  // Measure on mount and on every resize of the parent cell. React skips the re-render when the
-  // fitted count is unchanged.
+  // Measure on mount, when the candidates change and on every resize of the parent cell. React
+  // skips the re-render when the fitted count is unchanged.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -49,7 +51,9 @@ export function RefLabels({ refs }: RefLabelsProps) {
     const ro = new ResizeObserver(measure);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [candidateCount]);
+    // candidateKey is the trigger; candidateCount follows from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateKey]);
 
   if (refs.length === 0) return null;
   const shown = Math.min(fit ?? candidateCount, candidateCount);
