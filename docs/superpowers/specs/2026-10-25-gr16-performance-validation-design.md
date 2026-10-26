@@ -41,14 +41,14 @@ criteria that are properties rather than timings.
 
 ### Measured baselines (release build, i9-13900F, warm page cache)
 
-| Repository | Commits | Files | Open | Graph build | First page | Page all | RSS after build | Paging RSS growth | Status |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| synthetic (fast-import, 100k / 10k) | 100,000 | 10,000 | 0 ms | 460 ms | <1 ms | 20 ms | 168 MB | 0 MB | 47 ms (200 entries dirty) |
-| qemu/qemu, treeless, full main | 134,458 | – | 0 ms | 1,229 ms | <1 ms | 38 ms | 333 MB | 1 MB | n/a (bare) |
-| qemu/qemu, treeless, oldest 100k | 99,912 | – | – | – | – | – | – | – | – |
-| python/cpython, treeless, full main | 133,992 | – | 0 ms | 1,171 ms | <1 ms | 61 ms | 432 MB (1,238 lanes) | 3 MB | n/a (bare) |
-| qemu/qemu, depth 1 | 1 | 11,488 | 0 ms | – | – | – | – | – | 31 ms (clean) |
-| torvalds/linux, treeless, full master | 1,501,435 | – | 0 ms | 41,014 ms | 1 ms | 12,145 ms | 8,798 MB | 2,055 MB | n/a (bare) |
+| Repository                            |   Commits |  Files | Open | Graph build | First page |  Page all |      RSS after build | Paging RSS growth |                    Status |
+| ------------------------------------- | --------: | -----: | ---: | ----------: | ---------: | --------: | -------------------: | ----------------: | ------------------------: |
+| synthetic (fast-import, 100k / 10k)   |   100,000 | 10,000 | 0 ms |      460 ms |      <1 ms |     20 ms |               168 MB |              0 MB | 47 ms (200 entries dirty) |
+| qemu/qemu, treeless, full main        |   134,458 |      – | 0 ms |    1,229 ms |      <1 ms |     38 ms |               333 MB |              1 MB |                n/a (bare) |
+| qemu/qemu, treeless, oldest 100k      |    99,912 |      – |    – |           – |          – |         – |                    – |                 – |                         – |
+| python/cpython, treeless, full main   |   133,992 |      – | 0 ms |    1,171 ms |      <1 ms |     61 ms | 432 MB (1,238 lanes) |              3 MB |                n/a (bare) |
+| qemu/qemu, depth 1                    |         1 | 11,488 | 0 ms |           – |          – |         – |                    – |                 – |             31 ms (clean) |
+| torvalds/linux, treeless, full master | 1,501,435 |      – | 0 ms |   41,014 ms |       1 ms | 12,145 ms |             8,798 MB |          2,055 MB |                n/a (bare) |
 
 Fixture costs: synthetic 6.5 s to generate (69 MB); qemu treeless clone 4 s (62 MB);
 qemu depth-1 clone 7 s (208 MB); cpython treeless 5 s (56 MB); linux treeless 73 s
@@ -58,13 +58,13 @@ checkout of 11k files took ten minutes and is not usable as a fixture.
 
 ### Goals (the ticket's acceptance criteria, mapped)
 
-| AC | What this ticket delivers |
-| --- | --- |
-| 1. Benchmark suite against a large public repository runs in CI | `git-real-bench` (new workspace binary crate) + a `bench` job in `ci.yml` that prepares three fixtures (qemu graph, qemu worktree, synthetic), runs the suite, writes a job summary and an artifact, and fails on a budget miss (§3, §4) |
-| 2. Open + first graph paint < 3 s at 100k commits | metric `openToFirstPageMs` (open + graph build + first page serialized), budget 3000 ms, on the two 100k-commit fixtures (§3.4); end-to-end paint measured in the acceptance walk (§13) |
-| 3. Status refresh < 500 ms at 10k files | metric `statusMs`, budget 500 ms, on the 11,488-file qemu worktree and the 10,000-file synthetic worktree (§3.4) |
-| 4. All Git operations off the UI thread; UI never blocks > 100 ms | Rust contract test: every `#[tauri::command]` body calls `run_blocking`, and the handler count matches `generate_handler!` (§5); main-thread frame gaps measured in the walk (§13) |
-| 5. Memory bounded while scrolling the full history | metric `rssGrowthMb` while paging the whole history, budget 64 MB (§3.4); explicit `gcTime` on log-page queries so the webview keeps only recently viewed pages (§6); webview RSS sampled in the walk (§13) |
+| AC                                                                | What this ticket delivers                                                                                                                                                                                                                |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Benchmark suite against a large public repository runs in CI   | `git-real-bench` (new workspace binary crate) + a `bench` job in `ci.yml` that prepares three fixtures (qemu graph, qemu worktree, synthetic), runs the suite, writes a job summary and an artifact, and fails on a budget miss (§3, §4) |
+| 2. Open + first graph paint < 3 s at 100k commits                 | metric `openToFirstPageMs` (open + graph build + first page serialized), budget 3000 ms, on the two 100k-commit fixtures (§3.4); end-to-end paint measured in the acceptance walk (§13)                                                  |
+| 3. Status refresh < 500 ms at 10k files                           | metric `statusMs`, budget 500 ms, on the 11,488-file qemu worktree and the 10,000-file synthetic worktree (§3.4)                                                                                                                         |
+| 4. All Git operations off the UI thread; UI never blocks > 100 ms | Rust contract test: every `#[tauri::command]` body calls `run_blocking`, and the handler count matches `generate_handler!` (§5); main-thread frame gaps measured in the walk (§13)                                                       |
+| 5. Memory bounded while scrolling the full history                | metric `rssGrowthMb` while paging the whole history, budget 64 MB (§3.4); explicit `gcTime` on log-page queries so the webview keeps only recently viewed pages (§6); webview RSS sampled in the walk (§13)                              |
 
 ### Non-goals (each is a follow-up ticket or already one)
 
@@ -165,6 +165,17 @@ Jira comment), **R** = routine (ledger only).
 - **R13 (R)** Fixture markers are sibling files (`<dir>.fixture.json`) so a worktree
   fixture's status stays clean; `prepare` is idempotent on a matching marker and
   refuses a directory that exists without one.
+- **R14 (R)** Where the tester's committed signatures and the architect's sheet
+  differed (`BenchError` lives in `git.rs`; `cli::Command` shape), the tests won.
+- **R15 (R)** Under `--no-assert` the violation lines are printed before the `INFO`
+  trailer, so an informational run still shows what exceeded a budget.
+- **R16 (R)** The Markdown `result` column is `info` only on violating rows under
+  `--no-assert`; rows within budget stay `pass`.
+- **R17 (R)** Review follow-ups fixed in-ticket: value flags reject a following
+  `--flag` or a missing token (`‹flag› needs a value`); a stdin write error other
+  than `BrokenPipe` is surfaced; the offload scanner accepts
+  `#[tauri::command(...)]` arguments and ignores `//` comments. Accepted as is: the
+  fast-import stream is buffered in memory (about 20 MB at 100k commits).
 
 ## 3. Benchmark harness (`git-real-bench`)
 
@@ -290,22 +301,43 @@ budgets: open→first page 3000 ms, status 500 ms, paging RSS growth 64 MB
 PASS
 ```
 
-(`FAIL` followed by one violation line each; with `--no-assert`, `INFO` instead.)
+(`FAIL` preceded by one violation line each; with `--no-assert`, the violation lines
+are still printed and the trailer is `INFO`, always the last line — R15.) Columns
+widen to the longest cell, so a long label shifts the layout.
 
 `--summary <file>` appends a Markdown table with the same columns plus a `result`
-column (`pass` / `fail` / `info`) under a `### Git Real benchmarks` heading.
+column under a `### Git Real benchmarks` heading: `pass` for a row within budget,
+`fail` for a violating row, and `info` for a violating row under `--no-assert` — R16.
 `--json <file>` writes:
 
 ```json
-{ "version": 1,
+{
+  "version": 1,
   "host": { "os": "linux", "cpus": 4 },
   "budgets": { "openToFirstPageMs": 3000, "statusMs": 500, "pagingRssGrowthMb": 64 },
-  "results": [ { "label": "synthetic", "path": "…", "commits": 100000, "files": 10000,
-    "maxLanes": 2, "openMs": 0, "graphBuildMs": 460, "firstPageMs": 0,
-    "openToFirstPageMs": 461, "pageAllMs": 20, "rssBeforePagingMb": 168,
-    "rssAfterPagingMb": 168, "rssGrowthMb": 0, "statusMs": 47, "statusEntries": 200,
-    "graphRefreshMs": 7, "violations": [] } ],
-  "passed": true }
+  "results": [
+    {
+      "label": "synthetic",
+      "path": "…",
+      "commits": 100000,
+      "files": 10000,
+      "maxLanes": 2,
+      "openMs": 0,
+      "graphBuildMs": 460,
+      "firstPageMs": 0,
+      "openToFirstPageMs": 461,
+      "pageAllMs": 20,
+      "rssBeforePagingMb": 168,
+      "rssAfterPagingMb": 168,
+      "rssGrowthMb": 0,
+      "statusMs": 47,
+      "statusEntries": 200,
+      "graphRefreshMs": 7,
+      "violations": []
+    }
+  ],
+  "passed": true
+}
 ```
 
 camelCase keys; `null` for unavailable values; `passed` is `true` under `--no-assert`
@@ -314,47 +346,47 @@ only if there are no violations (the flag changes the exit code, not the record)
 ## 4. CI job (`.github/workflows/ci.yml`)
 
 ```yaml
-  bench:
-    name: Benchmarks (large repositories)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Build the benchmark harness
-        working-directory: src-tauri
-        run: cargo build --release -p git-real-bench
-      - name: Restore benchmark fixtures
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/git-real-bench
-          key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}
-      - name: Prepare fixtures
-        run: |
-          src-tauri/target/release/git-real-bench prepare synthetic ~/.cache/git-real-bench/synthetic
-          src-tauri/target/release/git-real-bench prepare public-graph ~/.cache/git-real-bench/qemu-graph
-          src-tauri/target/release/git-real-bench prepare public-worktree ~/.cache/git-real-bench/qemu-worktree
-      - name: Run benchmarks
-        run: >
-          src-tauri/target/release/git-real-bench run
-          ~/.cache/git-real-bench/synthetic
-          ~/.cache/git-real-bench/qemu-graph
-          ~/.cache/git-real-bench/qemu-worktree
-          --json bench-results.json --summary "$GITHUB_STEP_SUMMARY"
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bench-results-${{ github.sha }}
-          path: bench-results.json
-          retention-days: 30
-          if-no-files-found: ignore
+bench:
+  name: Benchmarks (large repositories)
+  runs-on: ubuntu-latest
+  timeout-minutes: 30
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache Rust build
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+    - name: Build the benchmark harness
+      working-directory: src-tauri
+      run: cargo build --release -p git-real-bench
+    - name: Restore benchmark fixtures
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/git-real-bench
+        key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}
+    - name: Prepare fixtures
+      run: |
+        src-tauri/target/release/git-real-bench prepare synthetic ~/.cache/git-real-bench/synthetic
+        src-tauri/target/release/git-real-bench prepare public-graph ~/.cache/git-real-bench/qemu-graph
+        src-tauri/target/release/git-real-bench prepare public-worktree ~/.cache/git-real-bench/qemu-worktree
+    - name: Run benchmarks
+      run: >
+        src-tauri/target/release/git-real-bench run
+        ~/.cache/git-real-bench/synthetic
+        ~/.cache/git-real-bench/qemu-graph
+        ~/.cache/git-real-bench/qemu-worktree
+        --json bench-results.json --summary "$GITHUB_STEP_SUMMARY"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-results-${{ github.sha }}
+        path: bench-results.json
+        retention-days: 30
+        if-no-files-found: ignore
 ```
 
 Contract tests (`src/test/release.test.ts`, `describe("bench workflow")`):
@@ -416,17 +448,17 @@ in `afterEach`.
 
 ## 8. Error handling
 
-| Where | Condition | Behaviour |
-| --- | --- | --- |
-| `prepare` | `git` missing | `error: git is required to prepare fixtures`, exit 3 |
-| `prepare` | dir exists, marker missing or different | `error: ‹dir› exists but is not a matching fixture; …`, exit 3 |
-| `prepare` | git step fails | `error: git ‹args› failed: ‹stderr›`, partial dir removed, exit 3 |
-| `prepare public-graph` | fewer commits than requested | no trim; marker records the real head |
-| `run` | path not a repository | `error: cannot open ‹path›: ‹err›`, exit 3, nothing written |
-| `run` | bare repository | `statusMs`, `statusEntries`, `files` are `null`; status budget skipped |
-| `run` | `/proc/self/status` unreadable or without `VmRSS` | RSS fields `null`; growth budget skipped |
-| `run` | `--json`/`--summary` unwritable | `error: cannot write ‹file›: ‹err›`, exit 3 (after printing the table) |
-| cli | unknown flag, missing operand, unknown fixture kind | `USAGE` on stderr, exit 2 |
+| Where                  | Condition                                           | Behaviour                                                              |
+| ---------------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
+| `prepare`              | `git` missing                                       | `error: git is required to prepare fixtures`, exit 3                   |
+| `prepare`              | dir exists, marker missing or different             | `error: ‹dir› exists but is not a matching fixture; …`, exit 3         |
+| `prepare`              | git step fails                                      | `error: git ‹args› failed: ‹stderr›`, partial dir removed, exit 3      |
+| `prepare public-graph` | fewer commits than requested                        | no trim; marker records the real head                                  |
+| `run`                  | path not a repository                               | `error: cannot open ‹path›: ‹err›`, exit 3, nothing written            |
+| `run`                  | bare repository                                     | `statusMs`, `statusEntries`, `files` are `null`; status budget skipped |
+| `run`                  | `/proc/self/status` unreadable or without `VmRSS`   | RSS fields `null`; growth budget skipped                               |
+| `run`                  | `--json`/`--summary` unwritable                     | `error: cannot write ‹file›: ‹err›`, exit 3 (after printing the table) |
+| cli                    | unknown flag, missing operand, unknown fixture kind | `USAGE` on stderr, exit 2                                              |
 
 ## 9. Testing strategy
 
@@ -437,7 +469,7 @@ in `afterEach`.
   terminator); marker round trip and mismatch detection; `prepare synthetic` on a
   temp dir (gated on `git_available()`) then counts via git2: commits, index length,
   tags, a `topic-` ref, 200 status entries; `prepare` twice prints `(cached)`;
-  `public-graph` and the trim logic exercised against a *local* bare repository
+  `public-graph` and the trim logic exercised against a _local_ bare repository
   (`--url` takes a path) with `--commits 5`: HEAD is the 5th oldest commit, only
   `refs/heads/bench` remains.
 - `measure.rs`: on a tiny synthetic fixture: every field present, `commits` equals
@@ -454,7 +486,7 @@ in `afterEach`.
   summary heading and `result` column; `passed` semantics with `--no-assert`.
 - `tests/cli.rs`: runs the built binary (`env!("CARGO_BIN_EXE_git-real-bench")`):
   `--help` exit 0, bad args exit 2, `run` on a non-repo exit 3, `prepare synthetic
-  --commits 30 --files 5` then `run --json` exit 0 with a parseable report.
+--commits 30 --files 5` then `run --json` exit 0 with a parseable report.
 - Rust contract test (§5) and Vitest contract tests (§4, §6) as listed.
 - Coverage: 100 % on the front-end change; the bench crate's unit tests cover every
   branch of `cli`, `budgets`, `report` and the stream generator; `measure`/`prepare`

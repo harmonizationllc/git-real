@@ -36,7 +36,7 @@
 ## Deviations and calls (decided here; the implementer does not reopen them)
 
 - `tests/cli.rs` uses `env!("CARGO_BIN_EXE_git-real-bench")` and a `tempfile::TempDir`; it builds a synthetic fixture with `--commits 30 --files 5` (sub-second) and runs the suite on it; it also runs `run` on the empty temp dir to get exit 3.
-- The `public-graph` trim is tested against a *local* bare repository created in the test (a `--url` that is a filesystem path works with `git clone`); no test touches the network.
+- The `public-graph` trim is tested against a _local_ bare repository created in the test (a `--url` that is a filesystem path works with `git clone`); no test touches the network.
 - `host.cpus` uses `std::thread::available_parallelism()` (`1` on error); `host.os` is `std::env::consts::OS`.
 - `Measurement` and `Report` derive `Serialize` with `#[serde(rename_all = "camelCase")]`; durations are stored as `u128` milliseconds; `Option<T>` fields serialize as `null`.
 - `fixtures.rs` may be split into `fixtures/mod.rs` + `fixtures/synthetic.rs` + `fixtures/public.rs` if it passes ~300 lines; the Cycle 2 tester then pins the CI cache glob `src/fixtures/**`.
@@ -51,6 +51,7 @@
 **Files:** create `src-tauri/crates/git-real-bench/Cargo.toml`, `src/main.rs`, `src/app.rs`, `src/cli.rs`, `src/rss.rs`, `src/git.rs`, `src/budgets.rs`, `src/report.rs`; edit `src-tauri/Cargo.toml` (`members`).
 
 **Tests (in each module's `#[cfg(test)]`):**
+
 - `cli`: `parses_prepare_synthetic_with_defaults`, `parses_prepare_synthetic_with_sizes`, `parses_prepare_public_graph_with_url_and_commits`, `parses_prepare_public_worktree`, `parses_run_with_repos_json_summary_and_no_assert`, `help_flag`, `rejects_missing_dir`, `rejects_missing_repos`, `rejects_unknown_flag`, `rejects_unknown_fixture_kind`, `rejects_non_numeric_commits`, `usage_text_lists_every_subcommand`.
 - `rss`: `parses_vm_rss_kb_to_mb`, `none_without_vm_rss_line`, `none_on_malformed_number`, `current_rss_is_some_on_linux` (`#[cfg(target_os = "linux")]`).
 - `git`: `run_git_reports_version` (gated), `failed_command_includes_args_and_stderr` (gated: `git rev-parse` in a non-repo temp dir), `git_available_honours_opt_out`.
