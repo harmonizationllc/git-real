@@ -1,12 +1,14 @@
 //! Fixture generation (`prepare`): the synthetic fast-import stream, public
 //! clones, and the sibling `<dir>.fixture.json` marker (§3.3).
 
-use std::io::Write;
+use std::fmt;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::git::BenchError;
+use crate::git::{BenchError, run_git, run_git_with_input};
 
 /// What `prepare` builds, with the parameters that identify a cached fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,43 +37,304 @@ pub struct Marker {
     pub head: String,
 }
 
+pub const MARKER_VERSION: u32 = 1;
+
 impl Marker {
     /// A version 1 marker for `spec` recording `head`.
     pub fn new(spec: &FixtureSpec, head: &str) -> Marker {
-        todo!()
+        let (kind, params) = match spec {
+            FixtureSpec::Synthetic { commits, files } => (
+                FixtureKind::Synthetic,
+                serde_json::json!({ "commits": commits, "files": files }),
+            ),
+            FixtureSpec::PublicGraph { url, commits } => (
+                FixtureKind::PublicGraph,
+                serde_json::json!({ "url": url, "commits": commits }),
+            ),
+            FixtureSpec::PublicWorktree { url } => (
+                FixtureKind::PublicWorktree,
+                serde_json::json!({ "url": url }),
+            ),
+        };
+        Marker {
+            version: MARKER_VERSION,
+            kind,
+            params,
+            head: head.to_string(),
+        }
     }
 
     /// True when `kind` and `params` equal those of `spec` (`head` is ignored).
     pub fn matches(&self, spec: &FixtureSpec) -> bool {
-        todo!()
+        let expected = Marker::new(spec, "");
+        (self.kind, &self.params) == (expected.kind, &expected.params)
     }
 }
 
 /// `<dir>.fixture.json` next to `dir` (not inside it).
 pub fn marker_path(dir: &Path) -> PathBuf {
-    todo!()
+    match (dir.parent(), dir.file_name()) {
+        (Some(parent), Some(name)) => {
+            let mut file = name.to_os_string();
+            file.push(".fixture.json");
+            parent.join(file)
+        }
+        _ => {
+            let mut path = dir.as_os_str().to_os_string();
+            path.push(".fixture.json");
+            PathBuf::from(path)
+        }
+    }
 }
 
 /// `None` when the marker is missing or is not valid marker JSON.
 pub fn read_marker(dir: &Path) -> Option<Marker> {
-    todo!()
+    let text = fs::read_to_string(marker_path(dir)).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 pub fn write_marker(dir: &Path, marker: &Marker) -> Result<(), BenchError> {
-    todo!()
+    let path = marker_path(dir);
+    let mut json = serde_json::to_string_pretty(marker).expect("a marker always serializes");
+    json.push('\n');
+    fs::write(&path, json)
+        .map_err(|e| BenchError::new(format!("cannot write {}: {e}", path.display())))
+}
+
+/// Topics start every `TOPIC_EVERY` indices, have `TOPIC_LEN` commits, and are
+/// merged `MERGE_AFTER` indices after they start; every `KEEP_EVERY`th is kept unmerged.
+const TOPIC_EVERY: u32 = 40;
+const TOPIC_LEN: u32 = 5;
+const MERGE_AFTER: u32 = 20;
+const KEEP_EVERY: u32 = 10;
+/// A lightweight tag on the main tip every `TAG_EVERY` indices.
+const TAG_EVERY: u32 = 2_000;
+/// The dirty working-tree step touches at most this many tracked files and adds
+/// this many untracked ones.
+const DIRTY_FILES: u32 = 100;
+const EPOCH: u64 = 1_600_000_000;
+
+/// `dir<i/100:03>/sub<(i/10)%10>/file<i:05>.txt`
+fn file_path(i: u32) -> String {
+    format!("dir{:03}/sub{}/file{i:05}.txt", i / 100, (i / 10) % 10)
+}
+
+/// The header of commit `c` (its mark is `:c`), message included.
+fn commit_header(out: &mut impl Write, branch: &str, c: u32, message: &str) -> io::Result<()> {
+    let when = EPOCH + 60 * u64::from(c - 1);
+    let who = "Bench <bench@example.com>";
+    write!(
+        out,
+        "commit {branch}\nmark :{c}\nauthor {who} {when} +0000\ncommitter {who} {when} +0000\ndata {}\n{message}\n",
+        message.len()
+    )
+}
+
+fn inline_file(out: &mut impl Write, i: u32, content: &str) -> io::Result<()> {
+    write!(
+        out,
+        "M 100644 inline {}\ndata {}\n{content}",
+        file_path(i),
+        content.len()
+    )
 }
 
 /// The deterministic `git fast-import` stream for the synthetic history (§3.3),
 /// ending with `done`. Does not include the dirty working-tree step.
 pub fn fast_import_stream(commits: u32, files: u32, out: &mut impl Write) -> std::io::Result<()> {
-    todo!()
+    commit_header(out, "refs/heads/main", 1, "initial tree")?;
+    for i in 0..files {
+        inline_file(out, i, &format!("file {i}\n"))?;
+    }
+    let mut main_tip = 1;
+    // Topics started but not yet merged, as (topic number, tip mark), oldest first.
+    let mut open: Vec<(u32, u32)> = Vec::new();
+    for c in 2..=commits {
+        if c.is_multiple_of(TAG_EVERY) {
+            writeln!(
+                out,
+                "reset refs/tags/v0.{}\nfrom :{main_tip}",
+                c / TAG_EVERY
+            )?;
+        }
+        let t = c / TOPIC_EVERY;
+        let k = c % TOPIC_EVERY;
+        if t > 0 && k < TOPIC_LEN {
+            let parent = if k == 0 { main_tip } else { c - 1 };
+            commit_header(
+                out,
+                "refs/heads/scratch",
+                c,
+                &format!("topic-{t} change {}", k + 1),
+            )?;
+            writeln!(out, "from :{parent}")?;
+            inline_file(out, c % files, &format!("topic {c}\n"))?;
+            match open.last_mut() {
+                Some((open_t, tip)) if *open_t == t => *tip = c,
+                _ => open.push((t, c)),
+            }
+            continue;
+        }
+        let merging = open
+            .iter()
+            .find(|(open_t, _)| k == MERGE_AFTER && *open_t == t && !t.is_multiple_of(KEEP_EVERY))
+            .copied();
+        commit_header(
+            out,
+            "refs/heads/main",
+            c,
+            &match merging {
+                Some((t, _)) => format!("Merge topic-{t}"),
+                None => format!("commit {c}"),
+            },
+        )?;
+        writeln!(out, "from :{main_tip}")?;
+        match merging {
+            Some((_, tip)) => {
+                writeln!(out, "merge :{tip}")?;
+                open.retain(|(open_t, _)| *open_t != t);
+            }
+            None => inline_file(out, c % files, &format!("{c}\n"))?,
+        }
+        main_tip = c;
+    }
+    // Every topic still unmerged (every 10th, and any cut off by `commits`) keeps
+    // its own ref, so no generated commit becomes unreachable.
+    for (t, tip) in open {
+        writeln!(out, "reset refs/heads/topic-{t}\nfrom :{tip}")?;
+    }
+    writeln!(out, "done")
 }
 
 /// Builds the fixture in `dir`, or prints `fixture ready: <dir> (cached)` when a
 /// matching marker exists; prints `fixture ready: <dir>` after a fresh build. Never
 /// deletes a directory it did not create in this call.
 pub fn prepare(dir: &Path, spec: &FixtureSpec, out: &mut impl Write) -> Result<(), BenchError> {
-    todo!()
+    if dir.exists() {
+        return match read_marker(dir) {
+            Some(marker) if marker.version == MARKER_VERSION && marker.matches(spec) => say(
+                out,
+                format_args!("fixture ready: {} (cached)", dir.display()),
+            ),
+            _ => Err(BenchError::new(format!(
+                "{} exists but is not a matching fixture; remove it or choose another directory",
+                dir.display()
+            ))),
+        };
+    }
+    // `dir` did not exist, so whatever is there after a failure was created here.
+    let head = build(dir, spec).inspect_err(|_| {
+        if dir.exists() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    })?;
+    write_marker(dir, &Marker::new(spec, &head))?;
+    say(out, format_args!("fixture ready: {}", dir.display()))
+}
+
+fn say(out: &mut impl Write, line: fmt::Arguments<'_>) -> Result<(), BenchError> {
+    writeln!(out, "{line}").map_err(|e| BenchError::new(e.to_string()))
+}
+
+/// Builds `dir` and returns the oid its HEAD points at.
+fn build(dir: &Path, spec: &FixtureSpec) -> Result<String, BenchError> {
+    let dir_arg = dir
+        .to_str()
+        .ok_or_else(|| BenchError::new(format!("{} is not valid UTF-8", dir.display())))?;
+    let here = Path::new(".");
+    match spec {
+        FixtureSpec::Synthetic { commits, files } => {
+            run_git(&["init", "-q", dir_arg], here)?;
+            let mut stream = Vec::new();
+            fast_import_stream(*commits, *files, &mut stream).map_err(io_error)?;
+            run_git_with_input(&["fast-import", "--quiet"], dir, &stream)?;
+            run_git(&["update-ref", "-d", "refs/heads/scratch"], dir)?;
+            run_git(&["checkout", "-q", "main"], dir)?;
+            make_dirty(dir, *files).map_err(io_error)?;
+            head(dir)
+        }
+        FixtureSpec::PublicGraph { url, commits } => {
+            run_git(
+                &[
+                    "clone",
+                    "--quiet",
+                    "--bare",
+                    "--single-branch",
+                    "--filter=tree:0",
+                    url,
+                    dir_arg,
+                ],
+                here,
+            )?;
+            trim_to_oldest(dir, *commits)
+        }
+        FixtureSpec::PublicWorktree { url } => {
+            run_git(
+                &[
+                    "clone",
+                    "--quiet",
+                    "--depth",
+                    "1",
+                    "--single-branch",
+                    url,
+                    dir_arg,
+                ],
+                here,
+            )?;
+            head(dir)
+        }
+    }
+}
+
+/// Points HEAD at `refs/heads/bench` on the `commits`-th oldest commit in date
+/// order (the tip when the history is shorter) and deletes every other ref.
+fn trim_to_oldest(dir: &Path, commits: u32) -> Result<String, BenchError> {
+    let revs = run_git(&["rev-list", "--date-order", "--reverse", "HEAD"], dir)?;
+    let lines: Vec<&str> = revs.lines().collect();
+    let wanted = usize::try_from(commits)
+        .unwrap_or(usize::MAX)
+        .min(lines.len());
+    let oid = lines
+        .get(wanted.saturating_sub(1))
+        .ok_or_else(|| BenchError::new(format!("{} has no commits", dir.display())))?
+        .to_string();
+    run_git(&["update-ref", "refs/heads/bench", &oid], dir)?;
+    run_git(&["symbolic-ref", "HEAD", "refs/heads/bench"], dir)?;
+    let refs = run_git(&["for-each-ref", "--format=%(refname)"], dir)?;
+    let deletes: String = refs
+        .lines()
+        .filter(|r| *r != "refs/heads/bench")
+        .map(|r| format!("delete {r}\n"))
+        .collect();
+    if !deletes.is_empty() {
+        run_git_with_input(&["update-ref", "--stdin"], dir, deletes.as_bytes())?;
+    }
+    Ok(oid)
+}
+
+/// Appends `dirty\n` to the first `min(100, files)` files and adds 100 untracked
+/// `dir001/sub1/new<i>.txt`.
+fn make_dirty(dir: &Path, files: u32) -> io::Result<()> {
+    for i in 0..files.min(DIRTY_FILES) {
+        OpenOptions::new()
+            .append(true)
+            .open(dir.join(file_path(i)))?
+            .write_all(b"dirty\n")?;
+    }
+    let untracked = dir.join("dir001/sub1");
+    fs::create_dir_all(&untracked)?;
+    for i in 0..DIRTY_FILES {
+        fs::write(untracked.join(format!("new{i}.txt")), "new\n")?;
+    }
+    Ok(())
+}
+
+fn head(dir: &Path) -> Result<String, BenchError> {
+    Ok(run_git(&["rev-parse", "HEAD"], dir)?.trim().to_string())
+}
+
+fn io_error(e: io::Error) -> BenchError {
+    BenchError::new(e.to_string())
 }
 
 #[cfg(test)]
