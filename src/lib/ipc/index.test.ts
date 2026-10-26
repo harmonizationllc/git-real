@@ -94,3 +94,13 @@ describe("ipc barrel GR-14 wrappers", () => {
     expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
   });
 });
+
+// Contract (GR-29): the barrel re-exports the settings file and health wrappers.
+describe("ipc barrel GR-29 wrappers", () => {
+  it.each(["revealSettingsFile", "checkSettingsHealth"])(
+    "barrel exposes %s as a function",
+    (name) => {
+      expect(typeof (ipc as Record<string, unknown>)[name]).toBe("function");
+    },
+  );
+});
