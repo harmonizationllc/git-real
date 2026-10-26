@@ -27,6 +27,8 @@ pub const DIFF_FONT_MIN: u32 = 10;
 pub const DIFF_FONT_MAX: u32 = 24;
 /// Narrowest refs panel, in px.
 pub const REFS_MIN: u32 = 160;
+/// Shortest a refs section can be dragged, in px.
+pub const SECTION_HEIGHT_MIN: u32 = 72;
 /// Narrowest sidebar, in px.
 pub const SIDEBAR_MIN: u32 = 240;
 /// Smallest window, `(width, height)` in logical px.
@@ -104,6 +106,10 @@ pub struct LayoutSettings {
     pub tags_collapsed: bool,
     pub pull_requests_collapsed: bool,
     pub issues_collapsed: bool,
+    pub branches_height: Option<u32>,
+    pub stashes_height: Option<u32>,
+    pub tags_height: Option<u32>,
+    pub pull_requests_height: Option<u32>,
 }
 
 impl Default for LayoutSettings {
@@ -114,6 +120,10 @@ impl Default for LayoutSettings {
             tags_collapsed: true,
             pull_requests_collapsed: false,
             issues_collapsed: true,
+            branches_height: None,
+            stashes_height: None,
+            tags_height: None,
+            pull_requests_height: None,
         }
     }
 }
@@ -308,6 +318,26 @@ pub struct LayoutPatch {
     pub pull_requests_collapsed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub issues_collapsed: Option<bool>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub branches_height: Option<Option<u32>>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub stashes_height: Option<Option<u32>>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tags_height: Option<Option<u32>>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pull_requests_height: Option<Option<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -426,6 +456,42 @@ impl Settings {
             "layout.sidebarWidth",
             warnings,
         );
+        if let Some(h) = self.layout.branches_height {
+            self.layout.branches_height = Some(bounded(
+                h,
+                SECTION_HEIGHT_MIN,
+                u32::MAX,
+                "layout.branchesHeight",
+                warnings,
+            ));
+        }
+        if let Some(h) = self.layout.stashes_height {
+            self.layout.stashes_height = Some(bounded(
+                h,
+                SECTION_HEIGHT_MIN,
+                u32::MAX,
+                "layout.stashesHeight",
+                warnings,
+            ));
+        }
+        if let Some(h) = self.layout.tags_height {
+            self.layout.tags_height = Some(bounded(
+                h,
+                SECTION_HEIGHT_MIN,
+                u32::MAX,
+                "layout.tagsHeight",
+                warnings,
+            ));
+        }
+        if let Some(h) = self.layout.pull_requests_height {
+            self.layout.pull_requests_height = Some(bounded(
+                h,
+                SECTION_HEIGHT_MIN,
+                u32::MAX,
+                "layout.pullRequestsHeight",
+                warnings,
+            ));
+        }
         let window = self.window.clone().clamp_to_min();
         if window != self.window {
             warnings.push(SettingsWarning::new(
@@ -596,6 +662,28 @@ impl Settings {
                     d.layout.issues_collapsed,
                     &mut w,
                 ),
+                branches_height: leaf(
+                    v,
+                    "layout",
+                    "branchesHeight",
+                    d.layout.branches_height,
+                    &mut w,
+                ),
+                stashes_height: leaf(
+                    v,
+                    "layout",
+                    "stashesHeight",
+                    d.layout.stashes_height,
+                    &mut w,
+                ),
+                tags_height: leaf(v, "layout", "tagsHeight", d.layout.tags_height, &mut w),
+                pull_requests_height: leaf(
+                    v,
+                    "layout",
+                    "pullRequestsHeight",
+                    d.layout.pull_requests_height,
+                    &mut w,
+                ),
             },
             updates: UpdateSettings {
                 check_on_startup: leaf(
@@ -689,6 +777,13 @@ impl Settings {
                 &p.pull_requests_collapsed,
             );
             set(&mut next.layout.issues_collapsed, &p.issues_collapsed);
+            set(&mut next.layout.branches_height, &p.branches_height);
+            set(&mut next.layout.stashes_height, &p.stashes_height);
+            set(&mut next.layout.tags_height, &p.tags_height);
+            set(
+                &mut next.layout.pull_requests_height,
+                &p.pull_requests_height,
+            );
         }
         if let Some(p) = &patch.updates {
             set(&mut next.updates.check_on_startup, &p.check_on_startup);
