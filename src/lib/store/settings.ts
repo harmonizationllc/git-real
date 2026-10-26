@@ -73,9 +73,24 @@ function merge(base: Settings, patch: SettingsPatch): Settings {
   return next as Settings;
 }
 
-/** `base` with the edits still waiting for their timer laid on top, so a reply never undoes them. */
-function withPending(base: Settings): Settings {
-  return merge(base, Object.fromEntries([...pending].map(([s, e]) => [s, e.patch])));
+/** Each backend request takes the next number; replies are applied in this order only. */
+let lastRequest = 0;
+let lastApplied = 0;
+
+/** setPref edits sent but not yet answered, by request number (ascending). */
+const inFlight = new Map<number, SettingsPatch>();
+
+/** Adopts `next` as server-known when its request is the newest answered; older replies are dropped. */
+function adopt(request: number, next: Settings): void {
+  if (request <= lastApplied) return;
+  lastApplied = request;
+  lastKnown = next;
+}
+
+/** Shows the server-known settings with in-flight, then still-pending, edits laid on top. */
+function refresh(): void {
+  const queued = Object.fromEntries([...pending].map(([s, e]) => [s, e.patch])) as SettingsPatch;
+  useSettings.setState({ settings: [...inFlight.values(), queued].reduce(merge, lastKnown) });
 }
 
 /** Sends one section's edits; only ever called for a section that is in `pending`. */
@@ -83,25 +98,26 @@ async function send(section: Section): Promise<void> {
   const { patch, timer } = pending.get(section) as PendingEdit;
   clearTimeout(timer);
   pending.delete(section);
+  const request = ++lastRequest;
+  const sent = { [section]: patch };
+  inFlight.set(request, sent);
   try {
-    const next = await updateSettings({ [section]: patch });
-    lastKnown = next;
-    useSettings.setState({ settings: withPending(next) });
+    adopt(request, await updateSettings(sent));
   } catch (e) {
-    useSettings.setState((s) => ({
-      settings: withPending({ ...s.settings, [section]: lastKnown[section] }),
-    }));
     useToasts
       .getState()
       .notify({ text: `Couldn't save settings: ${toAppError(e).message}`, variant: "error" });
+  } finally {
+    // A rejected edit leaves the overlay, so its section shows the server-known value again.
+    inFlight.delete(request);
+    refresh();
   }
 }
 
 /** Every preference, hydrated synchronously from the settings Rust injected; settings.json is the only store. */
-export const useSettings = create<SettingsState>()((set) => ({
+export const useSettings = create<SettingsState>()(() => ({
   settings: lastKnown,
   setPref: (patch) => {
-    set((s) => ({ settings: merge(s.settings, patch) }));
     for (const section of Object.keys(patch) as Section[]) {
       const prev = pending.get(section);
       if (prev) clearTimeout(prev.timer);
@@ -110,18 +126,20 @@ export const useSettings = create<SettingsState>()((set) => ({
         timer: setTimeout(() => void send(section), SAVE_DELAY_MS),
       });
     }
+    refresh();
   },
   save: async (patch) => {
+    const request = ++lastRequest;
     const next = await updateSettings(patch);
-    lastKnown = next;
-    set({ settings: withPending(next) });
+    adopt(request, next);
+    refresh();
     return next;
   },
   reconcile: async () => {
+    const request = ++lastRequest;
     try {
-      const next = await getSettings();
-      lastKnown = next;
-      set({ settings: withPending(next) });
+      adopt(request, await getSettings());
+      refresh();
     } catch {
       // The injected settings stay in use.
     }

@@ -176,6 +176,103 @@ describe("setPref", () => {
   });
 });
 
+/** A promise with its resolver, for replying to IPC calls in a chosen order. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+/** Lets awaited replies run their continuations. */
+async function settle() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
+describe("out-of-order replies", () => {
+  it("replies resolved in reverse order keep both newer values, not the older snapshot", async () => {
+    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    const second = deferred<Settings>();
+    updateSettings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    useSettings.getState().setPref({ layout: { refsWidth: 300 } });
+    const flushed = useSettings.getState().flush();
+    expect(updateSettings).toHaveBeenNthCalledWith(1, { appearance: { theme: "dark" } });
+    expect(updateSettings).toHaveBeenNthCalledWith(2, { layout: { refsWidth: 300 } });
+
+    const both = withSection(
+      withSection(DEFAULT_SETTINGS, "appearance", { theme: "dark" }),
+      "layout",
+      { refsWidth: 300 },
+    );
+    second.resolve(both);
+    await settle();
+    expect(useSettings.getState().settings).toEqual(both);
+
+    // The first reply is an older snapshot: the theme is saved, the width not yet.
+    first.resolve(withSection(DEFAULT_SETTINGS, "appearance", { theme: "dark" }));
+    await flushed;
+    expect(useSettings.getState().settings).toEqual(both);
+  });
+
+  it("a stale reply does not overwrite the server-known value a later revert uses", async () => {
+    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    const second = deferred<Settings>();
+    updateSettings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    useSettings.getState().setPref({ layout: { refsWidth: 300 } });
+    useSettings.getState().setPref({ appearance: { theme: "light" } });
+    const flushed = useSettings.getState().flush();
+    second.resolve(
+      withSection(withSection(DEFAULT_SETTINGS, "layout", { refsWidth: 300 }), "appearance", {
+        theme: "light",
+      }),
+    );
+    await settle();
+    first.resolve(DEFAULT_SETTINGS);
+    await flushed;
+
+    updateSettings.mockRejectedValueOnce(new Error("locked"));
+    useSettings.getState().setPref({ layout: { refsWidth: 350 } });
+    await useSettings.getState().flush();
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(300);
+    expect(useSettings.getState().settings.appearance.theme).toBe("light");
+  });
+
+  it("a reply arriving while a save is in flight keeps the in-flight value on screen", async () => {
+    const { useSettings, updateSettings, getSettings, DEFAULT_SETTINGS } = await load();
+    const reconciled = deferred<Settings>();
+    const saved = deferred<Settings>();
+    getSettings.mockReturnValueOnce(reconciled.promise);
+    updateSettings.mockReturnValueOnce(saved.promise);
+    const reconciling = useSettings.getState().reconcile();
+    useSettings.getState().setPref({ layout: { sidebarWidth: 400 } });
+    const flushed = useSettings.getState().flush();
+
+    // The reconcile reply was read before the width save landed.
+    reconciled.resolve(DEFAULT_SETTINGS);
+    await reconciling;
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(400);
+
+    saved.resolve(withSection(DEFAULT_SETTINGS, "layout", { sidebarWidth: 400 }));
+    await flushed;
+    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(400);
+  });
+
+  it("an older reconcile reply arriving after a newer save is dropped", async () => {
+    const { useSettings, updateSettings, getSettings, DEFAULT_SETTINGS } = await load();
+    const reconciled = deferred<Settings>();
+    getSettings.mockReturnValueOnce(reconciled.promise);
+    const saved = withSection(DEFAULT_SETTINGS, "tools", { editor: "code" });
+    updateSettings.mockResolvedValueOnce(saved);
+    const reconciling = useSettings.getState().reconcile();
+    await useSettings.getState().save({ tools: { editor: "code" } });
+    reconciled.resolve(DEFAULT_SETTINGS);
+    await reconciling;
+    expect(useSettings.getState().settings).toEqual(saved);
+  });
+});
+
 describe("flush", () => {
   it("flush sends pending patches immediately", async () => {
     const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
