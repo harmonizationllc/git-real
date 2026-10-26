@@ -4,7 +4,7 @@
 widened by the owner on 2026-10-26.
 **Reverses:** GR-14 ruling R3 (split store) and, in passing, the pre-GR-14
 habit of persisting UI preferences in `localStorage`.
-**Status:** reviewed by a builder check; awaiting owner approval.
+**Status:** implemented on branch `feature/gr-29-single-settings-file` (2026-10-26); acceptance walk results in §15.
 
 ## 1. Intent
 
@@ -375,3 +375,77 @@ the dialog can show its alert). All through `run_blocking`.
   GR-14's await-then-apply.
 - The window definition moves from `tauri.conf.json` into Rust.
 - A `File` section with `Show in folder` in the Settings dialog.
+
+## 14. Deviations and rulings during implementation
+
+- **R1:** the initialization script escapes `<` as `\u003c` (six characters),
+  as §9 says; no other escaping.
+- **R2/R3:** deletions were ordered across tasks differently from the plan;
+  no product effect.
+- **R4:** the manual window check moved out of the window task into the
+  acceptance walk (§15).
+- **R5:** `Show in folder` saves the file first when it does not exist yet
+  (fresh install), through `SettingsStore::ensure_file_exists`, so the file
+  manager has something to show.
+- **R6:** with `app.windows` now `[]`, the GR-15 release test asserts
+  `.decorations(true)` in `main_window.rs` instead of reading
+  `tauri.conf.json`.
+- **R7:** the front-end store serialises `update_settings` through one FIFO
+  queue (at most one request in flight; a flush merges pending sections into
+  one request), so send order equals the order Rust applies patches.
+- **Addition:** a read-only `settings_file_path` command returns the path for
+  the dialog's File section (§7, §8); the reveal itself stays in Rust.
+
+## 15. Walk results (2026-10-26)
+
+Run by the builder against `npm run tauri dev` on the owner's COSMIC/Wayland
+desktop, driven through WebKitGTK's remote inspector. The app grants no
+window-resize, maximize or close permission and has no in-app quit, so
+anything that needs a real quit (and so `CloseRequested`) is left to the
+owner. Stopping the dev process does not fire `CloseRequested` and is not
+counted as a save-on-close test.
+
+| Step            | Checked                                                              | Observed                                                                                                                                                                                                       | Result        |
+| --------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 1 launch        | GR-14 version-1 file in place; app starts on defaults                | `get_settings` returned exactly the §3 defaults; window 1280 × 800                                                                                                                                             | pass          |
+| 1 launch        | file not rewritten on launch                                         | same SHA-256, size 183, mtime unchanged; still `"version": 1`                                                                                                                                                  | pass          |
+| 1 change        | clicking Dark in Settings → Appearance writes version 2              | `data-theme="dark"`; file `"version": 2`, `"theme": "dark"`, every other section at defaults                                                                                                                   | pass          |
+| 1 quit/relaunch | all five changes survive a real quit                                 | —                                                                                                                                                                                                              | left to owner |
+| 2               | resize / maximize by mouse, quit, relaunch                           | —                                                                                                                                                                                                              | left to owner |
+| 2 restore       | hand-edited `window` 1100 × 650, not maximized                       | `innerWidth`/`innerHeight` 1100 × 650; `is_maximized` false                                                                                                                                                    | pass          |
+| 2 restore       | hand-edited `maximized: true`                                        | `plugin:window\|is_maximized` → true; viewport 3440 × 1347 on a 3440 × 1440 screen                                                                                                                             | pass          |
+| 3               | theme `light`, `refsWidth` 300, `diffFontSize` 99, window 1000 × 700 | `data-theme="light"`, background rgb(246,246,246); grid `300px auto 1fr auto 320px`, refs column 300 px, handle `aria-valuenow` 300                                                                            | pass          |
+| 3               | font size clamped to 24                                              | `--diff-font-size: 24px`; dialog font-size input `24`; injected snapshot `diffFontSize: 24`                                                                                                                    | pass          |
+| 3               | clamp log line                                                       | `settings: appearance.diffFontSize: 99 is out of range; using 24`                                                                                                                                              | pass          |
+| 3               | window size from the file                                            | 1000 × 700; COSMIC did not force a size                                                                                                                                                                        | pass          |
+| 3               | file not rewritten                                                   | same SHA-256 and mtime after launch, still `99`                                                                                                                                                                | pass          |
+| 4               | `git.executable` = `/definitely/missing/git`                         | `check_git_cli` → `available: true`, `path: /usr/bin/git`, `error: Configured Git executable not found: /definitely/missing/git; using /usr/bin/git`; log `git: configured executable … not found; using PATH` | pass          |
+| 4               | Settings → Git field                                                 | shows `Using /usr/bin/git (git version 2.43.0)` and the notice above                                                                                                                                           | pass          |
+| 4               | file unchanged                                                       | still holds `/definitely/missing/git` until the next patch                                                                                                                                                     | pass          |
+| 4               | fetch on PATH Git                                                    | not exercised (no network remote in the fixture)                                                                                                                                                               | left to owner |
+| 5               | `settings_file_path`                                                 | `/home/gorlox/.config/com.harmonization.git-real/settings.json`                                                                                                                                                | pass          |
+| 5               | `reveal_settings_file` and the `Show in folder` button               | both resolved; each spawned `cosmic-files file://…/settings.json`                                                                                                                                              | pass          |
+| 5               | File section copy                                                    | path, `Show in folder`, `Edits made outside the app apply the next time it starts.`                                                                                                                            | pass          |
+| 6               | injected global before app script                                    | at 50 ms (`readyState` interactive, `#root` empty) `typeof window.__GIT_REAL_SETTINGS__` = `object`, theme `dark`                                                                                              | pass          |
+| 6               | first app-rendered state and screenshots                             | first answer after the app modules ran: `data-theme="dark"`, body rgb(30,30,30); both screenshots rgb(30,30,30)                                                                                                | pass          |
+| 6               | no light flash to the eye                                            | the inspector cannot answer between 50 ms and the first app paint, so the frames before `main.tsx` runs were not observed                                                                                      | left to owner |
+
+A patch after the step 3 edit (resetting `git.executable` to `null`) rewrote
+`diffFontSize` 99 to 24, as §3 says.
+
+**Gate (§9), run after the walk:** `npm run lint` clean (0 errors; the one
+existing `react-hooks/incompatible-library` warning in `DiffViewer.tsx`),
+`npm run typecheck` clean, `npm test` 203 files / 6810 tests passed,
+`cargo test --workspace` 2947 passed / 0 failed, `cargo clippy --workspace
+-- -D warnings` clean.
+
+**Left to the owner:**
+
+- Resize the window by mouse, quit, relaunch: the size is restored.
+- Maximize, quit, relaunch: the window opens maximized; un-maximizing returns
+  to the saved size.
+- Confirm the file's `window` section updates on quit.
+- Glance at the Appearance section to confirm it looks unchanged.
+- Cold start in dark mode, ideally from a release build: no light frame
+  before the app paints. The window sets no native background colour, so
+  any frame before `main.tsx` runs is the webview's default.
