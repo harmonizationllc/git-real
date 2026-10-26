@@ -505,6 +505,15 @@ describe("bench workflow", () => {
     });
   });
 
+  it("restores the fixture cache before preparing and uploads only after running", () => {
+    const cache = stepIndex((s) => String(s.uses ?? "").startsWith("actions/cache@v4"));
+    const prepare = stepIndex((s) => runOf(s).includes(" prepare "));
+    const run = stepIndex((s) => runOf(s).includes(`${BENCH} run `));
+    const upload = stepIndex((s) => String(s.uses ?? "").startsWith("actions/upload-artifact@v4"));
+    expect(cache).toBeGreaterThanOrEqual(0);
+    expect([cache < prepare, prepare < run, run < upload]).toEqual([true, true, true]);
+  });
+
   it("never continues on error", () => {
     expect(bench).toBeDefined();
     const flagged = [bench, ...steps()].filter(
