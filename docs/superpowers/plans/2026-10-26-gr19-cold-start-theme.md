@@ -157,7 +157,7 @@ and in `src-tauri/tests/settings_store.rs`, beside the `update_settings_inner` t
 ```rust
 #[test]
 fn theme_changed_only_when_the_theme_differs() {
-    use git_real::commands::settings::theme_changed;
+    use git_real_lib::commands::settings::theme_changed; // the lib crate is `git_real_lib`, as tests/main_window.rs imports it
     let before = Settings::default();               // system
     let mut dark = before.clone(); dark.appearance.theme = Theme::Dark;
     let mut font = before.clone(); font.appearance.diff_font_size = 15;
