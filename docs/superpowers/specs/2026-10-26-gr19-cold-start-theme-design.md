@@ -272,3 +272,46 @@ Results are recorded in a §8 of this document, as GR-29 did.
    `feature/gr-19-cold-start-theme`.
 
 Everything else in this document is the writer's call.
+
+## 8. Walk results (2026-10-26)
+
+Run by the builder on the owner's COSMIC/Wayland desktop against a release
+build of `feature/gr-19-cold-start-theme` at 6897d61 (`npm run build`, then
+`cargo build --release --features tauri/custom-protocol`), window 1280 × 800,
+desktop colour scheme dark. Each cold start used the §1 harness unchanged: a
+90-frame portal screenshot burst (~50 ms per frame) started 1 s before
+launch, analysed inside the fixed page-area rect x1000 y576 – x2272 y1360. A
+frame counts as mapped when its mean colour first moves away from the
+desktop under the window (rgb(25,32,25), a dark terminal). The §1 baseline
+bursts were re-analysed with the same script and rect for the time
+comparison. Window and focus checks used the WebKit remote inspector and the
+`/dev/uinput` keyboard. Stopping the app with `pkill` does not fire
+`CloseRequested`, so nothing here counts as a save-on-close test.
+
+| Step          | Checked                                                               | Observed                                                                                                                                                                                         | Result        |
+| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| 1 dark        | three cold starts, stored `dark`                                      | first mapped frame rgb(30,30,30) in all three (+568, +184, +232 ms); every later frame rgb(30,30,30) then rgb(34,34,34) once the app renders; max mean luminance 34; 0 % light pixels            | pass          |
+| 1 dark        | no white frame (baseline showed rgb(255,255,255) at +254 and +262 ms) | none in 3 runs (201 post-map frames)                                                                                                                                                             | pass          |
+| 2 light       | three cold starts, stored `light`, dark desktop                       | first mapped frame rgb(246,246,246) in all three (+240, +215, +217 ms); then rgb(245,245,245) / rgb(240,240,240); min mean luminance 240; 0 % dark pixels                                        | pass          |
+| 2 light       | no dark frame before the app script (baseline: white → dark → light)  | none in 3 runs (207 post-map frames)                                                                                                                                                             | pass          |
+| 3 system      | three cold starts, stored `system`, desktop dark                      | first mapped frame rgb(30,30,30) in all three (+299, +202, +240 ms); max mean luminance 34; 0 % light pixels; page reports `data-theme` absent, `prefers-color-scheme: dark`, body rgb(30,30,30) | pass          |
+| 4 restore     | hand-edited `window` 1100 × 650, not maximized                        | `innerWidth`/`innerHeight` 1100 × 650; `plugin:window\|is_maximized` → false; `data-theme="dark"`                                                                                                | pass          |
+| 4 restore     | hand-edited `maximized: true`                                         | `is_maximized` → true; viewport 3440 × 1347 on a 3440 × 1440 screen                                                                                                                              | pass          |
+| 4 focus       | keyboard focus on launch (both launches above)                        | `document.hasFocus()` true; a real Ctrl+K through `/dev/uinput` arrived as `Ctrl+KeyK` and opened the Command palette, both at 1100 × 650 and maximized                                          | pass          |
+| 4 resize/quit | resize by mouse, quit, relaunch keeps the size                        | —                                                                                                                                                                                                | left to owner |
+| 5 map time    | median launch → first mapped frame over three cold starts             | dark 232 ms, light 217 ms, system 240 ms (all nine: 232 ms); baseline re-analysed: 254, 262 ms (dark), 268, 340 ms (light); within one 50 ms sample of ~250 ms                                   | pass          |
+| 6 switch      | theme switch in Settings (real Ctrl+, then the radios)                | Light → `data-theme="light"`, body rgb(246,246,246); System → attribute removed, rgb(30,30,30); Dark → `data-theme="dark"`; `settings.json` followed each change (`update_settings` ran)         | pass          |
+| 6 switch      | no `settings: cannot update window background` error                  | app stderr empty after all three switches                                                                                                                                                        | pass          |
+| 6 sliver      | switch theme, then resize by mouse: no previous-theme sliver          | —                                                                                                                                                                                                | left to owner |
+
+The first dark start (+568 ms) was the first launch after the release build
+and is a cold page cache; the other eight starts fall between +184 and
++299 ms. One baseline dark burst (+448 ms, first frame already the app's
+rgb(34,34,34)) missed the window's appearance and is left out of the
+baseline times.
+
+**Left to the owner:**
+
+- Resize the window by mouse, quit, relaunch: the size is kept.
+- Switch theme in Settings, then resize by mouse: no sliver of the previous
+  theme shows at the growing edge.
