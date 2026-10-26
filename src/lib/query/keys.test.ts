@@ -607,17 +607,17 @@ describe("GR-13c myRepos query key", () => {
   });
 });
 
-// Contract (GR-14): a settings query key exists and is distinct from gitCli.
-describe("queryKeys settings (GR-14)", () => {
-  it("defines a settings key ['settings']", () => {
-    expect(queryKeys.settings).toEqual(["settings"]);
+// Contract (GR-29): the settings live in the store, not a query; only the file path is queried.
+describe("queryKeys settings (GR-29)", () => {
+  it("has no settings query key", () => {
+    expect("settings" in queryKeys).toBe(false);
   });
 
-  it("settings key is distinct from gitCli", () => {
-    expect(queryKeys.settings).not.toEqual(queryKeys.gitCli);
+  it("defines a settingsPath key ['settingsPath']", () => {
+    expect(queryKeys.settingsPath).toEqual(["settingsPath"]);
   });
 
-  it("settings key is distinct from recent", () => {
-    expect(queryKeys.settings).not.toEqual(queryKeys.recent);
+  it("settingsPath is distinct from settingsHealth", () => {
+    expect(queryKeys.settingsPath).not.toEqual(queryKeys.settingsHealth);
   });
 });

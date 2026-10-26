@@ -349,6 +349,18 @@ fn path_returns_the_file_location() {
 }
 
 #[test]
+fn settings_file_path_inner_returns_the_store_path_as_a_string() {
+    use git_real_lib::commands::settings::settings_file_path_inner;
+
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+    assert_eq!(
+        settings_file_path_inner(&store),
+        path.to_string_lossy().into_owned()
+    );
+}
+
+#[test]
 fn check_settings_health_flags_a_missing_clone_dir() {
     use git_real_lib::commands::settings::check_settings_health_inner;
 

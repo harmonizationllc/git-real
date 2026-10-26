@@ -1,5 +1,5 @@
-//! Settings commands: read and update the persisted [`SettingsStore`], reveal
-//! its file, and report settings that point at something missing.
+//! Settings commands: read and update the persisted [`SettingsStore`], locate
+//! and reveal its file, and report settings that point at something missing.
 
 use std::sync::Arc;
 
@@ -40,6 +40,11 @@ pub fn check_settings_health_inner(store: &SettingsStore) -> SettingsHealth {
     }
 }
 
+/// The settings file's absolute path, for the front end to show.
+pub fn settings_file_path_inner(store: &SettingsStore) -> String {
+    store.path().to_string_lossy().into_owned()
+}
+
 /// Shows the settings file in the system file manager, writing it first when it
 /// does not exist yet (the opener canonicalises the path, so it must exist).
 pub fn reveal_settings_file_inner(store: &SettingsStore) -> Result<(), AppError> {
@@ -78,4 +83,12 @@ pub async fn check_settings_health(
 ) -> Result<SettingsHealth, AppError> {
     let store = Arc::clone(settings.inner());
     run_blocking(move || Ok(check_settings_health_inner(&store))).await
+}
+
+#[tauri::command]
+pub async fn settings_file_path(
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Result<String, AppError> {
+    let store = Arc::clone(settings.inner());
+    run_blocking(move || Ok(settings_file_path_inner(&store))).await
 }

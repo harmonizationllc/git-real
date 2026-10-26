@@ -4,12 +4,11 @@ import {
   applyHunk,
   getFileContent,
   getFileDiff,
-  getSettings,
   getStatus,
   openInEditor,
   updateSettings,
 } from "../../lib/ipc";
-import type { AppError, FileDiff, Settings, StatusEntry } from "../../lib/ipc";
+import type { AppError, FileDiff, StatusEntry } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -27,7 +26,6 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   getFileContent: vi.fn(),
   applyHunk: vi.fn(),
   getStatus: vi.fn(),
-  getSettings: vi.fn(),
   openInEditor: vi.fn(),
 }));
 const conflictEditorMounts = vi.hoisted(() => ({ count: 0 }));
@@ -94,13 +92,6 @@ beforeEach(async () => {
   vi.mocked(getFileContent).mockResolvedValue(new ArrayBuffer(2));
   vi.mocked(applyHunk).mockResolvedValue(undefined);
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  } satisfies Settings);
   vi.mocked(openInEditor).mockResolvedValue(undefined);
 });
 
@@ -1305,13 +1296,7 @@ describe("DetailPane file header", () => {
 
   // R18: DetailPane passes its repoId to FileHeader so Open in editor sends the correct id.
   it("passes repoId to the header so Open in editor includes the repo id", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: null,
-      gitExecutable: null,
-      externalEditor: "code",
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ tools: { editor: "code" } });
     setup();
     await diffRegion();
     fireEvent.click(screen.getByRole("button", { name: "Open in editor" }));

@@ -4,12 +4,11 @@ import type { FormEvent, KeyboardEvent } from "react";
 import { checkGitCli, onCloneProgress, pickFolder } from "../../lib/ipc";
 import type { HostedRepo, Progress, UnlistenFn } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useSettings as useSettingsStore } from "../../lib/store/settings";
+import { useSettings } from "../../lib/store/settings";
 import { AccountsDialog } from "../hosting/AccountsDialog";
 import type { AccountsPreset } from "../hosting/AccountsDialog";
 import { cloneUrlFor } from "../hosting/cloneUrlFor";
 import { RepoBrowser } from "../hosting/RepoBrowser";
-import { useSettings } from "../settings/useSettings";
 import styles from "./CloneDialog.module.css";
 import { CloneSourceTabs, cloneSourceIds } from "./CloneSourceTabs";
 import type { CloneSource } from "./CloneSourceTabs";
@@ -42,7 +41,6 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const headingId = useId();
   const git = useQuery({ queryKey: queryKeys.gitCli, queryFn: () => checkGitCli() });
   const { clone, error, clearError } = useOpenRepo();
-  const { settings } = useSettings();
   const [url, setUrl] = useState("");
   const [parentDir, setParentDir] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
@@ -53,7 +51,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const [picked, setPicked] = useState<HostedRepo | null>(null);
   // The browser's account, kept here so it survives the browser unmounting on a tab switch.
   const [accountId, setAccountId] = useState<string | null>(null);
-  const form = useSettingsStore((s) => s.settings.clone.urlForm);
+  const form = useSettings((s) => s.settings.clone.urlForm);
   const [prevForm, setPrevForm] = useState(form);
   // The accounts dialog is open (with its optional preset) when this is not null.
   const [accounts, setAccounts] = useState<{ preset?: AccountsPreset } | null>(null);
@@ -72,7 +70,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   // Seed the destination from the configured default clone directory the first time it is known,
   // and only while the user has not chosen one; a later-arriving setting never overwrites a folder
   // they already picked. Done during render (not an effect) so the preview is right on first paint.
-  const defaultCloneDir = settings?.defaultCloneDir ?? null;
+  const defaultCloneDir = useSettings((s) => s.settings.clone.defaultDir);
   const [seededDefault, setSeededDefault] = useState(false);
   if (!seededDefault && defaultCloneDir !== null) {
     setSeededDefault(true);

@@ -4,14 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkGitCli,
   cloneRepo,
-  getSettings,
   hostingListAccounts,
   hostingListMyRepos,
   listRecent,
   onCloneProgress,
   pickFolder,
 } from "../../lib/ipc";
-import type { OpenedRepo, Progress, Settings, UnlistenFn } from "../../lib/ipc";
+import type { OpenedRepo, Progress, UnlistenFn } from "../../lib/ipc";
 import { setCloneUrlForm } from "../../lib/store/settingsActions";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useRepoTabs } from "../../lib/store/repoTabs";
@@ -24,7 +23,6 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   updateSettings: vi.fn(),
   checkGitCli: vi.fn(),
   cloneRepo: vi.fn(),
-  getSettings: vi.fn(),
   onCloneProgress: vi.fn(),
   pickFolder: vi.fn(),
   listRecent: vi.fn(),
@@ -64,13 +62,6 @@ beforeEach(async () => {
     version: "2.43.0",
     error: null,
   });
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  } satisfies Settings);
   vi.mocked(pickFolder).mockResolvedValue("/home/u/src");
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(hostingListAccounts).mockResolvedValue([]);
@@ -1355,14 +1346,8 @@ describe("CloneDialog Escape in the repository search", () => {
 
 // Task 15: CloneDialog seeds the destination from defaultCloneDir.
 describe("CloneDialog default clone directory (GR-14)", () => {
-  it("seeds the destination from defaultCloneDir when settings load", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: "/home/u/projects",
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+  it("seeds the destination from settings.clone.defaultDir", async () => {
+    await seedSettings({ clone: { defaultDir: "/home/u/projects" } });
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     // After the settings query resolves, the destination field should start with the default dir.
     await user.type(await screen.findByLabelText("Repository URL"), URL_A);
@@ -1372,42 +1357,21 @@ describe("CloneDialog default clone directory (GR-14)", () => {
     });
   });
 
-  it("does not overwrite a folder the user picked when settings load later", async () => {
-    // Settings loads after the user has already picked a folder.
-    let resolveSettings!: (s: Settings) => void;
-    vi.mocked(getSettings).mockImplementation(
-      () =>
-        new Promise<Settings>((res) => {
-          resolveSettings = res;
-        }),
-    );
+  it("does not overwrite a folder the user picked when the default changes later", async () => {
+    // A default clone directory is saved after the user has already picked a folder.
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await user.type(await screen.findByLabelText("Repository URL"), URL_A);
     await user.click(screen.getByRole("button", { name: "Choose folder" }));
     await screen.findByText("Destination: /home/u/src/b");
     // Now settings arrive with a different default.
-    act(() =>
-      resolveSettings({
-        defaultCloneDir: "/other/dir",
-        gitExecutable: null,
-        externalEditor: null,
-        externalDiffTool: null,
-        externalMergeTool: null,
-      }),
-    );
+    await act(() => seedSettings({ clone: { defaultDir: "/other/dir" } }));
     await act(() => new Promise((r) => setTimeout(r, 0)));
     // The user's picked folder must not be overwritten.
     expect(screen.getByText("Destination: /home/u/src/b")).toBeInTheDocument();
   });
 
   it("passes the current directory as defaultPath to the picker", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: "/home/u/projects",
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ clone: { defaultDir: "/home/u/projects" } });
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);
     await screen.findByLabelText("Repository URL");
     await act(() => new Promise((r) => setTimeout(r, 0)));
@@ -1421,13 +1385,7 @@ describe("CloneDialog default clone directory (GR-14)", () => {
   // (seeded from defaultCloneDir) was not covered.
   it("a cancelled picker leaves a set parentDir unchanged", async () => {
     const DIR = "/home/u/projects";
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: DIR,
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: null,
-    } satisfies Settings);
+    await seedSettings({ clone: { defaultDir: DIR } });
     // The picker resolves null (user cancelled).
     vi.mocked(pickFolder).mockResolvedValue(null);
     const { user } = renderWithProviders(<CloneDialog open onClose={vi.fn()} />);

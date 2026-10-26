@@ -6,18 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getFileContent,
   getOperationState,
-  getSettings,
   listBranches,
   openExternalMerge,
   resolveConflicts,
   writeResolution,
 } from "../../../lib/ipc";
-import type { BranchList, OperationState, Settings } from "../../../lib/ipc";
+import type { BranchList, OperationState } from "../../../lib/ipc";
 import { useShell } from "../../../lib/store/shell";
 import { useToasts } from "../../../lib/store/toasts";
 import { queryKeys } from "../../../lib/query/keys";
 import { useWorkspace } from "../../../lib/store/workspace";
 import { renderWithProviders } from "../../../test/renderWithProviders";
+import { resetSettings, seedSettings } from "../../../test/settingsStore";
 import { HIGHLIGHT_LIMIT } from "../../diff/model/limits";
 import { languageFor, loadLanguage } from "../../diff/model/highlight";
 import { ConflictEditor } from "./ConflictEditor";
@@ -27,7 +27,7 @@ vi.mock(import("../../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getFileContent: vi.fn(),
   getOperationState: vi.fn(),
-  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   listBranches: vi.fn(),
   openExternalMerge: vi.fn(),
   writeResolution: vi.fn(),
@@ -120,6 +120,7 @@ const refetch = (queryClient: { invalidateQueries(f: object): Promise<void> }) =
 
 beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const actual = await vi.importActual<typeof import("../../diff/model/highlight")>(
     "../../diff/model/highlight",
@@ -132,13 +133,6 @@ beforeEach(async () => {
     return Promise.resolve();
   });
   vi.mocked(resolveConflicts).mockResolvedValue(undefined);
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  } satisfies Settings);
   vi.mocked(openExternalMerge).mockResolvedValue(undefined);
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   useShell.setState({ dialog: null, repoActions: null });
@@ -893,13 +887,7 @@ describe("ConflictEditor unmount", () => {
 // Task 15: external merge tool integration.
 describe("ConflictEditor external merge tool (GR-14)", () => {
   it("Open in merge tool calls openExternalMerge and shows the running label until it settles", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: null,
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: "meld",
-    } satisfies Settings);
+    await seedSettings({ tools: { mergeTool: "meld" } });
     let resolveExternalMerge!: () => void;
     vi.mocked(openExternalMerge).mockImplementation(
       () =>
@@ -918,7 +906,7 @@ describe("ConflictEditor external merge tool (GR-14)", () => {
   });
 
   it("an unset merge tool opens Settings at Tools without calling openExternalMerge", async () => {
-    // externalMergeTool is null (default mock).
+    // tools.mergeTool is null (the default settings).
     setup();
     await act(() => new Promise((r) => setTimeout(r, 0)));
     // With no merge tool configured, clicking the button opens settings.
@@ -933,13 +921,7 @@ describe("ConflictEditor external merge tool (GR-14)", () => {
   });
 
   it("a failed merge tool toasts Couldn't open merge tool: … and the button resets", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      defaultCloneDir: null,
-      gitExecutable: null,
-      externalEditor: null,
-      externalDiffTool: null,
-      externalMergeTool: "meld",
-    } satisfies Settings);
+    await seedSettings({ tools: { mergeTool: "meld" } });
     vi.mocked(openExternalMerge).mockRejectedValue({
       kind: "externalToolFailed",
       message: "meld exited with code 1",

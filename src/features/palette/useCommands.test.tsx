@@ -3,11 +3,10 @@
 
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSettings, listRecent, openInEditor, updateSettings } from "../../lib/ipc";
-import type { OpenedRepo, RecentRepo, Settings } from "../../lib/ipc";
+import { listRecent, openInEditor, updateSettings } from "../../lib/ipc";
+import type { OpenedRepo, RecentRepo } from "../../lib/ipc";
 import { queryClient } from "../../lib/query/client";
-import { queryKeys } from "../../lib/query/keys";
-import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
+import { useSettings } from "../../lib/store/settings";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import type { ShellActions } from "../../lib/store/shell";
 import { useShell } from "../../lib/store/shell";
@@ -18,7 +17,6 @@ import { useCommands } from "./useCommands";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
-  getSettings: vi.fn(),
   updateSettings: vi.fn(),
   listRecent: vi.fn(),
   openInEditor: vi.fn(),
@@ -31,11 +29,6 @@ const recentRepo = (path: string, name: string): RecentRepo => ({
   isBare: false,
   lastOpened: Date.now(),
 });
-
-const defaultSettings: Settings = {
-  ...DEFAULT_SETTINGS,
-  tools: { editor: null, diffTool: null, mergeTool: null },
-};
 
 const stubActions = (): ShellActions => ({
   openRepo: vi.fn(),
@@ -50,7 +43,6 @@ beforeEach(async () => {
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useShell.setState({ dialog: null, repoActions: null });
   useToasts.setState({ toasts: [] });
-  vi.mocked(getSettings).mockResolvedValue(defaultSettings);
   vi.mocked(listRecent).mockResolvedValue([]);
 });
 
@@ -186,10 +178,7 @@ describe("useCommands Open recent", () => {
 // Contract: Open repository in editor calls openInEditor with the repository path.
 describe("useCommands Open repository in editor", () => {
   it("Open repository in editor calls openInEditor with the repository path through useExternalTool", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      ...defaultSettings,
-      tools: { ...defaultSettings.tools, editor: "code" },
-    });
+    await seedSettings({ tools: { editor: "code" } });
     act(() => {
       useShell.getState().publishRepoActions({
         repoId: 1,
@@ -202,9 +191,7 @@ describe("useCommands Open repository in editor", () => {
       });
     });
     vi.mocked(openInEditor).mockResolvedValue(undefined);
-    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
-    // Wait until the settings query resolves so editor.configured becomes true.
-    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
     expect(editorCmd).toBeDefined();
     await act(() => editorCmd!.run());
@@ -214,10 +201,7 @@ describe("useCommands Open repository in editor", () => {
   // R18: the palette uses the absolute repository path with no repoId argument.
   // FileHeader and DetailPane pass repoId; the palette passes the absolute path directly.
   it("the editor command still sends the absolute repo path with no repo id", async () => {
-    vi.mocked(getSettings).mockResolvedValue({
-      ...defaultSettings,
-      tools: { ...defaultSettings.tools, editor: "code" },
-    });
+    await seedSettings({ tools: { editor: "code" } });
     act(() => {
       useShell.getState().publishRepoActions({
         repoId: 1,
@@ -230,8 +214,7 @@ describe("useCommands Open repository in editor", () => {
       });
     });
     vi.mocked(openInEditor).mockResolvedValue(undefined);
-    const { result, queryClient: qc } = renderHookWithProviders(() => useCommands(stubActions()));
-    await waitFor(() => expect(qc.getQueryData(queryKeys.settings)).toBeDefined());
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     const editorCmd = result.current.find((c) => c.label === "Open repository in editor");
     await act(() => editorCmd!.run());
     // Called with the absolute path only — no second repoId argument.

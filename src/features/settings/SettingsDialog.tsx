@@ -2,17 +2,24 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import { AboutSettings } from "./AboutSettings";
-import { checkGitCli, pickFile, pickFolder, toAppError } from "../../lib/ipc";
-import type { Settings } from "../../lib/ipc";
+import {
+  checkGitCli,
+  checkSettingsHealth,
+  pickFile,
+  pickFolder,
+  revealSettingsFile,
+  settingsFilePath,
+  toAppError,
+} from "../../lib/ipc";
+import type { Settings, ThemePref } from "../../lib/ipc";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../../lib/query/keys";
-import { DIFF_FONT_MAX, DIFF_FONT_MIN, useAppearancePrefs } from "../../lib/store/appearancePrefs";
-import type { ThemePref } from "../../lib/store/appearancePrefs";
+import { DIFF_FONT_MAX, DIFF_FONT_MIN, useSettings } from "../../lib/store/settings";
+import { setDiffFontFamily, setDiffFontSize, setTheme } from "../../lib/store/settingsActions";
 import { useShell } from "../../lib/store/shell";
 import type { SettingsSection } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
 import { TextSetting } from "./TextSetting";
-import { useSettings } from "./useSettings";
 import styles from "./SettingsDialog.module.css";
 
 export interface SettingsDialogProps {
@@ -31,7 +38,12 @@ const EDITOR_HINT = "Command line; the file or folder path is appended, e.g. cod
 const DIFF_HINT = 'Git difftool command, e.g. meld "$LOCAL" "$REMOTE"';
 const MERGE_HINT = 'Git mergetool command, e.g. meld "$LOCAL" "$BASE" "$REMOTE" --output "$MERGED"';
 
-/** The one dialog that edits appearance (localStorage) and the backend settings (settings.json). */
+/** Toasts a failed validated save. */
+function notifySaveFailed(message: string): void {
+  useToasts.getState().notify({ text: `Couldn't save settings: ${message}`, variant: "error" });
+}
+
+/** The one dialog that edits the settings store (settings.json). */
 export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -72,6 +84,7 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
         <CloneSettings />
         <ToolsSettings />
         <GitSettings />
+        <FileSettings />
         <AboutSettings />
         <div className={styles.actions}>
           <button type="button" onClick={() => useShell.getState().open({ kind: "shortcuts" })}>
@@ -108,8 +121,7 @@ export function Section({
 }
 
 function AppearanceSettings() {
-  const theme = useAppearancePrefs((s) => s.theme);
-  const setTheme = useAppearancePrefs((s) => s.setTheme);
+  const theme = useSettings((s) => s.settings.appearance.theme);
   const groupName = useId();
   return (
     <Section id="appearance" name="Appearance">
@@ -132,10 +144,8 @@ function AppearanceSettings() {
 }
 
 function DiffSettings() {
-  const family = useAppearancePrefs((s) => s.diffFontFamily);
-  const setFamily = useAppearancePrefs((s) => s.setDiffFontFamily);
-  const size = useAppearancePrefs((s) => s.diffFontSize);
-  const setSize = useAppearancePrefs((s) => s.setDiffFontSize);
+  const family = useSettings((s) => s.settings.appearance.diffFontFamily);
+  const size = useSettings((s) => s.settings.appearance.diffFontSize);
   const sizeId = useId();
   const [sizeDraft, setSizeDraft] = useState(String(size));
 
@@ -151,14 +161,14 @@ function DiffSettings() {
     // In-range integers apply at once; an out-of-range value waits for blur so typing on the
     // way to a valid number does not snap.
     if (raw !== "" && Number.isInteger(n) && n >= DIFF_FONT_MIN && n <= DIFF_FONT_MAX) {
-      setSize(n);
+      setDiffFontSize(n);
     }
   };
 
   const commitSize = () => {
     const n = Number(sizeDraft);
-    if (sizeDraft !== "" && !Number.isNaN(n)) setSize(n);
-    setSizeDraft(String(useAppearancePrefs.getState().diffFontSize));
+    if (sizeDraft !== "" && !Number.isNaN(n)) setDiffFontSize(n);
+    setSizeDraft(String(useSettings.getState().settings.appearance.diffFontSize));
   };
 
   return (
@@ -169,7 +179,7 @@ function DiffSettings() {
         value={family}
         placeholder="System monospace"
         onCommit={async (next) => {
-          setFamily(next);
+          setDiffFontFamily(next);
           return null;
         }}
       />
@@ -200,9 +210,9 @@ function DiffSettings() {
 }
 
 function CloneSettings() {
-  const { settings, update } = useSettings();
+  const current = useSettings((s) => s.settings.clone.defaultDir);
   const queryClient = useQueryClient();
-  const current = settings?.defaultCloneDir ?? null;
+  const health = useQuery({ queryKey: queryKeys.settingsHealth, queryFn: checkSettingsHealth });
   const [saved, setSaved] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -219,20 +229,19 @@ function CloneSettings() {
     timer.current = setTimeout(() => setSaved(false), 1000);
   };
 
-  const save = async (dir: string | null) => {
+  const save = async (defaultDir: string | null) => {
     try {
-      await update({ defaultCloneDir: dir });
+      await useSettings.getState().save({ clone: { defaultDir } });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settingsHealth });
       flashSaved();
     } catch (e) {
-      useToasts
-        .getState()
-        .notify({ text: `Couldn't save settings: ${toAppError(e).message}`, variant: "error" });
+      notifySaveFailed(toAppError(e).message);
     }
   };
 
   const choose = async () => {
-    // The freshest value, in case the query resolved after this render's closure was captured.
-    const live = queryClient.getQueryData<Settings>(queryKeys.settings)?.defaultCloneDir ?? current;
+    // The freshest value, in case the store changed after this render's closure was captured.
+    const live = useSettings.getState().settings.clone.defaultDir;
     const dir = await pickFolder("Choose default clone directory", live ?? undefined);
     if (dir !== null) await save(dir);
   };
@@ -242,6 +251,11 @@ function CloneSettings() {
       <div className={styles.field}>
         <span className={styles.label}>Default clone directory</span>
         <span className={styles.value}>{current ?? "Not set"}</span>
+        {health.data?.defaultCloneDirMissing && current !== null && (
+          <p role="alert" className={styles.value}>
+            Directory not found: {current}
+          </p>
+        )}
         <span className={styles.row}>
           <button type="button" onClick={() => void choose()}>
             Choose folder…
@@ -261,19 +275,17 @@ function CloneSettings() {
 }
 
 function ToolsSettings() {
-  const { settings, update } = useSettings();
+  const tools = useSettings((s) => s.settings.tools);
   const ids = useId();
 
   const save =
-    (key: keyof Settings) =>
+    (key: keyof Settings["tools"]) =>
     async (next: string | null): Promise<string | null> => {
       try {
-        await update({ [key]: next } as Partial<Settings>);
+        await useSettings.getState().save({ tools: { [key]: next } });
         return null;
       } catch (e) {
-        useToasts
-          .getState()
-          .notify({ text: `Couldn't save settings: ${toAppError(e).message}`, variant: "error" });
+        notifySaveFailed(toAppError(e).message);
         return "";
       }
     };
@@ -283,43 +295,44 @@ function ToolsSettings() {
       <TextSetting
         id={`${ids}-editor`}
         label="External editor"
-        value={settings?.externalEditor ?? null}
+        value={tools.editor}
         hint={EDITOR_HINT}
-        onCommit={save("externalEditor")}
+        onCommit={save("editor")}
       />
       <TextSetting
         id={`${ids}-diff`}
         label="External diff tool"
-        value={settings?.externalDiffTool ?? null}
+        value={tools.diffTool}
         hint={DIFF_HINT}
-        onCommit={save("externalDiffTool")}
+        onCommit={save("diffTool")}
       />
       <TextSetting
         id={`${ids}-merge`}
         label="External merge tool"
-        value={settings?.externalMergeTool ?? null}
+        value={tools.mergeTool}
         hint={MERGE_HINT}
-        onCommit={save("externalMergeTool")}
+        onCommit={save("mergeTool")}
       />
     </Section>
   );
 }
 
 function GitSettings() {
-  const { settings, update } = useSettings();
+  const executable = useSettings((s) => s.settings.git.executable);
+  const queryClient = useQueryClient();
   const git = useQuery({ queryKey: queryKeys.gitCli, queryFn: () => checkGitCli() });
   const id = useId();
 
   const save = async (next: string | null): Promise<string | null> => {
     try {
-      await update({ gitExecutable: next });
+      await useSettings.getState().save({ git: { executable: next } });
+      // The located Git CLI depends on the configured executable.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.gitCli });
       return null;
     } catch (e) {
       const err = toAppError(e);
       if (err.kind === "gitCliInvalid") return `Not a Git executable: ${err.message}`;
-      useToasts
-        .getState()
-        .notify({ text: `Couldn't save settings: ${err.message}`, variant: "error" });
+      notifySaveFailed(err.message);
       return "";
     }
   };
@@ -334,7 +347,7 @@ function GitSettings() {
       <TextSetting
         id={id}
         label="Git executable"
-        value={settings?.gitExecutable ?? null}
+        value={executable}
         placeholder="Found on PATH"
         onCommit={save}
       />
@@ -346,18 +359,45 @@ function GitSettings() {
           Use PATH
         </button>
       </div>
-      {git.data &&
-        (git.data.available ? (
-          <p className={styles.value}>
-            Using {git.data.path} (git version {git.data.version})
-          </p>
-        ) : (
-          git.data.error && (
-            <p role="alert" className={styles.value}>
-              {git.data.error}
-            </p>
-          )
-        ))}
+      {git.data?.available && (
+        <p className={styles.value}>
+          Using {git.data.path} (git version {git.data.version})
+        </p>
+      )}
+      {/* The probe's error, also while available: that is how the PATH-fallback notice shows. */}
+      {git.data?.error && (
+        <p role="alert" className={styles.value}>
+          {git.data.error}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+function FileSettings() {
+  const path = useQuery({ queryKey: queryKeys.settingsPath, queryFn: settingsFilePath });
+
+  const reveal = async () => {
+    try {
+      await revealSettingsFile();
+    } catch (e) {
+      useToasts
+        .getState()
+        .notify({ text: `Couldn't open folder: ${toAppError(e).message}`, variant: "error" });
+    }
+  };
+
+  return (
+    <Section id="file" name="File">
+      <div className={styles.field}>
+        <span className={styles.value}>{path.data}</span>
+        <span className={styles.row}>
+          <button type="button" onClick={() => void reveal()}>
+            Show in folder
+          </button>
+        </span>
+        <p className={styles.hint}>Edits made outside the app apply the next time it starts.</p>
+      </div>
     </Section>
   );
 }

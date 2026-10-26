@@ -17,3 +17,8 @@ export async function revealSettingsFile(): Promise<void> {
 export function checkSettingsHealth(): Promise<SettingsHealth> {
   return invoke<SettingsHealth>("check_settings_health");
 }
+
+/** The absolute path of settings.json. */
+export function settingsFilePath(): Promise<string> {
+  return invoke<string>("settings_file_path");
+}

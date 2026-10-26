@@ -11,7 +11,6 @@ import {
   getCommitConfig,
   getHeadMessage,
   getLogSummary,
-  getSettings,
   getStatus,
   listBranches,
   listRecent,
@@ -50,7 +49,6 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
   onRepoChanged: vi.fn(),
-  getSettings: vi.fn(),
 }));
 
 const repo = (id: number, name: string, headBranch: string | null = "main"): OpenedRepo => ({
@@ -91,13 +89,6 @@ beforeEach(() => {
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 0, maxLanes: 1 });
-  vi.mocked(getSettings).mockResolvedValue({
-    defaultCloneDir: null,
-    gitExecutable: null,
-    externalEditor: null,
-    externalDiffTool: null,
-    externalMergeTool: null,
-  });
 });
 
 function renderApp(...seed: OpenedRepo[]) {
