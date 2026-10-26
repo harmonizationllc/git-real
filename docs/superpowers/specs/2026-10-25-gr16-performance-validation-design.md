@@ -1,6 +1,6 @@
 # GR-16 — Performance validation on large repositories
 
-- Status: Draft for implementation (architect-reviewed)
+- Status: Implemented 2026-10-26 (architect-approved; walk results in §13)
 - Date: 2026-10-25
 - Epic: GR-1 / Story: GR-16
 - Base: `main` @ 4644b29 (after GR-15)
@@ -211,8 +211,10 @@ git-real-bench --help
 
 Defaults: `--commits 100000`, `--files 10000`, `--url https://github.com/qemu/qemu`.
 Exit codes: `0` all budgets met (or `--no-assert`); `1` a budget exceeded; `2` usage
-error (prints `USAGE` to stderr); `3` fixture or measurement error (`error: ‹message›`
-on stderr). Unknown flags and a missing `<dir>`/`<repo>` are usage errors.
+error (prints `error: ‹message›` and then `USAGE` to stderr); `3` fixture or
+measurement error (`error: ‹message›` on stderr). Unknown flags, a missing
+`<dir>`/`<repo>`, a value flag followed by another `--flag` or by nothing
+(`‹flag› needs a value`), and `--commits 0`/`--files 0` are usage errors.
 
 ### 3.3 Fixtures
 
@@ -236,9 +238,11 @@ deterministic (fixed identity `Bench <bench@example.com>`, timestamps
   on `refs/heads/scratch` (message `topic-‹t› change ‹k›`, from the main tip, each
   touching file `c % files` with `topic ‹c›\n`); 20 indices after the topic started,
   `main` merges it (`Merge topic-‹t›`, two parents). Every 10th topic is left
-  unmerged and kept as `refs/heads/topic-‹t›`. Every other index is a plain `main`
-  commit `commit ‹c›` touching file `c % files` with `‹c›\n`.
-- `refs/tags/v0.‹c/2000›` on every 2,000th main commit (lightweight).
+  unmerged and kept as `refs/heads/topic-‹t›`, and so is a topic that `commits`
+  cuts off before its merge (no reachable commit is ever dropped). Every other
+  index is a plain `main` commit `commit ‹c›` touching file `c % files` with `‹c›\n`.
+- `refs/tags/v0.‹c/2000›` on every 2,000th index (lightweight); when that index is
+  a topic commit the tag goes on the current `main` tip.
 - `done`. Then `git update-ref -d refs/heads/scratch`, `git checkout -q main`, and a
   deterministic dirty state: append `dirty\n` to files `0..min(100, files)` and
   create untracked `dir001/sub1/new‹i›.txt` (`new\n`) for i in 0..100.
@@ -366,7 +370,7 @@ bench:
       uses: actions/cache@v4
       with:
         path: ~/.cache/git-real-bench
-        key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}
+        key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs') }}
     - name: Prepare fixtures
       run: |
         src-tauri/target/release/git-real-bench prepare synthetic ~/.cache/git-real-bench/synthetic
@@ -396,7 +400,9 @@ fixtures under the cached directory`, `runs the three fixtures with a JSON repor
 the step summary`, `uploads the results artifact even on failure`, `never continues on
 error` (no `continue-on-error` anywhere in the job), `README documents the benchmark
 commands` (the README `Benchmarks` section contains the three `prepare` lines and
-the `run` line).
+the `run` line), `cache key hashes the fixtures source and the CLI defaults` (the
+fixture defaults live in `cli.rs`), and `restores the fixture cache before preparing
+and uploads after running` (step order).
 
 ## 5. Off-UI-thread guard (`src-tauri/tests/offload_contract.rs`)
 
@@ -530,3 +536,15 @@ dirty entries), recorded in the ledger and the Jira summary:
    `statusMs` is already asserted by the suite.
 
 If the driver cannot be brought up, these become `USER CHECKS`.
+
+**Results (2026-10-26, i9-13900F, synthetic fixture).** Dev-server run
+(`tauri dev --release`): open to first graph row 726 ms; full-history scroll twice,
+max frame gap 36 ms; WebKitWebProcess RSS 324 MB after first paint, 558 MB after
+the first scroll, 576 MB after the second (the main process stayed at 386 MB);
+status refresh 313 ms including driver polling. Production bundle
+(`tauri build --no-bundle`, three fresh launches): open to first row 613 / 610 /
+674 ms; scroll max gap 18 ms. The only miss: one frame of 122–128 ms during the
+initial paint, when the first graph page and the 200-entry changes list render
+together (two frames of about 140 ms under the dev server). It is a performance
+finding, not a correctness one, and is deferred to a follow-up ticket (ruling
+R18 on the Jira story: fix now / defer / fail → defer).
