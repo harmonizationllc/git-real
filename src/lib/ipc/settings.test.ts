@@ -2,7 +2,13 @@
 
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkSettingsHealth, getSettings, revealSettingsFile, updateSettings } from "./settings";
+import {
+  checkSettingsHealth,
+  getSettings,
+  revealSettingsFile,
+  syncWindowBackground,
+  updateSettings,
+} from "./settings";
 import type { Settings, SettingsPatch } from "./types";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -113,5 +119,20 @@ describe("checkSettingsHealth", () => {
     const err = { kind: "io", message: "disk error" };
     mockThrowing(err);
     await expect(checkSettingsHealth()).rejects.toBe(err);
+  });
+});
+
+// Contract (GR-19): syncWindowBackground invokes sync_window_background with the page's scheme flag.
+describe("syncWindowBackground", () => {
+  it("sends sync_window_background with desktopDark and resolves to undefined", async () => {
+    const calls = mockWith(null);
+    await expect(syncWindowBackground(true)).resolves.toBeUndefined();
+    expect(calls).toEqual([{ cmd: "sync_window_background", args: { desktopDark: true } }]);
+  });
+
+  it("syncWindowBackground rejection passes through", async () => {
+    const err = { kind: "io", message: "no window" };
+    mockThrowing(err);
+    await expect(syncWindowBackground(false)).rejects.toBe(err);
   });
 });

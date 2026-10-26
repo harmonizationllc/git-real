@@ -3,7 +3,44 @@
 //! the close decision that skips saving while fullscreen.
 
 use git_real_core::settings::{Settings, WindowGeometry};
-use git_real_lib::main_window::{LABEL, TITLE, close_geometry, initial_geometry, logical_geometry};
+use git_real_lib::main_window::{
+    LABEL, TITLE, background_color, close_geometry, desktop_theme, follows_desktop,
+    initial_geometry, logical_geometry,
+};
+
+#[test]
+fn background_color_follows_the_stored_theme_then_the_desktop() {
+    use git_real_core::settings::Theme;
+    use tauri::webview::Color;
+    assert_eq!(
+        background_color(Theme::Dark, Some(tauri::Theme::Light)),
+        Color(30, 30, 30, 255)
+    );
+    assert_eq!(
+        background_color(Theme::Light, Some(tauri::Theme::Dark)),
+        Color(246, 246, 246, 255)
+    );
+    assert_eq!(
+        background_color(Theme::System, Some(tauri::Theme::Dark)),
+        Color(30, 30, 30, 255)
+    );
+    assert_eq!(
+        background_color(Theme::System, Some(tauri::Theme::Light)),
+        Color(246, 246, 246, 255)
+    );
+    assert_eq!(
+        background_color(Theme::System, None),
+        Color(246, 246, 246, 255)
+    );
+}
+
+#[test]
+fn only_the_system_theme_follows_the_desktop() {
+    use git_real_core::settings::Theme;
+    assert!(follows_desktop(Theme::System));
+    assert!(!follows_desktop(Theme::Dark));
+    assert!(!follows_desktop(Theme::Light));
+}
 
 fn stored(width: u32, height: u32) -> WindowGeometry {
     WindowGeometry {
@@ -88,4 +125,10 @@ fn close_geometry_is_the_logical_geometry_when_not_fullscreen() {
         close_geometry((3840, 2160), 1.0, true, false, &stored),
         Some(logical_geometry((3840, 2160), 1.0, true, &stored))
     );
+}
+
+#[test]
+fn desktop_theme_maps_the_page_flag() {
+    assert_eq!(desktop_theme(true), tauri::Theme::Dark);
+    assert_eq!(desktop_theme(false), tauri::Theme::Light);
 }

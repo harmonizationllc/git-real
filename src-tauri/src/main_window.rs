@@ -2,7 +2,8 @@
 //! so the stored size and maximized flag apply before it shows and the
 //! settings init script runs before any page script.
 
-use git_real_core::settings::{Settings, WINDOW_MIN, WindowGeometry};
+use git_real_core::settings::{Settings, Theme, WINDOW_MIN, WindowGeometry, background_rgb};
+use tauri::webview::Color;
 use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::settings_store::SettingsStore;
@@ -38,17 +39,65 @@ pub fn logical_geometry(
     .clamp_to_min()
 }
 
+/// The window background for the stored `theme`. `desktop` is the desktop's
+/// colour scheme, `None` when unknown, which counts as light.
+pub fn background_color(theme: Theme, desktop: Option<tauri::Theme>) -> Color {
+    let (r, g, b) = background_rgb(theme, desktop == Some(tauri::Theme::Dark));
+    Color(r, g, b, 255)
+}
+
+/// Whether the window background follows the desktop's colour scheme.
+pub fn follows_desktop(theme: Theme) -> bool {
+    theme == Theme::System
+}
+
+/// The desktop colour scheme the page reports through `prefers-color-scheme`.
+pub fn desktop_theme(desktop_dark: bool) -> tauri::Theme {
+    if desktop_dark {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    }
+}
+
+/// Sets the window and webview background for `theme`. `desktop` is the
+/// desktop's colour scheme when the caller knows it; when it is `None` and the
+/// theme follows the desktop, the window is asked. That answer is only fresh
+/// at creation on Linux, so later changes come from the page.
+pub fn apply_background(
+    window: &WebviewWindow,
+    theme: Theme,
+    desktop: Option<tauri::Theme>,
+) -> tauri::Result<()> {
+    let desktop = if follows_desktop(theme) && desktop.is_none() {
+        window.theme().ok()
+    } else {
+        desktop
+    };
+    window.set_background_color(Some(background_color(theme, desktop)))
+}
+
+/// Builds the main window hidden, sets its background from the stored theme,
+/// then shows it, so it never paints a frame in the wrong colour.
 pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWindow> {
-    let geometry = initial_geometry(&store.get());
-    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::default())
+    let settings = store.get();
+    let geometry = initial_geometry(&settings);
+    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::default())
         .title(TITLE)
         .inner_size(f64::from(geometry.width), f64::from(geometry.height))
         .min_inner_size(f64::from(WINDOW_MIN.0), f64::from(WINDOW_MIN.1))
         .maximized(geometry.maximized)
         .resizable(true)
         .decorations(true)
+        .visible(false)
         .initialization_script(store.to_init_script())
-        .build()
+        .build()?;
+    // A wrong-coloured first frame is better than a window that never shows.
+    if let Err(e) = apply_background(&window, settings.appearance.theme, None) {
+        eprintln!("settings: cannot set window background: {e}");
+    }
+    window.show()?;
+    Ok(window)
 }
 
 /// The geometry to save on close, or `None` to save nothing. Fullscreen is

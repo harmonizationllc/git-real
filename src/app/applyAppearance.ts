@@ -1,4 +1,4 @@
-import type { ThemePref } from "../lib/ipc";
+import { syncWindowBackground, type ThemePref } from "../lib/ipc";
 import { installFlushOnPagehide, useSettings } from "../lib/store/settings";
 
 /** The CSS `--font-mono` stack used when no diff font family is set. */
@@ -27,12 +27,29 @@ export function applyAppearance(
 /**
  * Applies the injected appearance now, follows later settings changes, saves pending edits when the
  * window goes away, and reconciles with the backend once; returns the uninstaller.
+ *
+ * While the theme is `system`, desktop colour-scheme changes are reported to Rust so the window
+ * background follows them: on Linux the page is the only reliable source after launch. Rust already
+ * coloured the window at creation, so there is no startup sync.
  */
 export function bootstrapAppearance(): () => void {
   applyAppearance(useSettings.getState().settings.appearance);
+  const mql = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSchemeChange = () => {
+    if (useSettings.getState().settings.appearance.theme === "system") {
+      void syncWindowBackground(mql.matches);
+    }
+  };
+  mql.addEventListener("change", onSchemeChange);
   const unsubscribe = useSettings.subscribe((state, prev) => {
     if (state.settings.appearance !== prev.settings.appearance) {
       applyAppearance(state.settings.appearance);
+      if (
+        state.settings.appearance.theme === "system" &&
+        prev.settings.appearance.theme !== "system"
+      ) {
+        void syncWindowBackground(mql.matches);
+      }
     }
   });
   const uninstallFlush = installFlushOnPagehide();
@@ -40,5 +57,6 @@ export function bootstrapAppearance(): () => void {
   return () => {
     unsubscribe();
     uninstallFlush();
+    mql.removeEventListener("change", onSchemeChange);
   };
 }

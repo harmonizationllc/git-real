@@ -62,6 +62,7 @@ pub fn run() {
             commands::repo::check_git_cli,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::sync_window_background,
             commands::settings::reveal_settings_file,
             commands::settings::check_settings_health,
             commands::settings::settings_file_path,
