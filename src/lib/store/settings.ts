@@ -73,18 +73,36 @@ function merge(base: Settings, patch: SettingsPatch): Settings {
   return next as Settings;
 }
 
-/** Each backend request takes the next number; replies are applied in this order only. */
+/** Numbers each queued setPref request; the queue sends them in this order. */
 let lastRequest = 0;
-let lastApplied = 0;
 
-/** setPref edits sent but not yet answered, by request number (ascending). */
+/** setPref edits queued or sent but not yet answered, by request number (ascending). */
 const inFlight = new Map<number, SettingsPatch>();
 
-/** Adopts `next` as server-known when its request is the newest answered; older replies are dropped. */
-function adopt(request: number, next: Settings): void {
-  if (request <= lastApplied) return;
-  lastApplied = request;
-  lastKnown = next;
+/** True while one backend request is outstanding. */
+let busy = false;
+
+/** Requests waiting for the outstanding one to settle, oldest first. */
+const waiting: Array<() => void> = [];
+
+/**
+ * Runs `job` once every earlier request has settled, so Rust applies writes in the order they
+ * were made. When the queue is idle the job starts synchronously (a pagehide flush relies on it).
+ */
+function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      busy = true;
+      job()
+        .then(resolve, reject)
+        .finally(() => {
+          busy = false;
+          waiting.shift()?.();
+        });
+    };
+    if (busy) waiting.push(run);
+    else run();
+  });
 }
 
 /** Shows the server-known settings with in-flight, then still-pending, edits laid on top. */
@@ -93,25 +111,35 @@ function refresh(): void {
   useSettings.setState({ settings: [...inFlight.values(), queued].reduce(merge, lastKnown) });
 }
 
-/** Sends one section's edits; only ever called for a section that is in `pending`. */
-async function send(section: Section): Promise<void> {
-  const { patch, timer } = pending.get(section) as PendingEdit;
-  clearTimeout(timer);
-  pending.delete(section);
-  const request = ++lastRequest;
-  const sent = { [section]: patch };
-  inFlight.set(request, sent);
-  try {
-    adopt(request, await updateSettings(sent));
-  } catch (e) {
-    useToasts
-      .getState()
-      .notify({ text: `Couldn't save settings: ${toAppError(e).message}`, variant: "error" });
-  } finally {
-    // A rejected edit leaves the overlay, so its section shows the server-known value again.
-    inFlight.delete(request);
-    refresh();
+/** Takes the named sections out of `pending` as one patch; each must be in `pending`. */
+function takePending(sections: Section[]): SettingsPatch {
+  const patch: Record<string, unknown> = {};
+  for (const section of sections) {
+    const { patch: fields, timer } = pending.get(section) as PendingEdit;
+    clearTimeout(timer);
+    pending.delete(section);
+    patch[section] = fields;
   }
+  return patch as SettingsPatch;
+}
+
+/** Queues one setPref request; a rejection reverts the sections it carried and toasts once. */
+function send(patch: SettingsPatch): Promise<void> {
+  const request = ++lastRequest;
+  inFlight.set(request, patch);
+  return enqueue(async () => {
+    try {
+      lastKnown = await updateSettings(patch);
+    } catch (e) {
+      useToasts
+        .getState()
+        .notify({ text: `Couldn't save settings: ${toAppError(e).message}`, variant: "error" });
+    } finally {
+      // A rejected edit leaves the overlay, so its sections show the server-known value again.
+      inFlight.delete(request);
+      refresh();
+    }
+  });
 }
 
 /** Every preference, hydrated synchronously from the settings Rust injected; settings.json is the only store. */
@@ -123,29 +151,32 @@ export const useSettings = create<SettingsState>()(() => ({
       if (prev) clearTimeout(prev.timer);
       pending.set(section, {
         patch: { ...prev?.patch, ...patch[section] },
-        timer: setTimeout(() => void send(section), SAVE_DELAY_MS),
+        timer: setTimeout(() => void send(takePending([section])), SAVE_DELAY_MS),
       });
     }
     refresh();
   },
-  save: async (patch) => {
-    const request = ++lastRequest;
-    const next = await updateSettings(patch);
-    adopt(request, next);
-    refresh();
-    return next;
-  },
-  reconcile: async () => {
-    const request = ++lastRequest;
-    try {
-      adopt(request, await getSettings());
+  save: (patch) =>
+    enqueue(async () => {
+      const next = await updateSettings(patch);
+      lastKnown = next;
       refresh();
+      return next;
+    }),
+  reconcile: async () => {
+    try {
+      await enqueue(async () => {
+        lastKnown = await getSettings();
+        refresh();
+      });
     } catch {
       // The injected settings stay in use.
     }
   },
   flush: async () => {
-    await Promise.all([...pending.keys()].map(send));
+    const sections = [...pending.keys()];
+    // With nothing pending, the empty job still waits for whatever is already queued.
+    await (sections.length > 0 ? send(takePending(sections)) : enqueue(async () => {}));
   },
 }));
 

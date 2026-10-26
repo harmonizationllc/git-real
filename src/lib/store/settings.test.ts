@@ -176,117 +176,162 @@ describe("setPref", () => {
   });
 });
 
-/** A promise with its resolver, for replying to IPC calls in a chosen order. */
+/** A promise with its resolver and rejecter, for replying to IPC calls at a chosen time. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 /** Lets awaited replies run their continuations. */
 async function settle() {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
 }
 
-describe("out-of-order replies", () => {
-  it("replies resolved in reverse order keep both newer values, not the older snapshot", async () => {
+describe("one request at a time", () => {
+  it("two sections set in the same tick keep one updateSettings in flight at a time", async () => {
     const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    updateSettings.mockReturnValueOnce(first.promise).mockResolvedValue(DEFAULT_SETTINGS);
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    useSettings.getState().setPref({ layout: { refsWidth: 300 } });
+    await vi.advanceTimersByTimeAsync(300);
+    // Both timers fired, but the second request waits for the first reply.
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenLastCalledWith({ appearance: { theme: "dark" } });
+    first.resolve(withSection(DEFAULT_SETTINGS, "appearance", { theme: "dark" }));
+    await settle();
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenLastCalledWith({ layout: { refsWidth: 300 } });
+  });
+
+  it("serialised requests end with the theme dark and the width 300, whatever the reply timing", async () => {
+    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const light = withSection(DEFAULT_SETTINGS, "appearance", { theme: "light" });
+    useSettings.setState({ settings: light });
     const first = deferred<Settings>();
     const second = deferred<Settings>();
     updateSettings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     useSettings.getState().setPref({ appearance: { theme: "dark" } });
     useSettings.getState().setPref({ layout: { refsWidth: 300 } });
-    const flushed = useSettings.getState().flush();
-    expect(updateSettings).toHaveBeenNthCalledWith(1, { appearance: { theme: "dark" } });
-    expect(updateSettings).toHaveBeenNthCalledWith(2, { layout: { refsWidth: 300 } });
+    await vi.advanceTimersByTimeAsync(300);
 
-    const both = withSection(
-      withSection(DEFAULT_SETTINGS, "appearance", { theme: "dark" }),
-      "layout",
-      { refsWidth: 300 },
-    );
+    // Rust applies the theme first, because the width request has not been sent yet.
+    const dark = withSection(light, "appearance", { theme: "dark" });
+    await vi.advanceTimersByTimeAsync(50);
+    first.resolve(dark);
+    await settle();
+    expect(useSettings.getState().settings.appearance.theme).toBe("dark");
+    expect(useSettings.getState().settings.layout.refsWidth).toBe(300);
+
+    const both = withSection(dark, "layout", { refsWidth: 300 });
+    await vi.advanceTimersByTimeAsync(500);
     second.resolve(both);
     await settle();
     expect(useSettings.getState().settings).toEqual(both);
-
-    // The first reply is an older snapshot: the theme is saved, the width not yet.
-    first.resolve(withSection(DEFAULT_SETTINGS, "appearance", { theme: "dark" }));
-    await flushed;
-    expect(useSettings.getState().settings).toEqual(both);
   });
 
-  it("a stale reply does not overwrite the server-known value a later revert uses", async () => {
-    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+  it("a rejected request does not block the queue", async () => {
+    const { useSettings, updateSettings, toasts, DEFAULT_SETTINGS } = await load();
     const first = deferred<Settings>();
-    const second = deferred<Settings>();
-    updateSettings.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const widened = withSection(DEFAULT_SETTINGS, "layout", { refsWidth: 300 });
+    updateSettings.mockReturnValueOnce(first.promise).mockResolvedValueOnce(widened);
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
     useSettings.getState().setPref({ layout: { refsWidth: 300 } });
-    useSettings.getState().setPref({ appearance: { theme: "light" } });
-    const flushed = useSettings.getState().flush();
-    second.resolve(
-      withSection(withSection(DEFAULT_SETTINGS, "layout", { refsWidth: 300 }), "appearance", {
-        theme: "light",
-      }),
-    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    first.reject({ kind: "io", message: "disk full" });
     await settle();
-    first.resolve(DEFAULT_SETTINGS);
-    await flushed;
-
-    updateSettings.mockRejectedValueOnce(new Error("locked"));
-    useSettings.getState().setPref({ layout: { refsWidth: 350 } });
-    await useSettings.getState().flush();
-    expect(useSettings.getState().settings.layout.refsWidth).toBe(300);
-    expect(useSettings.getState().settings.appearance.theme).toBe("light");
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenLastCalledWith({ layout: { refsWidth: 300 } });
+    expect(useSettings.getState().settings).toEqual(widened);
+    expect(toasts().map((t) => t.text)).toEqual(["Couldn't save settings: disk full"]);
   });
 
-  it("a reply arriving while a save is in flight keeps the in-flight value on screen", async () => {
+  it("a reconcile reply read before a queued save keeps the queued value on screen", async () => {
     const { useSettings, updateSettings, getSettings, DEFAULT_SETTINGS } = await load();
     const reconciled = deferred<Settings>();
-    const saved = deferred<Settings>();
     getSettings.mockReturnValueOnce(reconciled.promise);
-    updateSettings.mockReturnValueOnce(saved.promise);
+    const saved = withSection(DEFAULT_SETTINGS, "layout", { sidebarWidth: 400 });
+    updateSettings.mockResolvedValueOnce(saved);
     const reconciling = useSettings.getState().reconcile();
     useSettings.getState().setPref({ layout: { sidebarWidth: 400 } });
     const flushed = useSettings.getState().flush();
+    // The flush waits behind the reconcile read.
+    expect(updateSettings).not.toHaveBeenCalled();
 
-    // The reconcile reply was read before the width save landed.
     reconciled.resolve(DEFAULT_SETTINGS);
     await reconciling;
     expect(useSettings.getState().settings.layout.sidebarWidth).toBe(400);
 
-    saved.resolve(withSection(DEFAULT_SETTINGS, "layout", { sidebarWidth: 400 }));
     await flushed;
-    expect(useSettings.getState().settings.layout.sidebarWidth).toBe(400);
+    expect(updateSettings).toHaveBeenCalledWith({ layout: { sidebarWidth: 400 } });
+    expect(useSettings.getState().settings).toEqual(saved);
   });
 
-  it("an older reconcile reply arriving after a newer save is dropped", async () => {
+  it("a save queued behind a reconcile is applied after the reconcile reply", async () => {
     const { useSettings, updateSettings, getSettings, DEFAULT_SETTINGS } = await load();
     const reconciled = deferred<Settings>();
     getSettings.mockReturnValueOnce(reconciled.promise);
     const saved = withSection(DEFAULT_SETTINGS, "tools", { editor: "code" });
     updateSettings.mockResolvedValueOnce(saved);
     const reconciling = useSettings.getState().reconcile();
-    await useSettings.getState().save({ tools: { editor: "code" } });
+    const saving = useSettings.getState().save({ tools: { editor: "code" } });
+    expect(updateSettings).not.toHaveBeenCalled();
     reconciled.resolve(DEFAULT_SETTINGS);
     await reconciling;
+    await expect(saving).resolves.toBe(saved);
     expect(useSettings.getState().settings).toEqual(saved);
   });
 });
 
 describe("flush", () => {
-  it("flush sends pending patches immediately", async () => {
+  it("flush sends every pending section in one request", async () => {
     const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
     updateSettings.mockResolvedValue(DEFAULT_SETTINGS);
     useSettings
       .getState()
       .setPref({ layout: { refsWidth: 250 }, diff: { ignoreWhitespace: true } });
     await useSettings.getState().flush();
-    expect(updateSettings).toHaveBeenCalledTimes(2);
-    expect(updateSettings).toHaveBeenCalledWith({ layout: { refsWidth: 250 } });
-    expect(updateSettings).toHaveBeenCalledWith({ diff: { ignoreWhitespace: true } });
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith({
+      layout: { refsWidth: 250 },
+      diff: { ignoreWhitespace: true },
+    });
     // The timers were cleared: nothing is sent again later.
     await vi.advanceTimersByTimeAsync(1000);
-    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("a rejected flush reverts every section it carried and toasts once", async () => {
+    const { useSettings, updateSettings, toasts, DEFAULT_SETTINGS } = await load();
+    updateSettings.mockRejectedValueOnce(new Error("locked"));
+    useSettings.getState().setPref({ layout: { refsWidth: 250 }, diff: { mode: "unified" } });
+    await useSettings.getState().flush();
+    expect(useSettings.getState().settings).toEqual(DEFAULT_SETTINGS);
+    expect(toasts().map((t) => t.text)).toEqual(["Couldn't save settings: locked"]);
+  });
+
+  it("flush with nothing pending waits for the request in flight and sends nothing more", async () => {
+    const { useSettings, updateSettings, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    updateSettings.mockReturnValueOnce(first.promise);
+    useSettings.getState().setPref({ diff: { mode: "unified" } });
+    await vi.advanceTimersByTimeAsync(300);
+    let done = false;
+    const flushed = useSettings
+      .getState()
+      .flush()
+      .then(() => (done = true));
+    await settle();
+    expect(done).toBe(false);
+    first.resolve(DEFAULT_SETTINGS);
+    await flushed;
+    expect(updateSettings).toHaveBeenCalledTimes(1);
   });
 
   it("flush with nothing pending sends nothing", async () => {
@@ -317,6 +362,23 @@ describe("flush", () => {
     window.dispatchEvent(new Event("pagehide"));
     window.dispatchEvent(new Event("beforeunload"));
     expect(updateSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("pagehide while a request is in flight queues the flush behind it", async () => {
+    const { useSettings, updateSettings, installFlushOnPagehide, DEFAULT_SETTINGS } = await load();
+    const first = deferred<Settings>();
+    updateSettings.mockReturnValueOnce(first.promise).mockResolvedValue(DEFAULT_SETTINGS);
+    const uninstall = installFlushOnPagehide();
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    await vi.advanceTimersByTimeAsync(300);
+    useSettings.getState().setPref({ layout: { sidebarWidth: 410 } });
+    window.dispatchEvent(new Event("pagehide"));
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    first.resolve(DEFAULT_SETTINGS);
+    await settle();
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(updateSettings).toHaveBeenLastCalledWith({ layout: { sidebarWidth: 410 } });
+    uninstall();
   });
 });
 

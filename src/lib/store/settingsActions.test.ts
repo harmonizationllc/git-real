@@ -121,9 +121,8 @@ describe("clone and updates setters", () => {
     actions.setCheckOnStartup(false);
     expect(settings().clone.urlForm).toBe("ssh");
     expect(settings().updates.checkOnStartup).toBe(false);
-    const sentPatches = await patches();
-    expect(sentPatches).toHaveLength(2);
-    expect(sentPatches).toContainEqual({ clone: { urlForm: "ssh" } });
-    expect(sentPatches).toContainEqual({ updates: { checkOnStartup: false } });
+    expect(await patches()).toEqual([
+      { clone: { urlForm: "ssh" }, updates: { checkOnStartup: false } },
+    ]);
   });
 });
