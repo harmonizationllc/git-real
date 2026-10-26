@@ -142,11 +142,14 @@ subject:
 - Pills never shrink (`flex: none`), are capped at `24ch` with an ellipsis
   and keep `title={name}`; the DOM text is the full name, so the accessible
   name is the full name.
-- `fitLabels(widths, gap, budget, moreWidth)` in
+- `fitLabels(widths, gap, budget, moreWidth, total = widths.length)` in
   `src/features/graph/model/refLabelFit.ts` returns how many candidates
   show: the largest `k ≥ 1` such that the first `k` widths with `k − 1` gaps
-  fit the budget when `k` is every candidate, or with the `+N` pill and `k`
-  gaps otherwise. At least one pill always shows.
+  fit the budget when `k` is every ref (`k === total`), or with the `+N`
+  pill and `k` gaps otherwise. At least one pill always shows. (`total` was
+  added during execution on 2026-10-26: with more refs than `MAX_LABELS`
+  the `+N` pill is rendered even when every candidate fits, so its width
+  must be budgeted then too.)
 - The component observes its parent flex cell with a `ResizeObserver` and
   measures the rendered pills by `offsetWidth`; the budget is the cell's
   width minus `SUBJECT_RESERVE_PX = 64` (the 8ch the CSS reserved) minus the
@@ -154,7 +157,8 @@ subject:
   `MORE_PILL_PX = 36`. While the cell or any pill measures zero (no layout,
   as in tests) every candidate shows. Candidates beyond `k` are kept in the
   DOM as `visibility: hidden; position: absolute` so they stay measurable and
-  out of the accessibility tree.
+  out of the accessibility tree; the root is `position: relative` so an
+  out-of-flow pill can never widen the graph list (ruled during execution).
 - The `+N` pill gets `aria-label` of `N more: name, name` and keeps its
   newline-joined `title`.
 
