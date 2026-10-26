@@ -21,16 +21,19 @@ export function sectionFloor(natural: number): number {
 
 /**
  * Shares the column between the sections (spec §3.1; index 0 is Branches). Each section prefers
- * its content height, or its stored height clamped between its floor and its content. Leftover
- * space goes to an automatic Branches; an overflow is taken from the automatic sections in
- * proportion to their room above the floor, then from the fixed ones. Floors are never crossed.
- * An unmeasured container (<= 0) returns the content heights unchanged.
+ * its content height, or its stored height clamped between its floor and its content; a stored
+ * Branches height is a true height, only floored. Leftover space goes to an automatic Branches;
+ * an overflow is taken from the automatic sections in proportion to their room above the floor,
+ * then from the fixed ones. Floors are never crossed. An unmeasured container (<= 0) returns the
+ * content heights unchanged.
  */
 export function fitSections(container: number, sections: SectionInput[]): number[] {
   if (container <= 0) return sections.map((s) => s.natural);
   const floors = sections.map((s) => sectionFloor(s.natural));
   const heights = sections.map((s, i) =>
-    s.fixed === null ? s.natural : Math.min(s.natural, Math.max(floors[i], s.fixed)),
+    s.fixed === null
+      ? s.natural
+      : Math.min(i === 0 ? Infinity : s.natural, Math.max(floors[i], s.fixed)),
   );
   let over = heights.reduce((sum, h) => sum + h, 0) - container;
   if (over <= 0) {

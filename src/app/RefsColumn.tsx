@@ -123,10 +123,14 @@ export function RefsColumn({
               orientation="horizontal"
               value={ready ? (heights[i] as number) : (layout[`${section}Height`] ?? 0)}
               min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-              // Capped at the content, so an inert (collapsed or empty) section cannot be dragged.
+              // A secondary section is capped at its content, so an inert (collapsed or empty) one
+              // cannot be dragged; Branches is bounded by the column alone.
               max={
                 ready
-                  ? Math.min(maxSectionHeight(container, inputs, i), inputs[i]!.natural)
+                  ? Math.min(
+                      maxSectionHeight(container, inputs, i),
+                      i === 0 ? Infinity : inputs[i]!.natural,
+                    )
                   : Infinity
               }
               step={KEY_STEP}
