@@ -11,18 +11,23 @@ export interface SplitHandleProps {
   min: number;
   /** Infinity while the container is unmeasured. */
   max: number;
-  /** Pixels per ArrowLeft/ArrowRight press. */
+  /** Pixels per arrow-key press along the handle's axis. */
   step: number;
   /**
    * Which column the value sizes, relative to the handle; "after" inverts the pointer delta and
    * ArrowLeft/ArrowRight so dragging towards that column narrows it. Defaults to "before".
    */
   side?: "before" | "after";
+  /**
+   * "vertical" separates columns (horizontal drag, ArrowLeft/ArrowRight); "horizontal" separates
+   * stacked sections (vertical drag, ArrowUp/ArrowDown). Defaults to "vertical".
+   */
+  orientation?: "vertical" | "horizontal";
   onChange(px: number): void;
   onReset(): void;
 }
 
-/** A vertical column separator, resized by pointer drag or the keyboard; double-click resets. */
+/** A column or section separator, resized by pointer drag or the keyboard; double-click resets. */
 export function SplitHandle({
   label,
   value,
@@ -30,20 +35,24 @@ export function SplitHandle({
   max,
   step,
   side = "before",
+  orientation = "vertical",
   onChange,
   onReset,
 }: SplitHandleProps) {
   const sign = side === "after" ? -1 : 1;
-  const start = useRef<{ x: number; value: number } | null>(null);
+  const horizontal = orientation === "horizontal";
+  const pos = (e: PointerEvent<HTMLDivElement>) => (horizontal ? e.clientY : e.clientX);
+  const [grow, shrink] = horizontal ? ["ArrowDown", "ArrowUp"] : ["ArrowRight", "ArrowLeft"];
+  const start = useRef<{ pos: number; value: number } | null>(null);
   const clamp = (px: number) => Math.min(max, Math.max(min, px));
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    start.current = { x: e.clientX, value };
+    start.current = { pos: pos(e), value };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (start.current) onChange(clamp(start.current.value + sign * (e.clientX - start.current.x)));
+    if (start.current) onChange(clamp(start.current.value + sign * (pos(e) - start.current.pos)));
   };
 
   const endDrag = (e: PointerEvent<HTMLDivElement>) => {
@@ -53,8 +62,8 @@ export function SplitHandle({
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const targets: Record<string, number> = {
-      ArrowRight: value + sign * step,
-      ArrowLeft: value - sign * step,
+      [grow]: value + sign * step,
+      [shrink]: value - sign * step,
       Home: min,
       End: max,
     };
@@ -68,14 +77,14 @@ export function SplitHandle({
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation}
       aria-label={label}
       aria-valuenow={value}
       aria-valuemin={min}
       aria-valuemax={Number.isFinite(max) ? max : undefined}
       tabIndex={0}
-      className={styles.handle}
-      style={{ width: SPLIT_HANDLE_WIDTH }}
+      className={horizontal ? `${styles.handle} ${styles.horizontal}` : styles.handle}
+      style={horizontal ? { height: SPLIT_HANDLE_WIDTH } : { width: SPLIT_HANDLE_WIDTH }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
