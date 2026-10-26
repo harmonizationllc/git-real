@@ -125,10 +125,13 @@ fn unknown_flag(flag: &str) -> UsageError {
     UsageError(format!("unknown flag {flag}"))
 }
 
+/// The value after a value-taking flag; a missing token or another `--flag`
+/// is a usage error rather than being swallowed as the value.
 fn flag_value<'a>(flag: &str, value: Option<&'a String>) -> Result<&'a str, UsageError> {
-    value
-        .map(String::as_str)
-        .ok_or_else(|| UsageError(format!("{flag} needs a value")))
+    match value {
+        Some(value) if !value.starts_with("--") => Ok(value),
+        _ => Err(UsageError(format!("{flag} needs a value"))),
+    }
 }
 
 /// A positive count: `0` would leave nothing to build (and `c % files` undefined).

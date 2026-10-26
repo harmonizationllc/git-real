@@ -48,17 +48,22 @@ pub fn run_git_with_input(args: &[&str], cwd: &Path, input: &[u8]) -> Result<Str
         .spawn()
         .map_err(|e| failed(args, &e.to_string()))?;
     let mut stdin = child.stdin.take().expect("stdin is piped");
-    let output = thread::scope(|scope| {
-        scope.spawn(move || {
+    let (output, written) = thread::scope(|scope| {
+        let writer = scope.spawn(move || {
             // A broken pipe means git exited early; its stderr says why.
             match stdin.write_all(input) {
                 Err(e) if e.kind() != io::ErrorKind::BrokenPipe => Err(e),
                 _ => Ok(()),
             }
         });
-        child.wait_with_output()
-    })
-    .map_err(|e| failed(args, &e.to_string()))?;
+        let output = child.wait_with_output();
+        let written = writer
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        (output, written)
+    });
+    let output = output.map_err(|e| failed(args, &e.to_string()))?;
+    written.map_err(|e| failed(args, &format!("writing stdin: {e}")))?;
     finish(args, output)
 }
 
