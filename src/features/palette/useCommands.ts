@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { listRecent, openInEditor } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useAppearancePrefs } from "../../lib/store/appearancePrefs";
-import type { ThemePref } from "../../lib/store/appearancePrefs";
+import type { ThemePref } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
+import { setTheme } from "../../lib/store/settingsActions";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useShell } from "../../lib/store/shell";
 import type { ShellActions } from "../../lib/store/shell";
@@ -34,8 +35,7 @@ const THEME_LABEL: Record<ThemePref, string> = {
  * repositories not already open. It reads the published `repoActions`, never a network hook.
  */
 export function useCommands(actions: ShellActions): Command[] {
-  const theme = useAppearancePrefs((s) => s.theme);
-  const setTheme = useAppearancePrefs((s) => s.setTheme);
+  const theme = useSettings((s) => s.settings.appearance.theme);
   const repoActions = useShell((s) => s.repoActions);
   const tabs = useRepoTabs((s) => s.tabs);
   const activeId = useRepoTabs((s) => s.activeId);

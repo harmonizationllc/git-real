@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Contract: applyAppearance sets or removes data-theme and the two CSS custom properties.
-// bootstrapAppearance runs before first render and subscribes for later changes.
+// bootstrapAppearance applies the injected settings before first render, follows the settings
+// store, installs the flush hook and reconciles with the backend once.
+
+vi.mock(import("../lib/ipc"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+}));
 
 beforeEach(() => {
   localStorage.clear();
+  delete window.__GIT_REAL_SETTINGS__;
   // Reset html element attributes / style between tests.
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.style.removeProperty("--font-mono");
@@ -12,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete window.__GIT_REAL_SETTINGS__;
   vi.restoreAllMocks();
   vi.resetModules();
 });
@@ -57,42 +66,73 @@ describe("applyAppearance font tokens", () => {
   });
 });
 
-// Review Focus item 3: bootstrapAppearance must apply the stored theme BEFORE first render.
+/** Fresh copies of the store and the bootstrap, hydrated from the current injected global. */
+async function load(reply?: { theme: "system" | "light" | "dark" }) {
+  vi.resetModules();
+  const { getSettings, updateSettings } = await import("../lib/ipc");
+  const { DEFAULT_SETTINGS, useSettings } = await import("../lib/store/settings");
+  vi.mocked(getSettings).mockResolvedValue({
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, ...reply },
+  });
+  vi.mocked(updateSettings).mockResolvedValue(DEFAULT_SETTINGS);
+  const { bootstrapAppearance } = await import("./applyAppearance");
+  return { getSettings, DEFAULT_SETTINGS, useSettings, bootstrapAppearance };
+}
+
 describe("bootstrapAppearance", () => {
-  it("applies the stored theme before the first render", async () => {
-    // Seed localStorage with a light theme before any module loads.
-    localStorage.setItem(
-      "git-real.appearancePrefs",
-      JSON.stringify({
-        state: { theme: "light", diffFontFamily: null, diffFontSize: 13 },
-        version: 1,
-      }),
-    );
-    // Re-import fresh modules so the persist store picks up the seeded value.
-    vi.resetModules();
-    const { bootstrapAppearance } = await import("./applyAppearance");
+  it("applies the injected theme and fonts before the first render", async () => {
+    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+    window.__GIT_REAL_SETTINGS__ = {
+      ...DEFAULT_SETTINGS,
+      appearance: { theme: "dark", diffFontFamily: "Fira Code", diffFontSize: 17 },
+    };
+    const { bootstrapAppearance } = await load();
     bootstrapAppearance();
-    // Must be synchronous: data-theme is set before the assertion.
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    // Synchronous: nothing has been awaited since the call.
+    const root = document.documentElement;
+    expect(root.getAttribute("data-theme")).toBe("dark");
+    expect(root.style.getPropertyValue("--font-mono")).toBe("Fira Code");
+    expect(root.style.getPropertyValue("--diff-font-size")).toBe("17px");
   });
 
-  it("re-applies when the store changes", async () => {
-    vi.resetModules();
-    const { bootstrapAppearance } = await import("./applyAppearance");
-    const { useAppearancePrefs } = await import("../lib/store/appearancePrefs");
+  it("re-applies when the settings store changes", async () => {
+    const { bootstrapAppearance, useSettings } = await load();
     bootstrapAppearance();
-    useAppearancePrefs.getState().setTheme("dark");
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    await useSettings.getState().flush();
   });
 
-  it("stops re-applying after unsubscribe is called", async () => {
-    vi.resetModules();
-    const { bootstrapAppearance } = await import("./applyAppearance");
-    const { useAppearancePrefs } = await import("../lib/store/appearancePrefs");
-    const unsub = bootstrapAppearance();
-    unsub();
-    useAppearancePrefs.getState().setTheme("dark");
-    // data-theme should not have been set to dark after unsubscribe.
+  it("leaves the page alone when another section changes", async () => {
+    const { bootstrapAppearance, useSettings } = await load();
+    bootstrapAppearance();
+    document.documentElement.setAttribute("data-theme", "marker");
+    useSettings.getState().setPref({ diff: { mode: "unified" } });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("marker");
+    await useSettings.getState().flush();
+  });
+
+  it("calls reconcile exactly once and applies what the backend reports", async () => {
+    const { bootstrapAppearance, getSettings } = await load({ theme: "light" });
+    bootstrapAppearance();
+    expect(getSettings).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() =>
+      expect(document.documentElement.getAttribute("data-theme")).toBe("light"),
+    );
+    expect(getSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops following the store and drops the flush hook once uninstalled", async () => {
+    const { bootstrapAppearance, useSettings } = await load();
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const uninstall = bootstrapAppearance();
+    expect(add).toHaveBeenCalledWith("pagehide", expect.any(Function));
+    uninstall();
+    expect(remove).toHaveBeenCalledWith("pagehide", expect.any(Function));
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
     expect(document.documentElement.getAttribute("data-theme")).not.toBe("dark");
+    await useSettings.getState().flush();
   });
 });

@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { appVersion, checkForUpdate, openExternal, toAppError } from "../../lib/ipc";
 import type { UpdateInfo } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
-import { useUpdatePrefs } from "../../lib/store/updatePrefs";
+import { useSettings } from "../../lib/store/settings";
+import { setCheckOnStartup } from "../../lib/store/settingsActions";
 import { Section } from "./SettingsDialog";
 import styles from "./SettingsDialog.module.css";
 
@@ -13,8 +14,7 @@ const REPO_URL = "https://github.com/harmonizationllc/git-real";
 /** Version, the startup-check toggle, a manual check, and the source link. */
 export function AboutSettings() {
   const version = useQuery({ queryKey: queryKeys.appVersion, queryFn: () => appVersion() });
-  const checkOnStartup = useUpdatePrefs((s) => s.checkOnStartup);
-  const setCheckOnStartup = useUpdatePrefs((s) => s.setCheckOnStartup);
+  const checkOnStartup = useSettings((s) => s.settings.updates.checkOnStartup);
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UpdateInfo | null>(null);

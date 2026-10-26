@@ -1,25 +1,23 @@
-// GR-15 Cycle 1, Task 4 – tests for the startup update-check hook.
-//
-// RED PHASE: `./useUpdateCheck` and `../lib/store/updatePrefs` do not exist
-// yet; every test in this file fails at module resolution time.
-
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdatePrefs } from "../lib/store/updatePrefs"; // RED
+import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdateState } from "../lib/store/updateState";
+import { resetSettings, seedSettings } from "../test/settingsStore";
 import { useToasts } from "../lib/store/toasts";
-import { useUpdateCheck } from "./useUpdateCheck"; // RED
+import { useUpdateCheck } from "./useUpdateCheck";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   checkForUpdate: vi.fn(),
+  updateSettings: vi.fn(),
   openExternal: vi.fn(),
 }));
 
-beforeEach(() => {
-  vi.useFakeTimers();
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
+  vi.useFakeTimers();
   useToasts.setState({ toasts: [] });
-  useUpdatePrefs.setState(useUpdatePrefs.getInitialState(), true);
+  useUpdateState.setState(useUpdateState.getInitialState(), true);
 });
 
 afterEach(() => {
@@ -58,7 +56,7 @@ describe("useUpdateCheck startup check", () => {
 describe("useUpdateCheck disabled", () => {
   it("should not call checkForUpdate when checkOnStartup is false", async () => {
     const { checkForUpdate } = await import("../lib/ipc");
-    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), checkOnStartup: false }, true);
+    await seedSettings({ updates: { checkOnStartup: false } });
     renderHook(() => useUpdateCheck());
     act(() => {
       vi.advanceTimersByTime(STARTUP_DELAY_MS + 1000);
@@ -72,7 +70,7 @@ describe("useUpdateCheck skip recent", () => {
   it("should not check if checked within the last 24 h", async () => {
     const { checkForUpdate } = await import("../lib/ipc");
     const recent = Date.now() - CHECK_INTERVAL_MS + 1_000;
-    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: recent }, true);
+    useUpdateState.setState({ ...useUpdateState.getInitialState(), lastCheckedAt: recent }, true);
     renderHook(() => useUpdateCheck());
     act(() => {
       vi.advanceTimersByTime(STARTUP_DELAY_MS + 1_000);
@@ -89,7 +87,7 @@ describe("useUpdateCheck skip recent", () => {
       url: null,
     });
     const old = Date.now() - CHECK_INTERVAL_MS;
-    useUpdatePrefs.setState({ ...useUpdatePrefs.getInitialState(), lastCheckedAt: old }, true);
+    useUpdateState.setState({ ...useUpdateState.getInitialState(), lastCheckedAt: old }, true);
     renderHook(() => useUpdateCheck());
     await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
     expect(checkForUpdate).toHaveBeenCalledOnce();
@@ -160,7 +158,7 @@ describe("useUpdateCheck toast on update", () => {
     renderHook(() => useUpdateCheck());
     await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
     expect(checkForUpdate).toHaveBeenCalledOnce();
-    expect(useUpdatePrefs.getState().lastCheckedAt).not.toBeNull();
+    expect(useUpdateState.getState().lastCheckedAt).not.toBeNull();
   });
 });
 
@@ -186,7 +184,7 @@ describe("useUpdateCheck failure handling", () => {
     renderHook(() => useUpdateCheck());
     await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
     expect(checkForUpdate).toHaveBeenCalledOnce();
-    expect(useUpdatePrefs.getState().lastCheckedAt).not.toBeNull();
+    expect(useUpdateState.getState().lastCheckedAt).not.toBeNull();
   });
 });
 

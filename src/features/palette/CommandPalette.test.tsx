@@ -11,21 +11,24 @@ import {
   listRecent,
   listRemotes,
   openInEditor,
+  updateSettings,
 } from "../../lib/ipc";
 import type { Settings } from "../../lib/ipc";
 import { MAX_PALETTE_ROWS } from "../../lib/fuzzy";
 import { queryClient } from "../../lib/query/client";
-import { useAppearancePrefs } from "../../lib/store/appearancePrefs";
+import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import type { ShellActions } from "../../lib/store/shell";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
+import { resetSettings } from "../../test/settingsStore";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CommandPalette } from "./CommandPalette";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   listRecent: vi.fn(),
   openInEditor: vi.fn(),
   listBranches: vi.fn(),
@@ -34,11 +37,8 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 }));
 
 const defaultSettings: Settings = {
-  defaultCloneDir: null,
-  gitExecutable: null,
-  externalEditor: null,
-  externalDiffTool: null,
-  externalMergeTool: null,
+  ...DEFAULT_SETTINGS,
+  tools: { editor: null, diffTool: null, mergeTool: null },
 };
 
 function makeFallback() {
@@ -66,13 +66,13 @@ function setup(over: { actions?: ShellActions; onClose?: () => void } = {}) {
   return { ...view, onClose, actions, div };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetAllMocks();
+  await resetSettings();
   queryClient.clear();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useShell.setState({ dialog: null, repoActions: null });
   useToasts.setState({ toasts: [] });
-  useAppearancePrefs.setState(useAppearancePrefs.getInitialState(), true);
   vi.mocked(getSettings).mockResolvedValue(defaultSettings);
   vi.mocked(listRecent).mockResolvedValue([]);
 });
@@ -263,6 +263,21 @@ describe("CommandPalette click to run", () => {
       fireEvent.click(enabled);
       expect(onClose).toHaveBeenCalled();
     }
+  });
+
+  it("clicking Theme: Dark applies the theme and saves it after the pause", async () => {
+    setup();
+    await screen.findByRole("combobox", { name: "Search commands" });
+    const dark = within(screen.getByRole("listbox")).getByRole("option", { name: /Theme: Dark/ });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.click(dark);
+      expect(useSettings.getState().settings.appearance.theme).toBe("dark");
+      vi.advanceTimersByTime(300);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(updateSettings).toHaveBeenCalledExactlyOnceWith({ appearance: { theme: "dark" } });
   });
 });
 
