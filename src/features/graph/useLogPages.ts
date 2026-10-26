@@ -6,6 +6,9 @@ import { queryKeys } from "../../lib/query/keys";
 import { PAGE_SIZE } from "./model/layout";
 import { pageOf, pagesFor, pageStart } from "./model/pages";
 
+/** How long a log page nobody is viewing stays cached; bounds memory while scrolling a long history. */
+export const LOG_PAGE_GC_MS = 60_000;
+
 /** One page of a generation; shared by the hook and imperative fetches so the cache entries match. */
 export const logPageOptions = (repoId: RepoId, generation: number, page: number) =>
   queryOptions<LogPage, AppError>({
@@ -15,6 +18,7 @@ export const logPageOptions = (repoId: RepoId, generation: number, page: number)
         throw toAppError(e);
       }),
     staleTime: Infinity,
+    gcTime: LOG_PAGE_GC_MS,
   });
 
 export interface UseLogPages {

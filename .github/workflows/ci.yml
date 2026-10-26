@@ -123,3 +123,45 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
           retention-days: 14
           if-no-files-found: error
+
+  bench:
+    name: Benchmarks (large repositories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Build the benchmark harness
+        working-directory: src-tauri
+        run: cargo build --release -p git-real-bench
+      - name: Restore benchmark fixtures
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/git-real-bench
+          key: git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs') }}
+      - name: Prepare fixtures
+        run: |
+          src-tauri/target/release/git-real-bench prepare synthetic ~/.cache/git-real-bench/synthetic
+          src-tauri/target/release/git-real-bench prepare public-graph ~/.cache/git-real-bench/qemu-graph
+          src-tauri/target/release/git-real-bench prepare public-worktree ~/.cache/git-real-bench/qemu-worktree
+      - name: Run benchmarks
+        run: >
+          src-tauri/target/release/git-real-bench run
+          ~/.cache/git-real-bench/synthetic
+          ~/.cache/git-real-bench/qemu-graph
+          ~/.cache/git-real-bench/qemu-worktree
+          --json bench-results.json --summary "$GITHUB_STEP_SUMMARY"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ github.sha }}
+          path: bench-results.json
+          retention-days: 30
+          if-no-files-found: ignore
