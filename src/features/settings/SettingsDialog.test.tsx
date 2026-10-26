@@ -453,6 +453,23 @@ describe("SettingsDialog section focus", () => {
   });
 });
 
+// Contract (GR-15): SettingsDialog renders an About section as the last section.
+describe("SettingsDialog About section", () => {
+  it("renders About last and after Git", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(screen.getByRole("heading", { level: 3, name: "About" })).toBeInTheDocument();
+  });
+
+  it("focuses About for section about", async () => {
+    // Cast through unknown: TypeScript rejects "about" until SettingsSection gains it.
+    setup({ section: "about" as unknown as SettingsSection });
+    await screen.findByRole("heading", { name: "Settings" });
+    const aboutSection = screen.getByRole("region", { name: "About" });
+    expect(aboutSection).toBeInTheDocument();
+  });
+});
+
 // Contract: Keyboard shortcuts… opens the shortcuts dialog.
 describe("SettingsDialog keyboard shortcuts button", () => {
   it("Keyboard shortcuts… opens the shortcuts dialog", async () => {

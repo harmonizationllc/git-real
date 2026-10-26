@@ -36,6 +36,7 @@ pub mod stash;
 pub mod status;
 pub mod token;
 pub mod tools;
+pub mod update;
 
 pub use error::GitError;
 pub use ignore::gitignore_pattern;
