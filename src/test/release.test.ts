@@ -61,13 +61,11 @@ function extractAptPackages(script: string): Set<string> {
  * Find the first step in a job's step array whose `run` field contains
  * `apt-get install`, and return that run script.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function aptStepScript(steps: any[]): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function aptStepScript(steps: Record<string, unknown>[]): string {
   const step = steps.find(
-    (s: any) => typeof s.run === "string" && s.run.includes("apt-get install"),
+    (s) => typeof s["run"] === "string" && (s["run"] as string).includes("apt-get install"),
   );
-  return (step?.run as string | undefined) ?? "";
+  return (step?.["run"] as string | undefined) ?? "";
 }
 
 /**
@@ -138,14 +136,12 @@ describe("bundle config", () => {
   });
 
   it("descriptions, homepage and license are set", () => {
-    expect(typeof bundle.shortDescription).toBe("string");
-    expect((bundle.shortDescription as string).length).toBeGreaterThan(0);
+    expect(bundle.shortDescription).toBe("Lightweight desktop Git client");
     expect(typeof bundle.longDescription).toBe("string");
     expect((bundle.longDescription as string).length).toBeGreaterThan(0);
     expect(bundle.homepage).toBe("https://github.com/harmonizationllc/git-real");
     expect(bundle.license).toBe("GPL-3.0-only");
-    expect(typeof bundle.licenseFile).toBe("string");
-    expect((bundle.licenseFile as string).length).toBeGreaterThan(0);
+    expect(bundle.licenseFile).toBe("../LICENSE");
   });
 
   // icon list must include icons/icon.png and every listed file must exist on disk
@@ -209,6 +205,21 @@ describe("desktop template", () => {
     expect(template).toContain("{{icon}}");
     expect(template).toContain("{{name}}");
     expect(template).toContain("{{categories}}");
+  });
+
+  // R16: StartupWMClass must be the exec placeholder so compositors (COSMIC,
+  //      GNOME) can group the app's windows under the correct launcher icon.
+  it("has StartupWMClass set to the exec placeholder", () => {
+    const template = readText("src-tauri/packaging/git-real.desktop");
+    expect(template).toContain("StartupWMClass={{exec}}");
+  });
+
+  // Every product-name field must use Handlebars placeholders, never a
+  // hard-coded string, so Tauri substitutes the canonical value at bundle time.
+  it("contains no literal product name (all placeholders)", () => {
+    const template = readText("src-tauri/packaging/git-real.desktop");
+    expect(template).not.toContain("Git Real");
+    expect(template).not.toContain("git-real");
   });
 });
 
@@ -282,6 +293,8 @@ describe("ci workflow", () => {
     );
     expect(uploadStep).toBeDefined();
     const w = uploadStep!.with as Record<string, unknown>;
+    // Artifact name must be prefixed with git-real-linux- for discoverability
+    expect(String(w["name"])).toContain("git-real-linux-");
     const path = String(w.path);
     expect(path).toContain("src-tauri/target/release/bundle/deb/*.deb");
     expect(path).toContain("src-tauri/target/release/bundle/rpm/*.rpm");
@@ -320,15 +333,28 @@ describe("release workflow", () => {
     const conf = parse(readText(".github/workflows/release.yml")) as any;
     const steps: Array<Record<string, unknown>> = conf.jobs.release.steps;
 
-    const checkIdx = steps.findIndex((s) => s.name === "Check the tag matches the app version");
+    const checkIdx = steps.findIndex((s) => s["name"] === "Check the tag matches the app version");
     const buildIdx = steps.findIndex(
-      (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
+      (s) => typeof s["run"] === "string" && (s["run"] as string).includes("npm run tauri build"),
     );
 
     expect(checkIdx).toBeGreaterThanOrEqual(0);
     expect(buildIdx).toBeGreaterThanOrEqual(0);
     // The version-check step must precede the build step
     expect(checkIdx).toBeLessThan(buildIdx);
+
+    // The version-check step's script must compare GITHUB_REF_NAME with tauri.conf.json
+    const checkStep = steps[checkIdx];
+    const checkRun = checkStep["run"] as string;
+    expect(checkRun).toContain("GITHUB_REF_NAME");
+    expect(checkRun).toContain("tauri.conf.json");
+  });
+
+  it("has release-scoped concurrency to prevent duplicate releases", () => {
+    const conf = parse(readText(".github/workflows/release.yml")) as Record<string, unknown>;
+    const concurrency = conf["concurrency"] as Record<string, unknown>;
+    expect(concurrency).toBeDefined();
+    expect(String(concurrency["group"])).toContain("release-");
   });
 
   it("builds the three bundles", () => {
