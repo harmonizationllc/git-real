@@ -387,6 +387,66 @@ mod tests {
         assert!(parse(&argv(&["prepare", "synthetic", "d", "--files", "-3"])).is_err());
     }
 
+    // A value flag never swallows a following flag or the end of the arguments.
+    #[test]
+    fn value_flag_rejects_a_following_flag() {
+        let cases: [(&[&str], &str); 5] = [
+            (&["run", "a", "--json", "--no-assert"], "--json"),
+            (&["run", "a", "--summary", "--no-assert"], "--summary"),
+            (
+                &["prepare", "public-graph", "d", "--url", "--no-assert"],
+                "--url",
+            ),
+            (
+                &["prepare", "synthetic", "d", "--commits", "--no-assert"],
+                "--commits",
+            ),
+            (
+                &["prepare", "synthetic", "d", "--files", "--no-assert"],
+                "--files",
+            ),
+        ];
+        for (parts, flag) in cases {
+            let err = parse(&argv(parts)).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("{flag} needs a value"),
+                "{parts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn value_flag_rejects_end_of_args() {
+        for (parts, flag) in [
+            (&["run", "a", "--json"][..], "--json"),
+            (&["run", "a", "--summary"][..], "--summary"),
+            (&["prepare", "public-graph", "d", "--url"][..], "--url"),
+            (&["prepare", "synthetic", "d", "--commits"][..], "--commits"),
+            (&["prepare", "synthetic", "d", "--files"][..], "--files"),
+        ] {
+            let err = parse(&argv(parts)).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!("{flag} needs a value"),
+                "{parts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn value_flag_still_takes_a_plain_value_before_another_flag() {
+        assert_eq!(
+            parse_ok(&["run", "a", "--json", "out.json", "--no-assert"]),
+            Command::Run {
+                repos: vec![PathBuf::from("a")],
+                json: Some(PathBuf::from("out.json")),
+                summary: None,
+                no_assert: true,
+            }
+        );
+    }
+
     #[test]
     fn rejects_a_flag_missing_its_value() {
         assert!(parse(&argv(&["run", "a", "--json"])).is_err());

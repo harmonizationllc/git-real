@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-const ATTRIBUTE: &str = "#[tauri::command]";
+const ATTRIBUTE: &str = "#[tauri::command";
 
 /// One command handler: its name and its text, from the attribute to the
 /// function's closing brace (rustfmt keeps it at column 0: `"\n}\n"`).
@@ -21,6 +21,14 @@ fn handlers(source: &str) -> Vec<Handler> {
     let mut from = 0;
     while let Some(rel) = source[from..].find(ATTRIBUTE) {
         let start = from + rel;
+        // `#[tauri::command]` or `#[tauri::command(args)]`, not a longer name.
+        if !matches!(
+            source[start + ATTRIBUTE.len()..].chars().next(),
+            Some(']' | '(')
+        ) {
+            from = start + ATTRIBUTE.len();
+            continue;
+        }
         let end = source[start..]
             .find("\n}\n")
             .map(|i| start + i + 3)
@@ -43,11 +51,21 @@ fn handlers(source: &str) -> Vec<Handler> {
     found
 }
 
+/// True when `run_blocking(` appears outside `//` line comments.
+fn calls_run_blocking(text: &str) -> bool {
+    text.lines().any(|line| {
+        line.split("//")
+            .next()
+            .unwrap_or("")
+            .contains("run_blocking(")
+    })
+}
+
 /// Names of the handlers whose text lacks `run_blocking(`.
 fn bare_handlers(source: &str) -> Vec<String> {
     handlers(source)
         .into_iter()
-        .filter(|h| !h.text.contains("run_blocking("))
+        .filter(|h| !calls_run_blocking(&h.text))
         .map(|h| h.name)
         .collect()
 }
@@ -241,4 +259,19 @@ fn registered_names_accept_a_list_without_a_trailing_comma() {
 #[should_panic(expected = "generate_handler!")]
 fn registered_names_panic_without_a_generate_handler_invocation() {
     registered_names("fn main() {}");
+}
+
+#[test]
+fn scanner_recognises_attribute_arguments() {
+    let source = "#[tauri::command(async)]\npub fn a() {\n}\n\n#[tauri::command(rename_all = \"snake_case\")]\npub fn b() {\n}\n";
+    assert_eq!(
+        bare_handlers(source),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+#[test]
+fn scanner_ignores_run_blocking_in_comments() {
+    let source = "#[tauri::command]\npub async fn faked() -> u8 {\n    // run_blocking(|| 1) would be right\n    1\n}\n";
+    assert_eq!(bare_handlers(source), vec!["faked".to_string()]);
 }
