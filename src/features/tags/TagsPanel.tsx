@@ -182,7 +182,12 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
       </div>
       <TagFeedback actions={actions} />
       {copyError && (
-        <RepoError error={copyError} path={null} onDismiss={() => setCopyError(null)} />
+        <RepoError
+          error={copyError}
+          path={null}
+          variant="panel"
+          onDismiss={() => setCopyError(null)}
+        />
       )}
       <div id={bodyId}>{body}</div>
       <ContextMenu
