@@ -1,15 +1,19 @@
 import { waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLogPage } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { makeRow } from "../../test/graphFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
-import { useLogPages } from "./useLogPages";
+import { LOG_PAGE_GC_MS, logPageOptions, useLogPages } from "./useLogPages";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getLogPage: vi.fn(),
 }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -213,5 +217,60 @@ describe("useLogPages invalidates the summary once on logStale and does not retr
     generation = 8;
     rerender();
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Contract (GR-16 §6): log pages nobody is viewing are garbage collected after LOG_PAGE_GC_MS,
+// which bounds memory while scrolling a long history.
+describe("useLogPages page cache bound", () => {
+  it("should carry gcTime LOG_PAGE_GC_MS on page queries", () => {
+    const { gcTime } = logPageOptions(1, 7, 0);
+    // typeof guard: an undefined export and an unset gcTime must not compare equal
+    expect([gcTime, typeof gcTime]).toEqual([LOG_PAGE_GC_MS, "number"]);
+  });
+
+  it("should set LOG_PAGE_GC_MS to one minute", () => {
+    expect(LOG_PAGE_GC_MS).toBe(60_000);
+  });
+
+  it("should collect a page no longer in view after LOG_PAGE_GC_MS", async () => {
+    let first = 0;
+    let last = 500; // pages 0 and 1
+    const { rerender, queryClient } = renderHookWithProviders(() => useLogPages(1, 7, first, last));
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryCache().find({ queryKey: queryKeys.logPage(1, 7, 1) })?.state.data,
+      ).toBeDefined(),
+    );
+
+    vi.useFakeTimers();
+    first = 40 * 500;
+    last = 40 * 500 + 10; // page 40 only
+    rerender();
+    await vi.advanceTimersByTimeAsync(LOG_PAGE_GC_MS);
+
+    const cache = queryClient.getQueryCache();
+    expect({
+      page0: cache.find({ queryKey: queryKeys.logPage(1, 7, 0) }) !== undefined,
+      page1: cache.find({ queryKey: queryKeys.logPage(1, 7, 1) }) !== undefined,
+      page40: cache.find({ queryKey: queryKeys.logPage(1, 7, 40) }) !== undefined,
+    }).toEqual({ page0: false, page1: false, page40: true });
+  });
+
+  it("should keep a page that left the view until LOG_PAGE_GC_MS has elapsed", async () => {
+    let first = 0;
+    const { rerender, queryClient } = renderHookWithProviders(() => useLogPages(1, 7, first, 10));
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledTimes(1));
+    await settle();
+
+    vi.useFakeTimers();
+    first = 40 * 500;
+    rerender();
+    await vi.advanceTimersByTimeAsync(LOG_PAGE_GC_MS - 1);
+
+    expect(
+      queryClient.getQueryCache().find({ queryKey: queryKeys.logPage(1, 7, 0) }),
+    ).toBeDefined();
   });
 });

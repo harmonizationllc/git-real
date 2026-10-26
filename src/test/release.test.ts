@@ -418,3 +418,129 @@ describe("apt packages", () => {
     expect(ciPkgs.has("patchelf")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// bench workflow
+// ---------------------------------------------------------------------------
+
+// GR-16 §4: ci.yml gains a `bench` job that builds git-real-bench in release,
+//           prepares three cached fixtures, runs them with a JSON report and the
+//           step summary, and uploads the results even when a budget fails.
+describe("bench workflow", () => {
+  const BENCH = "src-tauri/target/release/git-real-bench";
+  const CACHE = "~/.cache/git-real-bench";
+  const conf = parse(readText(".github/workflows/ci.yml")) as {
+    jobs: Record<string, { steps?: Array<Record<string, unknown>> } & Record<string, unknown>>;
+  };
+  const bench = conf.jobs.bench;
+  const steps = (): Array<Record<string, unknown>> => bench?.steps ?? [];
+  const runOf = (s: Record<string, unknown> | undefined): string => String(s?.run ?? "");
+  const stepIndex = (pred: (s: Record<string, unknown>) => boolean): number =>
+    steps().findIndex(pred);
+  const prepareStep = () => steps().find((s) => runOf(s).includes(" prepare "));
+  const runStep = () => steps().find((s) => runOf(s).includes(`${BENCH} run `));
+
+  it("has a bench job on ubuntu-latest with a timeout", () => {
+    expect({
+      name: bench?.name,
+      runsOn: bench?.["runs-on"],
+      timeout: bench?.["timeout-minutes"],
+    }).toEqual({
+      name: "Benchmarks (large repositories)",
+      runsOn: "ubuntu-latest",
+      timeout: 30,
+    });
+  });
+
+  it("builds git-real-bench in release before preparing fixtures", () => {
+    const build = stepIndex((s) => runOf(s).includes("cargo build --release -p git-real-bench"));
+    const prepare = stepIndex((s) => runOf(s).includes(" prepare "));
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(prepare).toBeGreaterThan(build);
+    expect(steps()[build]["working-directory"]).toBe("src-tauri");
+  });
+
+  it("prepares the synthetic, public-graph and public-worktree fixtures under the cached directory", () => {
+    const cache = steps().find((s) => String(s.uses ?? "").startsWith("actions/cache@v4"));
+    const withCache = cache?.with as Record<string, unknown> | undefined;
+    expect({
+      path: withCache?.path,
+      key: withCache?.key,
+      lines: runOf(prepareStep())
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
+    }).toEqual({
+      path: CACHE,
+      key: "git-real-bench-fixtures-v1-${{ hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs') }}",
+      lines: [
+        `${BENCH} prepare synthetic ${CACHE}/synthetic`,
+        `${BENCH} prepare public-graph ${CACHE}/qemu-graph`,
+        `${BENCH} prepare public-worktree ${CACHE}/qemu-worktree`,
+      ],
+    });
+  });
+
+  it("runs the three fixtures with a JSON report and the step summary", () => {
+    // `run: >` folds to a single line
+    expect(runOf(runStep()).trim()).toBe(
+      `${BENCH} run ${CACHE}/synthetic ${CACHE}/qemu-graph ${CACHE}/qemu-worktree ` +
+        `--json bench-results.json --summary "$GITHUB_STEP_SUMMARY"`,
+    );
+  });
+
+  it("uploads the results artifact even on failure", () => {
+    const upload = steps().find((s) =>
+      String(s.uses ?? "").startsWith("actions/upload-artifact@v4"),
+    );
+    expect({ if: upload?.if, uses: upload?.uses, with: upload?.with }).toEqual({
+      if: "always()",
+      uses: "actions/upload-artifact@v4",
+      with: {
+        name: "bench-results-${{ github.sha }}",
+        path: "bench-results.json",
+        "retention-days": 30,
+        "if-no-files-found": "ignore",
+      },
+    });
+  });
+
+  it("restores the fixture cache before preparing and uploads only after running", () => {
+    const cache = stepIndex((s) => String(s.uses ?? "").startsWith("actions/cache@v4"));
+    const prepare = stepIndex((s) => runOf(s).includes(" prepare "));
+    const run = stepIndex((s) => runOf(s).includes(`${BENCH} run `));
+    const upload = stepIndex((s) => String(s.uses ?? "").startsWith("actions/upload-artifact@v4"));
+    expect(cache).toBeGreaterThanOrEqual(0);
+    expect([cache < prepare, prepare < run, run < upload]).toEqual([true, true, true]);
+  });
+
+  it("never continues on error", () => {
+    expect(bench).toBeDefined();
+    const flagged = [bench, ...steps()].filter(
+      (n) => n !== undefined && Object.prototype.hasOwnProperty.call(n, "continue-on-error"),
+    );
+    expect(flagged).toEqual([]);
+  });
+
+  it("README documents the benchmark commands", () => {
+    const readme = readText("README.md");
+    const idx = readme.indexOf("## Benchmarks");
+    expect(idx).toBeGreaterThanOrEqual(0);
+    const next = readme.indexOf("\n## ", idx + 1);
+    const section = readme.slice(idx, next === -1 ? undefined : next);
+    expect({
+      synthetic: /git-real-bench -- prepare synthetic /.test(section),
+      graph: /git-real-bench -- prepare public-graph /.test(section),
+      worktree: /git-real-bench -- prepare public-worktree /.test(section),
+      run: /git-real-bench -- run /.test(section),
+    }).toEqual({ synthetic: true, graph: true, worktree: true, run: true });
+  });
+
+  it("cache key hashes the fixtures source and the CLI defaults", () => {
+    const cache = steps().find((s) => String(s.uses ?? "").startsWith("actions/cache@v4"));
+    const key = String((cache?.with as Record<string, unknown> | undefined)?.key ?? "");
+    expect(key).toContain(
+      "hashFiles('src-tauri/crates/git-real-bench/src/fixtures.rs', 'src-tauri/crates/git-real-bench/src/cli.rs')",
+    );
+  });
+});

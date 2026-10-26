@@ -150,6 +150,49 @@ kept at 100 % on the front end, and each change passes a code review and an
 architecture review before it is merged. The design and plan documents are checked in
 under `docs/superpowers` so the reasoning behind each feature travels with the code.
 
+## Benchmarks
+
+`src-tauri/crates/git-real-bench` is a benchmark harness that measures the backend
+against large repositories. For each repository it times opening the repository,
+building the commit graph and serializing the first 500-row page, pages through the
+whole history while sampling resident memory, and times a working-tree status refresh.
+It fails when a budget is exceeded:
+
+| Metric              | Budget   | What it covers                                      |
+| ------------------- | -------- | --------------------------------------------------- |
+| `openToFirstPageMs` | 3,000 ms | Open, graph build and first page at 100,000 commits |
+| `statusMs`          | 500 ms   | Status refresh on a worktree of 10,000+ files       |
+| `rssGrowthMb`       | 64 MB    | Memory growth while paging through the full history |
+
+Prepare the three fixtures (a deterministic synthetic repository of 100,000 commits and
+10,000 files built with `git fast-import`, the oldest 100,000 commits of `qemu/qemu`
+for the graph, and a shallow `qemu/qemu` checkout of 11,488 files for status), then run
+the suite, from `src-tauri`:
+
+```sh
+cargo run --release -p git-real-bench -- prepare synthetic ~/.cache/git-real-bench/synthetic
+cargo run --release -p git-real-bench -- prepare public-graph ~/.cache/git-real-bench/qemu-graph
+cargo run --release -p git-real-bench -- prepare public-worktree ~/.cache/git-real-bench/qemu-worktree
+cargo run --release -p git-real-bench -- run ~/.cache/git-real-bench/synthetic ~/.cache/git-real-bench/qemu-graph ~/.cache/git-real-bench/qemu-worktree --json bench-results.json --summary bench-summary.md
+```
+
+`prepare` is idempotent: a directory that already holds a matching fixture is reused.
+In CI the `bench` job runs the same suite on every push and pull request, writes the
+results table to the job summary, and uploads the JSON report as the
+`bench-results-‹sha›` artifact.
+
+The Linux kernel is an informational run, outside the budgets:
+
+```sh
+cargo run --release -p git-real-bench -- prepare public-graph ~/.cache/git-real-bench/linux-graph --url https://github.com/torvalds/linux --commits 2000000
+cargo run --release -p git-real-bench -- run ~/.cache/git-real-bench/linux-graph --no-assert
+```
+
+Measured on an i9-13900F with a warm page cache, its 1,501,435 commits take 41 s to
+build the graph and 8.8 GB of memory, and paging the full history adds 2 GB. Repositories
+of a million commits and more need a different cache shape, recorded in
+[ADR 0004](docs/adr/0004-performance-budgets-and-benchmarks.md).
+
 ## Releasing
 
 A release is cut from a tag. The three app version strings must agree, and the release
@@ -180,6 +223,7 @@ src/                 React front end (features, components, lib/ipc seam, stores
 src-tauri/           Tauri app crate: commands, events, keychain, registration
 src-tauri/crates/
   git-real-core/     Pure Rust Git domain: git2 reads, git CLI network ops, hosting APIs
+  git-real-bench/    Benchmark harness for large repositories (dev tool, not bundled)
 docs/adr/            Architecture decision records
 docs/superpowers/    Feature design specs and implementation plans
 ```
@@ -187,8 +231,8 @@ docs/superpowers/    Feature design specs and implementation plans
 ## Status
 
 Git Real is at version 0.1.0 and under active development. The features above are
-implemented and tested, and Linux packages are published on each release; performance
-validation on very large repositories is still ahead.
+implemented and tested, Linux packages are published on each release, and a benchmark
+suite holds the app to its performance budgets on 100,000-commit repositories in CI.
 
 ## License
 

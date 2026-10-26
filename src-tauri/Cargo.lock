@@ -1505,6 +1505,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "git-real-bench"
+version = "0.1.0"
+dependencies = [
+ "git-real-core",
+ "git2",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "git-real-core"
 version = "0.1.0"
 dependencies = [
