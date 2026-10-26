@@ -77,7 +77,10 @@ pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWin
         .visible(false)
         .initialization_script(store.to_init_script())
         .build()?;
-    apply_background(&window, settings.appearance.theme)?;
+    // A wrong-coloured first frame is better than a window that never shows.
+    if let Err(e) = apply_background(&window, settings.appearance.theme) {
+        eprintln!("settings: cannot set window background: {e}");
+    }
     window.show()?;
     Ok(window)
 }
