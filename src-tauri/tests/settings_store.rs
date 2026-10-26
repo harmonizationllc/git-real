@@ -352,6 +352,63 @@ fn to_init_script_assigns_the_global_and_escapes_lt() {
     assert!(!script.contains("</script"), "{script}");
 }
 
+/// Builds a store in a temp dir whose theme is set through a real patch.
+fn store_with_theme(theme: &str) -> (tempfile::TempDir, SettingsStore) {
+    let (dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(&format!(r#"{{"appearance":{{"theme":"{theme}"}}}}"#)).unwrap();
+    store.update(&patch).unwrap();
+    (dir, store)
+}
+
+#[test]
+fn init_script_pre_applies_an_explicit_theme() {
+    let (_dir, store) = store_with_theme("dark");
+    let script = store.to_init_script();
+    assert!(
+        script.starts_with("window.__GIT_REAL_SETTINGS__={"),
+        "{script}"
+    );
+    assert!(
+        script.ends_with(
+            r#";if(document.documentElement)document.documentElement.setAttribute("data-theme","dark");"#
+        ),
+        "{script}"
+    );
+
+    let (_dir_light, store_light) = store_with_theme("light");
+    assert!(
+        store_light
+            .to_init_script()
+            .ends_with(r#".setAttribute("data-theme","light");"#)
+    );
+}
+
+#[test]
+fn init_script_leaves_system_theme_to_the_page() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+    let script = store.to_init_script();
+    assert!(script.ends_with("};"), "{script}");
+    assert!(!script.contains("data-theme"), "{script}");
+}
+
+#[test]
+fn theme_changed_only_when_the_theme_differs() {
+    use git_real_core::settings::{Settings, Theme};
+    use git_real_lib::commands::settings::theme_changed;
+
+    let before = Settings::default();
+    let mut dark = before.clone();
+    dark.appearance.theme = Theme::Dark;
+    let mut font = before.clone();
+    font.appearance.diff_font_size = 15;
+    assert!(theme_changed(&before, &dark));
+    assert!(!theme_changed(&before, &font));
+    assert!(!theme_changed(&before, &before));
+}
+
 #[test]
 fn path_returns_the_file_location() {
     let (_dir, path) = common::temp_file_path("settings.json");
