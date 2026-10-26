@@ -9,6 +9,7 @@ import {
   listStashes,
   listTags,
   pullDefaultMode,
+  updateSettings,
 } from "../lib/ipc";
 import type { BranchList } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
@@ -81,15 +82,19 @@ function measure() {
   act(() => observer().fire([{ target: root(), height: 624 }, ...sectionEntries()]));
 }
 
-// Without a hosting context the pull requests and issues panels render nothing, so they measure 0.
-function measureWithZeroHostingSections() {
-  const heights = [200, 60, 150, 0, 0];
+function measureAt(rootHeight: number, heights: number[]) {
   act(() =>
     observer().fire([
-      { target: root(), height: 624 },
+      { target: root(), height: rootHeight },
       ...REFS_SECTIONS.map((s, i) => ({ target: content(s), height: heights[i] as number })),
     ]),
   );
+}
+
+// Without a hosting context the pull requests and issues panels render nothing, so they measure 0.
+// Three handles render, so the container is 624 - 3 * 6 = 606.
+function measureWithZeroHostingSections() {
+  measureAt(624, [200, 60, 150, 0, 0]);
 }
 
 async function renderColumn() {
@@ -164,7 +169,7 @@ describe("RefsColumn measurement", () => {
   it("should apply fitted heights once every target has reported, even at zero", async () => {
     await renderColumn();
     measureWithZeroHostingSections();
-    expect(wrapper("branches").style.height).toBe("390px");
+    expect(wrapper("branches").style.height).toBe("396px");
     expect(wrapper("tags").style.height).toBe("150px");
     expect(wrapper("pullRequests").style.height).toBe("0px");
   });
@@ -217,14 +222,54 @@ describe("RefsColumn handles", () => {
     const tags = handle("Resize Tags section");
     expect(tags).toHaveAttribute("aria-valuenow", "150");
     expect(tags).toHaveAttribute("aria-valuemin", "72");
-    expect(tags).toHaveAttribute("aria-valuemax", "396");
+    expect(tags).toHaveAttribute("aria-valuemax", "150");
   });
 
-  it("should persist a keyboard resize to the section's height leaf", async () => {
+  it("should cap a handle's maximum at its section's content", async () => {
+    await renderColumn();
+    measure();
+    expect(handle("Resize Stashes section")).toHaveAttribute("aria-valuemax", "60");
+    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuemax", "150");
+  });
+
+  it("should store nothing when a key press cannot move the handle", async () => {
     await renderColumn();
     measure();
     fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowDown" });
-    expect(useSettings.getState().settings.layout.tagsHeight).toBe(166);
+    expect(useSettings.getState().settings.layout.tagsHeight).toBeNull();
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a key press before the column is measured", async () => {
+    await renderColumn();
+    fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowDown" });
+    expect(useSettings.getState().settings.layout.tagsHeight).toBeNull();
+  });
+
+  it("should expose whole-pixel values", async () => {
+    await renderColumn();
+    // container 600; over 232 shared by room: branches 400 - 263.14, tags 300 - 204.86
+    measureAt(624, [400, 60, 300, 36, 36]);
+    expect(wrapper("branches").style.height).toBe("263px");
+    expect(wrapper("tags").style.height).toBe("205px");
+    expect(handle("Resize Branches section")).toHaveAttribute("aria-valuenow", "263");
+    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuenow", "205");
+  });
+
+  it("should keep the inline heights when a batch changes nothing", async () => {
+    await renderColumn();
+    measure();
+    const before = ["branches", "stashes", "tags"].map((s) => wrapper(s).style.height);
+    act(() => observer().fire([{ target: document.body, height: 999 }]));
+    expect(["branches", "stashes", "tags"].map((s) => wrapper(s).style.height)).toEqual(before);
+  });
+
+  it("should persist an ArrowUp resize to the section's height leaf", async () => {
+    await renderColumn();
+    // container 976: everything fits, so Tags renders at its natural 300
+    measureAt(1000, [200, 60, 300, 36, 36]);
+    fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowUp" });
+    expect(useSettings.getState().settings.layout.tagsHeight).toBe(284);
   });
 
   it("should reset the section to automatic on double-click", async () => {

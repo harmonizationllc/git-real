@@ -99,6 +99,11 @@ describe("maxSectionHeight", () => {
     expect(maxSectionHeight(1038, sections, 2)).toBe(822);
   });
 
+  it("should never fall below the section's own floor", () => {
+    const tight = [auto(72), auto(72), auto(72), auto(36), auto(36)];
+    expect(maxSectionHeight(100, tight, 2)).toBe(72);
+  });
+
   it("should be unbounded while unmeasured", () => {
     expect(maxSectionHeight(0, sections, 0)).toBe(Infinity);
   });
