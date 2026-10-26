@@ -115,6 +115,40 @@ describe("useUpdateCheck toast on update", () => {
     expect(toast?.action?.label).toBe("Release notes");
   });
 
+  it("should invoke openExternal when the Release notes action is run", async () => {
+    const { checkForUpdate, openExternal } = await import("../lib/ipc");
+    const releaseUrl = "https://github.com/harmonizationllc/git-real/releases/tag/v1.0.0";
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: "1.0.0",
+      available: true,
+      url: releaseUrl,
+    });
+    renderHook(() => useUpdateCheck());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    const toast = useToasts.getState().toasts.find((t) => t.text === "Git Real 1.0.0 is available");
+    expect(toast?.action).not.toBeNull();
+    // Run the action — this calls openExternal with the release URL.
+    toast!.action!.run();
+    expect(openExternal).toHaveBeenCalledWith(releaseUrl);
+  });
+
+  it("should omit the Release notes action when url is null", async () => {
+    const { checkForUpdate } = await import("../lib/ipc");
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: "1.0.0",
+      available: true,
+      url: null,
+    });
+    renderHook(() => useUpdateCheck());
+    await act(() => vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS + 1_000));
+    const toast = useToasts.getState().toasts.find((t) => t.text === "Git Real 1.0.0 is available");
+    expect(toast).toBeDefined();
+    // No url → action must be null (not a Release notes link).
+    expect(toast?.action).toBeNull();
+  });
+
   it("should call markChecked after a successful check", async () => {
     const { checkForUpdate } = await import("../lib/ipc");
     vi.mocked(checkForUpdate).mockResolvedValue({

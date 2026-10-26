@@ -4,11 +4,7 @@
 // at module resolution time.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  CHECK_INTERVAL_MS,
-  STARTUP_DELAY_MS,
-  useUpdatePrefs,
-} from "./updatePrefs"; // RED: module missing
+import { CHECK_INTERVAL_MS, STARTUP_DELAY_MS, useUpdatePrefs } from "./updatePrefs"; // RED: module missing
 
 beforeEach(() => {
   localStorage.clear();

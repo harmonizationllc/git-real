@@ -136,15 +136,30 @@ describe("AboutSettings manual check button", () => {
 describe("AboutSettings status", () => {
   it("shows a status element with up-to-date message when already latest", async () => {
     const { checkForUpdate } = await import("../../lib/ipc");
+    await setup();
     vi.mocked(checkForUpdate).mockResolvedValue({
       current: "0.1.0",
       latest: "0.1.0",
       available: false,
       url: null,
     });
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.getByRole("status").textContent).toMatch(/up to date/i);
+  });
+
+  it("shows No releases published yet when latest is null", async () => {
+    const { checkForUpdate } = await import("../../lib/ipc");
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: null,
+      available: false,
+      url: null,
+    });
     await setup();
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    expect(screen.getByRole("status").textContent).toMatch(/no releases published yet/i);
   });
 
   it("shows a Release notes button and an alert when update is available", async () => {
@@ -159,6 +174,36 @@ describe("AboutSettings status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Release notes" })).toBeInTheDocument();
+  });
+
+  it("clicking Release notes opens the release URL via openExternal", async () => {
+    const { checkForUpdate, openExternal } = await import("../../lib/ipc");
+    const releaseUrl = "https://github.com/harmonizationllc/git-real/releases/tag/v1.0.0";
+    await setup();
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: "1.0.0",
+      available: true,
+      url: releaseUrl,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Release notes" }));
+    expect(openExternal).toHaveBeenCalledWith(releaseUrl);
+  });
+
+  it("shows no Release notes button when available but url is null", async () => {
+    const { checkForUpdate } = await import("../../lib/ipc");
+    await setup();
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      current: "0.1.0",
+      latest: "1.0.0",
+      available: true,
+      url: null,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Release notes" })).not.toBeInTheDocument();
   });
 
   it("shows an alert with the error message when check fails", async () => {

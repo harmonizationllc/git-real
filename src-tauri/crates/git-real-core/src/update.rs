@@ -483,6 +483,107 @@ mod tests {
         }
     }
 
+    /// A 403 without `x-ratelimit-remaining: 0` falls through to the generic
+    /// "GitHub answered 403" message (not the rate-limited variant).
+    #[test]
+    fn plain_403_without_rate_limit_header_is_reported() {
+        use super::check_for_update;
+
+        // No x-ratelimit-remaining header at all → should hit the `status =>` arm.
+        let t = Fake::new().reply(403, "Forbidden");
+        let err = check_for_update(&t, CURRENT, API_URL).unwrap_err();
+
+        match err {
+            GitError::UpdateCheckFailed { message } => {
+                assert!(message.contains("403"), "status in message: {message}");
+                assert!(
+                    !message.contains("rate limited"),
+                    "must not say rate limited: {message}"
+                );
+            }
+            other => panic!("expected UpdateCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// A JSON body that has `tag_name` but no `html_url` maps to
+    /// `UpdateCheckFailed { message: "unexpected response" }`.
+    #[test]
+    fn missing_html_url_is_unexpected() {
+        use super::check_for_update;
+
+        let t = Fake::new().reply(200, r#"{"tag_name":"v1.0.0"}"#);
+        let err = check_for_update(&t, CURRENT, API_URL).unwrap_err();
+
+        match err {
+            GitError::UpdateCheckFailed { message } => {
+                assert!(
+                    message.contains("unexpected"),
+                    "unexpected in message: {message}"
+                );
+            }
+            other => panic!("expected UpdateCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// A `tag_name` that is a JSON number (non-string) maps to
+    /// `UpdateCheckFailed { message: "unexpected response" }`.
+    #[test]
+    fn non_string_tag_name_is_unexpected() {
+        use super::check_for_update;
+
+        let t = Fake::new().reply(200, r#"{"tag_name":123,"html_url":"https://example.com"}"#);
+        let err = check_for_update(&t, CURRENT, API_URL).unwrap_err();
+
+        match err {
+            GitError::UpdateCheckFailed { message } => {
+                assert!(
+                    message.contains("unexpected"),
+                    "unexpected in message: {message}"
+                );
+            }
+            other => panic!("expected UpdateCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// When the `current` string passed to `check_for_update` does not parse
+    /// as a version, the result is
+    /// `UpdateCheckFailed { message: "unrecognised current version <current>" }`.
+    #[test]
+    fn unparseable_current_is_reported() {
+        use super::check_for_update;
+
+        let url = "https://example.com";
+        let t = Fake::new().reply(200, &release_body("v1.0.0", url));
+        let err = check_for_update(&t, "not-a-version", API_URL).unwrap_err();
+
+        match err {
+            GitError::UpdateCheckFailed { message } => {
+                assert!(
+                    message.contains("unrecognised current version"),
+                    "message: {message}"
+                );
+                assert!(
+                    message.contains("not-a-version"),
+                    "bad version in message: {message}"
+                );
+            }
+            other => panic!("expected UpdateCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// `Version::parse` trims surrounding whitespace before parsing.
+    #[test]
+    fn version_parse_trims_whitespace() {
+        use super::Version;
+
+        let v = Version::parse("  1.2.3  ").expect("trimmed version must parse");
+        assert_eq!((v.major, v.minor, v.patch), (1, 2, 3));
+
+        // Whitespace + v prefix
+        let vp = Version::parse("  v2.0.0  ").expect("trimmed v-prefixed version must parse");
+        assert_eq!((vp.major, vp.minor, vp.patch), (2, 0, 0));
+    }
+
     /// The request sent must be a GET to `api_url` with the two GitHub headers
     /// and no Authorization header.
     #[test]
