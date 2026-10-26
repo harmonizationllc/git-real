@@ -94,20 +94,16 @@ pub async fn update_settings(
     Ok(next)
 }
 
-/// Recolours the window for the desktop colour scheme the page reports, while
-/// the theme follows the desktop. On Linux the window's own theme is cached at
-/// creation, so the page is the source of truth after launch. A recolour
-/// failure is only logged.
+/// Recolours the window for the desktop colour scheme the page reports. On
+/// Linux the window's own theme is cached at creation, so the page is the
+/// source of truth after launch. The page calls this only while its theme is
+/// `system`, and the command trusts that rather than re-checking the stored
+/// theme: the page store updates at once but the file save is debounced, so
+/// right after a switch to `system` the stored theme is still the old one. A
+/// recolour failure is only logged.
 #[tauri::command]
-pub async fn sync_window_background(
-    app: AppHandle,
-    settings: State<'_, Arc<SettingsStore>>,
-    desktop_dark: bool,
-) -> Result<(), AppError> {
-    let store = Arc::clone(settings.inner());
-    let theme = run_blocking(move || Ok(store.get().appearance.theme)).await?;
-    if main_window::follows_desktop(theme)
-        && let Some(window) = app.get_webview_window(main_window::LABEL)
+pub async fn sync_window_background(app: AppHandle, desktop_dark: bool) -> Result<(), AppError> {
+    if let Some(window) = app.get_webview_window(main_window::LABEL)
         && let Err(e) = main_window::apply_background(
             &window,
             Theme::System,

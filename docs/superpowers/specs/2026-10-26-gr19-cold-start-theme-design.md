@@ -181,8 +181,12 @@ be in the launch theme. So the colour follows the theme:
   `bootstrapAppearance()` a `matchMedia("(prefers-color-scheme: dark)")`
   listener calls the `sync_window_background` command with the current
   `matches` on every change, and a settings switch to `system` calls it once.
-  The command reads the stored theme and, when it is `system`, recolours the
-  window for the scheme the page reported. A recolour failure is only logged.
+  The command trusts the page's report and recolours the window for that
+  scheme without re-checking the stored theme: the page store updates at
+  once but the file save is debounced, so right after a switch to `system`
+  the stored theme is still the old one. The debounced `update_settings` for
+  `system` skips the recolour by rule, and a later explicit theme still
+  recolours through `update_settings`. A recolour failure is only logged.
   There is no startup sync: `build` already coloured the window from the
   portal answer at creation, which is fresh at launch.
 
