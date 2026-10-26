@@ -18,7 +18,6 @@ import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { SyncMessage } from "../features/remotes/SyncMessage";
 import { SyncToolbar } from "../features/remotes/SyncToolbar";
 import { useSyncActions } from "../features/remotes/useSyncActions";
-import type { SyncActions } from "../features/remotes/useSyncActions";
 import { StashSummary } from "../features/stash/StashSummary";
 import { StashesPanel } from "../features/stash/StashesPanel";
 import { TagsPanel } from "../features/tags/TagsPanel";
@@ -27,7 +26,9 @@ import type { HeadState, RepoId } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
+import { matchesShortcut } from "../lib/shortcuts";
 import { KEY_STEP, REFS_MIN, SIDEBAR_MIN, clampWidths, maxWidth } from "./layout";
 import styles from "./RepoPane.module.css";
 
@@ -43,13 +44,6 @@ function headLine(head: HeadState | undefined, fallback: string | null): string 
       return `${head.name} (no commits yet)`;
   }
 }
-
-/** Ctrl/Cmd+Shift+<key> sync shortcuts, by lower-case key. */
-const SYNC_SHORTCUTS = new Map<string, (sync: SyncActions) => void>([
-  ["f", (sync) => sync.fetch()],
-  ["l", (sync) => sync.pull()],
-  ["p", (sync) => sync.push()],
-]);
 
 export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   // The single repo-changed subscription for this tab; it refreshes every query of the repo.
@@ -91,29 +85,48 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
     syncRef.current = sync;
   });
 
-  // Ctrl/Cmd+Shift+H opens the file picker; Ctrl/Cmd+Shift+F, L and P fetch, pull and push.
-  // Never on top of another dialog.
+  // The Repository rows: file history, fetch, pull and push. Never on top of another dialog.
+  // matchesShortcut ignores repeats, consumed and composing events; each action ignores itself
+  // while gated.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
       if (document.querySelector('[role="dialog"]') !== null) return;
-      // Shift reports upper case, and Caps Lock can flip it, so compare in lower case.
-      const key = e.key.toLowerCase();
-      if (key === "h") {
+      if (matchesShortcut(e, "fileHistory")) {
         e.preventDefault();
         setPicker(true);
-        return;
+      } else if (matchesShortcut(e, "fetch")) {
+        e.preventDefault();
+        syncRef.current.fetch();
+      } else if (matchesShortcut(e, "pull")) {
+        e.preventDefault();
+        syncRef.current.pull();
+      } else if (matchesShortcut(e, "push")) {
+        e.preventDefault();
+        syncRef.current.push();
       }
-      const action = SYNC_SHORTCUTS.get(key);
-      // A held chord must not queue actions, and a control that consumed it keeps it.
-      if (action === undefined || e.repeat || e.defaultPrevented) return;
-      e.preventDefault();
-      // Each action ignores itself while gated.
-      action(syncRef.current);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Publish the active pane's repository actions for the command palette, with stable callbacks
+  // backed by syncRef so only a gate or the path re-publishes. Cleared when the pane unmounts.
+  useEffect(() => {
+    useShell.getState().publishRepoActions({
+      repoId: tab.id,
+      path,
+      gates: {
+        fetch: sync.gates.fetch,
+        pull: sync.gates.pull,
+        push: sync.gates.push,
+      },
+      fetch: () => syncRef.current.fetch(),
+      pull: () => syncRef.current.pull(),
+      push: () => syncRef.current.push(),
+      fileHistory: () => setPicker(true),
+    });
+    return () => useShell.getState().publishRepoActions(null);
+  }, [tab.id, path, sync.gates.fetch, sync.gates.pull, sync.gates.push]);
 
   // Measured body width; 0 until the first observation, which leaves the stored widths unclamped.
   const [container, setContainer] = useState(0);

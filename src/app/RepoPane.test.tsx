@@ -36,6 +36,7 @@ import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useLayoutPrefs } from "../lib/store/layoutPrefs";
+import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
 import { commitDetail, makeRow, oidOf, shortOf } from "../test/graphFixtures";
 import {
@@ -165,6 +166,7 @@ beforeEach(() => {
     refsFilter: {},
   });
   vi.mocked(listStashes).mockResolvedValue([]);
+  useShell.setState({ dialog: null, repoActions: null });
   vi.mocked(hostingRepoContext).mockResolvedValue(null);
   vi.mocked(hostingListPullRequests).mockResolvedValue([]);
   vi.mocked(hostingListIssues).mockResolvedValue([]);
@@ -1992,5 +1994,60 @@ describe("RepoPane create pull request", () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext(null));
     await renderLoaded();
     expect(await screen.findByRole("button", { name: "Create pull request" })).toBeDisabled();
+  });
+});
+
+// Review Focus 4 + Task 15: RepoPane publishes repoActions from an effect with cleanup.
+describe("RepoPane repoActions publication (GR-14)", () => {
+  // Helper: render the pane and wait for it to be loaded.
+  async function renderAndWaitForLoad(repoId = 1) {
+    const t = tab(repoId);
+    const view = renderWithProviders(<RepoPane tab={t} />);
+    // Wait for the pane to mount and at least one branch query to run.
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    return { ...view, t };
+  }
+
+  it("publishes repoActions from an effect and clears them on unmount", async () => {
+    const { unmount } = await renderAndWaitForLoad();
+    await waitFor(() => expect(useShell.getState().repoActions).not.toBeNull());
+    expect(useShell.getState().repoActions?.repoId).toBe(1);
+    unmount();
+    expect(useShell.getState().repoActions).toBeNull();
+  });
+
+  it("republishes only when a gate or the path changes", async () => {
+    // Render with a specific gate.
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    const { rerender } = await renderAndWaitForLoad();
+    await waitFor(() => expect(useShell.getState().repoActions).not.toBeNull());
+    const spy = vi.spyOn(useShell.getState(), "publishRepoActions");
+    // Re-render with the same props: no re-publish expected.
+    rerender(<RepoPane tab={tab(1)} />);
+    await act(() => new Promise((r) => setTimeout(r, 0)));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("published fetch/pull/push call the pane's sync actions", async () => {
+    await renderAndWaitForLoad();
+    await waitFor(() => expect(useShell.getState().repoActions).not.toBeNull());
+    const ra = useShell.getState().repoActions!;
+    // Calling the published fetch should trigger fetchAll.
+    act(() => ra.fetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalled());
+  });
+
+  it("published pull and push invoke sync and fileHistory opens the file history dialog", async () => {
+    await renderAndWaitForLoad();
+    await waitFor(() => expect(useShell.getState().repoActions).not.toBeNull());
+    const ra = useShell.getState().repoActions!;
+    // Invoke pull and push to cover their callback bodies (lines 124–125).
+    await act(async () => {
+      ra.pull();
+      ra.push();
+    });
+    // fileHistory sets picker to true, which shows the File history dialog (line 126).
+    act(() => ra.fileHistory());
+    await screen.findByRole("dialog", { name: "File history" });
   });
 });

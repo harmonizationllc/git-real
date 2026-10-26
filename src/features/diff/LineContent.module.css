@@ -2,8 +2,8 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: 4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  font-size: var(--diff-font-size);
   line-height: 1.4;
 }
 

@@ -9,6 +9,7 @@ import { AccountsDialog } from "../hosting/AccountsDialog";
 import type { AccountsPreset } from "../hosting/AccountsDialog";
 import { cloneUrlFor } from "../hosting/cloneUrlFor";
 import { RepoBrowser } from "../hosting/RepoBrowser";
+import { useSettings } from "../settings/useSettings";
 import styles from "./CloneDialog.module.css";
 import { CloneSourceTabs, cloneSourceIds } from "./CloneSourceTabs";
 import type { CloneSource } from "./CloneSourceTabs";
@@ -41,6 +42,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const headingId = useId();
   const git = useQuery({ queryKey: queryKeys.gitCli, queryFn: () => checkGitCli() });
   const { clone, error, clearError } = useOpenRepo();
+  const { settings } = useSettings();
   const [url, setUrl] = useState("");
   const [parentDir, setParentDir] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
@@ -66,6 +68,16 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const accountsWereOpen = useRef(false);
 
   useEffect(() => () => releaseSubscription(subRef), []);
+
+  // Seed the destination from the configured default clone directory the first time it is known,
+  // and only while the user has not chosen one; a later-arriving setting never overwrites a folder
+  // they already picked. Done during render (not an effect) so the preview is right on first paint.
+  const defaultCloneDir = settings?.defaultCloneDir ?? null;
+  const [seededDefault, setSeededDefault] = useState(false);
+  if (!seededDefault && defaultCloneDir !== null) {
+    setSeededDefault(true);
+    if (parentDir === null) setParentDir(defaultCloneDir);
+  }
   useLayoutEffect(() => {
     if (focusUrl.current && urlInputRef.current !== null) {
       urlInputRef.current.focus();
@@ -98,8 +110,12 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
   const canClone = dest !== null && !cloning;
 
   const choose = async () => {
-    const picked = await pickFolder("Choose destination folder");
-    if (picked !== null) setParentDir(picked);
+    // Pass the current directory only when there is one, so the picker opens there.
+    const args: [string, string?] =
+      parentDir !== null ? ["Choose destination folder", parentDir] : ["Choose destination folder"];
+    const picked = await pickFolder(...args);
+    if (picked === null) return;
+    setParentDir(picked);
   };
 
   const submit = async (e: FormEvent) => {

@@ -5,9 +5,28 @@ use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::{PoisonError, RwLock};
 use std::thread;
 
 use crate::error::GitError;
+
+/// A process-wide override for the git executable. When set, [`locate`] returns
+/// it instead of searching `PATH`. It is poison-tolerant: a panic while the lock
+/// is held still leaves a readable value.
+static CONFIGURED: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+/// Sets (or clears, with `None`) the configured git executable path.
+pub fn set_configured_path(path: Option<PathBuf>) {
+    *CONFIGURED.write().unwrap_or_else(PoisonError::into_inner) = path;
+}
+
+/// The configured git executable path, if one is set.
+pub fn configured_path() -> Option<PathBuf> {
+    CONFIGURED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
 
 #[cfg(windows)]
 const CANDIDATES: [&str; 2] = ["git.exe", "git"];
@@ -37,11 +56,47 @@ pub fn command(git: &Path) -> Command {
     cmd
 }
 
-/// Finds `git` on the process `PATH`.
+/// Finds the git executable: the configured override when set (an error when it
+/// no longer exists), otherwise the first `git` on `PATH`.
 pub fn locate() -> Result<PathBuf, GitError> {
+    if let Some(configured) = configured_path() {
+        return if configured.is_file() {
+            Ok(configured)
+        } else {
+            Err(GitError::GitCliConfiguredMissing(configured))
+        };
+    }
     env::var_os("PATH")
         .and_then(locate_in)
         .ok_or(GitError::GitCliMissing)
+}
+
+/// Checks that `path` is a working git by reading `git --version`. Returns the
+/// version string after `git version ` (e.g. `2.43.0`). A spawn failure maps to
+/// [`GitError::GitCliMissing`]; a non-zero exit or unexpected output maps to
+/// [`GitError::GitCliInvalid`].
+pub fn verify(path: &Path) -> Result<String, GitError> {
+    let mut cmd = command(path);
+    cmd.arg("--version");
+    let output = match capture(&mut cmd) {
+        Ok(output) => output,
+        Err(_) => return Err(GitError::GitCliMissing),
+    };
+    if !output.status.success() {
+        let message = match output.status.code() {
+            Some(code) => format!("exited with code {code}"),
+            None => "terminated by a signal".to_owned(),
+        };
+        return Err(GitError::GitCliInvalid { message });
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    match trimmed.strip_prefix("git version ") {
+        Some(version) => Ok(version.trim().to_owned()),
+        None => Err(GitError::GitCliInvalid {
+            message: format!("unexpected output: {trimmed}"),
+        }),
+    }
 }
 
 /// Finds `git` in the given `PATH`-style list.

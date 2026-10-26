@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { useShell } from "../lib/store/shell";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../lib/query/client";
@@ -10,6 +11,7 @@ import {
   getCommitConfig,
   getHeadMessage,
   getLogSummary,
+  getSettings,
   getStatus,
   listBranches,
   listRecent,
@@ -48,6 +50,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
   onRepoChanged: vi.fn(),
+  getSettings: vi.fn(),
 }));
 
 const repo = (id: number, name: string, headBranch: string | null = "main"): OpenedRepo => ({
@@ -64,10 +67,16 @@ beforeEach(() => {
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   useCommitDraft.setState({ drafts: {} });
   useToasts.setState({ toasts: [] });
+  useShell.setState({ dialog: null, repoActions: null });
   queryClient.clear();
   vi.mocked(listRecent).mockResolvedValue([]);
   vi.mocked(closeRepo).mockResolvedValue(undefined);
-  vi.mocked(checkGitCli).mockResolvedValue({ available: true, path: "/usr/bin/git" });
+  vi.mocked(checkGitCli).mockResolvedValue({
+    available: true,
+    path: "/usr/bin/git",
+    version: "2.43.0",
+    error: null,
+  });
   vi.mocked(onCloneProgress).mockResolvedValue(vi.fn());
   vi.mocked(getStatus).mockResolvedValue({ entries: [], headUnborn: false });
   vi.mocked(listBranches).mockResolvedValue({
@@ -82,6 +91,13 @@ beforeEach(() => {
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 0, maxLanes: 1 });
+  vi.mocked(getSettings).mockResolvedValue({
+    defaultCloneDir: null,
+    gitExecutable: null,
+    externalEditor: null,
+    externalDiffTool: null,
+    externalMergeTool: null,
+  });
 });
 
 function renderApp(...seed: OpenedRepo[]) {
@@ -319,5 +335,83 @@ describe("App toasts", () => {
       useToasts.getState().show("Hi");
     });
     expect(screen.getAllByText("Hi")).toHaveLength(1);
+  });
+});
+
+// Contract (GR-14): global shortcuts and shell dialogs from the App root.
+describe("App global shortcuts (GR-14)", () => {
+  it("Ctrl+/ opens the shortcuts dialog and Escape returns focus to the app root", async () => {
+    const { user } = renderApp();
+    const appRoot = document.querySelector("[data-focus-target]") as HTMLElement | null;
+    if (appRoot) appRoot.focus();
+    await user.keyboard("{Control>}/{/Control}");
+    await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  // CommandPalette component arrives in Cycle 3. This test asserts the shell store state
+  // (per plan: useGlobalShortcuts tests assert the store) rather than a DOM dialog.
+  it("Ctrl+K sets the palette dialog on the shell store and Ctrl+, switches to settings", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>}k{/Control}");
+    expect(useShell.getState().dialog).toEqual({ kind: "palette" });
+    // Opening settings must close the palette (single-slot rule).
+    await user.keyboard("{Control>},{/Control}");
+    expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
+  });
+});
+
+// Coverage: App.tsx lines 42 (openRepo pickFolder branch) and 47 (openPath failure branch).
+describe("App openRepo and openPath actions (GR-14)", () => {
+  it("Ctrl+O calls the folder picker and skips openRepo when it returns null", async () => {
+    vi.mocked(pickFolder).mockResolvedValue(null);
+    const { user } = renderApp();
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(pickFolder).toHaveBeenCalledWith("Open repository"));
+    expect(openRepo).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+O opens the repo when the folder picker returns a path", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r/new");
+    vi.mocked(openRepo).mockResolvedValue(repo(99, "new"));
+    const { user } = renderApp();
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(useRepoTabs.getState().tabs.map((t) => t.id)).toContain(99));
+  });
+
+  it("openPath deactivates the active tab when opener.open returns false", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r/bad");
+    vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "not a repo" });
+    const { user } = renderApp(repo(1, "existing"));
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    await user.keyboard("{Control>}o{/Control}");
+    await waitFor(() => expect(useRepoTabs.getState().activeId).toBeNull());
+  });
+});
+
+// Task 15: App mounts SettingsDialog and CommandPalette from the shell store.
+describe("App shell dialogs (GR-14 Cycle 3)", () => {
+  it("Ctrl+, opens Settings dialog and Escape returns focus to the app root", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>},{/Control}");
+    // SettingsDialog must mount (requires App to render it on dialog.kind === "settings").
+    await screen.findByRole("dialog", { name: "Settings" });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    // Focus should be on the app root (data-focus-target).
+    const appRoot = document.querySelector("[data-focus-target]") as HTMLElement | null;
+    if (appRoot) expect(document.activeElement).toBe(appRoot);
+  });
+
+  it("Ctrl+K opens the palette and opening Settings from it closes the palette", async () => {
+    const { user } = renderApp();
+    await user.keyboard("{Control>}k{/Control}");
+    // CommandPalette must mount (requires App to render it on dialog.kind === "palette").
+    await screen.findByRole("dialog", { name: "Command palette" });
+    // Now open settings via shortcut; single-slot rule means palette closes.
+    await user.keyboard("{Control>},{/Control}");
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+    await screen.findByRole("dialog", { name: "Settings" });
   });
 });

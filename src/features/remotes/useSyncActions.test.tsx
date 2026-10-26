@@ -562,3 +562,51 @@ describe("useSyncActions during an in-progress operation", () => {
     expect(result.current.gates).toEqual({ fetch: null, pull: null, push: null, forcePush: null });
   });
 });
+
+// Contract (GR-14): completion toasts.
+import { useToasts } from "../../lib/store/toasts";
+
+describe("useSyncActions completion toasts (GR-14)", () => {
+  beforeEach(() => {
+    useToasts.setState({ toasts: [] });
+  });
+
+  it("toasts Fetch complete on success and nothing on failure", async () => {
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    const { result } = await setup();
+    await act(async () => result.current.fetch());
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    expect(texts).toContain("Fetch complete");
+  });
+
+  it("does not toast on fetch failure", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(networkError);
+    const { result } = await setup();
+    await act(async () => result.current.fetch());
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    expect(texts).not.toContain("Fetch complete");
+  });
+
+  it("toasts Pull complete only for a completed outcome", async () => {
+    vi.mocked(pull).mockResolvedValue("completed");
+    const { result } = await setup();
+    await act(async () => result.current.pull());
+    expect(useToasts.getState().toasts.map((t) => t.text)).toContain("Pull complete");
+  });
+
+  it("does not toast Pull complete for a conflicts outcome", async () => {
+    vi.mocked(pull).mockResolvedValue("conflicts");
+    const { result } = await setup();
+    await act(async () => result.current.pull());
+    expect(useToasts.getState().toasts.map((t) => t.text)).not.toContain("Pull complete");
+  });
+
+  it("toasts Pushed <branch> after push", async () => {
+    vi.mocked(push).mockResolvedValue(undefined);
+    const { result } = await setup();
+    await act(async () => result.current.push());
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    const pushed = texts.find((t) => t.startsWith("Pushed "));
+    expect(pushed).toBeTruthy();
+  });
+});

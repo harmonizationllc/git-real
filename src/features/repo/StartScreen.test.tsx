@@ -12,6 +12,15 @@ import type { OpenedRepo, RecentEntry } from "../../lib/ipc";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { StartScreen } from "./StartScreen";
+import { useOpenRepo } from "./useOpenRepo";
+
+// GR-14: StartScreen now receives an `opener` prop (UseOpenRepo) instead of calling
+// useOpenRepo() itself, so a wrapper that provides the real hook is used in tests.
+// This preserves all existing behavioral assertions (IPC calls, error state, tabs).
+function StartScreenWithOpener({ onClone }: { onClone(): void }) {
+  const opener = useOpenRepo();
+  return <StartScreen opener={opener} onClone={onClone} />;
+}
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -48,7 +57,7 @@ beforeEach(() => {
 // Contract: static structure of the start screen.
 describe("StartScreen layout", () => {
   it("should render the heading and the three action buttons", async () => {
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 1, name: "Git Real" })).toBeInTheDocument();
     expect(screen.getByRole("button", openBtn)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Clone repository" })).toBeInTheDocument();
@@ -61,26 +70,26 @@ describe("StartScreen layout", () => {
 describe("StartScreen recents", () => {
   it("should render recents from listRecent", async () => {
     vi.mocked(listRecent).mockResolvedValue([entry("a"), entry("b")]);
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     expect(await screen.findByRole("button", { name: "a /home/u/a" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "b /home/u/b" })).toBeInTheDocument();
   });
 
   it("should show the empty message when there are no recents", async () => {
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     expect(await screen.findByText(EMPTY)).toBeInTheDocument();
   });
 
   it("should not show the empty message while recents are loading", () => {
     vi.mocked(listRecent).mockReturnValue(new Promise(() => {}));
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     expect(screen.queryByText(EMPTY)).toBeNull();
   });
 
   it("should call removeRecent and drop the row when remove is clicked", async () => {
     vi.mocked(listRecent).mockResolvedValue([entry("a"), entry("b")]);
     vi.mocked(removeRecent).mockResolvedValue([entry("b")]);
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(
       await screen.findByRole("button", { name: "Remove a from recent repositories" }),
     );
@@ -92,7 +101,7 @@ describe("StartScreen recents", () => {
   it("should open a tab for a recent entry when its row is clicked", async () => {
     vi.mocked(listRecent).mockResolvedValue([entry("a")]);
     vi.mocked(openRepo).mockResolvedValue(opened("/home/u/a"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(await screen.findByRole("button", { name: "a /home/u/a" }));
     await waitFor(() => expect(useRepoTabs.getState().tabs).toHaveLength(1));
     expect(openRepo).toHaveBeenCalledExactlyOnceWith("/home/u/a");
@@ -104,7 +113,7 @@ describe("StartScreen open", () => {
   it("should pick a folder, call openRepo and open a tab when Open is clicked", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockResolvedValue(opened("/r"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     await waitFor(() => expect(useRepoTabs.getState().tabs).toHaveLength(1));
     expect(pickFolder).toHaveBeenCalledExactlyOnceWith("Open repository");
@@ -114,7 +123,7 @@ describe("StartScreen open", () => {
 
   it("should call nothing and show no error when the open picker is cancelled", async () => {
     vi.mocked(pickFolder).mockResolvedValue(null);
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     await waitFor(() => expect(pickFolder).toHaveBeenCalled());
     expect(openRepo).not.toHaveBeenCalled();
@@ -125,7 +134,7 @@ describe("StartScreen open", () => {
   it("should render the error when openRepo rejects", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockRejectedValue({ kind: "pathNotFound", message: "No such path" });
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     expect(await screen.findByRole("alert")).toHaveTextContent("No such path");
   });
@@ -136,7 +145,7 @@ describe("StartScreen open", () => {
       .mockResolvedValueOnce([entry("r", "/r")]);
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockResolvedValue(opened("/r"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await screen.findByText(EMPTY);
     await user.click(screen.getByRole("button", openBtn));
     expect(await screen.findByRole("button", { name: "r /r" })).toBeInTheDocument();
@@ -149,7 +158,7 @@ describe("StartScreen initialize here", () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "Not a repo" });
     vi.mocked(initRepo).mockResolvedValue(opened("/r"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     await user.click(await screen.findByRole("button", initHereBtn));
     await waitFor(() => expect(useRepoTabs.getState().tabs).toHaveLength(1));
@@ -160,7 +169,7 @@ describe("StartScreen initialize here", () => {
   it("should show pathNotFound without an init offer and keep the entry when a missing recent is reopened", async () => {
     vi.mocked(listRecent).mockResolvedValue([entry("gone")]);
     vi.mocked(openRepo).mockRejectedValue({ kind: "pathNotFound", message: "Path is gone" });
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(await screen.findByRole("button", { name: "gone /home/u/gone" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Path is gone");
     expect(screen.queryByRole("button", initHereBtn)).toBeNull();
@@ -170,7 +179,7 @@ describe("StartScreen initialize here", () => {
   it("should hide the error when Dismiss is clicked", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockRejectedValue({ kind: "pathNotFound", message: "No such path" });
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
@@ -182,7 +191,7 @@ describe("StartScreen initialize", () => {
   it("should pick a folder, call initRepo and open a tab when Initialize is clicked", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/n");
     vi.mocked(initRepo).mockResolvedValue(opened("/n"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", initBtn));
     await waitFor(() => expect(useRepoTabs.getState().tabs).toHaveLength(1));
     expect(pickFolder).toHaveBeenCalledExactlyOnceWith("Initialize repository");
@@ -192,7 +201,7 @@ describe("StartScreen initialize", () => {
 
   it("should call nothing when the initialize picker is cancelled", async () => {
     vi.mocked(pickFolder).mockResolvedValue(null);
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", initBtn));
     await waitFor(() => expect(pickFolder).toHaveBeenCalled());
     expect(initRepo).not.toHaveBeenCalled();
@@ -205,7 +214,7 @@ describe("StartScreen initialize", () => {
 describe("StartScreen clone", () => {
   it("should call onClone and not the picker when Clone is clicked", async () => {
     const onClone = vi.fn();
-    const { user } = renderWithProviders(<StartScreen onClone={onClone} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={onClone} />);
     await user.click(screen.getByRole("button", { name: "Clone repository" }));
     expect(onClone).toHaveBeenCalledOnce();
     expect(pickFolder).not.toHaveBeenCalled();
@@ -217,7 +226,7 @@ describe("StartScreen init failure", () => {
   it("should render the error and open no tab when initRepo rejects", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(initRepo).mockRejectedValue({ kind: "io", message: "permission denied" });
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", initBtn));
     expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
     expect(screen.queryByRole("button", initHereBtn)).toBeNull();
@@ -227,7 +236,7 @@ describe("StartScreen init failure", () => {
   it("should render the error message when openRepo rejects with a plain Error", async () => {
     vi.mocked(pickFolder).mockResolvedValue("/r");
     vi.mocked(openRepo).mockRejectedValue(new Error("ipc unavailable"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     expect(await screen.findByRole("alert")).toHaveTextContent("ipc unavailable");
   });
@@ -237,7 +246,7 @@ describe("StartScreen init failure", () => {
     vi.mocked(openRepo)
       .mockRejectedValueOnce({ kind: "pathNotFound", message: "No such path" })
       .mockResolvedValueOnce(opened("/r"));
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", openBtn));
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", openBtn));
@@ -251,7 +260,7 @@ describe("StartScreen hosting accounts", () => {
   const hostingBtn = { name: "Hosting accounts…" };
 
   it("should render a Hosting accounts… button after Initialize repository", async () => {
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     const init = screen.getByRole("button", initBtn);
     const hosting = screen.getByRole("button", hostingBtn);
     expect(init.compareDocumentPosition(hosting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -259,20 +268,20 @@ describe("StartScreen hosting accounts", () => {
   });
 
   it("should open the Hosting accounts dialog when the button is clicked", async () => {
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", hostingBtn));
     expect(await screen.findByRole("dialog", { name: "Hosting accounts" })).toBeInTheDocument();
     expect(await screen.findByText("No accounts connected")).toBeInTheDocument();
   });
 
   it("should show no dialog before the button is clicked", async () => {
-    renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await screen.findByText(EMPTY);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("should close the dialog and return focus to the button on Close", async () => {
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", hostingBtn));
     await user.click(await screen.findByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -280,10 +289,31 @@ describe("StartScreen hosting accounts", () => {
   });
 
   it("should close the dialog and return focus to the button on Escape", async () => {
-    const { user } = renderWithProviders(<StartScreen onClone={vi.fn()} />);
+    const { user } = renderWithProviders(<StartScreenWithOpener onClone={vi.fn()} />);
     await user.click(screen.getByRole("button", hostingBtn));
     await screen.findByRole("dialog", { name: "Hosting accounts" });
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", hostingBtn)).toHaveFocus();
+  });
+});
+
+// Contract (GR-14): StartScreen uses the opener prop rather than calling useOpenRepo() internally.
+describe("StartScreen opener prop (GR-14)", () => {
+  it("should call opener.open when Open is clicked (not the internal hook)", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("/r");
+    const openSpy = vi.fn().mockResolvedValue(true);
+    const opener = {
+      error: null,
+      errorPath: null,
+      open: openSpy,
+      init: vi.fn(),
+      clone: vi.fn(),
+      clearError: vi.fn(),
+    };
+    // Pass the spy opener directly — if StartScreen ignores opener and calls useOpenRepo() itself,
+    // openSpy will NOT be called (openRepo mock may fire instead through the internal hook).
+    const { user } = renderWithProviders(<StartScreen opener={opener} onClone={vi.fn()} />);
+    await user.click(screen.getByRole("button", openBtn));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith("/r"));
   });
 });

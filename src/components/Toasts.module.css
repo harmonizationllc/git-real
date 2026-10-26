@@ -24,6 +24,36 @@
   pointer-events: auto;
 }
 
+.toast[data-variant="success"] {
+  border-color: var(--color-added);
+}
+
+.toast[data-variant="error"] {
+  border-color: var(--color-danger);
+}
+
+.icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-on-accent);
+  background: var(--color-text-muted);
+}
+
+.toast[data-variant="success"] .icon {
+  background: var(--color-added);
+}
+
+.toast[data-variant="error"] .icon {
+  background: var(--color-danger);
+}
+
 .text {
   flex: 1;
   margin: 0;

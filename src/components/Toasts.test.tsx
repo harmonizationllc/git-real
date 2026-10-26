@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useToasts } from "../lib/store/toasts";
 import { TOAST_MS, Toasts } from "./Toasts";
+import type { ToastVariant } from "../lib/store/toasts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -318,5 +319,60 @@ describe("Toasts pause on hover and focus", () => {
     expect(screen.getByText("Hi")).toBeInTheDocument();
     advance(1);
     expect(screen.queryByText("Hi")).toBeNull();
+  });
+});
+
+// Contract (GR-14): variants, sticky behaviour, role=alert for errors.
+describe("Toasts variants (GR-14)", () => {
+  const notify = (text: string, variant: ToastVariant, sticky = false) => {
+    act(() => {
+      useToasts.getState().notify({ text, variant, sticky });
+    });
+  };
+
+  it("renders data-variant on a toast element", () => {
+    render(<Toasts />);
+    notify("ok", "success");
+    const toastEl = screen.getByText("ok").parentElement!;
+    expect(toastEl).toHaveAttribute("data-variant", "success");
+  });
+
+  it("renders an aria-hidden icon span", () => {
+    render(<Toasts />);
+    notify("done", "success");
+    const toastEl = screen.getByText("done").parentElement!;
+    const icon = toastEl.querySelector("[aria-hidden]");
+    expect(icon).not.toBeNull();
+  });
+
+  it("an error toast has role alert while the region stays polite", () => {
+    render(<Toasts />);
+    notify("bad", "error");
+    const toastEl = screen.getByText("bad").parentElement!;
+    expect(toastEl).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("a sticky toast has no timeout and keeps Dismiss", () => {
+    render(<Toasts />);
+    act(() => {
+      useToasts.getState().notify({ text: "sticky", variant: "error", sticky: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(TOAST_MS * 2);
+    });
+    expect(screen.getByText("sticky")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss notification" })).toBeInTheDocument();
+  });
+
+  it("a non-sticky success toast times out", () => {
+    render(<Toasts />);
+    act(() => {
+      useToasts.getState().notify({ text: "gone", variant: "success", sticky: false });
+    });
+    act(() => {
+      vi.advanceTimersByTime(TOAST_MS);
+    });
+    expect(screen.queryByText("gone")).toBeNull();
   });
 });

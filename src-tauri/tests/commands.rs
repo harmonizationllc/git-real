@@ -304,63 +304,77 @@ fn remove_recent_unknown_path_is_unchanged() {
     assert_eq!(after, before);
 }
 
-// --- check_git_cli_inner / GitCliInfo::from_located ---
+// --- check_git_cli_inner / GitCliInfo::from_probe ---
 
 #[test]
 fn check_git_cli_reports_path_when_available() {
     let info = check_git_cli_inner();
 
     match git_cli::locate() {
-        Ok(p) => assert_eq!(
-            info,
-            GitCliInfo {
-                available: true,
-                path: Some(p.to_string_lossy().into_owned())
-            }
-        ),
-        Err(_) => assert_eq!(
-            info,
-            GitCliInfo {
-                available: false,
-                path: None
-            }
-        ),
+        Ok(p) => {
+            assert!(
+                info.available,
+                "available must be true when locate() succeeds"
+            );
+            assert_eq!(info.path, Some(p.to_string_lossy().into_owned()));
+        }
+        Err(_) => {
+            assert!(
+                !info.available,
+                "available must be false when locate() fails"
+            );
+            assert_eq!(info.path, None);
+        }
     }
 }
 
 #[test]
-fn git_cli_info_from_located_some() {
-    let info = GitCliInfo::from_located(Some(std::path::PathBuf::from("/usr/bin/git")));
+fn git_cli_info_from_probe_available() {
+    let path = std::path::PathBuf::from("/usr/bin/git");
+    let info = GitCliInfo::from_probe(Some(path.clone()), Ok("2.43.0".to_string()));
 
     assert_eq!(
         info,
         GitCliInfo {
             available: true,
-            path: Some("/usr/bin/git".to_string())
+            path: Some("/usr/bin/git".to_string()),
+            version: Some("2.43.0".to_string()),
+            error: None,
         }
     );
 }
 
 #[test]
-fn git_cli_info_from_located_none() {
-    let info = GitCliInfo::from_located(None);
+fn git_cli_info_from_probe_unavailable_no_path() {
+    use git_real_core::GitError;
+    let info = GitCliInfo::from_probe(None, Err(GitError::GitCliMissing));
 
     assert_eq!(
         info,
         GitCliInfo {
             available: false,
-            path: None
+            path: None,
+            version: None,
+            error: Some(GitError::GitCliMissing.to_string()),
         }
     );
 }
 
 #[test]
 fn git_cli_info_serializes_camel_case() {
-    let info = GitCliInfo::from_located(Some(std::path::PathBuf::from("/usr/bin/git")));
+    let info = GitCliInfo::from_probe(
+        Some(std::path::PathBuf::from("/usr/bin/git")),
+        Ok("2.43.0".to_string()),
+    );
 
     assert_eq!(
         serde_json::to_value(info).unwrap(),
-        serde_json::json!({"available": true, "path": "/usr/bin/git"})
+        serde_json::json!({
+            "available": true,
+            "path": "/usr/bin/git",
+            "version": "2.43.0",
+            "error": null
+        })
     );
 }
 
@@ -632,4 +646,79 @@ fn run_blocking_panic_error_has_a_message() {
         tauri::async_runtime::block_on(run_blocking(|| panic!("boom")));
 
     assert!(!result.unwrap_err().message.is_empty());
+}
+
+// --- GR-14 GitCliInfo::from_probe / version / error ---
+
+// Contract: check_git_cli reports the version string when the executable is available.
+// This test extends check_git_cli_reports_path_when_available with the version field.
+#[test]
+fn check_git_cli_reports_path_version_and_no_error_when_available() {
+    // Import from_probe which will be added by the developer.
+    use git_real_lib::commands::repo::check_git_cli_inner;
+
+    let info = check_git_cli_inner();
+
+    // When git is available, version must be Some and error must be None.
+    match git_cli::locate() {
+        Ok(_) => {
+            assert!(
+                info.available,
+                "available must be true when locate() succeeds"
+            );
+            assert!(
+                info.version.is_some(),
+                "version must be Some when git is found and verify succeeds"
+            );
+            assert!(
+                info.error.is_none(),
+                "error must be None when git is found successfully"
+            );
+        }
+        Err(_) => {
+            assert!(
+                !info.available,
+                "available must be false when locate() fails"
+            );
+        }
+    }
+}
+
+// Contract: from_probe fills available=false, path=Some, version=None, error=Some(msg)
+// when locate() found a path but verify() rejected it.
+#[cfg(unix)]
+#[test]
+fn from_probe_marks_unavailable_with_the_error_when_verify_fails() {
+    use git_real_core::GitError;
+    use git_real_lib::commands::repo::GitCliInfo;
+    use std::os::unix::fs::PermissionsExt;
+
+    // Create a non-git executable (outputs "hello", not "git version …").
+    let dir = tempfile::tempdir().unwrap();
+    let non_git_path = dir.path().join("not_git");
+    std::fs::write(&non_git_path, "#!/bin/sh\necho hello\n").unwrap();
+    std::fs::set_permissions(&non_git_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let verify_result = git_real_core::git_cli::verify(&non_git_path);
+    assert!(
+        verify_result.is_err(),
+        "verify must fail for a non-git binary"
+    );
+    let err_msg = verify_result.unwrap_err().to_string();
+
+    // from_probe(Some(path), Err(e)) must produce: available=false, path=Some, version=None, error=Some(msg)
+    let info = GitCliInfo::from_probe(
+        Some(non_git_path.clone()),
+        Err(GitError::GitCliInvalid {
+            message: err_msg.clone(),
+        }),
+    );
+    assert!(!info.available, "available must be false when verify fails");
+    assert_eq!(info.path, Some(non_git_path.to_string_lossy().into_owned()));
+    assert_eq!(info.version, None);
+    assert!(
+        info.error.is_some(),
+        "error field must be Some when verify fails"
+    );
+    assert_eq!(info.error.as_deref(), Some(err_msg.as_str()));
 }

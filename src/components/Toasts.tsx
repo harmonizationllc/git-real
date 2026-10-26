@@ -22,22 +22,31 @@ export function Toasts() {
  * One toast; its timer lives and dies with it, so a dismiss or unmount clears it. The timer is
  * held while the toast is hovered or holds focus, and a full TOAST_MS restarts once neither holds.
  */
+const VARIANT_ICON: Record<Toast["variant"], string> = {
+  info: "i",
+  success: "✓",
+  error: "!",
+};
+
 function ToastItem({ toast }: { toast: Toast }) {
-  const { id, text, action } = toast;
+  const { id, text, action, variant, sticky } = toast;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const held = hovered || focused;
   useEffect(() => {
-    if (held) return;
+    // A sticky toast stays until it is dismissed by hand.
+    if (held || sticky) return;
     const timer = setTimeout(() => useToasts.getState().dismiss(id), TOAST_MS);
     return () => clearTimeout(timer);
-  }, [id, held]);
+  }, [id, held, sticky]);
 
   const dismiss = () => useToasts.getState().dismiss(id);
 
   return (
     <div
       className={styles.toast}
+      data-variant={variant}
+      role={variant === "error" ? "alert" : undefined}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -45,6 +54,9 @@ function ToastItem({ toast }: { toast: Toast }) {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       }}
     >
+      <span className={styles.icon} aria-hidden="true">
+        {VARIANT_ICON[variant]}
+      </span>
       <p className={styles.text}>{text}</p>
       {action !== null && (
         <button

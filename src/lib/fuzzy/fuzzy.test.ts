@@ -1,5 +1,8 @@
+// This file is the moved version of src/features/history/model/fuzzy.test.ts.
+// The imports now come from src/lib/fuzzy — red until the fuzzy module exists there.
+
 import { describe, expect, it } from "vitest";
-import { MAX_PICKER_ROWS, fuzzyMatch, rankFiles } from "./fuzzy";
+import { MAX_PICKER_ROWS, fuzzyMatch, rankFiles } from "./index";
 
 // Contract: MAX_PICKER_ROWS caps the picker's results.
 describe("MAX_PICKER_ROWS", () => {
@@ -35,7 +38,6 @@ describe("fuzzyMatch matching", () => {
   });
 
   it("should walk greedily from the leftmost occurrence of each character", () => {
-    // a at 0, b at 2, c at 3: the walk takes the first a, so the later "ab" is never considered.
     expect(fuzzyMatch("abc", "axbcab")).toBe(4);
   });
 });
@@ -100,7 +102,6 @@ describe("rankFiles", () => {
   });
 
   it("should break score ties by code-unit order, not by locale", () => {
-    // All three score 1 - 1000. Code-unit order puts "B/a" before "a" before "b/a".
     expect(rankFiles("a", ["b/a", "B/a", "a"], 3)).toEqual(["B/a", "a", "b/a"]);
   });
 

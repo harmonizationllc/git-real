@@ -1,6 +1,6 @@
 //! Serializable error type sent across the IPC boundary.
 
-use git_real_core::{GitError, NetworkErrorKind};
+use git_real_core::{GitError, NetworkErrorKind, SettingsError, ToolError};
 use serde::Serialize;
 
 use crate::state::RepoId;
@@ -63,6 +63,10 @@ pub enum AppErrorKind {
     NoHostingAccount,
     InvalidHostingHost,
     InvalidToken,
+    InvalidSettings,
+    GitCliInvalid,
+    NoExternalTool,
+    ExternalToolFailed,
 }
 
 /// What the UI needs to act on a network failure; stderr stays in `message`.
@@ -91,12 +95,48 @@ pub struct AppError {
     pub network: Option<NetworkInfo>,
 }
 
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 impl AppError {
     /// Error for a repository id that is not (or no longer) registered.
     pub fn unknown_repo(id: RepoId) -> Self {
         Self {
             kind: AppErrorKind::UnknownRepo,
             message: format!("no open repository with id {id}"),
+            network: None,
+        }
+    }
+
+    /// Error for an external-tool action with no tool configured; `tool` is
+    /// `editor`, `diff tool` or `merge tool`.
+    pub fn no_external_tool(tool: &str) -> Self {
+        Self {
+            kind: AppErrorKind::NoExternalTool,
+            message: format!("no external {tool} is configured"),
+            network: None,
+        }
+    }
+}
+
+impl From<SettingsError> for AppError {
+    fn from(error: SettingsError) -> Self {
+        Self {
+            kind: AppErrorKind::InvalidSettings,
+            message: error.to_string(),
+            network: None,
+        }
+    }
+}
+
+impl From<ToolError> for AppError {
+    fn from(error: ToolError) -> Self {
+        Self {
+            kind: AppErrorKind::ExternalToolFailed,
+            message: error.to_string(),
             network: None,
         }
     }
@@ -157,6 +197,9 @@ impl From<GitError> for AppError {
             GitError::NoHostingAccount => AppErrorKind::NoHostingAccount,
             GitError::InvalidHostingHost(_) => AppErrorKind::InvalidHostingHost,
             GitError::InvalidToken => AppErrorKind::InvalidToken,
+            // The configured path is gone; the UI treats it like a missing CLI.
+            GitError::GitCliConfiguredMissing(_) => AppErrorKind::GitCliMissing,
+            GitError::GitCliInvalid { .. } => AppErrorKind::GitCliInvalid,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

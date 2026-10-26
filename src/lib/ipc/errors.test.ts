@@ -266,3 +266,28 @@ describe("isAppError hosting kinds", () => {
     expect(isAppError({ kind: "network", message: "m" })).toBe(false);
   });
 });
+
+// Contract (Review Focus 5): the four GR-14 error kinds are recognised by the guard.
+// Both types.ts AND errors.ts must be updated — the KINDS Record enforces the sync.
+describe("isAppError GR-14 kinds", () => {
+  it.each(["invalidSettings", "gitCliInvalid", "noExternalTool", "externalToolFailed"] as const)(
+    "isAppError accepts every new kind %s",
+    (kind) => {
+      expect(isAppError({ kind, message: "m" })).toBe(true);
+    },
+  );
+
+  it.each(["invalidSettings", "gitCliInvalid", "noExternalTool", "externalToolFailed"] as const)(
+    "isAppError rejects %s without a message",
+    (kind) => {
+      expect(isAppError({ kind })).toBe(false);
+    },
+  );
+
+  it.each(["invalidSettings", "gitCliInvalid", "noExternalTool", "externalToolFailed"] as const)(
+    "isAppError rejects %s with a non-string message",
+    (kind) => {
+      expect(isAppError({ kind, message: 5 })).toBe(false);
+    },
+  );
+});

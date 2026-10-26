@@ -8,8 +8,10 @@ pub mod merge;
 pub mod refs;
 pub mod remote;
 pub mod repo;
+pub mod settings;
 pub mod stash;
 pub mod tags;
+pub mod tools;
 pub mod worktree;
 
 use std::sync::PoisonError;

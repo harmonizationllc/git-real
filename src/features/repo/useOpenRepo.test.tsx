@@ -69,17 +69,6 @@ describe("useOpenRepo open failure", () => {
     expect(useRepoTabs.getState().tabs).toEqual([]);
   });
 
-  it("should resolve to undefined when open rejects", async () => {
-    vi.mocked(openRepo).mockRejectedValue(notARepo);
-    const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: Promise<void> | undefined;
-    await act(async () => {
-      outcome = result.current.open("/r");
-      await outcome;
-    });
-    await expect(outcome).resolves.toBeUndefined();
-  });
-
   it("should map a plain Error rejection to an io error with its message", async () => {
     vi.mocked(openRepo).mockRejectedValue(new Error("boom"));
     const { result } = renderHookWithProviders(() => useOpenRepo());
@@ -217,7 +206,7 @@ describe("useOpenRepo overlapping calls", () => {
       .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
       .mockResolvedValueOnce(opened("/b", 2));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let first!: Promise<void>;
+    let first!: Promise<boolean>;
     act(() => {
       first = result.current.open("/a");
     });
@@ -315,5 +304,64 @@ describe("useOpenRepo clone overlapping calls", () => {
     expect(outcome).toBe(false);
     expect(result.current.error).toBeNull();
     expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
+  });
+});
+
+// Contract (GR-14): open and init resolve boolean; clone toasts Cloned <name>.
+import { useToasts } from "../../lib/store/toasts";
+
+describe("useOpenRepo boolean results (GR-14)", () => {
+  beforeEach(() => {
+    useToasts.setState({ toasts: [] });
+  });
+
+  it("open resolves true on success", async () => {
+    vi.mocked(openRepo).mockResolvedValue(opened("/r"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.open("/r");
+    });
+    expect(outcome).toBe(true);
+  });
+
+  it("open resolves false on failure", async () => {
+    vi.mocked(openRepo).mockRejectedValue(notARepo);
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.open("/r");
+    });
+    expect(outcome).toBe(false);
+  });
+
+  it("init resolves false on failure", async () => {
+    vi.mocked(initRepo).mockRejectedValue(notARepo);
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.init("/r");
+    });
+    expect(outcome).toBe(false);
+  });
+
+  it("toasts Cloned <name> on clone success and not on open", async () => {
+    const repo = opened("/home/u/my-repo");
+    vi.mocked(cloneRepo).mockResolvedValue(repo);
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(async () => {
+      await result.current.clone("u", "/home/u/my-repo", 5);
+    });
+    const texts = useToasts.getState().toasts.map((t) => t.text);
+    expect(texts).toContain("Cloned my-repo");
+  });
+
+  it("does not toast on plain open success", async () => {
+    vi.mocked(openRepo).mockResolvedValue(opened("/r"));
+    const { result } = renderHookWithProviders(() => useOpenRepo());
+    await act(async () => {
+      await result.current.open("/r");
+    });
+    expect(useToasts.getState().toasts).toHaveLength(0);
   });
 });

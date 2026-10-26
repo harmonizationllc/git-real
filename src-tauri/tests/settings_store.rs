@@ -1,0 +1,266 @@
+//! Task 4: Failing tests for `SettingsStore` — load, get, update, apply_git_override.
+//! Expected to fail to compile until the implementation exists.
+
+#![cfg(unix)]
+
+mod common;
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use git_real_core::git_cli::{configured_path, set_configured_path};
+use git_real_lib::settings_store::SettingsStore;
+
+/// Serialises tests that touch the process-wide `CONFIGURED` static.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Panic-safe guard.
+struct ResetConfigured;
+impl Drop for ResetConfigured {
+    fn drop(&mut self) {
+        set_configured_path(None);
+    }
+}
+
+// ─── load ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn load_missing_corrupt_unreadable_and_unknown_version_yield_defaults() {
+    // Missing file
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+    assert_eq!(store.get(), Default::default());
+
+    // Corrupt JSON
+    let (_dir2, path2) = common::temp_file_path("settings.json");
+    fs::write(&path2, "{not json").unwrap();
+    let store2 = SettingsStore::load(path2.clone());
+    assert_eq!(store2.get(), Default::default());
+
+    // Unreadable directory path
+    let dir3 = tempfile::tempdir().unwrap();
+    let store3 = SettingsStore::load(dir3.path().to_path_buf());
+    assert_eq!(store3.get(), Default::default());
+
+    // Unknown version (version 2)
+    let (_dir4, path4) = common::temp_file_path("settings.json");
+    fs::write(
+        &path4,
+        r#"{"version":2,"settings":{"externalEditor":"code"}}"#,
+    )
+    .unwrap();
+    let store4 = SettingsStore::load(path4.clone());
+    assert_eq!(store4.get(), Default::default());
+}
+
+#[test]
+fn load_does_not_create_the_file() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let _ = SettingsStore::load(path.clone());
+    assert!(!path.exists(), "load() must not create the settings file");
+}
+
+// ─── update ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn update_persists_the_patch_and_round_trips() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"externalEditor":"code --wait"}"#).unwrap();
+    let result = store.update(&patch).unwrap();
+    assert_eq!(result.external_editor.as_deref(), Some("code --wait"));
+
+    // File must be valid JSON with version:1, no .tmp file
+    let content = fs::read_to_string(&path).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["settings"]["externalEditor"], "code --wait");
+
+    let tmp = path.clone();
+    let mut s = tmp.as_os_str().to_owned();
+    s.push(".tmp");
+    let tmp_path = PathBuf::from(s);
+    assert!(!tmp_path.exists(), ".tmp file must be cleaned up");
+}
+
+#[test]
+fn update_rejects_invalid_settings_without_saving() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"defaultCloneDir":"relative/path"}"#).unwrap();
+    let err = store.update(&patch).unwrap_err();
+    use git_real_lib::error::AppErrorKind;
+    assert_eq!(err.kind, AppErrorKind::InvalidSettings);
+    assert!(
+        !path.exists(),
+        "file must not be created on validation error"
+    );
+}
+
+#[test]
+fn update_verifies_a_changed_git_executable_and_pushes_the_override() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake_git = common_fake_git(dir.path());
+
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let json = format!(r#"{{"gitExecutable":"{}"}}"#, fake_git.display());
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(&json).unwrap();
+    store.update(&patch).unwrap();
+
+    assert_eq!(configured_path(), Some(fake_git));
+}
+
+#[test]
+fn update_rejects_a_non_git_executable_and_keeps_the_old_value() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let non_git = make_non_git(dir.path());
+
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let json = format!(r#"{{"gitExecutable":"{}"}}"#, non_git.display());
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(&json).unwrap();
+    let err = store.update(&patch).unwrap_err();
+
+    use git_real_lib::error::AppErrorKind;
+    assert_eq!(err.kind, AppErrorKind::GitCliInvalid);
+    // In-memory value unchanged
+    assert!(store.get().git_executable.is_none());
+    // Override unchanged (None)
+    assert_eq!(configured_path(), None);
+}
+
+#[test]
+fn update_clearing_the_git_executable_resets_the_override() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake_git = common_fake_git(dir.path());
+
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    // First install a fake git
+    let set_json = format!(r#"{{"gitExecutable":"{}"}}"#, fake_git.display());
+    let set_patch: git_real_core::SettingsPatch = serde_json::from_str(&set_json).unwrap();
+    store.update(&set_patch).unwrap();
+    assert_eq!(configured_path(), Some(fake_git));
+
+    // Clear it
+    let clear_patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"gitExecutable":null}"#).unwrap();
+    store.update(&clear_patch).unwrap();
+    assert_eq!(configured_path(), None);
+}
+
+#[test]
+fn apply_git_override_installs_the_stored_path() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake_git = common_fake_git(dir.path());
+
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    // Write a settings file that has a gitExecutable already.
+    fs::write(
+        &path,
+        format!(
+            r#"{{"version":1,"settings":{{"gitExecutable":"{}"}}}}"#,
+            fake_git.display()
+        ),
+    )
+    .unwrap();
+
+    let store = SettingsStore::load(path.clone());
+    // At this point configured_path is still None; apply_git_override sets it.
+    store.apply_git_override();
+    assert_eq!(configured_path(), Some(fake_git));
+}
+
+#[test]
+fn update_reports_io_when_the_directory_is_unwritable() {
+    let dir = tempfile::tempdir().unwrap();
+    // Make the directory unwritable
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
+
+    let path = dir.path().join("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"externalEditor":"code"}"#).unwrap();
+    let err = store.update(&patch).unwrap_err();
+
+    use git_real_lib::error::AppErrorKind;
+    assert_eq!(err.kind, AppErrorKind::Io);
+    // In-memory value is NOT persisted — it should not have changed
+    assert!(store.get().external_editor.is_none());
+
+    // Restore permissions so the temp dir can be cleaned up
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+fn common_fake_git(dir: &std::path::Path) -> PathBuf {
+    let script = "echo git version 9.9.9";
+    let path = dir.join("git");
+    let body = format!("#!/bin/sh\n[ -n \"$FAKE_GIT_PROBE\" ] && exit 0\n{script}\n");
+    fs::write(&path, body).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+fn make_non_git(dir: &std::path::Path) -> PathBuf {
+    let path = dir.join("not_git");
+    fs::write(&path, "#!/bin/sh\necho hello\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+// ─── get_settings_inner / update_settings_inner wrappers ──────────────────────
+
+/// Coverage gap: `get_settings_inner` is a thin wrapper; exercise it end-to-end.
+#[test]
+fn get_settings_inner_returns_current_settings() {
+    use git_real_lib::commands::settings::get_settings_inner;
+
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+
+    let settings = get_settings_inner(&store);
+    assert_eq!(settings, git_real_core::Settings::default());
+}
+
+/// Coverage gap: `update_settings_inner` is a thin wrapper; exercise it end-to-end.
+#[test]
+fn update_settings_inner_persists_the_patch() {
+    use git_real_lib::commands::settings::{get_settings_inner, update_settings_inner};
+
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+
+    let patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"externalEditor":"nano"}"#).unwrap();
+    let updated = update_settings_inner(&store, &patch).unwrap();
+    assert_eq!(updated.external_editor.as_deref(), Some("nano"));
+    assert_eq!(
+        get_settings_inner(&store).external_editor.as_deref(),
+        Some("nano")
+    );
+}
