@@ -103,16 +103,19 @@ pub async fn update_settings(
 /// recolour failure is only logged.
 #[tauri::command]
 pub async fn sync_window_background(app: AppHandle, desktop_dark: bool) -> Result<(), AppError> {
-    if let Some(window) = app.get_webview_window(main_window::LABEL)
-        && let Err(e) = main_window::apply_background(
-            &window,
-            Theme::System,
-            Some(main_window::desktop_theme(desktop_dark)),
-        )
-    {
-        eprintln!("settings: cannot update window background: {e}");
-    }
-    Ok(())
+    run_blocking(move || {
+        if let Some(window) = app.get_webview_window(main_window::LABEL)
+            && let Err(e) = main_window::apply_background(
+                &window,
+                Theme::System,
+                Some(main_window::desktop_theme(desktop_dark)),
+            )
+        {
+            eprintln!("settings: cannot update window background: {e}");
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
