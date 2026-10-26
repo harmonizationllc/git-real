@@ -130,6 +130,11 @@ path, a size out of range, an unknown enum string) is replaced by its
 default **for that field only**, logged, and the rest of the file is kept.
 That last rule is what makes a file copied from another machine safe.
 
+**Logging:** lenient-load and window warnings go to stderr via `eprintln!`, the
+crate convention. A bundle launched from a `.desktop` file delivers stderr to
+the user journal (`journalctl --user`), which is where an owner looks for the
+clamp lines the acceptance walk mentions.
+
 **Existence is never checked on load.** "Existing directory" for
 `clone.defaultDir` and "verified with `git --version`" for `git.executable`
 are checks the **patch** path runs when the user sets the value. On load,
