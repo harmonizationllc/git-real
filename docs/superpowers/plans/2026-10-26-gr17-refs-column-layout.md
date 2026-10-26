@@ -353,24 +353,34 @@ it("sectionFloor never pads a short section", () => {
 });
 
 it("gives the leftover to an automatic Branches when everything fits", () => {
-  expect(fitSections(600, [auto(200), auto(60), auto(150), auto(36), auto(36)])).toEqual([318, 60, 150, 36, 36]);
+  expect(fitSections(600, [auto(200), auto(60), auto(150), auto(36), auto(36)])).toEqual([
+    318, 60, 150, 36, 36,
+  ]);
 });
 
 it("leaves the leftover unassigned when Branches is fixed", () => {
-  expect(fitSections(600, [fixed(400, 250), auto(60), auto(150), auto(36), auto(36)])).toEqual([250, 60, 150, 36, 36]);
+  expect(fitSections(600, [fixed(400, 250), auto(60), auto(150), auto(36), auto(36)])).toEqual([
+    250, 60, 150, 36, 36,
+  ]);
 });
 
 it("shrinks automatic sections in proportion to their room above the floor", () => {
   // rooms 1000, 0, 500, 0, 0; over 750 → ratio 1/2
-  expect(fitSections(1038, [auto(1072), auto(72), auto(572), auto(36), auto(36)])).toEqual([572, 72, 322, 36, 36]);
+  expect(fitSections(1038, [auto(1072), auto(72), auto(572), auto(36), auto(36)])).toEqual([
+    572, 72, 322, 36, 36,
+  ]);
 });
 
 it("holds a fixed section while the automatic ones shrink", () => {
-  expect(fitSections(1038, [auto(1072), auto(72), fixed(572, 400), auto(36), auto(36)])).toEqual([494, 72, 400, 36, 36]);
+  expect(fitSections(1038, [auto(1072), auto(72), fixed(572, 400), auto(36), auto(36)])).toEqual([
+    494, 72, 400, 36, 36,
+  ]);
 });
 
 it("clamps a fixed height above the content to the content", () => {
-  expect(fitSections(2000, [auto(100), auto(60), fixed(572, 900), auto(36), auto(36)])[2]).toBe(572);
+  expect(fitSections(2000, [auto(100), auto(60), fixed(572, 900), auto(36), auto(36)])[2]).toBe(
+    572,
+  );
 });
 
 it("clamps a fixed height below the floor to the floor", () => {
@@ -382,15 +392,21 @@ it("shows a collapsed section at its header even with a stored height", () => {
 });
 
 it("takes from fixed sections once the automatic room is gone", () => {
-  expect(fitSections(300, [auto(72), auto(72), fixed(572, 500), auto(36), auto(36)])).toEqual([72, 72, 84, 36, 36]);
+  expect(fitSections(300, [auto(72), auto(72), fixed(572, 500), auto(36), auto(36)])).toEqual([
+    72, 72, 84, 36, 36,
+  ]);
 });
 
 it("keeps every floor when the floors alone overflow the container", () => {
-  expect(fitSections(100, [auto(72), auto(72), auto(72), auto(36), auto(36)])).toEqual([72, 72, 72, 36, 36]);
+  expect(fitSections(100, [auto(72), auto(72), auto(72), auto(36), auto(36)])).toEqual([
+    72, 72, 72, 36, 36,
+  ]);
 });
 
 it("passes the naturals through while unmeasured", () => {
-  expect(fitSections(0, [auto(1072), auto(72), fixed(572, 100), auto(36), auto(36)])).toEqual([1072, 72, 572, 36, 36]);
+  expect(fitSections(0, [auto(1072), auto(72), fixed(572, 100), auto(36), auto(36)])).toEqual([
+    1072, 72, 572, 36, 36,
+  ]);
 });
 
 it("maxSectionHeight is the container less the other floors, unbounded while unmeasured", () => {
@@ -565,18 +581,26 @@ it("pins the reserve constants", () => {
 `RefLabels.test.tsx` (new `describe("RefLabels fit")`; stub `ResizeObserver` recording the observed target with a `fire()`; set widths with `Object.defineProperty(el, "offsetWidth", { value })` on the pills and `clientWidth` on the parent):
 
 ```ts
-it("observes its parent cell", () => { /* expect observe called with root.parentElement */ });
-it("shows every pill while unmeasured", () => { /* three titles visible, no data-hidden */ });
+it("observes its parent cell", () => {
+  /* expect observe called with root.parentElement */
+});
+it("shows every pill while unmeasured", () => {
+  /* three titles visible, no data-hidden */
+});
 it("hides trailing pills that do not fit and counts them into +N", () => {
   // parent 200 → budget 130; pills 40, 80, 40; "+2" ≈ 36 → fitLabels → 1
   expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
   expect(screen.getByText("+2")).toHaveAttribute("aria-label", "2 more: b, c");
 });
-it("keeps a hidden pill's full name as its title", () => { /* getByTitle("b") exists */ });
+it("keeps a hidden pill's full name as its title", () => {
+  /* getByTitle("b") exists */
+});
 it("counts labels beyond MAX_LABELS and labels that do not fit together", () => {
   // four refs, parent wide enough for two → "+2"
 });
-it("disconnects on unmount", () => { /* disconnect called */ });
+it("disconnects on unmount", () => {
+  /* disconnect called */
+});
 ```
 
 Also tighten the existing CSS test: `should declare the pill rule non-shrinking` → `expect(rule(".pill")).toMatch(/flex:\s*none/)`, and add `expect(rule(".pill")).toMatch(/max-width:\s*24ch/)`.

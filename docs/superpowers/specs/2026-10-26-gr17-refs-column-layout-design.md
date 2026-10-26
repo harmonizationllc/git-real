@@ -6,7 +6,7 @@ Backlog; found during the GR-11b acceptance walk at 1280×800).
 (stashes, tags, `RepoError variant="panel"`), GR-13 (pull requests and issues
 panels), ADR 0005 (settings owned by Rust, `settings.json` is the only store).
 **Status:** written from the ticket without a brainstorming round (the owner
-skipped the questions on 2026-10-26); every choice below marked *(my call)* is
+skipped the questions on 2026-10-26); every choice below marked _(my call)_ is
 the author's and is open to the owner's review. Plan in
 `docs/superpowers/plans/2026-10-26-gr17-refs-column-layout.md`.
 
@@ -35,8 +35,8 @@ Success is the ticket's acceptance criteria, restated in §2.
    section keeps a large blank gap while another is cramped.
 2. Each section boundary is draggable and keyboard-steppable, with the chosen
    height persisted in the layout preferences, resettable by double-click
-   *(my call: the ticket says "consider"; included because collapse toggles
-   alone give no control over Stashes or Branches)*.
+   _(my call: the ticket says "consider"; included because collapse toggles
+   alone give no control over Stashes or Branches)_.
 3. Ref labels stay readable when a commit has several refs: the first labels
    in full, then a `+N` chip for the rest. Every truncated label keeps its
    full name as its hover title and its accessible name.
@@ -64,7 +64,7 @@ must default); any new dependency.
   in column order; `RefsSection` is their union and `ResizableSection`
   excludes `"issues"`.
 - `SECTION_MIN = 72` px: the least an expanded section with content keeps
-  (one header plus about two rows) *(my call)*.
+  (one header plus about two rows) _(my call)_.
 - `sectionFloor(natural) = min(SECTION_MIN, natural)`: a collapsed or empty
   section is never padded up to the minimum.
 - `fitSections(container, sections)` where each section is
@@ -92,12 +92,12 @@ inside a `section` wrapper (`overflow: auto`, inline `height` from
 `fitSections` once measured) and, between consecutive sections, a horizontal
 `SplitHandle` that sizes the section above it:
 
-| Handle label                      | Sizes          | Stored as                   |
-| --------------------------------- | -------------- | --------------------------- |
-| `Resize Branches section`         | Branches       | `layout.branchesHeight`     |
-| `Resize Stashes section`          | Stashes        | `layout.stashesHeight`      |
-| `Resize Tags section`             | Tags           | `layout.tagsHeight`         |
-| `Resize Pull requests section`    | Pull requests  | `layout.pullRequestsHeight` |
+| Handle label                   | Sizes         | Stored as                   |
+| ------------------------------ | ------------- | --------------------------- |
+| `Resize Branches section`      | Branches      | `layout.branchesHeight`     |
+| `Resize Stashes section`       | Stashes       | `layout.stashesHeight`      |
+| `Resize Tags section`          | Tags          | `layout.tagsHeight`         |
+| `Resize Pull requests section` | Pull requests | `layout.pullRequestsHeight` |
 
 Handle contract: `value` is the rendered height; `min` is the section's
 floor; `max` is `maxSectionHeight`; `step` is `KEY_STEP` (16); ArrowDown and
