@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use git_real_core::git_cli;
-use git_real_core::settings::{SettingsFileError, SettingsWarning, WindowGeometry};
+use git_real_core::settings::{SettingsFileError, SettingsWarning, Theme, WindowGeometry};
 use git_real_core::{GitError, Settings, SettingsFile, SettingsPatch};
 
 use crate::error::AppError;
@@ -105,14 +105,29 @@ impl SettingsStore {
 
     /// A webview init script that sets `window.__GIT_REAL_SETTINGS__` to the
     /// current settings. Every `<` is written as a JSON unicode escape so no
-    /// string value can close a `<script>` element.
+    /// string value can close a `<script>` element. An explicit light or dark
+    /// theme is also set as `data-theme` on the root element, so the page
+    /// paints in it before the app script runs; the system theme is left to
+    /// the page.
     pub fn to_init_script(&self) -> String {
-        let json = serde_json::to_string(&self.get())
+        let settings = self.get();
+        let json = serde_json::to_string(&settings)
             .expect("Settings has only string keys, so it always serialises");
-        format!(
+        let mut script = format!(
             "window.__GIT_REAL_SETTINGS__={};",
             json.replace('<', "\\u003c")
-        )
+        );
+        let data_theme = match settings.appearance.theme {
+            Theme::Dark => Some("dark"),
+            Theme::Light => Some("light"),
+            Theme::System => None,
+        };
+        if let Some(name) = data_theme {
+            script.push_str(&format!(
+                r#"if(document.documentElement)document.documentElement.setAttribute("data-theme","{name}");"#
+            ));
+        }
+        script
     }
 
     fn lock(&self) -> MutexGuard<'_, Settings> {

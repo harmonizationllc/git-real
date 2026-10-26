@@ -172,6 +172,23 @@ pub enum Theme {
     Dark,
 }
 
+/// The dark theme's window background, `--color-bg` in `src/styles/tokens.css`.
+pub const BG_DARK_RGB: (u8, u8, u8) = (30, 30, 30);
+
+/// The light theme's window background, `--color-bg` in `src/styles/tokens.css`.
+pub const BG_LIGHT_RGB: (u8, u8, u8) = (246, 246, 246);
+
+/// The window background for `theme`. [`Theme::System`] follows the desktop:
+/// dark when `desktop_dark`, light otherwise.
+pub fn background_rgb(theme: Theme, desktop_dark: bool) -> (u8, u8, u8) {
+    match theme {
+        Theme::Dark => BG_DARK_RGB,
+        Theme::Light => BG_LIGHT_RGB,
+        Theme::System if desktop_dark => BG_DARK_RGB,
+        Theme::System => BG_LIGHT_RGB,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffMode {
