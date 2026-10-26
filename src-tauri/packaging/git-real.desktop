@@ -10,6 +10,7 @@ Terminal=false
 Type=Application
 Keywords=git;vcs;version control;repository;commit;branch;
 StartupNotify=true
+StartupWMClass={{exec}}
 {{#if mime_type}}
 MimeType={{mime_type}}
 {{/if}}

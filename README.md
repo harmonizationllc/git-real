@@ -60,25 +60,26 @@ to the front end over typed IPC commands.
 
 Pre-built Linux packages are published on each release. Download the one for your
 distribution from the [GitHub Releases](https://github.com/harmonizationllc/git-real/releases)
-page (`<version>` is the release, for example `0.1.0`):
+page (`<version>` is the release, for example `0.1.0`). The file names carry the product
+name with a space in it — `Git Real_<version>_amd64.deb` — so quote the path:
 
 - **Debian, Ubuntu, Pop!\_OS** — the `.deb`:
 
   ```sh
-  sudo apt install ./git-real_<version>_amd64.deb
+  sudo apt install "./Git Real_<version>_amd64.deb"
   ```
 
 - **Fedora, RHEL, openSUSE** — the `.rpm`:
 
   ```sh
-  sudo dnf install ./Git\ Real-<version>-1.x86_64.rpm
+  sudo dnf install "./Git Real-<version>-1.x86_64.rpm"
   ```
 
 - **Any distribution** — the AppImage, which installs nothing:
 
   ```sh
-  chmod +x Git\ Real_<version>_amd64.AppImage
-  ./Git\ Real_<version>_amd64.AppImage
+  chmod +x "Git Real_<version>_amd64.AppImage"
+  "./Git Real_<version>_amd64.AppImage"
   ```
 
 The `.deb` recommends `git`, and you should have it on any install: every network
