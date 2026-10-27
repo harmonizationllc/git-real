@@ -70,14 +70,14 @@ Survey of `main` at 4476849:
 
 ### Goals (the ticket, mapped)
 
-| Ticket item                                              | Delivered by                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------- |
-| Windows installer from the release workflow, attached    | §4 `build-windows` job and the `publish` job in `release.yml`.      |
-| NSIS `.exe` and/or MSI                                   | Both (§3). **Call.**                                                |
-| Code-signed                                              | Not in this story (§2, R4). Recipe recorded in ADR 0006; follow-up. |
-| `bundle.targets` per platform                            | §3 overlay files. **Owner** chose full symmetry for macOS next.     |
-| Known Windows gaps (splitter, `.exe` lookup, `keyring`)  | First two already closed by GR-20; `keyring` is proven by §5.       |
-| Extend `src/test/release.test.ts`                        | §6.                                                                 |
+| Ticket item                                             | Delivered by                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------- |
+| Windows installer from the release workflow, attached   | §4 `build-windows` job and the `publish` job in `release.yml`.      |
+| NSIS `.exe` and/or MSI                                  | Both (§3). **Call.**                                                |
+| Code-signed                                             | Not in this story (§2, R4). Recipe recorded in ADR 0006; follow-up. |
+| `bundle.targets` per platform                           | §3 overlay files. **Owner** chose full symmetry for macOS next.     |
+| Known Windows gaps (splitter, `.exe` lookup, `keyring`) | First two already closed by GR-20; `keyring` is proven by §5.       |
+| Extend `src/test/release.test.ts`                       | §6.                                                                 |
 
 ### Non-goals
 
@@ -122,7 +122,7 @@ Survey of `main` at 4476849:
   exercise until an Azure account exists would ship untested; the
   conditional-on-secret pattern in Actions also needs an env indirection
   that is easy to get wrong. ADR 0006 records the recipe (`bundle.windows.
-  signCommand` in `tauri.windows.conf.json` wrapping `trusted-signing-cli`,
+signCommand` in `tauri.windows.conf.json` wrapping `trusted-signing-cli`,
   Azure credentials as repository secrets, a `trusted-signing-cli` install
   step before the build), so turning it on is a small, well-described
   follow-up story. The orchestrator files that Jira story at finish.
@@ -179,7 +179,7 @@ Survey of `main` at 4476849:
   GitHub replaces spaces in release asset names with dots, so the file a
   user downloads from the release page is `Git.Real_X.Y.Z_x64-setup.exe`,
   and the existing Linux text in README `## Install` (`Git Real_<version>_
-  amd64.deb`) is already wrong for a download, though right for a CI
+amd64.deb`) is already wrong for a download, though right for a CI
   artifact. README documents the download names with the dot for all five
   files and says why in one sentence. The CI artifact keeps the original
   names; §3 confirms those from the artifact, and the dotted download names
@@ -256,13 +256,13 @@ default, `wix` keeps its defaults (language `en-US`), icons fall back to
 Bundle output paths and file names (Tauri 2.12 defaults, product name
 "Git Real", version `X.Y.Z`):
 
-| Platform | Path under `src-tauri/target/release/bundle/` | File name                        |
-| -------- | --------------------------------------------- | -------------------------------- |
-| Linux    | `deb/`                                        | `Git Real_X.Y.Z_amd64.deb`       |
-| Linux    | `rpm/`                                        | `Git Real-X.Y.Z-1.x86_64.rpm`    |
-| Linux    | `appimage/`                                   | `Git Real_X.Y.Z_amd64.AppImage`  |
-| Windows  | `nsis/`                                       | `Git Real_X.Y.Z_x64-setup.exe`   |
-| Windows  | `msi/`                                        | `Git Real_X.Y.Z_x64_en-US.msi`   |
+| Platform | Path under `src-tauri/target/release/bundle/` | File name                       |
+| -------- | --------------------------------------------- | ------------------------------- |
+| Linux    | `deb/`                                        | `Git Real_X.Y.Z_amd64.deb`      |
+| Linux    | `rpm/`                                        | `Git Real-X.Y.Z-1.x86_64.rpm`   |
+| Linux    | `appimage/`                                   | `Git Real_X.Y.Z_amd64.AppImage` |
+| Windows  | `nsis/`                                       | `Git Real_X.Y.Z_x64-setup.exe`  |
+| Windows  | `msi/`                                        | `Git Real_X.Y.Z_x64_en-US.msi`  |
 
 The builder confirms the Windows names from the first green CI artifact and
 corrects the README if Tauri's output differs.
@@ -392,7 +392,7 @@ Assertions that must change:
   runs on `ubuntu-22.04`, `build-windows` on `windows-latest`; `publish`
   has `download-artifact@v4` with `merge-multiple: true` before the
   `action-gh-release@v2` step; the release step keeps `generate_release_
-  notes`, `fail_on_unmatched_files`, the `prerelease` expression, the
+notes`, `fail_on_unmatched_files`, the `prerelease` expression, the
   `Git Real` name, and lists all five globs; no job other than `publish`
   uses `action-gh-release`; `publish` has `contents: write` either on the
   job or inherited from the workflow.

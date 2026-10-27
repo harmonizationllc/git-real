@@ -42,9 +42,11 @@ Inputs the spec implies but no task's tests would otherwise exercise, most likel
 ### Task 1: Contract tests for the per-platform config, workflows and README
 
 **Files:**
+
 - Modify: `src/test/release.test.ts`
 
 **Interfaces:**
+
 - Consumes: the existing helpers in the file (`readText`, `readJson`, `fileExists`, `extractAptPackages`, `aptStepScript`, `extractReadmeAptPackages`, `parseCargoVersion`), `yaml`'s `parse`.
 - Produces: the red tests Tasks 2 and 3 turn green. Task 2 relies on the exact keys and values asserted here; they are the spec's values and are listed in Global Constraints.
 
@@ -53,14 +55,17 @@ Inputs the spec implies but no task's tests would otherwise exercise, most likel
 Keep the `desktop template`, `icon source` and `bench workflow` describe blocks and the helpers unchanged. Rewrite the `versions`, `bundle config`, `ci workflow`, `release workflow` and `apt packages` blocks and add `platform overlays` and `README` blocks, with these tests and assertions:
 
 `versions`
+
 - `package.json, tauri.conf.json and Cargo.toml agree`: unchanged.
 - `version is MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-N`: `expect(String(pkgJson.version)).toMatch(/^\d+\.\d+\.\d+(-\d+)?$/)`.
 
 `bundle config` (base file `src-tauri/tauri.conf.json`)
+
 - `base config has no targets and no linux block`: `expect(bundle).not.toHaveProperty("targets")`; `expect(bundle).not.toHaveProperty("linux")`; `expect(bundle).not.toHaveProperty("windows")`.
 - `category is DeveloperTool`, `descriptions, homepage and license are set`, `icon list includes icon.png and every file exists`, `icons are not the Tauri template files`, `window decorations are explicit in main_window.rs`: unchanged.
 
 `platform overlays` (new)
+
 - `exactly linux and windows overlays exist and each names its targets`: `readdirSync(resolve(ROOT, "src-tauri"))` filtered by `/^tauri\.([a-z]+)\.conf\.json$/`, platform names sorted `toEqual(["linux", "windows"])`; for each file, `Array.isArray(bundle.targets)` and `length > 0`.
 - `linux overlay has the Linux targets and the deb/rpm block`: `targets` `toEqual(["deb", "rpm", "appimage"])`; `linux.deb.section === "vcs"`; `linux.deb.recommends` contains `"git"`; `linux.deb.desktopTemplate === "packaging/git-real.desktop"`; `linux.rpm.desktopTemplate === "packaging/git-real.desktop"`; `fileExists("src-tauri/packaging/git-real.desktop")`. (This replaces the old `deb recommends git and both desktop templates exist`.)
 - `windows overlay has nsis and msi with a per-user NSIS install`: `targets` `toEqual(["nsis", "msi"])`; `windows.nsis.installMode === "currentUser"`.
@@ -68,12 +73,14 @@ Keep the `desktop template`, `icon source` and `bench workflow` describe blocks 
 - `overlays carry the Tauri schema`: each overlay's `$schema === "https://schema.tauri.app/config/2"`.
 
 `ci workflow`
+
 - `has build-and-test, package-linux and package-windows jobs and no package job`: `toHaveProperty` for the three, `not.toHaveProperty("package")`.
 - `package-linux bundles on ubuntu-22.04 and uploads the three globs`: the old `package` test body against `jobs["package-linux"]`, plus `expect(jobs["package-linux"].name).toBe("Package (Linux)")`.
 - `package-windows bundles nsis and msi on windows-latest under bash and uploads both globs`: `runs-on === "windows-latest"`; `name === "Package (Windows)"`; the build step's `run` contains `npm run tauri build` and `--bundles nsis,msi`; every step with a `run` has `shell === "bash"`; no step's `run` contains `apt-get`; the `actions/upload-artifact@v4` step has `with.name` containing `git-real-windows-`, `with.path` containing both `…/nsis/*.exe` and `…/msi/*.msi`, `with["if-no-files-found"] === "error"`, `with["retention-days"] === 14`.
 - `cancels in-progress runs per ref`: unchanged.
 
 `release workflow` (all against `parse(readText(".github/workflows/release.yml"))`)
+
 - `runs on v tags only`: `on.push.tags` `toEqual(["v*"])`, no `branches`. (Permissions move to the next test.)
 - `has check-version, build-linux, build-windows and publish jobs`: `Object.keys(jobs).sort()` `toEqual(["build-linux", "build-windows", "check-version", "publish"])`.
 - `check-version guards the tag and rejects non-numeric pre-release identifiers`: `jobs["check-version"].steps` contains a step named `Check the tag matches the app version` whose `run` contains `GITHUB_REF_NAME`, `tauri.conf.json` and the literal text `(-[0-9]+)?`.
@@ -85,9 +92,11 @@ Keep the `desktop template`, `icon source` and `bench workflow` describe blocks 
 - `has release-scoped concurrency to prevent duplicate releases`: unchanged.
 
 `apt packages`
+
 - `both workflows and the README list the same packages`: same body, reading `ciConf.jobs["package-linux"].steps` and `releaseConf.jobs["build-linux"].steps`.
 
 `README` (new; helper `section(readme, heading)` returns the text from `\n## <heading>` to the next `\n## `)
+
 - `intro no longer calls Windows a follow-on target`: `readme.slice(0, readme.indexOf("\n## "))` does not match `/Windows[^.\n]*follow-on/`.
 - `install section documents the Windows installers and the SmartScreen prompt`: `section("Install")` contains `-setup.exe`, `.msi`, `SmartScreen`, `msiexec`.
 - `install section spells download names Git.Real_`: `section("Install")` contains `Git.Real_` and does not contain `Git Real_`.
@@ -115,6 +124,7 @@ git commit -m "test(GR-24): pin per-platform Tauri overlays, Windows package job
 ### Task 2: Per-platform config, workflows and documentation
 
 **Files:**
+
 - Modify: `src-tauri/tauri.conf.json` (remove `bundle.targets` and `bundle.linux`)
 - Create: `src-tauri/tauri.linux.conf.json`, `src-tauri/tauri.windows.conf.json` (exact contents in spec §3)
 - Modify: `.github/workflows/ci.yml` (rename `package` → `package-linux`; add `package-windows`)
@@ -124,6 +134,7 @@ git commit -m "test(GR-24): pin per-platform Tauri overlays, Windows package job
 - Modify: `docs/adr/0003-release-pipeline-and-update-check.md` (one line under Consequences)
 
 **Interfaces:**
+
 - Consumes: Task 1's assertions (the values are in Global Constraints and spec §3–§4).
 - Produces: the job ids `package-windows` and `build-windows` that Task 3 watches on CI, and the artifact name prefix `git-real-windows-` Task 3 downloads.
 
@@ -139,11 +150,13 @@ Expected: PASS.
 - [ ] **Step 3: Prove the Linux overlay is read by building once**
 
 Run (from the repo root, allow 10 minutes):
+
 ```sh
 npm run tauri build -- --bundles deb
 dpkg-deb -f "src-tauri/target/release/bundle/deb/Git Real_0.1.0_amd64.deb" Section Recommends
 dpkg-deb -c "src-tauri/target/release/bundle/deb/Git Real_0.1.0_amd64.deb" | grep '\.desktop$'
 ```
+
 Expected: `Section: vcs` and `Recommends: git` in the first output, one `.desktop` path in the second. Those two fields exist only because `bundle.linux` in the overlay was merged. If `Recommends` is missing, the overlay is not being read: stop and report; do not work around it by putting the block back in the base file.
 
 - [ ] **Step 4: Edit `ci.yml`**
@@ -151,45 +164,45 @@ Expected: `Section: vcs` and `Recommends: git` in the first output, one `.deskto
 Rename job id `package` to `package-linux`, leaving its `name` and steps untouched. Add after it:
 
 ```yaml
-  package-windows:
-    name: Package (Windows)
-    runs-on: windows-latest
+package-windows:
+  name: Package (Windows)
+  runs-on: windows-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: npm
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
+    - name: Cache Rust build
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
 
-      - name: Install npm dependencies
-        shell: bash
-        run: npm ci
+    - name: Install npm dependencies
+      shell: bash
+      run: npm ci
 
-      - name: Build Windows bundles
-        shell: bash
-        run: npm run tauri build -- --bundles nsis,msi
+    - name: Build Windows bundles
+      shell: bash
+      run: npm run tauri build -- --bundles nsis,msi
 
-      - name: Upload bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: git-real-windows-${{ github.sha }}
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-          retention-days: 14
-          if-no-files-found: error
+    - name: Upload bundles
+      uses: actions/upload-artifact@v4
+      with:
+        name: git-real-windows-${{ github.sha }}
+        path: |
+          src-tauri/target/release/bundle/nsis/*.exe
+          src-tauri/target/release/bundle/msi/*.msi
+        retention-days: 14
+        if-no-files-found: error
 ```
 
 - [ ] **Step 5: Rewrite the jobs in `release.yml`**
@@ -215,8 +228,9 @@ Expected: PASS.
 - [ ] **Step 7: Update the README**
 
 Edits, each one place:
+
 - Intro line 8: `Linux (Wayland, with the COSMIC desktop as the primary target) is the first-class platform. Windows installers are built alongside the Linux packages; macOS is the follow-on target.`
-- `## Install`: in the first paragraph, replace the sentence that starts `The file names carry the product name with a space in it` with: `The product name has a space in it, and GitHub replaces that space with a dot when it serves a release file, so a download is named `Git.Real_<version>_amd64.deb`; quote the path.` Change the three Linux file names in the commands to `Git.Real_…`. The string `Git Real_` must not remain anywhere in the section. Add a fourth bullet group **Windows** after the AppImage bullet: download `Git.Real_<version>_x64-setup.exe` and run it; because the installer is not yet code-signed, Windows SmartScreen shows "Windows protected your PC": choose **More info**, then **Run anyway**; the installer is per-user and needs no administrator rights; for managed deployment use the per-machine MSI, `msiexec /i "Git.Real_<version>_x64_en-US.msi"`; Windows 10 and 11 ship WebView2, and the installer downloads it on a machine that lacks it. Extend the final `git` paragraph with: `On Windows, install [Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`.`
+- `## Install`: in the first paragraph, replace the sentence that starts `The file names carry the product name with a space in it` with: `The product name has a space in it, and GitHub replaces that space with a dot when it serves a release file, so a download is named `Git.Real_<version>_amd64.deb`; quote the path.` Change the three Linux file names in the commands to `Git.Real_…`. The string `Git Real_` must not remain anywhere in the section. Add a fourth bullet group **Windows** after the AppImage bullet: download `Git.Real_<version>_x64-setup.exe` and run it; because the installer is not yet code-signed, Windows SmartScreen shows "Windows protected your PC": choose **More info**, then **Run anyway**; the installer is per-user and needs no administrator rights; for managed deployment use the per-machine MSI, `msiexec /i "Git.Real_<version>_x64_en-US.msi"`; Windows 10 and 11 ship WebView2, and the installer downloads it on a machine that lacks it. Extend the final `git` paragraph with: `On Windows, install [Git for Windows](https://gitforwindows.org/) and let it add `git`to`PATH`.`
 - `## Development`: after the apt block's bullet, add a bullet **Building on Windows**: Rust stable with the MSVC toolchain (rustup's default on Windows), Node.js 24, Visual Studio Build Tools 2022 with the "Desktop development with C++" workload, and WebView2 (preinstalled on Windows 10 and 11). `npm run tauri build -- --bundles nsis,msi` produces the installers under `src-tauri\target\release\bundle\`.
 - `## Releasing`: the paragraph after the steps becomes: the `Release` workflow first checks the tag against the version, then builds the `.deb`, `.rpm` and AppImage on Linux and the NSIS `.exe` and `.msi` on Windows in parallel, then publishes one GitHub release carrying all five files with generated release notes. Replace the pre-release sentence: `A pre-release tag contains a hyphen followed by a plain integer (for example `vX.Y.Z-1`), because the Windows MSI format accepts only a numeric pre-release identifier; the workflow rejects any other shape. It is marked as a pre-release, and the in-app update check reads the latest non-prerelease release, so pre-releases do not prompt users to update.`
 - `## Status`: `Linux packages are published on each release` → `Linux packages and Windows installers are published on each release`.
@@ -244,10 +258,12 @@ git commit -m "feat(GR-24): per-platform Tauri overlays, Windows package jobs, s
 ### Task 3: Prove the Windows build on CI and record the probe
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-10-27-gr24-windows-build-design.md` (§5.1 Probe results)
 - Possibly modify, under spec R8 only: files in `src-tauri/src/`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `README.md` (file names)
 
 **Interfaces:**
+
 - Consumes: the branch with Tasks 1–2 committed; job id `package-windows`; artifact prefix `git-real-windows-`.
 - Produces: a green `Package (Windows)` run on the branch, the real Windows file names and sizes in spec §5.1.
 
@@ -264,18 +280,21 @@ Expected: `Package (Windows): success`, and `Package (Linux)`, `Core crate (Wind
 - [ ] **Step 3: On a Windows failure, apply spec R8 and repeat**
 
 Run: `gh run view <id> --log-failed | tail -120`. Classify the failure:
+
 - A gate, an import, or a one-line platform branch in `src-tauri/src/` fixes it → make the change with a one-line comment naming GR-24, run `cd src-tauri && cargo build` locally to confirm Linux still compiles, commit as `fix(GR-24): <what failed on Windows and the gate>`, push, return to Step 2.
 - The build step itself needs an adjustment (a missing tool on the runner, the `core.autocrlf` step the spec left to the builder, a `timeout-minutes`) → edit the two workflows identically for `package-windows` and `build-windows`, run `npx vitest run src/test/release.test.ts`, commit, push, return to Step 2.
 - Anything in `git-real-core`, or anything larger → stop and report to the orchestrator with the log excerpt. Do not work around it.
-Record every round (run id, failure in one line, fix in one line) for §5.1.
+  Record every round (run id, failure in one line, fix in one line) for §5.1.
 
 - [ ] **Step 4: Download the green artifact and check the installers**
 
 Run, in the scratchpad directory:
+
 ```sh
 gh run download <id> -n git-real-windows-$(git rev-parse HEAD) -D gr24-windows
 find gr24-windows -type f -printf '%s %p\n'
 ```
+
 Expected: exactly one `.exe` and one `.msi`, each larger than 5 242 880 bytes. Record the file names and sizes.
 
 - [ ] **Step 5: Fill §5.1 and correct the README if the names differ**
