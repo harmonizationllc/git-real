@@ -524,8 +524,29 @@ describe("release workflow", () => {
     expect(String(w["prerelease"])).toContain("contains(github.ref_name, '-')");
     expect(String(w["name"])).toContain("Git Real");
     const files = String(w["files"]);
-    for (const ext of ["deb", "rpm", "AppImage", "exe", "msi"]) {
-      expect(files).toContain(`release-assets/*.${ext}`);
+    // upload-artifact@v4 keeps paths relative to the globs' common ancestor, so
+    // after the merge each file sits under its bundle folder (release-assets/deb/...).
+    // Derive the expected publish globs from the upload paths, never hard-code them.
+    const BUNDLE_DIR = "src-tauri/target/release/bundle/";
+    const uploadedGlobs = ["build-linux", "build-windows"].flatMap((name) =>
+      String((uploadOf(name)?.with as Record<string, unknown> | undefined)?.path ?? "")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith(BUNDLE_DIR))
+        .map((l) => l.slice(BUNDLE_DIR.length)),
+    );
+    expect(uploadedGlobs).toHaveLength(5);
+    for (const glob of uploadedGlobs) {
+      expect(files).toContain(`release-assets/${glob}`);
+    }
+    const fileLines = files
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    expect(fileLines).toHaveLength(5);
+    // A flat release-assets/*.ext glob matches nothing after the merge
+    for (const line of fileLines) {
+      expect(line, `flat glob ${line}`).not.toMatch(/^release-assets\/\*\./);
     }
 
     // Exactly one release step across every job, so assets land on one release
