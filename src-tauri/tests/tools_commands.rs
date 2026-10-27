@@ -419,3 +419,87 @@ fn open_in_editor_without_a_repo_id_passes_the_absolute_path_unchanged() {
         "expected absolute path unchanged in argv: {argv}"
     );
 }
+
+/// GR-20 §3: with a repo id, only repo-relative paths reach the editor.
+#[test]
+fn open_in_editor_with_a_repo_id_rejects_paths_that_leave_the_repository() {
+    let git_dir = tempfile::tempdir().unwrap();
+    let argv_file = git_dir.path().join("argv.txt");
+    let argv_file_str = argv_file.to_str().unwrap();
+    let editor_path = {
+        let p = git_dir.path().join("fake_editor");
+        let body = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{argv_file_str}'\n");
+        fs::write(&p, &body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    let editor_cmd = format!("sh {}", editor_path.display());
+
+    let (_repo_dir, repo_path) = common::temp_repo_with_commit();
+    let reg = RepoRegistry::default();
+    let id = open_repo_in_registry(&reg, &repo_path);
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, &editor_cmd);
+
+    for bad in [
+        "/etc/hosts",
+        "../outside.txt",
+        "src/../../x",
+        "",
+        ".git/config",
+        ".GIT/config",
+        "a//b",
+    ] {
+        let err = open_in_editor_inner(&reg, &store, Some(id), bad)
+            .expect_err(&format!("path {bad:?} must be rejected"));
+        assert_eq!(err.kind, AppErrorKind::PathNotFound, "path {bad:?}");
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(!argv_file.exists(), "no editor may have been spawned");
+}
+
+/// Review Focus 4: a trailing slash is trimmed and the directory opens.
+#[test]
+fn open_in_editor_with_a_repo_id_opens_a_directory_given_with_a_trailing_slash() {
+    let git_dir = tempfile::tempdir().unwrap();
+    let argv_file = git_dir.path().join("argv.txt");
+    let argv_file_str = argv_file.to_str().unwrap();
+    let editor_path = {
+        let p = git_dir.path().join("fake_editor");
+        let body = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{argv_file_str}'\n");
+        fs::write(&p, &body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    let editor_cmd = format!("sh {}", editor_path.display());
+
+    let (_repo_dir, repo_path) = common::temp_repo_with_commit();
+    fs::create_dir(repo_path.join("src")).unwrap();
+    let reg = RepoRegistry::default();
+    let id = open_repo_in_registry(&reg, &repo_path);
+    let (_sdir, spath) = common::temp_file_path("settings.json");
+    let store = store_with_editor(spath, &editor_cmd);
+
+    open_in_editor_inner(&reg, &store, Some(id), "src/").unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !argv_file.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "editor argv file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // The editor may still be writing; give it a moment to finish.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let argv = fs::read_to_string(&argv_file).unwrap();
+    let expected = repo_path.join("src");
+    assert!(
+        argv.lines().any(|l| l == expected.to_str().unwrap()),
+        "expected the directory without a trailing slash in argv: {argv}"
+    );
+    assert!(
+        !argv.contains("src/"),
+        "trailing slash must be trimmed: {argv}"
+    );
+}
