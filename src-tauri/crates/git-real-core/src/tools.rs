@@ -69,13 +69,65 @@ impl ExternalDiffScope {
     }
 }
 
-/// Splits a shell-style command into argv.
+/// The command-line convention a user's editor command is written in.
 ///
-/// A backslash escapes the next character outside single quotes; inside single
-/// quotes nothing escapes; an explicit empty quoted argument (`""`) is kept; a
-/// trailing lone backslash is literal. A blank command is [`ToolError::EmptyCommand`]
-/// and an unterminated quote is [`ToolError::UnterminatedQuote`].
+/// Settings hold the editor command as one string, and the right way to split
+/// it depends on the platform: POSIX shell quoting on Linux and macOS, the
+/// MSVCRT / `CommandLineToArgvW` rules on Windows, where `\` is a path
+/// separator rather than an escape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandSyntax {
+    Posix,
+    Windows,
+}
+
+impl CommandSyntax {
+    /// The syntax of the host this binary was built for: [`CommandSyntax::Windows`]
+    /// on Windows, [`CommandSyntax::Posix`] everywhere else. The native
+    /// wrappers use it so callers never have to pick a syntax themselves.
+    pub fn native() -> Self {
+        if cfg!(windows) {
+            CommandSyntax::Windows
+        } else {
+            CommandSyntax::Posix
+        }
+    }
+}
+
+/// Splits a command into argv under the host's [`CommandSyntax::native`]
+/// rules. This is what the editor launch uses; [`split_command_with`]
+/// documents the rules of each syntax.
 pub fn split_command(cmd: &str) -> Result<Vec<String>, ToolError> {
+    split_command_with(CommandSyntax::native(), cmd)
+}
+
+/// Splits a command into argv under an explicit `syntax`, so both rule sets
+/// can be exercised on any host.
+///
+/// Under [`CommandSyntax::Posix`] a backslash escapes the next character
+/// outside single quotes; inside single quotes nothing escapes; a trailing
+/// lone backslash is literal.
+///
+/// Under [`CommandSyntax::Windows`] arguments are separated by spaces and
+/// tabs; a double quote starts or ends a quoted span and is dropped; inside a
+/// quoted span `""` is one literal quote (the CRT rule since 2008); backslashes
+/// are literal unless a run of them is followed by a double quote, when `2n`
+/// backslashes give `n` and the quote acts as a quote, and `2n+1` give `n`
+/// and a literal `"`; single quotes are ordinary characters.
+///
+/// Under both, an explicit empty quoted argument (`""`) is kept, a blank
+/// command is [`ToolError::EmptyCommand`] and an unterminated quote is
+/// [`ToolError::UnterminatedQuote`] (Windows itself would close it silently;
+/// the same mistake is reported the same way on every platform).
+pub fn split_command_with(syntax: CommandSyntax, cmd: &str) -> Result<Vec<String>, ToolError> {
+    match syntax {
+        CommandSyntax::Posix => split_posix(cmd),
+        CommandSyntax::Windows => split_windows(cmd),
+    }
+}
+
+/// The POSIX-shell splitter behind [`split_command_with`].
+fn split_posix(cmd: &str) -> Result<Vec<String>, ToolError> {
     #[derive(PartialEq)]
     enum Quote {
         None,
@@ -139,6 +191,71 @@ pub fn split_command(cmd: &str) -> Result<Vec<String>, ToolError> {
     }
 
     if quote != Quote::None {
+        return Err(ToolError::UnterminatedQuote);
+    }
+    if has_token {
+        args.push(current);
+    }
+    if args.is_empty() {
+        return Err(ToolError::EmptyCommand);
+    }
+    Ok(args)
+}
+
+/// The Windows (MSVCRT) splitter behind [`split_command_with`].
+fn split_windows(cmd: &str) -> Result<Vec<String>, ToolError> {
+    let mut args: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut has_token = false;
+    let mut in_quotes = false;
+    let mut chars = cmd.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                let mut run = 1;
+                while chars.peek() == Some(&'\\') {
+                    chars.next();
+                    run += 1;
+                }
+                has_token = true;
+                if chars.peek() == Some(&'"') {
+                    current.extend(std::iter::repeat_n('\\', run / 2));
+                    if run % 2 == 1 {
+                        // An odd run escapes the quote: it is a literal `"`.
+                        chars.next();
+                        current.push('"');
+                    }
+                    // After an even run the quote is left for the next
+                    // iteration, where it opens or closes a quoted span.
+                } else {
+                    current.extend(std::iter::repeat_n('\\', run));
+                }
+            }
+            '"' => {
+                has_token = true;
+                if in_quotes && chars.peek() == Some(&'"') {
+                    // `""` inside a quoted span is one literal quote.
+                    chars.next();
+                    current.push('"');
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            }
+            ' ' | '\t' if !in_quotes => {
+                if has_token {
+                    args.push(std::mem::take(&mut current));
+                    has_token = false;
+                }
+            }
+            c => {
+                current.push(c);
+                has_token = true;
+            }
+        }
+    }
+
+    if in_quotes {
         return Err(ToolError::UnterminatedQuote);
     }
     if has_token {

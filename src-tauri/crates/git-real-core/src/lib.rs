@@ -47,7 +47,7 @@ pub use remote::auth::Credentials;
 pub use repo::RepoSession;
 pub use settings::{SETTINGS_VERSION, Settings, SettingsError, SettingsFile, SettingsPatch};
 pub use tools::{
-    DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff, open_external_merge,
-    open_in_editor, split_command,
+    CommandSyntax, DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff,
+    open_external_merge, open_in_editor, split_command, split_command_with,
 };
 pub use update::{UpdateInfo, Version};
