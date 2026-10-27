@@ -55,14 +55,27 @@ impl SettingsStore {
     /// Applies `patch`, verifying a newly set git executable, persisting the
     /// result and updating the override. On any error the stored settings and
     /// the override are left unchanged.
+    ///
+    /// The lock is never held while git is verified, so reads and other
+    /// updates proceed meanwhile. The patch is first applied to a snapshot as
+    /// a dry run (so an invalid patch never spawns git), the executable the
+    /// patch names is verified unlocked, and the patch is then re-applied to
+    /// the current settings under the lock, so overlapping updates each land
+    /// on top of the other's result.
     pub fn update(&self, patch: &SettingsPatch) -> Result<Settings, AppError> {
+        // Step 1: dry run on a snapshot; the lock is released at once.
+        let snapshot = self.get();
+        snapshot.apply(patch)?;
+        // Step 2: verify a newly named git executable with no lock held.
+        if let Some(Some(path)) = patch.git.as_ref().and_then(|g| g.executable.as_ref())
+            && snapshot.git.executable.as_ref() != Some(path)
+        {
+            git_cli::verify(path)?;
+        }
+        // Step 3: apply to the current settings, save, swap.
         let mut guard = self.lock();
         let next = guard.apply(patch)?;
         let git_changed = next.git.executable != guard.git.executable;
-        // Verify a newly set git executable before persisting it.
-        if let Some(path) = next.git.executable.as_ref().filter(|_| git_changed) {
-            git_cli::verify(path)?;
-        }
         self.save(&next).map_err(GitError::Io)?;
         *guard = next.clone();
         // Only touch the process-wide override when the executable changed, so
