@@ -456,41 +456,19 @@ impl Settings {
             "layout.sidebarWidth",
             warnings,
         );
-        if let Some(h) = self.layout.branches_height {
-            self.layout.branches_height = Some(bounded(
-                h,
-                SECTION_HEIGHT_MIN,
-                u32::MAX,
-                "layout.branchesHeight",
-                warnings,
-            ));
-        }
-        if let Some(h) = self.layout.stashes_height {
-            self.layout.stashes_height = Some(bounded(
-                h,
-                SECTION_HEIGHT_MIN,
-                u32::MAX,
-                "layout.stashesHeight",
-                warnings,
-            ));
-        }
-        if let Some(h) = self.layout.tags_height {
-            self.layout.tags_height = Some(bounded(
-                h,
-                SECTION_HEIGHT_MIN,
-                u32::MAX,
-                "layout.tagsHeight",
-                warnings,
-            ));
-        }
-        if let Some(h) = self.layout.pull_requests_height {
-            self.layout.pull_requests_height = Some(bounded(
-                h,
-                SECTION_HEIGHT_MIN,
-                u32::MAX,
+        let layout = &mut self.layout;
+        for (height, field) in [
+            (&mut layout.branches_height, "layout.branchesHeight"),
+            (&mut layout.stashes_height, "layout.stashesHeight"),
+            (&mut layout.tags_height, "layout.tagsHeight"),
+            (
+                &mut layout.pull_requests_height,
                 "layout.pullRequestsHeight",
-                warnings,
-            ));
+            ),
+        ] {
+            if let Some(h) = *height {
+                *height = Some(bounded(h, SECTION_HEIGHT_MIN, u32::MAX, field, warnings));
+            }
         }
         let window = self.window.clone().clamp_to_min();
         if window != self.window {
