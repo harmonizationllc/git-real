@@ -305,12 +305,19 @@ impl ToolEnv {
 /// runs a `.cmd`/`.bat` launcher (VS Code's `code` is `code.cmd`) only when
 /// handed its full name, so the editor launch resolves the name first.
 ///
+/// The candidates for `program` are the name as given, only when its last
+/// component already has an extension (a `.` after the last separator that is
+/// not the component's first character), then the name with each `PATHEXT`
+/// extension appended, in order. A bare name is never probed as given: a
+/// standard VS Code install puts an extensionless `sh` script `code` beside
+/// `code.cmd`, `CreateProcess` cannot run the script, and `cmd.exe` would
+/// pick `code.cmd`.
+///
 /// A `program` containing `\` or `/` or starting with a drive prefix is not
-/// searched on `PATH`: it is probed as given, then with each `PATHEXT`
-/// extension appended. Otherwise each Windows-absolute `PATH` entry (`X:\`,
-/// `X:/` or `\\`; empty and relative entries are skipped) is probed the same
-/// way as `dir\program`. A `program` that already ends in a `PATHEXT`
-/// extension (compared case-insensitively) is probed only as given.
+/// searched on `PATH`: its candidates are probed where it points. Otherwise
+/// each Windows-absolute `PATH` entry (`X:\`, `X:/` or `\\`; empty and
+/// relative entries are skipped) is tried in order, probing
+/// `dir\<candidate>` for each candidate. The first file found wins.
 /// Extensions are used as written after trimming; an empty `PATHEXT` means
 /// [`DEFAULT_PATHEXT`]. `PATH` is split on `;` and candidates are joined with
 /// `\` here rather than by the host, so this behaves the same on every OS.
@@ -331,14 +338,12 @@ pub fn resolve_program(
         .map(str::trim)
         .filter(|ext| !ext.is_empty())
         .collect();
-    let has_ext = exts.iter().any(|ext| ends_with_ignore_case(program, ext));
+    let name = program.rsplit(['\\', '/']).next().unwrap_or(program);
+    let has_ext = name.rfind('.').is_some_and(|dot| dot > 0);
 
     let probe = |base: &str| -> Option<PathBuf> {
-        if is_file(Path::new(base)) {
+        if has_ext && is_file(Path::new(base)) {
             return Some(PathBuf::from(base));
-        }
-        if has_ext {
-            return None;
         }
         exts.iter()
             .map(|ext| format!("{base}{ext}"))
@@ -371,12 +376,6 @@ fn has_drive_prefix(s: &str) -> bool {
 fn is_windows_absolute(s: &str) -> bool {
     s.starts_with(r"\\")
         || (has_drive_prefix(s) && matches!(s.as_bytes().get(2), Some(b'\\' | b'/')))
-}
-
-fn ends_with_ignore_case(s: &str, suffix: &str) -> bool {
-    s.len() > suffix.len()
-        && s.get(s.len() - suffix.len()..)
-            .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
 }
 
 /// Spawns an editor detached, appending `path` to the parsed command. When
