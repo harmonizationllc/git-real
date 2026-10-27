@@ -4,7 +4,7 @@
 during git verify, non-Linux tool commands" (Task, relates to GR-14).
 **Builds on:** GR-14 §2 (external tools, settings store) and GR-29 (one
 settings file).
-**Status:** draft for the owner's review, 2026-10-27.
+**Status:** implemented on branch `feature/gr-20-tools-hardening`; Windows probe results in §6.1
 
 ## 1. Intent
 
@@ -339,6 +339,73 @@ The job is a required part of the gate for this ticket. Whether it becomes
 a required status check for `main` is the owner's call at merge time; the
 recommendation is yes, since it costs nothing to keep and a red Windows
 job is the whole point.
+
+### 6.1 Probe results
+
+Six CI rounds on `feature/gr-20-tools-hardening`. The job ended green at
+run 40511357273 with the whole crate selected: clippy clean and every core
+test binary run on Windows, 0 failed. Two job changes were made by
+controller ruling during the probe. The test step runs with
+`--no-fail-fast`, so one run reports every failing binary. A step before it
+runs `git config --system core.autocrlf false`, because Git for Windows sets
+autocrlf system-wide and libgit2 reads that file (GR-33).
+
+Rule 1, gated or allowed in this ticket:
+
+- `tests/common/mod.rs`: `fake_git` and `install_hook` import
+  `std::os::unix`. They were already `#[cfg(unix)]` before the probe; no
+  edit.
+- `tests/commit_error_paths.rs`: clippy unused imports (`git_commit`,
+  `clone`, `Progress`, `ProgressSink`) and dead `NullSink`, `ROLE`, `OUT`,
+  all used only by the unix GIT_DIR probe. Gated `#[cfg(unix)]`.
+- `tests/clone.rs`: clippy unused imports `Credentials`, `HELPER`, used only
+  by unix fake-git tests. Gated `#[cfg(unix)]`.
+- `tests/tools_windows.rs`: clippy `collapsible_if` in the poll loop of
+  `a_bare_name_resolves_to_a_cmd_file_on_path_and_runs_through_cmd_exe`.
+  Function-scoped `#[allow(clippy::collapsible_if)]` with a comment.
+- `tests/tags_coverage.rs`: compile error, ungated
+  `std::os::unix::ffi::OsStrExt` for
+  `list_tags_skips_a_tag_whose_ref_is_not_utf8`. Test and its two imports
+  gated `#[cfg(unix)]`, matching its twin in `branches.rs`.
+- 22 tests whose fixture cannot create its file name on Windows, failing in
+  `common::write_file` or `common::stage` before core runs. Gated
+  `#[cfg(unix)]` with a one-line comment, plus the helper
+  `repo_with_trailing_space_files`.
+  - Control or glob characters (os error 123): `diff.rs`
+    `diff_pathspec_glob_characters_match_literally`; four `ignore.rs`
+    `add_to_gitignore_*` tests (carriage return, literal glob, line break,
+    newline); ten `index_ops.rs` tests (`*_treats_glob_characters_literally`
+    for discard, stage and unstage; leading newline, carriage return,
+    newline, tab and vertical-tab/form-feed names).
+  - Trailing spaces, which Windows strips: seven `index_ops.rs` tests on
+    `pad ` and `two  `.
+
+Rule 2: no compile error in core `src/` on Windows.
+
+Rule 3, ticketed by the main session:
+
+- GR-32: NTFS loose refs and file names are case-insensitive.
+  `branches.rs` `list_sorts_local_branches_by_name_in_byte_order`
+  (`BranchExists("alpha")`) and `status.rs`
+  `status_entries_sorted_bytewise_with_mixed_case_and_nesting`. Gated.
+- GR-33: Git for Windows sets `core.autocrlf=true` system-wide, so 30 tests
+  in `index_ops`, `log`, `merge`, `patch_apply`, `stash` and `switch` saw
+  CRLF conversion. Not gated: the job disables autocrlf before the tests,
+  and all 30 pass.
+- GR-34 (bug): libgit2 on Windows does not honour the backslash pathspec
+  escape, so `unstage_paths` of a `!` or `#` name is a silent no-op.
+  `index_ops.rs` `unstage_paths_unstages_file_with_leading_bang` and
+  `unstage_paths_hash_prefixed_name_unstages_only_that_file`. Gated.
+- GR-35 (bug): renaming a remote whose URL is a local `C:\` path leaves an
+  unescaped URL in `.git/config` ("invalid escape").
+  `remote_sync.rs`
+  `update_remote_rename_moves_tracking_refs_and_upstream_config`. Gated.
+- GR-36: `/definitely/missing` is not absolute on Windows; the test data is
+  Unix-shaped. `settings.rs`
+  `apply_rejects_a_missing_clone_dir_and_a_relative_git_path`,
+  `apply_does_not_recheck_an_unpatched_missing_clone_dir`,
+  `lenient_relative_paths_never_panic`, and their now-unix-only imports.
+  Gated.
 
 ## 7. Verification
 
