@@ -8,7 +8,7 @@ mod common;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use git_real_core::git_cli::{configured_path, set_configured_path};
 use git_real_lib::settings_store::SettingsStore;
@@ -501,4 +501,128 @@ fn ensure_file_exists_leaves_an_existing_file_untouched() {
     assert_eq!(fs::read_to_string(&path).unwrap(), original);
     let after = fs::metadata(&path).unwrap().modified().unwrap();
     assert_eq!(before, after, "an existing file must not be rewritten");
+}
+
+// ─── GR-20: the settings mutex is not held across git verification ───────────
+
+/// A fake git whose `--version` touches `<dir>/started`, blocks until
+/// `<dir>/go` exists, then prints a valid version line. A watchdog thread
+/// writes `go` after 3 s so a test against a lock-holding `update` still
+/// terminates (and then fails on its timing assertion) instead of hanging.
+fn blocking_fake_git(dir: &std::path::Path) -> PathBuf {
+    let script = format!(
+        "touch '{d}/started'\nwhile [ ! -f '{d}/go' ]; do sleep 0.02; done\necho git version 2.0.0\nexit 0",
+        d = dir.display()
+    );
+    let git = common::fake_git_script(dir, &script);
+    let go = dir.join("go");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let _ = fs::write(go, "");
+    });
+    git
+}
+
+/// GR-20 §4 and Review Focus 2: reads and other patches proceed while a new
+/// git executable is being verified, and nothing is lost.
+/// RED terminates through the 3 s watchdog `go` write, then fails on timing.
+#[test]
+fn update_does_not_hold_the_lock_while_verifying_the_git_executable() {
+    use git_real_core::settings::Theme;
+
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake_git = blocking_fake_git(dir.path());
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    let store = Arc::new(SettingsStore::load(path));
+
+    let git_patch: git_real_core::SettingsPatch = serde_json::from_str(&format!(
+        r#"{{"git":{{"executable":"{}"}}}}"#,
+        fake_git.display()
+    ))
+    .unwrap();
+    let theme_patch: git_real_core::SettingsPatch =
+        serde_json::from_str(r#"{"appearance":{"theme":"dark"}}"#).unwrap();
+
+    let handle = std::thread::spawn({
+        let store = Arc::clone(&store);
+        move || store.update(&git_patch)
+    });
+
+    // Wait (bounded) until the fake git is running and blocked.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !dir.path().join("started").exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "fake git never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    let t = std::time::Instant::now();
+    let snapshot = store.get();
+    let get_elapsed = t.elapsed();
+    let t2 = std::time::Instant::now();
+    let theme_result = store.update(&theme_patch);
+    let theme_elapsed = t2.elapsed();
+
+    // Always unblock before asserting so a failure never leaves git running.
+    fs::write(dir.path().join("go"), "").unwrap();
+    let saved = handle.join().unwrap();
+
+    assert!(
+        get_elapsed < std::time::Duration::from_millis(500),
+        "get() blocked for {get_elapsed:?} while git was being verified"
+    );
+    assert!(
+        theme_elapsed < std::time::Duration::from_millis(500),
+        "a second update blocked for {theme_elapsed:?} while git was being verified"
+    );
+    assert!(snapshot.git.executable.is_none());
+    theme_result.unwrap();
+    let saved = saved.unwrap();
+    assert_eq!(saved.git.executable.as_deref(), Some(fake_git.as_path()));
+    assert_eq!(saved.appearance.theme, Theme::Dark);
+    assert_eq!(store.get().appearance.theme, Theme::Dark);
+    assert_eq!(configured_path(), Some(fake_git));
+}
+
+/// Spec §4.2 step 1: an invalid patch is rejected before git is spawned.
+#[test]
+fn update_rejects_an_invalid_patch_before_spawning_git() {
+    use git_real_lib::error::AppErrorKind;
+
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _reset = ResetConfigured;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fake_git = blocking_fake_git(dir.path());
+    let (_sdir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+
+    let json = format!(
+        r#"{{"git":{{"executable":"{}"}},"clone":{{"defaultDir":"relative/path"}}}}"#,
+        fake_git.display()
+    );
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(&json).unwrap();
+
+    let t = std::time::Instant::now();
+    let result = store.update(&patch);
+    let elapsed = t.elapsed();
+    // Unblock any fake git that was spawned so nothing lingers.
+    let _ = fs::write(dir.path().join("go"), "");
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "update took {elapsed:?}; git was probably spawned before validation"
+    );
+    assert!(
+        !dir.path().join("started").exists(),
+        "git must not be spawned for an invalid patch"
+    );
+    assert_eq!(result.unwrap_err().kind, AppErrorKind::InvalidSettings);
+    assert!(!path.exists(), "nothing may be saved");
+    assert_eq!(configured_path(), None);
 }

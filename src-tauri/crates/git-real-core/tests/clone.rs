@@ -4,6 +4,7 @@ use common::git_available;
 
 use std::path::Path;
 
+#[cfg(unix)] // only the fake-git (unix) tests use these
 use git_real_core::remote::auth::{Credentials, HELPER};
 use git_real_core::remote::clone;
 use git_real_core::{GitError, Progress, ProgressPhase, ProgressSink, RepoSession};

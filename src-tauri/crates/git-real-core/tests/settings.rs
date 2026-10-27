@@ -1,11 +1,15 @@
 //! Settings v2: the nested shape, lenient per-field loading (Load mode), the
 //! nested patch (Patch mode) and the versioned file codec.
 
+// The cfg(unix) imports serve only the GR-36 unix-gated tests below.
+#[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use git_real_core::settings::SettingsError;
 use git_real_core::settings::{
-    CloneUrlForm, DiffMode, SETTINGS_VERSION, Settings, SettingsError, SettingsFile,
-    SettingsFileError, SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
+    CloneUrlForm, DiffMode, SETTINGS_VERSION, Settings, SettingsFile, SettingsFileError,
+    SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
 };
 use serde_json::{Value, json};
 
@@ -248,6 +252,8 @@ fn lenient_wrong_type_falls_back_per_field() {
 /// Load mode cannot fail: every relative form of either path leaf is dropped
 /// to the default with one warning per leaf, and a missing absolute path is
 /// kept (Load never checks existence).
+// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
+#[cfg(unix)]
 #[test]
 fn lenient_relative_paths_never_panic() {
     for rel in ["rel/dir", "", ".", "..", "./git", "~/git"] {
@@ -332,6 +338,8 @@ fn patch_non_nullable_leaf_absent_keeps() {
     assert_eq!(set.diff.mode, DiffMode::Split);
 }
 
+// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
+#[cfg(unix)]
 #[test]
 fn apply_rejects_a_missing_clone_dir_and_a_relative_git_path() {
     let base = Settings::default();
@@ -363,6 +371,8 @@ fn apply_rejects_a_missing_clone_dir_and_a_relative_git_path() {
     assert_eq!(ok.clone.default_dir.as_deref(), Some(dir.path()));
 }
 
+// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
+#[cfg(unix)]
 #[test]
 fn apply_does_not_recheck_an_unpatched_missing_clone_dir() {
     // A file copied from another machine keeps a dir that does not exist here;

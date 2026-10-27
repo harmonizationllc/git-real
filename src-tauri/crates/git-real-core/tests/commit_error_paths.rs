@@ -9,9 +9,14 @@ use common::git_available;
 
 use std::path::Path;
 
+// The cfg(unix) imports serve only the unix GIT_DIR probe below.
+#[cfg(unix)]
 use git_real_core::commit::git_commit;
+#[cfg(unix)]
 use git_real_core::remote::clone;
-use git_real_core::{CommitMessage, GitError, Progress, ProgressSink, RepoSession};
+use git_real_core::{CommitMessage, GitError, RepoSession};
+#[cfg(unix)]
+use git_real_core::{Progress, ProgressSink};
 use git2::Repository;
 
 fn msg(subject: &str, body: &str) -> CommitMessage {
@@ -190,13 +195,17 @@ fn commit_outcome_survives_a_non_utf8_recorded_message() {
 // Mutating this process's environment is racy and `unsafe`, so each probe
 // re-runs this test binary as a child with `GIT_DIR` set and a role variable.
 
+#[cfg(unix)]
 struct NullSink;
 
+#[cfg(unix)]
 impl ProgressSink for NullSink {
     fn report(&mut self, _progress: Progress) {}
 }
 
+#[cfg(unix)]
 const ROLE: &str = "GR_ENV_PROBE_ROLE";
+#[cfg(unix)]
 const OUT: &str = "GR_ENV_PROBE_OUT";
 
 /// Records, from inside a fake git, whether `GIT_DIR` reached the child.

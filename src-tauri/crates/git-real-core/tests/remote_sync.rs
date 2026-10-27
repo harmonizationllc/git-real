@@ -1205,6 +1205,8 @@ fn update_remote_sets_the_urls_and_none_clears_the_push_url() {
     );
 }
 
+// GR-35: git2 writes an unescaped C:\ URL into .git/config on rename.
+#[cfg(unix)]
 #[test]
 fn update_remote_rename_moves_tracking_refs_and_upstream_config() {
     let (_d1, _d2, path, head, session) = tracked();

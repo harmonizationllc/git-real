@@ -24,7 +24,7 @@ pub mod index_ops;
 pub mod log;
 pub mod merge;
 pub mod model;
-mod paths;
+pub mod paths;
 pub mod progress;
 pub mod recent;
 pub mod refs;
@@ -47,7 +47,8 @@ pub use remote::auth::Credentials;
 pub use repo::RepoSession;
 pub use settings::{SETTINGS_VERSION, Settings, SettingsError, SettingsFile, SettingsPatch};
 pub use tools::{
-    DiffRange, EMPTY_TREE, ExternalDiffScope, ToolError, open_external_diff, open_external_merge,
-    open_in_editor, split_command,
+    CommandSyntax, DEFAULT_PATHEXT, DiffRange, EMPTY_TREE, ExternalDiffScope, ToolEnv, ToolError,
+    open_external_diff, open_external_merge, open_in_editor, open_in_editor_with, resolve_program,
+    split_command, split_command_with,
 };
 pub use update::{UpdateInfo, Version};
