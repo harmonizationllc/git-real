@@ -640,3 +640,26 @@ Expected: all green, coverage 100 %.
 - [ ] **Step 2: Whole-branch review** by a fresh reviewer against the spec; fix findings; re-run the gate.
 
 - [ ] **Step 3:** The owner runs the walk in spec §7 on the desktop; results go into the spec's §7 and the Jira ticket as a comment.
+
+---
+
+### Task 9: Post-review cleanup (owner-requested 2026-10-26)
+
+**Files:**
+
+- Modify: `src-tauri/crates/git-real-core/src/settings.rs` (`normalise`, the four section-height clamp blocks)
+- Modify: `src/features/graph/model/layout.ts`, `src/features/graph/RefLabels.tsx`, `src/features/graph/RefLabels.module.css`, `src/features/graph/GraphRow.tsx`, `src/features/graph/GraphRow.module.css`
+- Modify: `src/app/RepoPane.tsx` (the `key` on `RefsColumn`)
+- Test: `src-tauri/crates/git-real-core/tests/settings.rs`, `src/features/graph/RefLabels.test.tsx`, `src/features/graph/GraphRow.test.tsx` (only if the inline gap needs a pin)
+
+**Interfaces:**
+
+- Rust: behaviour unchanged; the four clamp blocks collapse into one loop over `[(&mut self.layout.branches_height, "layout.branchesHeight"), …]` (or a small helper). New tests: patch clamps for `stashesHeight` and `pullRequestsHeight` (5 → 72) and a patch value of 0 → 72; the lenient-load test asserts the `layout.tagsHeight` and `layout.pullRequestsHeight` warning names.
+- Label gaps: `export const LABEL_GAP_PX = 4;` and `export const MESSAGE_GAP_PX = 6;` in `src/features/graph/model/layout.ts`. `RefLabels` root gets inline `style={{ gap: LABEL_GAP_PX }}` and `GraphRow`'s `.message` cell gets inline `style={{ gap: MESSAGE_GAP_PX }}`; both `gap` declarations leave the CSS. `RefLabels` imports the two constants instead of its local 4 and 6. Budget stays `parent.clientWidth − SUBJECT_RESERVE_PX − MESSAGE_GAP_PX`.
+- `+N` pill: no `aria-label`. Visible text stays `+N`; a nested `<span className={styles.srOnly}>` carries ` more: a, b` (leading space) so the pill's accessible name is `+2 more: b, c`. `.srOnly` is the usual clip rule (`position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap`). `title` unchanged (names joined by newline).
+- `RepoPane.tsx`: remove the `key` prop from `<RefsColumn …>`; the keyed wrapper div stays.
+- Label test gaps: a component test where the `+N` pill measures a non-zero width (lookup table gives `+2` → 60) and changes the result (e.g. cell 240 → budget 170: with pill 36, k = 2 (164 ≤ 170); with pill 60, 40+80+60+8 = 188 > 170 → k = 1); and a test with exactly three refs that all fit (no hidden pill, no `+N`).
+
+- [ ] **Step 1 (test role):** write the tests above; RED for the Rust patch clamps is not expected (the behaviour exists), so those are pins; RED is expected for the warning-name assertions only if a name is wrong (they should pass), for the `+N` accessible-name test (no sr-only text today), for the `aria-label` absence test, for the non-zero `+N` width test (today's lookup gives 0), and for the CSS test that `.root` and `.message` no longer declare `gap` while `.srOnly` exists.
+- [ ] **Step 2 (developer):** implement; `cargo test -p git-real-core`, `cargo clippy --workspace -- -D warnings`, `cargo fmt --check`, `npx vitest run src/features/graph src/app`, full `npx vitest run --coverage` (100 %), typecheck, eslint, prettier.
+- [ ] **Step 3:** commit per role; one task review.
