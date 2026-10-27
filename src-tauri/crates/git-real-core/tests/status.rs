@@ -383,6 +383,8 @@ fn status_corrupt_head_errors_instead_of_reporting_unborn() {
 
 // --- ordering: byte-wise, case-sensitive, nested ---
 
+// GR-32: case-insensitive filesystem; B.txt/b.txt and A/ a/ collide on Windows.
+#[cfg(unix)]
 #[test]
 fn status_entries_sorted_bytewise_with_mixed_case_and_nesting() {
     let (_dir, path) = common::temp_repo_with_commit();

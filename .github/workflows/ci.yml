@@ -93,6 +93,9 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy -p git-real-core --all-targets -- -D warnings
 
+      - name: Disable autocrlf (Git for Windows sets it system-wide)
+        run: git config --system core.autocrlf false
+
       - name: Rust tests (core)
         working-directory: src-tauri
         run: cargo test -p git-real-core --no-fail-fast
