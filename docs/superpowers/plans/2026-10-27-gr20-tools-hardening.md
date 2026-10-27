@@ -191,7 +191,7 @@ fn windows_syntax_table() {
         (r#""C:\Program Files\Microsoft VS Code\Code.exe" --wait"#,
          &[r"C:\Program Files\Microsoft VS Code\Code.exe", "--wait"]),
         (r#"a"b c"d"#, &["ab cd"]),
-        (r#"\\"x"#, &[r#"\x"#]),            // 2 backslashes + quote → 1 backslash, quote toggles
+        (r#"\\"x""#, &[r#"\x"#]),           // 2 backslashes + quote → 1 backslash, quote toggles
         (r#""a\\\"b""#, &[r#"a\"b"#]),       // 3 backslashes + quote → 1 backslash + literal quote
         (r#""a""b""#, &[r#"a"b"#]),          // "" inside quotes is a literal quote
         ("'a b'", &["'a", "b'"]),            // single quotes are ordinary
