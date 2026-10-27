@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "../../test/graphFixtures";
 import { RefLabels } from "./RefLabels";
 
+// The +N pill is found by its class, not by its text: its text content carries an sr-only suffix.
+const morePill = () => document.querySelector('[class*="more"]') as HTMLElement;
+
 // Contract: no labels renders nothing.
 describe("RefLabels empty", () => {
   it("should render nothing for an empty list", () => {
@@ -80,13 +83,13 @@ describe("RefLabels overflow", () => {
 
   it("should show three pills and a +1 pill for four labels", () => {
     render(<RefLabels refs={four} />);
-    expect(screen.getByText("+1")).toBeInTheDocument();
+    expect(morePill()).toBeInTheDocument();
     expect(screen.getByTitle("c")).toBeInTheDocument();
   });
 
   it("should title the +1 pill with the fourth label's name", () => {
     render(<RefLabels refs={four} />);
-    expect(screen.getByText("+1")).toHaveAttribute("title", "the-fourth");
+    expect(morePill()).toHaveAttribute("title", "the-fourth");
   });
 
   it("should not render the fourth label as its own pill", () => {
@@ -96,12 +99,12 @@ describe("RefLabels overflow", () => {
 
   it("should count every hidden label in the +n pill", () => {
     render(<RefLabels refs={[...four, ref("tag", "fifth")]} />);
-    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(morePill()).toBeInTheDocument();
   });
 
   it("should list every hidden name in the +n title", () => {
     render(<RefLabels refs={[...four, ref("tag", "fifth")]} />);
-    const title = screen.getByText("+2").getAttribute("title") ?? "";
+    const title = morePill().getAttribute("title") ?? "";
     expect(title).toContain("the-fourth");
     expect(title).toContain("fifth");
   });
@@ -132,7 +135,7 @@ describe("RefLabels pill sizing", () => {
     for (const title of ["origin/main", "a"]) {
       expect(screen.getByTitle(title).className).toMatch(/pill/);
     }
-    expect(screen.getByText("+1").className).toMatch(/pill/);
+    expect(morePill().className).toMatch(/pill/);
   });
 
   it("should declare the pill rule non-shrinking", () => {
@@ -143,6 +146,20 @@ describe("RefLabels pill sizing", () => {
     expect(rule(".pill")).toMatch(/max-width:\s*24ch/);
   });
 
+  it("should not declare gap in CSS; the gaps are inline from layout constants", () => {
+    expect(rule(".root")).not.toMatch(/gap:/);
+  });
+
+  it("should give the root an inline 4px gap", () => {
+    const { container } = render(<RefLabels refs={[ref("branch", "a")]} />);
+    expect((container.firstElementChild as HTMLElement).style.gap).toBe("4px");
+  });
+
+  it("should declare an sr-only rule for the +n suffix", () => {
+    expect(rule(".srOnly")).toMatch(/position:\s*absolute/);
+    expect(rule(".srOnly")).toMatch(/clip:/);
+  });
+
   it("should position the root so hidden pills cannot widen an ancestor", () => {
     expect(rule(".root")).toMatch(/position:\s*relative/);
   });
@@ -151,6 +168,7 @@ describe("RefLabels pill sizing", () => {
 // Contract: pills are measured against the parent cell; trailing pills that do not fit are hidden and counted into +N.
 // Measurement stub: the component must read `parentElement.clientWidth` and each pill's `offsetWidth`.
 describe("RefLabels fit", () => {
+  // Keyed on the element's first text node, so a nested sr-only span in the +N pill is ignored.
   const widths: Record<string, number> = { a: 40, b: 80, c: 40 };
   let cellWidth = 0;
   let observers: StubResizeObserver[] = [];
@@ -174,7 +192,8 @@ describe("RefLabels fit", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
       configurable: true,
       get(this: HTMLElement) {
-        return widths[this.textContent ?? ""] ?? 0;
+        const first = this.firstChild;
+        return first?.nodeType === Node.TEXT_NODE ? (widths[first.textContent ?? ""] ?? 0) : 0;
       },
     });
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
@@ -186,6 +205,7 @@ describe("RefLabels fit", () => {
   });
 
   afterEach(() => {
+    delete widths["+2"];
     vi.unstubAllGlobals();
     Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
     Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
@@ -221,15 +241,17 @@ describe("RefLabels fit", () => {
     expect(screen.getByTitle("a")).not.toHaveAttribute("data-hidden");
     expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
     expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
-    const more = screen.getByText("+2");
-    expect(more).toHaveAttribute("aria-label", "2 more: b, c");
+    const more = morePill();
+    expect(more).not.toHaveAttribute("aria-label");
+    expect(more).toHaveAccessibleName("+2 more: b, c");
+    expect(more.firstChild?.textContent).toBe("+2");
     expect(more).toHaveAttribute("title", "b\nc");
   });
 
   it("should re-measure when a candidate name changes at the same count", () => {
     cellWidth = 200;
     const { rerender } = renderInCell();
-    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(morePill()).toBeInTheDocument();
     // d has no entry in the width table, so it measures 0 (unmeasured): every candidate shows.
     rerender(
       <span data-testid="cell">
@@ -254,7 +276,7 @@ describe("RefLabels fit", () => {
     cellWidth = 235;
     renderInCell([...three, ref("tag", "d")]);
     expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
-    expect(screen.getByText("+2")).toHaveAttribute("aria-label", "2 more: c, d");
+    expect(morePill()).toHaveAccessibleName("+2 more: c, d");
   });
 
   it("should re-measure when the observer fires", () => {
@@ -263,6 +285,27 @@ describe("RefLabels fit", () => {
     cellWidth = 200;
     act(() => observers.forEach((o) => o.fire()));
     expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
+  });
+
+  it("should use the +N pill's measured width when it has one", () => {
+    // budget = 240 - 64 - 6 = 170; with the pill at 60, k=2 needs 40+80+60+8 = 188 > 170, so k=1.
+    widths["+2"] = 60;
+    cellWidth = 240;
+    renderInCell();
+    expect(screen.getByTitle("a")).not.toHaveAttribute("data-hidden");
+    expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
+    expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
+    expect(morePill().firstChild?.textContent).toBe("+2");
+  });
+
+  it("should show exactly three refs that all fit with no +N pill", () => {
+    // budget = 240 - 64 - 6 = 170; 40 + 80 + 40 + 8 = 168 fits.
+    cellWidth = 240;
+    renderInCell();
+    for (const name of ["a", "b", "c"]) {
+      expect(screen.getByTitle(name)).not.toHaveAttribute("data-hidden");
+    }
+    expect(morePill()).toBeNull();
   });
 
   it("should disconnect on unmount", () => {

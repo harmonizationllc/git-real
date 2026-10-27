@@ -478,6 +478,36 @@ fn lenient_section_heights_absent_null_wrong_type_and_small() {
 }
 
 #[test]
+fn lenient_section_heights_name_tags_and_pull_requests_warnings() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"tagsHeight": "x", "pullRequestsHeight": 1}
+    }));
+    assert_eq!(s.layout.tags_height, None);
+    assert_eq!(s.layout.pull_requests_height, Some(72));
+    let mut got = fields(&warnings);
+    got.sort_unstable();
+    assert_eq!(got, vec!["layout.pullRequestsHeight", "layout.tagsHeight"]);
+}
+
+#[test]
+fn patch_section_height_clamps_every_section_and_zero() {
+    let base = Settings::default();
+    let apply =
+        |layout: serde_json::Value| base.apply(&patch(json!({ "layout": layout }))).unwrap();
+    assert_eq!(
+        apply(json!({"stashesHeight": 5})).layout.stashes_height,
+        Some(72)
+    );
+    assert_eq!(
+        apply(json!({"pullRequestsHeight": 5}))
+            .layout
+            .pull_requests_height,
+        Some(72)
+    );
+    assert_eq!(apply(json!({"tagsHeight": 0})).layout.tags_height, Some(72));
+}
+
+#[test]
 fn patch_section_height_absent_keeps_null_clears_value_sets_and_clamps() {
     let mut base = Settings::default();
     base.layout.tags_height = Some(300);
