@@ -28,6 +28,10 @@ pub fn open_in_editor_inner(
         .ok_or_else(|| AppError::no_external_tool("editor"))?;
     match repo_id {
         Some(id) => {
+            // Only a repository-relative path may reach the editor: an absolute
+            // path, `..`, an empty component or `.git` is rejected before the
+            // session lock is taken.
+            let rel = git_real_core::paths::repo_relative(path)?;
             // Read the working directory under the lock, then drop it before
             // spawning, as the other tool handlers do.
             let workdir = {
@@ -35,7 +39,7 @@ pub fn open_in_editor_inner(
                 let guard = session.lock().unwrap_or_else(PoisonError::into_inner);
                 guard.path().to_path_buf()
             };
-            let full = workdir.join(path);
+            let full = workdir.join(&rel);
             tools::open_in_editor(&editor, &full, Some(&workdir))?;
         }
         None => {

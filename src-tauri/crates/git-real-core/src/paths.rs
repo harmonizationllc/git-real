@@ -12,7 +12,7 @@ use crate::error::GitError;
 /// must not have `.git` (any ASCII case) as its first component. On Windows
 /// it must not contain `\` or `:` either. Every rejection is reported as
 /// [`GitError::PathNotFound`] for `raw`.
-pub(crate) fn repo_relative(raw: &str) -> Result<String, GitError> {
+pub fn repo_relative(raw: &str) -> Result<String, GitError> {
     let rejected = || GitError::PathNotFound(PathBuf::from(raw));
     let trimmed = raw.trim_end_matches('/');
     if trimmed.is_empty() || trimmed.starts_with('/') {
