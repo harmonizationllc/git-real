@@ -95,7 +95,7 @@ jobs:
 
       - name: Rust tests (core)
         working-directory: src-tauri
-        run: cargo test -p git-real-core
+        run: cargo test -p git-real-core --no-fail-fast
 
   package:
     name: Package (Linux)

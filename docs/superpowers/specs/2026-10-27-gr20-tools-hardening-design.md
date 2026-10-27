@@ -299,7 +299,7 @@ core-windows:
   steps: checkout; dtolnay/rust-toolchain@stable with clippy;
          Swatinem/rust-cache (workspaces: src-tauri);
          cargo clippy -p git-real-core --all-targets -- -D warnings;
-         cargo test -p git-real-core
+         cargo test -p git-real-core --no-fail-fast
 ```
 
 working-directory `src-tauri` for the cargo steps. Only the core crate:

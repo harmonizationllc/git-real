@@ -78,6 +78,8 @@ fn list_reports_full_hex_oid_of_the_branch_tip() {
     assert_eq!(list.local[0].oid, head_oid(&path).to_string());
 }
 
+// GR-32: NTFS loose refs are case-insensitive, so Alpha/alpha cannot coexist on Windows.
+#[cfg(unix)]
 #[test]
 fn list_sorts_local_branches_by_name_in_byte_order() {
     let (_d, _p, session, head) = fixture();
