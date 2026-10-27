@@ -701,6 +701,8 @@ fn diff_directory_path_errors_with_no_changes() {
     );
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn diff_pathspec_glob_characters_match_literally() {
     let (_dir, path) = common::temp_repo_with_commit();

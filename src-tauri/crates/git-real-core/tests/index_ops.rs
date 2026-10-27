@@ -432,6 +432,8 @@ fn stage_paths_strips_trailing_slash() {
     assert_eq!(sides(&path, "a.txt"), (Some(ChangeKind::Added), None));
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn stage_paths_treats_glob_characters_literally() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -508,6 +510,8 @@ fn unstage_paths_empty_list_changes_nothing() {
     assert_eq!(sides(&path, "a.txt"), (Some(ChangeKind::Added), None));
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_treats_glob_characters_literally() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -676,6 +680,8 @@ fn discard_paths_empty_list_leaves_unstaged_changes() {
     );
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn discard_paths_treats_glob_characters_literally() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1233,6 +1239,7 @@ fn unstage_all_restores_staged_deletion_and_modification_to_worktree_only() {
 // --- filenames ending in spaces must be matched exactly ---
 
 /// Commits `pad `, `two  ` and a sibling `pad`, then modifies all three.
+#[cfg(unix)] // only the trailing-space tests use it, and they are unix-only
 fn repo_with_trailing_space_files() -> (tempfile::TempDir, std::path::PathBuf) {
     let (dir, path) = common::temp_repo_with_commit();
     common::write_file(&path, "pad ", "1\n");
@@ -1249,6 +1256,8 @@ fn read(path: &std::path::Path, rel: &str) -> String {
     std::fs::read_to_string(path.join(rel)).unwrap()
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn discard_paths_restores_file_with_one_trailing_space() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1258,6 +1267,8 @@ fn discard_paths_restores_file_with_one_trailing_space() {
     assert_eq!(read(&path, "pad "), "1\n");
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn discard_paths_restores_file_with_two_trailing_spaces() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1267,6 +1278,8 @@ fn discard_paths_restores_file_with_two_trailing_spaces() {
     assert_eq!(read(&path, "two  "), "2\n");
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn discard_paths_trailing_space_leaves_unspaced_sibling_modified() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1276,6 +1289,8 @@ fn discard_paths_trailing_space_leaves_unspaced_sibling_modified() {
     assert_eq!(read(&path, "pad"), "3x\n");
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn unstage_paths_unstages_file_with_one_trailing_space() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1286,6 +1301,8 @@ fn unstage_paths_unstages_file_with_one_trailing_space() {
     assert_eq!(sides(&path, "pad "), (None, Some(ChangeKind::Modified)));
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn unstage_paths_unstages_file_with_two_trailing_spaces() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1296,6 +1313,8 @@ fn unstage_paths_unstages_file_with_two_trailing_spaces() {
     assert_eq!(sides(&path, "two  "), (None, Some(ChangeKind::Modified)));
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn unstage_paths_trailing_space_leaves_unspaced_sibling_staged() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1307,6 +1326,8 @@ fn unstage_paths_trailing_space_leaves_unspaced_sibling_staged() {
     assert_eq!(sides(&path, "pad"), (Some(ChangeKind::Modified), None));
 }
 
+// Windows strips trailing spaces from file names, so this fixture cannot exist.
+#[cfg(unix)]
 #[test]
 fn stage_paths_trailing_space_stages_only_that_file() {
     let (_dir, path) = repo_with_trailing_space_files();
@@ -1386,6 +1407,8 @@ fn stage_paths_hash_prefixed_name_stages_only_that_file() {
 
 // --- unstage_paths: control whitespace truncates libgit2 pathspecs ---
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_newline_leading_name_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1399,6 +1422,8 @@ fn unstage_paths_newline_leading_name_is_bad_selection() {
     assert!(matches!(err, GitError::BadSelection), "got {err:?}");
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_newline_name_leaves_other_staged_files_staged() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1410,6 +1435,8 @@ fn unstage_paths_newline_name_leaves_other_staged_files_staged() {
     assert_eq!(sides(&path, "other.txt"), (Some(ChangeKind::Added), None));
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_tab_name_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1421,6 +1448,8 @@ fn unstage_paths_tab_name_is_bad_selection() {
     assert!(matches!(err, GitError::BadSelection), "got {err:?}");
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_tab_name_leaves_staged_sibling_untouched() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1432,6 +1461,8 @@ fn unstage_paths_tab_name_leaves_staged_sibling_untouched() {
     assert_eq!(sides(&path, "a/c.txt"), (Some(ChangeKind::Added), None));
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_carriage_return_name_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1443,6 +1474,8 @@ fn unstage_paths_carriage_return_name_is_bad_selection() {
     assert!(matches!(err, GitError::BadSelection), "got {err:?}");
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn unstage_paths_vertical_tab_and_form_feed_names_are_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1456,6 +1489,8 @@ fn unstage_paths_vertical_tab_and_form_feed_names_are_bad_selection() {
     }
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn discard_paths_deletes_only_untracked_file_with_leading_newline() {
     let (_dir, path) = common::temp_repo_with_commit();

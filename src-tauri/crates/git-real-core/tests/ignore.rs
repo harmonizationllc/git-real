@@ -147,6 +147,8 @@ fn add_to_gitignore_second_call_still_returns_pattern() {
     assert_eq!(pattern, "/x.log");
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn add_to_gitignore_ignores_only_the_literal_glob_named_file() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -340,6 +342,8 @@ fn add_to_gitignore_tolerates_crlf_existing_line() {
 
 // --- filenames containing line breaks cannot be written as a gitignore line ---
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn add_to_gitignore_newline_in_filename_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -353,6 +357,8 @@ fn add_to_gitignore_newline_in_filename_is_bad_selection() {
     );
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn add_to_gitignore_carriage_return_in_filename_is_bad_selection() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -366,6 +372,8 @@ fn add_to_gitignore_carriage_return_in_filename_is_bad_selection() {
     );
 }
 
+// Windows cannot create this file name (control or glob character).
+#[cfg(unix)]
 #[test]
 fn add_to_gitignore_line_break_in_filename_writes_nothing() {
     let (_dir, path) = common::temp_repo_with_commit();
