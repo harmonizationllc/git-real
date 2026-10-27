@@ -71,6 +71,32 @@ jobs:
         working-directory: src-tauri
         run: cargo test --workspace
 
+  core-windows:
+    name: Core crate (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Rust clippy (core)
+        working-directory: src-tauri
+        run: cargo clippy -p git-real-core --all-targets -- -D warnings
+
+      - name: Rust tests (core)
+        working-directory: src-tauri
+        run: cargo test -p git-real-core
+
   package:
     name: Package (Linux)
     runs-on: ubuntu-22.04
