@@ -132,63 +132,64 @@ fn files(list: &[&str]) -> impl Fn(&Path) -> bool {
 
 #[test]
 fn resolve_program_finds_a_cmd_launcher_through_pathext() {
-    let f = files(&[r"C:\VSCode\bin\code.cmd"]);
+    let f = files(&[r"C:\VSCode\bin\code.CMD"]);
     assert_eq!(
         resolve_program(
             "code",
             &env(r"C:\Windows;C:\VSCode\bin", ".COM;.EXE;.BAT;.CMD"),
             &f
         ),
-        Some(PathBuf::from(r"C:\VSCode\bin\code.cmd"))
+        Some(PathBuf::from(r"C:\VSCode\bin\code.CMD"))
     );
 }
 
 #[test]
 fn resolve_program_prefers_the_name_as_given_then_pathext_order() {
-    let f = files(&[r"C:\a\x", r"C:\a\x.cmd", r"C:\a\x.exe"]);
+    let f = files(&[r"C:\a\x", r"C:\a\x.CMD", r"C:\a\x.EXE"]);
     assert_eq!(
         resolve_program("x", &env(r"C:\a", ".CMD;.EXE"), &f),
         Some(PathBuf::from(r"C:\a\x"))
     );
     assert_eq!(
-        resolve_program("x.exe", &env(r"C:\a", ".CMD;.EXE"), &f),
-        Some(PathBuf::from(r"C:\a\x.exe"))
+        resolve_program("x.EXE", &env(r"C:\a", ".CMD;.EXE"), &f),
+        Some(PathBuf::from(r"C:\a\x.EXE"))
     );
-    let f = files(&[r"C:\a\x.cmd", r"C:\a\x.exe"]);
+    let f = files(&[r"C:\a\x.CMD", r"C:\a\x.EXE"]);
     assert_eq!(
         resolve_program("x", &env(r"C:\a", ".CMD;.EXE"), &f),
-        Some(PathBuf::from(r"C:\a\x.cmd"))
+        Some(PathBuf::from(r"C:\a\x.CMD"))
     );
 }
 
 #[test]
 fn resolve_program_skips_empty_and_relative_path_entries() {
-    let f = files(&[r"bin\x.exe", r"C:\b\x.exe"]);
+    let f = files(&[r"bin\x.EXE", r"C:\b\x.EXE"]);
     assert_eq!(
         resolve_program("x", &env(r";bin;C:\b", ".EXE"), &f),
-        Some(PathBuf::from(r"C:\b\x.exe"))
+        Some(PathBuf::from(r"C:\b\x.EXE"))
     );
 }
 
 #[test]
 fn resolve_program_does_not_search_path_for_rooted_programs() {
     let f = files(&[
-        r"\\srv\tools\code.cmd",
-        r"C:\t\code.exe",
-        r"C:\on\path\code.exe",
+        r"\\srv\tools\code.CMD",
+        r"C:\t\code.EXE",
+        r"C:/t/code.EXE",
+        r"C:\on\path\code.EXE",
     ]);
     let e = env(r"C:\on\path", ".EXE;.CMD");
     assert_eq!(
         resolve_program(r"\\srv\tools\code", &e, &f),
-        Some(PathBuf::from(r"\\srv\tools\code.cmd"))
+        Some(PathBuf::from(r"\\srv\tools\code.CMD"))
     );
     assert_eq!(
         resolve_program(r"C:\t\code", &e, &f),
-        Some(PathBuf::from(r"C:\t\code.exe"))
+        Some(PathBuf::from(r"C:\t\code.EXE"))
     );
     assert_eq!(
         resolve_program(r"C:/t/code", &e, &f),
-        Some(PathBuf::from(r"C:/t/code.exe"))
+        Some(PathBuf::from(r"C:/t/code.EXE"))
     );
     assert_eq!(resolve_program(r"C:\missing\code", &e, &f), None);
 }
