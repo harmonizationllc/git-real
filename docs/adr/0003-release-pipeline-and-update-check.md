@@ -35,7 +35,7 @@ added.
 - **R6 — Hand-written release workflow.** The release job is explicit steps
   (`npm run tauri build`, then `softprops/action-gh-release@v2` with file globs and
   generated notes) rather than `tauri-apps/tauri-action`. Every step is visible in the
-  YAML and the build step is shared verbatim with the CI `package` job.
+  YAML and the build step is shared verbatim with the CI `package-linux` job.
 
 ## Consequences
 

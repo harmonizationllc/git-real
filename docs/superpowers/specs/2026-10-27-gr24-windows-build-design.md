@@ -355,7 +355,22 @@ The proof is CI. The builder:
 
 ### 5.1 Probe results
 
-Filled in by the builder.
+One CI round, green on the first push (no Windows compile fix was needed).
+
+- Round 1: run 40567850881 on a13fb1c. `Package (Windows)`, `Core crate (Windows)`,
+  `Package (Linux)` and `build-and-test` succeeded. `Benchmarks (large
+repositories)` failed, as it already did on `main` at 4476849.
+- Job durations: `Package (Windows)` 11m28s (19:18:06 to 19:29:34 UTC),
+  `Package (Linux)` 9m13s (19:18:06 to 19:27:19 UTC). Under 20 minutes, so
+  no `timeout-minutes` was added.
+- Artifact `git-real-windows-a13fb1c2cc269dd205a5bf2599b9eeeb1263e26f`:
+  - `nsis/Git Real_0.1.0_x64-setup.exe`, 3 997 321 bytes
+  - `msi/Git Real_0.1.0_x64_en-US.msi`, 5 316 608 bytes
+- The file names match the README and §3. The `.exe` is under the 5 MB
+  heuristic from step 3. `file` identifies it as a genuine Nullsoft
+  self-extracting installer; NSIS compresses with LZMA, so it is smaller
+  than the MSI. The heuristic is relaxed for NSIS. The real check is the
+  owner smoke test on Windows.
 
 ## 6. Tests (`src/test/release.test.ts`)
 
