@@ -3,7 +3,10 @@
 
 mod common;
 
+// Only the unix non-UTF-8 ref test below uses these.
+#[cfg(unix)]
 use std::ffi::OsStr;
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
@@ -130,6 +133,7 @@ fn list_tags_skips_a_remote_whose_name_is_not_utf8() {
     assert_eq!(session.list_tags().unwrap().remotes, ["good"]);
 }
 
+#[cfg(unix)]
 #[test]
 fn list_tags_skips_a_tag_whose_ref_is_not_utf8() {
     let (_d, path, session) = repo();
