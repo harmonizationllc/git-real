@@ -1,5 +1,6 @@
 import type { GraphRow as GraphRowData } from "../../lib/ipc";
 import { LaneGraph } from "./LaneGraph";
+import { MESSAGE_GAP_PX } from "./model/layout";
 import { fullDate, relativeTime } from "./model/relativeTime";
 import { RefLabels } from "./RefLabels";
 import styles from "./GraphRow.module.css";
@@ -40,7 +41,7 @@ export function GraphRow({
       }}
     >
       <LaneGraph row={row} maxLanes={maxLanes} />
-      <span className={styles.message}>
+      <span className={styles.message} style={{ gap: MESSAGE_GAP_PX }}>
         <RefLabels refs={row.refs} />
         <span className={styles.subject}>{row.subject}</span>
       </span>

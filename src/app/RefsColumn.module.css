@@ -1,0 +1,14 @@
+/* The refs column: the sections stacked with a horizontal handle between each pair. */
+.column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* A section wrapper; height and flex: none are set inline once the column is measured. */
+.section {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

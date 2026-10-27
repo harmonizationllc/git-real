@@ -148,6 +148,10 @@ export interface Settings {
     tagsCollapsed: boolean;
     pullRequestsCollapsed: boolean;
     issuesCollapsed: boolean;
+    branchesHeight: number | null;
+    stashesHeight: number | null;
+    tagsHeight: number | null;
+    pullRequestsHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
   window: { width: number; height: number; maximized: boolean };

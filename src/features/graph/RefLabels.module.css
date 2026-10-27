@@ -1,18 +1,16 @@
-/* Shrinks to its pills, capped so at least 8ch of the subject always remains beside it. */
+/* Sized by its pills, which never shrink; RefLabels hides the trailing ones that do not fit. */
 .root {
-  flex: 0 1 auto;
+  position: relative;
+  flex: none;
   display: inline-flex;
-  gap: 4px;
-  min-width: 0;
-  max-width: calc(100% - 8ch);
+  max-width: 100%;
   overflow: hidden;
 }
 
-/* Under the cap the pills ellipsize together; short names such as "main" never do. */
+/* A pill keeps its whole name up to 24ch, then ellipsises. */
 .pill {
-  flex: 0 1 auto;
-  min-width: 5ch;
-  max-width: 14ch;
+  flex: none;
+  max-width: 24ch;
   padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: 9px;
@@ -21,6 +19,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A candidate that does not fit: kept measurable, out of the flow and the accessibility tree. */
+.pill[data-hidden="true"] {
+  visibility: hidden;
+  position: absolute;
 }
 
 .branch {
@@ -46,4 +50,14 @@
 
 .more {
   color: var(--color-text-muted);
+}
+
+/* The +n pill's hidden-ref names: in the accessible name, not drawn. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

@@ -393,7 +393,11 @@ describe("RepoPane repo-changed subscription", () => {
 const header = () => screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 const body = () => handle("Resize branches column").parentElement as HTMLElement;
-const observer = () => StubResizeObserver.instances[0] as StubResizeObserver;
+// The pane's own observer is the one watching the body; the refs column keeps its own.
+const observer = () =>
+  StubResizeObserver.instances.find((o) =>
+    o.observe.mock.calls.some(([t]) => t === body()),
+  ) as StubResizeObserver;
 const follows = (a: Element, b: Element) =>
   Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
@@ -625,16 +629,20 @@ describe("RepoPane resize observer", () => {
   it("should observe the body element with one observer", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
-    expect(StubResizeObserver.instances).toHaveLength(1);
-    expect(observer().observe).toHaveBeenCalledExactlyOnceWith(body());
+    const observers = StubResizeObserver.instances.filter((o) =>
+      o.observe.mock.calls.some(([t]) => t === body()),
+    );
+    expect(observers).toHaveLength(1);
+    expect(observers[0]?.observe).toHaveBeenCalledExactlyOnceWith(body());
   });
 
   it("should keep the same observer across a tab change", async () => {
     const { rerender } = renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
+    const before = observer();
     rerender(<RepoPane tab={tab(2)} />);
-    expect(StubResizeObserver.instances).toHaveLength(1);
-    expect(observer().disconnect).not.toHaveBeenCalled();
+    expect(observer()).toBe(before);
+    expect(before.disconnect).not.toHaveBeenCalled();
   });
 
   it("should disconnect the observer on unmount", async () => {

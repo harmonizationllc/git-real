@@ -110,6 +110,29 @@ describe("layout setters", () => {
     expect(await patches()).toEqual([{ layout: { refsWidth: 240, sidebarWidth: 320 } }]);
   });
 
+  it("setSectionHeight rounds and saves the section's height leaf", async () => {
+    actions.setSectionHeight("tags", 300.4);
+    actions.setSectionHeight("branches", 199.6);
+    expect(settings().layout).toMatchObject({ tagsHeight: 300, branchesHeight: 200 });
+    expect(await patches()).toEqual([{ layout: { tagsHeight: 300, branchesHeight: 200 } }]);
+  });
+
+  it("setSectionHeight with null clears the leaf back to automatic", async () => {
+    actions.setSectionHeight("pullRequests", 150);
+    actions.setSectionHeight("pullRequests", null);
+    expect(settings().layout.pullRequestsHeight).toBeNull();
+    expect(await patches()).toEqual([{ layout: { pullRequestsHeight: null } }]);
+  });
+
+  it("the defaults carry four null section heights", () => {
+    expect(DEFAULT_SETTINGS.layout).toMatchObject({
+      branchesHeight: null,
+      stashesHeight: null,
+      tagsHeight: null,
+      pullRequestsHeight: null,
+    });
+  });
+
   it("the collapsed-section setters set their flags", async () => {
     actions.setTagsCollapsed(false);
     actions.setPullRequestsCollapsed(true);

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { makeRow, oidOf, ref } from "../../test/graphFixtures";
@@ -66,6 +67,15 @@ describe("GraphRow content", () => {
     renderRow({ row: makeRow(0, { refs: [ref("branch", "main", true), ref("tag", "v1")] }) });
     expect(screen.getByTitle("main")).toBeInTheDocument();
     expect(screen.getByTitle("v1")).toBeInTheDocument();
+  });
+
+  it("should give the message cell an inline 6px gap and no CSS gap", () => {
+    renderRow();
+    const cell = screen.getByText("Subject 0").parentElement as HTMLElement;
+    expect(cell.style.gap).toBe("6px");
+    const css = readFileSync("src/features/graph/GraphRow.module.css", "utf8");
+    const message = /(?:^|\n)\.message\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(message).not.toMatch(/gap:/);
   });
 
   it("should render no ref labels for a row without refs", () => {

@@ -251,13 +251,13 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   if (isLoading) {
     body = <p role="status">Loading changes…</p>;
   } else if (statusError !== null) {
-    body = <RepoError error={statusError} path={null} onDismiss={refetch} />;
+    body = <RepoError error={statusError} path={null} variant="panel" onDismiss={refetch} />;
   } else {
     const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
       <>
         {panelError !== null && (
-          <RepoError error={panelError} path={null} onDismiss={clearErrors} />
+          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         )}
         {nonEmpty.length === 0 && <p className={styles.empty}>No changes</p>}
         {nonEmpty.map(({ section, title, listLabel }) => {

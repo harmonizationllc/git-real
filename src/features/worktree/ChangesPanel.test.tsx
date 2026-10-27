@@ -177,6 +177,12 @@ describe("ChangesPanel states", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("status exploded");
   });
 
+  it("renders the status error alert in the panel variant", async () => {
+    vi.mocked(getStatus).mockRejectedValueOnce({ kind: "io", message: "status exploded" });
+    renderWithProviders(<ChangesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should not render the lists while the status query is in error", async () => {
     vi.mocked(getStatus).mockRejectedValueOnce({ kind: "io", message: "status exploded" });
     renderWithProviders(<ChangesPanel repoId={1} />);
@@ -835,6 +841,13 @@ describe("ChangesPanel action errors", () => {
     const { user } = await renderPanel(unstaged("a.txt"));
     await user.click(btn("Stage a.txt"));
     expect(await screen.findByRole("alert")).toHaveTextContent("nothing to do");
+  });
+
+  it("renders the action error alert in the panel variant", async () => {
+    vi.mocked(stagePaths).mockRejectedValue(failure);
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should keep the lists visible when an action fails", async () => {

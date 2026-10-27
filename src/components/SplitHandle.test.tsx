@@ -582,3 +582,43 @@ describe("SplitHandle side after clamping", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+// Contract: orientation="horizontal" makes a row separator driven by the vertical axis.
+describe("SplitHandle horizontal", () => {
+  it("should expose aria-orientation horizontal", () => {
+    const { handle } = renderHandle({ orientation: "horizontal" });
+    expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+  });
+
+  it("should set its height, not its width, from the handle size", () => {
+    const { handle } = renderHandle({ orientation: "horizontal" });
+    expect(handle.style.height).toBe("6px");
+    expect(handle.style.width).toBe("");
+  });
+
+  it("should grow the value by step on ArrowDown and shrink it on ArrowUp", () => {
+    const { handle, onChange } = renderHandle({ orientation: "horizontal" });
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(onChange.mock.calls).toEqual([[316], [284]]);
+  });
+
+  it("should ignore ArrowRight when horizontal", () => {
+    const { handle, onChange } = renderHandle({ orientation: "horizontal" });
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("should follow the vertical pointer delta when horizontal", () => {
+    const { handle, onChange } = renderHandle({ orientation: "horizontal" });
+    fireEvent.pointerDown(handle, { clientX: 10, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 500, clientY: 140, pointerId: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(340);
+  });
+
+  it("should keep the vertical default when no orientation is given", () => {
+    const { handle } = renderHandle();
+    expect(handle).toHaveAttribute("aria-orientation", "vertical");
+    expect(handle.style.width).toBe("6px");
+  });
+});

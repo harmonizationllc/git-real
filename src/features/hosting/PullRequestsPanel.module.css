@@ -1,10 +1,6 @@
 /* The section rules mirror TagsPanel.module.css; no feature imports another feature's module. */
+/* The RefsColumn wrapper sizes and scrolls the section; its handle draws the divider. */
 .root {
-  flex: 0 1 auto;
-  max-height: 40%;
-  min-height: 0;
-  overflow: auto;
-  border-top: 1px solid var(--color-border);
   color: var(--color-text);
 }
 

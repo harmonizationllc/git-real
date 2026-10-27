@@ -1,6 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { SPLIT_HANDLE_WIDTH, SplitHandle } from "../components/SplitHandle";
-import { BranchesPanel } from "../features/branches/BranchesPanel";
 import { useBranches } from "../features/branches/useBranches";
 import { CommitBox } from "../features/commit/CommitBox";
 import { DetailPane } from "../features/diff/DetailPane";
@@ -10,8 +9,6 @@ import { CommitSummary } from "../features/history/CommitSummary";
 import { FileHistoryPanel } from "../features/history/FileHistoryPanel";
 import { FilePickerDialog } from "../features/history/FilePickerDialog";
 import { CreatePullRequestDialog } from "../features/hosting/CreatePullRequestDialog";
-import { IssuesPanel } from "../features/hosting/IssuesPanel";
-import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
 import { useRepoContext } from "../features/hosting/useRepoContext";
 import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
@@ -19,8 +16,6 @@ import { SyncMessage } from "../features/remotes/SyncMessage";
 import { SyncToolbar } from "../features/remotes/SyncToolbar";
 import { useSyncActions } from "../features/remotes/useSyncActions";
 import { StashSummary } from "../features/stash/StashSummary";
-import { StashesPanel } from "../features/stash/StashesPanel";
-import { TagsPanel } from "../features/tags/TagsPanel";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
 import type { HeadState, RepoId } from "../lib/ipc";
 import { useRepoChanged } from "../lib/query/useRepoChanged";
@@ -31,6 +26,7 @@ import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
 import { matchesShortcut } from "../lib/shortcuts";
 import { KEY_STEP, REFS_MIN, SIDEBAR_MIN, clampWidths, maxWidth } from "./layout";
+import { RefsColumn } from "./RefsColumn";
 import styles from "./RepoPane.module.css";
 
 /** The header's branch line: the live HEAD once the branch list is known, else the snapshot. */
@@ -173,17 +169,11 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         {/* Keyed so menu, dialog and mutation state never leak across tabs. */}
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
-            <>
-              <BranchesPanel
-                repoId={tab.id}
-                onOpenRemotes={openRemotes}
-                onCreatePullRequest={onCreatePullRequest}
-              />
-              <StashesPanel repoId={tab.id} />
-              <TagsPanel repoId={tab.id} />
-              <PullRequestsPanel repoId={tab.id} onCreatePullRequest={onCreatePullRequest} />
-              <IssuesPanel repoId={tab.id} />
-            </>
+            <RefsColumn
+              repoId={tab.id}
+              onOpenRemotes={openRemotes}
+              onCreatePullRequest={onCreatePullRequest}
+            />
           ) : (
             // Keyed so a newly picked file starts at the top with a fresh keyboard anchor.
             <FileHistoryPanel key={historyPath} repoId={tab.id} path={historyPath} />

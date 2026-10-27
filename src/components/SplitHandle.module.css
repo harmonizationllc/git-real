@@ -1,4 +1,4 @@
-/* A hit area (width set inline from SPLIT_HANDLE_WIDTH) drawing a 1px line in its middle. */
+/* A hit area (width set inline from SPLIT_HANDLE_WIDTH) drawing a 1px line down its middle. */
 .handle {
   flex: none;
   cursor: col-resize;
@@ -16,6 +16,27 @@
   outline: none;
   background: linear-gradient(
     to right,
+    transparent 2px,
+    var(--color-accent) 2px 3px,
+    transparent 3px
+  );
+}
+
+/* A section separator: height set inline, the 1px line drawn across its middle. */
+.horizontal {
+  cursor: row-resize;
+  background: linear-gradient(
+    to bottom,
+    transparent 2px,
+    var(--color-border) 2px 3px,
+    transparent 3px
+  );
+}
+
+.horizontal:hover,
+.horizontal:focus-visible {
+  background: linear-gradient(
+    to bottom,
     transparent 2px,
     var(--color-accent) 2px 3px,
     transparent 3px

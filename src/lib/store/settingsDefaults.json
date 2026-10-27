@@ -25,7 +25,11 @@
     "sidebarWidth": 320,
     "tagsCollapsed": true,
     "pullRequestsCollapsed": false,
-    "issuesCollapsed": true
+    "issuesCollapsed": true,
+    "branchesHeight": null,
+    "stashesHeight": null,
+    "tagsHeight": null,
+    "pullRequestsHeight": null
   },
   "updates": {
     "checkOnStartup": true
