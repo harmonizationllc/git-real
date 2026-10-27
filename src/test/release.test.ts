@@ -7,7 +7,7 @@
  * Note: the `yaml` package uses YAML 1.2 schema by default, so the key `on:`
  * in a workflow file parses as the string "on", not the boolean true.
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -95,7 +95,7 @@ function parseCargoVersion(toml: string): string {
 // ---------------------------------------------------------------------------
 
 // R8: version strings in package.json, tauri.conf.json and Cargo.toml must
-//     be equal and semver-shaped (MAJOR.MINOR.PATCH).
+//     be equal and semver-shaped (MAJOR.MINOR.PATCH, optionally -N).
 describe("versions", () => {
   const tauriConf = readJson("src-tauri/tauri.conf.json") as Record<string, unknown>;
   const pkgJson = readJson("package.json") as Record<string, unknown>;
@@ -107,8 +107,8 @@ describe("versions", () => {
     expect(pkgJson.version).toBe(cargoVersion);
   });
 
-  it("version is MAJOR.MINOR.PATCH", () => {
-    expect(String(pkgJson.version)).toMatch(/^\d+\.\d+\.\d+$/);
+  it("version is MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-N", () => {
+    expect(String(pkgJson.version)).toMatch(/^\d+\.\d+\.\d+(-\d+)?$/);
   });
 });
 
@@ -117,16 +117,19 @@ describe("versions", () => {
 // ---------------------------------------------------------------------------
 
 // §4.1: bundle metadata in src-tauri/tauri.conf.json must match the spec
-//       values exactly.
+//       values exactly. Targets and platform blocks live in the overlays.
 describe("bundle config", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tauriConf = readJson("src-tauri/tauri.conf.json") as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bundle = tauriConf.bundle as any;
 
-  // R7: targets stay ["deb", "rpm", "appimage"]
-  it("targets are deb, rpm, appimage", () => {
-    expect(bundle.targets).toEqual(["deb", "rpm", "appimage"]);
+  // GR-24: Tauri merges tauri.<platform>.conf.json over the base file, so the
+  // base must not name targets or platform blocks.
+  it("base config has no targets and no linux block", () => {
+    expect(bundle).not.toHaveProperty("targets");
+    expect(bundle).not.toHaveProperty("linux");
+    expect(bundle).not.toHaveProperty("windows");
   });
 
   it("category is DeveloperTool", () => {
@@ -168,22 +171,74 @@ describe("bundle config", () => {
     }
   });
 
-  it("deb recommends git and both desktop templates exist", () => {
-    const linux = bundle.linux as Record<string, unknown>;
-    const deb = linux.deb as Record<string, unknown>;
-    expect(deb.section).toBe("vcs");
-    expect(deb.recommends).toContain("git");
-    expect(deb.desktopTemplate).toBe("packaging/git-real.desktop");
-    const rpm = linux.rpm as Record<string, unknown>;
-    expect(rpm.desktopTemplate).toBe("packaging/git-real.desktop");
-    // The file referenced by both desktopTemplate values must exist
-    expect(fileExists("src-tauri/packaging/git-real.desktop")).toBe(true);
-  });
-
   it("window decorations are explicit in main_window.rs", () => {
     // The main window is built in Rust (GR-29), so the explicit decorations
     // that give Wayland/COSMIC server-side decorations live there.
     expect(readText("src-tauri/src/main_window.rs")).toContain(".decorations(true)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// platform overlays
+// ---------------------------------------------------------------------------
+
+// GR-24: src-tauri/tauri.<platform>.conf.json files carry each platform's
+//        bundle targets and platform block; Tauri merges them over the base.
+describe("platform overlays", () => {
+  const OVERLAY = /^tauri\.([a-z]+)\.conf\.json$/;
+  const overlayFiles = readdirSync(resolve(ROOT, "src-tauri")).filter((f) => OVERLAY.test(f));
+  const platformOf = (f: string): string => OVERLAY.exec(f)?.[1] ?? "";
+  // A missing overlay reads as {} so the assertion fails, not the file read.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const overlay = (platform: string): any =>
+    fileExists(`src-tauri/tauri.${platform}.conf.json`)
+      ? readJson(`src-tauri/tauri.${platform}.conf.json`)
+      : {};
+
+  it("exactly linux and windows overlays exist and each names its targets", () => {
+    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "windows"]);
+    for (const file of overlayFiles) {
+      const bundle = readJson(`src-tauri/${file}`) as { bundle?: { targets?: unknown } };
+      const targets = bundle.bundle?.targets;
+      expect(Array.isArray(targets), `${file} bundle.targets is an array`).toBe(true);
+      expect((targets as unknown[]).length, `${file} bundle.targets is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it("linux overlay has the Linux targets and the deb/rpm block", () => {
+    const bundle = overlay("linux").bundle;
+    expect(bundle?.targets).toEqual(["deb", "rpm", "appimage"]);
+    const linux = bundle?.linux;
+    expect(linux?.deb?.section).toBe("vcs");
+    expect(linux?.deb?.recommends).toContain("git");
+    expect(linux?.deb?.desktopTemplate).toBe("packaging/git-real.desktop");
+    expect(linux?.rpm?.desktopTemplate).toBe("packaging/git-real.desktop");
+    // The file referenced by both desktopTemplate values must exist
+    expect(fileExists("src-tauri/packaging/git-real.desktop")).toBe(true);
+  });
+
+  it("windows overlay has nsis and msi with a per-user NSIS install", () => {
+    const bundle = overlay("windows").bundle;
+    expect(bundle?.targets).toEqual(["nsis", "msi"]);
+    expect(bundle?.windows?.nsis?.installMode).toBe("currentUser");
+  });
+
+  // Unsigned installers for now: no signing material may be configured.
+  it("windows overlay has no signing keys", () => {
+    expect(fileExists("src-tauri/tauri.windows.conf.json")).toBe(true);
+    const windows = overlay("windows").bundle?.windows ?? {};
+    for (const key of ["signCommand", "certificateThumbprint", "timestampUrl"]) {
+      expect(windows).not.toHaveProperty(key);
+    }
+  });
+
+  it("overlays carry the Tauri schema", () => {
+    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "windows"]);
+    for (const file of overlayFiles) {
+      expect((readJson(`src-tauri/${file}`) as { $schema?: string }).$schema).toBe(
+        "https://schema.tauri.app/config/2",
+      );
+    }
   });
 });
 
@@ -260,30 +315,35 @@ describe("icon source", () => {
 // ci workflow
 // ---------------------------------------------------------------------------
 
-// §3 / R9 / R10: ci.yml gains a `package` job on ubuntu-22.04 with workflow-level
+type Step = Record<string, unknown>;
+
+// §3 / R9 / R10 + GR-24: ci.yml has per-platform package jobs and workflow-level
 //                concurrency that cancels stale runs on the same ref.
 describe("ci workflow", () => {
   const ciText = readText(".github/workflows/ci.yml");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ciConf = parse(ciText) as any;
 
-  it("has build-and-test and package jobs", () => {
+  it("has build-and-test, package-linux and package-windows jobs and no package job", () => {
     expect(ciConf.jobs).toHaveProperty("build-and-test");
-    expect(ciConf.jobs).toHaveProperty("package");
+    expect(ciConf.jobs).toHaveProperty("package-linux");
+    expect(ciConf.jobs).toHaveProperty("package-windows");
+    expect(ciConf.jobs).not.toHaveProperty("package");
   });
 
-  it("package bundles on ubuntu-22.04 and uploads the three globs", () => {
-    const pkg = ciConf.jobs.package;
-    expect(pkg["runs-on"]).toBe("ubuntu-22.04");
+  it("package-linux bundles on ubuntu-22.04 and uploads the three globs", () => {
+    const pkg = ciConf.jobs?.["package-linux"];
+    expect(pkg?.["runs-on"]).toBe("ubuntu-22.04");
+    expect(pkg?.name).toBe("Package (Linux)");
 
-    const steps: Array<Record<string, unknown>> = pkg.steps;
+    const steps: Step[] = pkg?.steps ?? [];
 
     // Must have a step that runs the Tauri build with the three bundle targets
     const buildStep = steps.find(
       (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
     );
     expect(buildStep).toBeDefined();
-    expect(buildStep!.run as string).toContain("--bundles deb,rpm,appimage");
+    expect(String(buildStep?.run)).toContain("--bundles deb,rpm,appimage");
 
     // Must upload the bundles with actions/upload-artifact@v4
     const uploadStep = steps.find(
@@ -291,13 +351,46 @@ describe("ci workflow", () => {
         typeof s.uses === "string" && (s.uses as string).startsWith("actions/upload-artifact@v4"),
     );
     expect(uploadStep).toBeDefined();
-    const w = uploadStep!.with as Record<string, unknown>;
+    const w = (uploadStep?.with ?? {}) as Record<string, unknown>;
     // Artifact name must be prefixed with git-real-linux- for discoverability
     expect(String(w["name"])).toContain("git-real-linux-");
     const path = String(w.path);
     expect(path).toContain("src-tauri/target/release/bundle/deb/*.deb");
     expect(path).toContain("src-tauri/target/release/bundle/rpm/*.rpm");
     expect(path).toContain("src-tauri/target/release/bundle/appimage/*.AppImage");
+    expect(w["if-no-files-found"]).toBe("error");
+    expect(w["retention-days"]).toBe(14);
+  });
+
+  it("package-windows bundles nsis and msi on windows-latest under bash and uploads both globs", () => {
+    const win = ciConf.jobs?.["package-windows"];
+    expect(win?.["runs-on"]).toBe("windows-latest");
+    expect(win?.name).toBe("Package (Windows)");
+
+    const steps: Step[] = win?.steps ?? [];
+    const runs = steps.filter((s) => typeof s.run === "string");
+
+    const buildStep = runs.find((s) => (s.run as string).includes("npm run tauri build"));
+    expect(buildStep).toBeDefined();
+    expect(String(buildStep?.run)).toContain("--bundles nsis,msi");
+
+    // Bash everywhere, so the same scripts behave on the Windows runner
+    expect(runs.length).toBeGreaterThan(0);
+    for (const s of runs) {
+      expect(s.shell, `step ${String(s.name)} must run under bash`).toBe("bash");
+      expect(s.run as string).not.toContain("apt-get");
+    }
+
+    const uploadStep = steps.find(
+      (s) =>
+        typeof s.uses === "string" && (s.uses as string).startsWith("actions/upload-artifact@v4"),
+    );
+    expect(uploadStep).toBeDefined();
+    const w = (uploadStep?.with ?? {}) as Record<string, unknown>;
+    expect(String(w["name"])).toContain("git-real-windows-");
+    const path = String(w.path);
+    expect(path).toContain("src-tauri/target/release/bundle/nsis/*.exe");
+    expect(path).toContain("src-tauri/target/release/bundle/msi/*.msi");
     expect(w["if-no-files-found"]).toBe("error");
     expect(w["retention-days"]).toBe(14);
   });
@@ -313,82 +406,147 @@ describe("ci workflow", () => {
 // release workflow
 // ---------------------------------------------------------------------------
 
-// §6 / R3 / R6: release.yml triggers on v* tags only, checks the tag against
-//               the version before building, then publishes with gh-release.
+// §6 / R3 / R6 + GR-24: release.yml triggers on v* tags only, checks the tag
+//   against the version, builds Linux and Windows in parallel, then one publish
+//   job uploads every installer to a single release.
 describe("release workflow", () => {
-  it("runs on v tags only with contents write", () => {
-    const conf = parse(readText(".github/workflows/release.yml")) as Record<string, unknown>;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const conf = parse(readText(".github/workflows/release.yml")) as any;
+  const jobs = (conf.jobs ?? {}) as Record<string, any>;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  const stepsOf = (name: string): Step[] => jobs[name]?.steps ?? [];
+  const needsOf = (job: { needs?: string | string[] } | undefined): string[] =>
+    ([] as string[]).concat(job?.needs ?? []);
+  const uploadOf = (name: string): Step | undefined =>
+    stepsOf(name).find(
+      (s) =>
+        typeof s.uses === "string" && (s.uses as string).startsWith("actions/upload-artifact@v4"),
+    );
+  const buildRunOf = (name: string): string =>
+    String(
+      stepsOf(name).find(
+        (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
+      )?.run ?? "",
+    );
+
+  it("runs on v tags only", () => {
     // The yaml package (YAML 1.2) parses `on:` as the string key "on"
     const trigger = conf["on"] as Record<string, unknown>;
     const push = trigger.push as Record<string, unknown>;
     expect(push.tags).toEqual(["v*"]);
     expect(push).not.toHaveProperty("branches");
-    const permissions = conf.permissions as Record<string, unknown>;
-    expect(permissions.contents).toBe("write");
   });
 
-  it("checks the tag before building", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const conf = parse(readText(".github/workflows/release.yml")) as any;
-    const steps: Array<Record<string, unknown>> = conf.jobs.release.steps;
+  it("has check-version, build-linux, build-windows and publish jobs", () => {
+    expect(Object.keys(jobs).sort()).toEqual([
+      "build-linux",
+      "build-windows",
+      "check-version",
+      "publish",
+    ]);
+  });
 
-    const checkIdx = steps.findIndex((s) => s["name"] === "Check the tag matches the app version");
-    const buildIdx = steps.findIndex(
-      (s) => typeof s["run"] === "string" && (s["run"] as string).includes("npm run tauri build"),
+  it("check-version guards the tag and rejects non-numeric pre-release identifiers", () => {
+    const step = stepsOf("check-version").find(
+      (s) => s["name"] === "Check the tag matches the app version",
     );
-
-    expect(checkIdx).toBeGreaterThanOrEqual(0);
-    expect(buildIdx).toBeGreaterThanOrEqual(0);
-    // The version-check step must precede the build step
-    expect(checkIdx).toBeLessThan(buildIdx);
-
-    // The version-check step's script must compare GITHUB_REF_NAME with tauri.conf.json
-    const checkStep = steps[checkIdx];
-    const checkRun = checkStep["run"] as string;
-    expect(checkRun).toContain("GITHUB_REF_NAME");
-    expect(checkRun).toContain("tauri.conf.json");
+    expect(step).toBeDefined();
+    const run = String(step?.run ?? "");
+    expect(run).toContain("GITHUB_REF_NAME");
+    expect(run).toContain("tauri.conf.json");
+    // MSI needs a numeric pre-release identifier, so only -N is accepted
+    expect(run).toContain("(-[0-9]+)?");
   });
 
-  it("has release-scoped concurrency to prevent duplicate releases", () => {
-    const conf = parse(readText(".github/workflows/release.yml")) as Record<string, unknown>;
-    const concurrency = conf["concurrency"] as Record<string, unknown>;
-    expect(concurrency).toBeDefined();
-    expect(String(concurrency["group"])).toContain("release-");
+  it("both builds need check-version and publish needs both builds", () => {
+    expect(needsOf(jobs["build-linux"])).toEqual(["check-version"]);
+    expect(needsOf(jobs["build-windows"])).toEqual(["check-version"]);
+    expect(needsOf(jobs["publish"]).sort()).toEqual(["build-linux", "build-windows"]);
   });
 
-  it("builds the three bundles", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const conf = parse(readText(".github/workflows/release.yml")) as any;
-    const steps: Array<Record<string, unknown>> = conf.jobs.release.steps;
-    const buildStep = steps.find(
-      (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
+  it("build-linux builds the Linux bundles on ubuntu-22.04 and uploads release-linux", () => {
+    expect(jobs["build-linux"]?.["runs-on"]).toBe("ubuntu-22.04");
+    expect(buildRunOf("build-linux")).toContain("--bundles deb,rpm,appimage");
+    const upload = uploadOf("build-linux");
+    expect(upload).toBeDefined();
+    const w = (upload?.with ?? {}) as Record<string, unknown>;
+    expect(w["name"]).toBe("release-linux");
+    const path = String(w.path);
+    expect(path).toContain("src-tauri/target/release/bundle/deb/*.deb");
+    expect(path).toContain("src-tauri/target/release/bundle/rpm/*.rpm");
+    expect(path).toContain("src-tauri/target/release/bundle/appimage/*.AppImage");
+    expect(w["if-no-files-found"]).toBe("error");
+    expect(w["retention-days"]).toBe(1);
+  });
+
+  it("build-windows builds the Windows bundles on windows-latest under bash and uploads release-windows", () => {
+    expect(jobs["build-windows"]?.["runs-on"]).toBe("windows-latest");
+    expect(buildRunOf("build-windows")).toContain("--bundles nsis,msi");
+    const runs = stepsOf("build-windows").filter((s) => typeof s.run === "string");
+    expect(runs.length).toBeGreaterThan(0);
+    for (const s of runs) {
+      expect(s.shell, `step ${String(s.name)} must run under bash`).toBe("bash");
+    }
+    const upload = uploadOf("build-windows");
+    expect(upload).toBeDefined();
+    const w = (upload?.with ?? {}) as Record<string, unknown>;
+    expect(w["name"]).toBe("release-windows");
+    const path = String(w.path);
+    expect(path).toContain("src-tauri/target/release/bundle/nsis/*.exe");
+    expect(path).toContain("src-tauri/target/release/bundle/msi/*.msi");
+    expect(w["if-no-files-found"]).toBe("error");
+    expect(w["retention-days"]).toBe(1);
+  });
+
+  it("publish downloads both artifacts then releases all five globs once", () => {
+    const steps = stepsOf("publish");
+    const downloadIdx = steps.findIndex(
+      (s) =>
+        typeof s.uses === "string" && (s.uses as string).startsWith("actions/download-artifact@v4"),
     );
-    expect(buildStep).toBeDefined();
-    expect(buildStep!.run as string).toContain("--bundles deb,rpm,appimage");
-  });
-
-  it("publishes with generated notes and the three globs", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const conf = parse(readText(".github/workflows/release.yml")) as any;
-    const job = conf.jobs.release;
-    expect(job["runs-on"]).toBe("ubuntu-22.04");
-
-    const steps: Array<Record<string, unknown>> = job.steps;
-    const releaseStep = steps.find(
+    const releaseIdx = steps.findIndex(
       (s) =>
         typeof s.uses === "string" &&
         (s.uses as string).startsWith("softprops/action-gh-release@v2"),
     );
-    expect(releaseStep).toBeDefined();
-    const w = releaseStep!.with as Record<string, unknown>;
+    expect(downloadIdx).toBeGreaterThanOrEqual(0);
+    expect(releaseIdx).toBeGreaterThanOrEqual(0);
+    expect(downloadIdx).toBeLessThan(releaseIdx);
+
+    const dl = (steps[downloadIdx]?.with ?? {}) as Record<string, unknown>;
+    expect(dl["pattern"]).toBe("release-*");
+    expect(dl["merge-multiple"]).toBe(true);
+    expect(dl["path"]).toBe("release-assets");
+
+    const w = (steps[releaseIdx]?.with ?? {}) as Record<string, unknown>;
     expect(w["generate_release_notes"]).toBe(true);
     expect(w["fail_on_unmatched_files"]).toBe(true);
     expect(String(w["prerelease"])).toContain("contains(github.ref_name, '-')");
-    const files = String(w["files"]);
-    expect(files).toContain("src-tauri/target/release/bundle/deb/*.deb");
-    expect(files).toContain("src-tauri/target/release/bundle/rpm/*.rpm");
-    expect(files).toContain("src-tauri/target/release/bundle/appimage/*.AppImage");
     expect(String(w["name"])).toContain("Git Real");
+    const files = String(w["files"]);
+    for (const ext of ["deb", "rpm", "AppImage", "exe", "msi"]) {
+      expect(files).toContain(`release-assets/*.${ext}`);
+    }
+
+    // Exactly one release step across every job, so assets land on one release
+    const releaseSteps = Object.keys(jobs).flatMap((name) =>
+      stepsOf(name).filter(
+        (s) =>
+          typeof s.uses === "string" &&
+          (s.uses as string).startsWith("softprops/action-gh-release@v2"),
+      ),
+    );
+    expect(releaseSteps).toHaveLength(1);
+  });
+
+  it("publish can write releases", () => {
+    expect(jobs["publish"]?.permissions?.contents ?? conf.permissions?.contents).toBe("write");
+  });
+
+  it("has release-scoped concurrency to prevent duplicate releases", () => {
+    const concurrency = conf["concurrency"] as Record<string, unknown>;
+    expect(concurrency).toBeDefined();
+    expect(String(concurrency["group"])).toContain("release-");
   });
 });
 
@@ -396,8 +554,8 @@ describe("release workflow", () => {
 // apt packages
 // ---------------------------------------------------------------------------
 
-// §3 / Global Constraints: the package job in ci.yml, the release job in
-//   release.yml, and the README Development section must all install the same
+// §3 / Global Constraints: the package-linux job in ci.yml, the build-linux job
+//   in release.yml, and the README Development section must all install the same
 //   set of apt packages (including `file` and `patchelf`).
 describe("apt packages", () => {
   it("both workflows and the README list the same packages", () => {
@@ -407,14 +565,67 @@ describe("apt packages", () => {
     const releaseConf = parse(readText(".github/workflows/release.yml")) as any;
     const readmeText = readText("README.md");
 
-    const ciPkgs = extractAptPackages(aptStepScript(ciConf.jobs.package.steps));
-    const releasePkgs = extractAptPackages(aptStepScript(releaseConf.jobs.release.steps));
+    const ciPkgs = extractAptPackages(aptStepScript(ciConf.jobs?.["package-linux"]?.steps ?? []));
+    const releasePkgs = extractAptPackages(
+      aptStepScript(releaseConf.jobs?.["build-linux"]?.steps ?? []),
+    );
     const readmePkgs = extractReadmeAptPackages(readmeText);
 
     expect(ciPkgs).toEqual(releasePkgs);
     expect(ciPkgs).toEqual(readmePkgs);
     expect(ciPkgs.has("file")).toBe(true);
     expect(ciPkgs.has("patchelf")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README
+// ---------------------------------------------------------------------------
+
+// GR-24: the README documents the Windows installers and the numeric
+//        pre-release tag rule, and the ADRs record the decision.
+describe("README", () => {
+  const readme = readText("README.md");
+  /** Text from `\n## <heading>` to the next `\n## ` (or the end). */
+  const section = (text: string, heading: string): string => {
+    const start = text.indexOf(`\n## ${heading}`);
+    if (start === -1) return "";
+    const next = text.indexOf("\n## ", start + 1);
+    return text.slice(start, next === -1 ? undefined : next);
+  };
+
+  it("intro no longer calls Windows a follow-on target", () => {
+    expect(readme.slice(0, readme.indexOf("\n## "))).not.toMatch(/Windows[^.\n]*follow-on/);
+  });
+
+  it("install section documents the Windows installers and the SmartScreen prompt", () => {
+    const install = section(readme, "Install");
+    expect(install).toContain("-setup.exe");
+    expect(install).toContain(".msi");
+    expect(install).toContain("SmartScreen");
+    expect(install).toContain("msiexec");
+  });
+
+  it("install section spells download names Git.Real_", () => {
+    const install = section(readme, "Install");
+    expect(install).toContain("Git.Real_");
+    expect(install).not.toContain("Git Real_");
+  });
+
+  it("releasing section mentions Windows installers and a numeric pre-release example", () => {
+    const releasing = section(readme, "Releasing");
+    expect(releasing).toContain("Windows");
+    expect(releasing).toContain("vX.Y.Z-1");
+    expect(releasing).not.toContain("-beta");
+  });
+
+  it("development section has a Windows build paragraph", () => {
+    expect(section(readme, "Development")).toContain("Building on Windows");
+  });
+
+  it("ADR 0006 exists and ADR 0003 points to it", () => {
+    expect(fileExists("docs/adr/0006-per-platform-bundles-and-release.md")).toBe(true);
+    expect(readText("docs/adr/0003-release-pipeline-and-update-check.md")).toContain("ADR 0006");
   });
 });
 
