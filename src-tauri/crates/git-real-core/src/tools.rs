@@ -2,7 +2,8 @@
 //! merge tools (run through `git difftool`/`git mergetool` with the user's
 //! command as the `gitreal` tool).
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde::Deserialize;
@@ -267,13 +268,162 @@ fn split_windows(cmd: &str) -> Result<Vec<String>, ToolError> {
     Ok(args)
 }
 
+/// The `PATHEXT` Windows uses when the variable is unset or empty.
+pub const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+/// Windows' `CREATE_NO_WINDOW` process creation flag: a console program
+/// started from the GUI gets no console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// The environment program resolution reads: `PATH` and `PATHEXT`.
+///
+/// It is a value rather than a read of the process environment so tests can
+/// hand [`open_in_editor_with`] and [`resolve_program`] a synthetic Windows
+/// `PATH` on any host.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolEnv {
+    pub path: OsString,
+    pub pathext: OsString,
+}
+
+impl ToolEnv {
+    /// Reads `PATH` and `PATHEXT` from this process's environment, each empty
+    /// when unset. This is what the native [`open_in_editor`] uses.
+    pub fn from_process() -> Self {
+        ToolEnv {
+            path: std::env::var_os("PATH").unwrap_or_default(),
+            pathext: std::env::var_os("PATHEXT").unwrap_or_default(),
+        }
+    }
+}
+
+/// Finds the file Windows would run for `program`, using `env`'s `PATH` and
+/// `PATHEXT`, and `is_file` to test each candidate.
+///
+/// The standard library's `Command` finds only `.exe` files on `PATH`, and
+/// runs a `.cmd`/`.bat` launcher (VS Code's `code` is `code.cmd`) only when
+/// handed its full name, so the editor launch resolves the name first.
+///
+/// A `program` containing `\` or `/` or starting with a drive prefix is not
+/// searched on `PATH`: it is probed as given, then with each `PATHEXT`
+/// extension appended. Otherwise each Windows-absolute `PATH` entry (`X:\`,
+/// `X:/` or `\\`; empty and relative entries are skipped) is probed the same
+/// way as `dir\program`. A `program` that already ends in a `PATHEXT`
+/// extension (compared case-insensitively) is probed only as given.
+/// Extensions are used as written after trimming; an empty `PATHEXT` means
+/// [`DEFAULT_PATHEXT`]. `PATH` is split on `;` and candidates are joined with
+/// `\` here rather than by the host, so this behaves the same on every OS.
+/// `None` means nothing matched.
+pub fn resolve_program(
+    program: &str,
+    env: &ToolEnv,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let pathext = env.pathext.to_string_lossy();
+    let pathext = if pathext.trim().is_empty() {
+        DEFAULT_PATHEXT
+    } else {
+        pathext.as_ref()
+    };
+    let exts: Vec<&str> = pathext
+        .split(';')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+        .collect();
+    let has_ext = exts.iter().any(|ext| ends_with_ignore_case(program, ext));
+
+    let probe = |base: &str| -> Option<PathBuf> {
+        if is_file(Path::new(base)) {
+            return Some(PathBuf::from(base));
+        }
+        if has_ext {
+            return None;
+        }
+        exts.iter()
+            .map(|ext| format!("{base}{ext}"))
+            .find(|candidate| is_file(Path::new(candidate)))
+            .map(PathBuf::from)
+    };
+
+    if program.contains(['\\', '/']) || has_drive_prefix(program) {
+        return probe(program);
+    }
+    let path = env.path.to_string_lossy();
+    path.split(';')
+        .filter(|dir| is_windows_absolute(dir))
+        .find_map(|dir| {
+            if dir.ends_with(['\\', '/']) {
+                probe(&format!("{dir}{program}"))
+            } else {
+                probe(&format!("{dir}\\{program}"))
+            }
+        })
+}
+
+/// `X:` at the start of `s`, for an ASCII letter `X`.
+fn has_drive_prefix(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+/// A Windows-absolute path: `X:\`, `X:/` or a `\\` UNC prefix.
+fn is_windows_absolute(s: &str) -> bool {
+    s.starts_with(r"\\")
+        || (has_drive_prefix(s) && matches!(s.as_bytes().get(2), Some(b'\\' | b'/')))
+}
+
+fn ends_with_ignore_case(s: &str, suffix: &str) -> bool {
+    s.len() > suffix.len()
+        && s.get(s.len() - suffix.len()..)
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+}
+
 /// Spawns an editor detached, appending `path` to the parsed command. When
 /// `cwd` is given the editor runs in that directory, so a relative `path`
 /// resolves against it; otherwise the editor inherits this process's directory.
+///
+/// Uses the host's [`CommandSyntax::native`] and the real `PATH`/`PATHEXT`;
+/// [`open_in_editor_with`] is the same launch with both supplied.
 pub fn open_in_editor(cmd: &str, path: &Path, cwd: Option<&Path>) -> Result<(), ToolError> {
-    let argv = split_command(cmd)?;
+    open_in_editor_with(
+        CommandSyntax::native(),
+        &ToolEnv::from_process(),
+        cmd,
+        path,
+        cwd,
+    )
+}
+
+/// [`open_in_editor`] with the command syntax and environment supplied, so
+/// the Windows route can be exercised on any host.
+///
+/// The command is split under `syntax`. Under [`CommandSyntax::Windows`] the
+/// program is resolved with [`resolve_program`] first, so a `.cmd` launcher
+/// such as VS Code's `code` is found, and a program that resolves to nothing
+/// is [`ToolError::Spawn`] with the cause "not found on PATH". Under
+/// [`CommandSyntax::Posix`] `env` is ignored and the OS searches `PATH`. On
+/// Windows the editor is spawned with `CREATE_NO_WINDOW`, so a console
+/// launcher does not flash a console window.
+pub fn open_in_editor_with(
+    syntax: CommandSyntax,
+    env: &ToolEnv,
+    cmd: &str,
+    path: &Path,
+    cwd: Option<&Path>,
+) -> Result<(), ToolError> {
+    let argv = split_command_with(syntax, cmd)?;
     let program = argv[0].clone();
-    let mut command = Command::new(&argv[0]);
+    let executable = match syntax {
+        CommandSyntax::Posix => PathBuf::from(&program),
+        CommandSyntax::Windows => {
+            resolve_program(&program, env, Path::is_file).ok_or_else(|| ToolError::Spawn {
+                program: program.clone(),
+                cause: "not found on PATH".to_owned(),
+            })?
+        }
+    };
+    let mut command = Command::new(executable);
     command
         .args(&argv[1..])
         .arg(path)
@@ -282,6 +432,11 @@ pub fn open_in_editor(cmd: &str, path: &Path, cwd: Option<&Path>) -> Result<(), 
         .stderr(Stdio::null());
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
     }
     // The child is dropped without waiting: the editor outlives this call.
     command.spawn().map_err(|e| ToolError::Spawn {
