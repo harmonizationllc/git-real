@@ -132,7 +132,7 @@ fn files(list: &[&str]) -> impl Fn(&Path) -> bool {
 
 #[test]
 fn resolve_program_finds_a_cmd_launcher_through_pathext() {
-    let f = files(&[r"C:\VSCode\bin\code.CMD"]);
+    let f = files(&[r"C:\VSCode\bin\code", r"C:\VSCode\bin\code.CMD"]);
     assert_eq!(
         resolve_program(
             "code",
@@ -148,7 +148,7 @@ fn resolve_program_prefers_the_name_as_given_then_pathext_order() {
     let f = files(&[r"C:\a\x", r"C:\a\x.CMD", r"C:\a\x.EXE"]);
     assert_eq!(
         resolve_program("x", &env(r"C:\a", ".CMD;.EXE"), &f),
-        Some(PathBuf::from(r"C:\a\x"))
+        Some(PathBuf::from(r"C:\a\x.CMD"))
     );
     assert_eq!(
         resolve_program("x.EXE", &env(r"C:\a", ".CMD;.EXE"), &f),
@@ -158,6 +158,12 @@ fn resolve_program_prefers_the_name_as_given_then_pathext_order() {
     assert_eq!(
         resolve_program("x", &env(r"C:\a", ".CMD;.EXE"), &f),
         Some(PathBuf::from(r"C:\a\x.CMD"))
+    );
+    // An extension outside PATHEXT is still probed as given, first.
+    let f = files(&[r"C:\a\tool.py", r"C:\a\tool.py.EXE"]);
+    assert_eq!(
+        resolve_program("tool.py", &env(r"C:\a", ".CMD;.EXE"), &f),
+        Some(PathBuf::from(r"C:\a\tool.py"))
     );
 }
 
@@ -174,6 +180,7 @@ fn resolve_program_skips_empty_and_relative_path_entries() {
 fn resolve_program_does_not_search_path_for_rooted_programs() {
     let f = files(&[
         r"\\srv\tools\code.CMD",
+        r"C:\t\code",
         r"C:\t\code.EXE",
         r"C:/t/code.EXE",
         r"C:\on\path\code.EXE",
@@ -205,7 +212,6 @@ fn resolve_program_probes_pathext_as_given_and_defaults_it_when_empty() {
     assert_eq!(
         seen.borrow().as_slice(),
         [
-            r"C:\a\code",
             r"C:\a\code.com",
             r"C:\a\code.exe",
             r"C:\a\code.Bat",

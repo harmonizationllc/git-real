@@ -14,6 +14,8 @@ fn a_bare_name_resolves_to_a_cmd_file_on_path_and_runs_through_cmd_exe() {
     let argv = dir.path().join("argv.txt");
     let script = format!("@echo %* > \"{}\"\r\n", argv.display());
     std::fs::write(dir.path().join("code.cmd"), script).unwrap();
+    // The VS Code layout: an extensionless sh script sits beside code.cmd.
+    std::fs::write(dir.path().join("code"), "#!/bin/sh\n").unwrap();
 
     let env = ToolEnv {
         path: dir.path().as_os_str().to_owned(),
