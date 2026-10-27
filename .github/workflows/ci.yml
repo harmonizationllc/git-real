@@ -76,6 +76,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      - name: Disable autocrlf (Git for Windows sets it system-wide)
+        run: git config --system core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -92,9 +95,6 @@ jobs:
       - name: Rust clippy (core)
         working-directory: src-tauri
         run: cargo clippy -p git-real-core --all-targets -- -D warnings
-
-      - name: Disable autocrlf (Git for Windows sets it system-wide)
-        run: git config --system core.autocrlf false
 
       - name: Rust tests (core)
         working-directory: src-tauri

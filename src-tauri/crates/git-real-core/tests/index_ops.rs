@@ -1204,7 +1204,7 @@ fn unstage_paths_unstages_file_named_with_backslash_on_unix() {
     );
 }
 
-// GR-34: libgit2 on Windows treats the pathspec escape backslash as a separator; unstage of !/# names is a no-op.
+// GR-34: libgit2 on Windows does not honour the backslash pathspec escape, so unstaging a !/# name is a silent no-op.
 #[cfg(unix)]
 #[test]
 fn unstage_paths_unstages_file_with_leading_bang() {
@@ -1378,7 +1378,7 @@ fn discard_paths_hash_prefixed_name_leaves_other_files_modified() {
     );
 }
 
-// GR-34: libgit2 on Windows treats the pathspec escape backslash as a separator; unstage of !/# names is a no-op.
+// GR-34: libgit2 on Windows does not honour the backslash pathspec escape, so unstaging a !/# name is a silent no-op.
 #[cfg(unix)]
 #[test]
 fn unstage_paths_hash_prefixed_name_unstages_only_that_file() {

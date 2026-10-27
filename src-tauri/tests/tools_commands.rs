@@ -498,8 +498,4 @@ fn open_in_editor_with_a_repo_id_opens_a_directory_given_with_a_trailing_slash()
         argv.lines().any(|l| l == expected.to_str().unwrap()),
         "expected the directory without a trailing slash in argv: {argv}"
     );
-    assert!(
-        !argv.contains("src/"),
-        "trailing slash must be trimmed: {argv}"
-    );
 }

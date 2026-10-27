@@ -296,7 +296,8 @@ A new job in `.github/workflows/ci.yml`:
 core-windows:
   name: Core crate (Windows)
   runs-on: windows-latest
-  steps: checkout; dtolnay/rust-toolchain@stable with clippy;
+  steps: git config --system core.autocrlf false; checkout;
+         dtolnay/rust-toolchain@stable with clippy;
          Swatinem/rust-cache (workspaces: src-tauri);
          cargo clippy -p git-real-core --all-targets -- -D warnings;
          cargo test -p git-real-core --no-fail-fast
@@ -348,7 +349,9 @@ test binary run on Windows, 0 failed. Two job changes were made by
 controller ruling during the probe. The test step runs with
 `--no-fail-fast`, so one run reports every failing binary. A step before it
 runs `git config --system core.autocrlf false`, because Git for Windows sets
-autocrlf system-wide and libgit2 reads that file (GR-33).
+autocrlf system-wide and libgit2 reads that file (GR-33). The step runs before
+checkout so the repository itself is not checked out with CRLF line endings
+(there is no `.gitattributes`).
 
 Rule 1, gated or allowed in this ticket:
 
