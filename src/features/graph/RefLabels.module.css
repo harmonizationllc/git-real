@@ -3,7 +3,6 @@
   position: relative;
   flex: none;
   display: inline-flex;
-  gap: 4px;
   max-width: 100%;
   overflow: hidden;
 }
@@ -51,4 +50,14 @@
 
 .more {
   color: var(--color-text-muted);
+}
+
+/* The +n pill's hidden-ref names: in the accessible name, not drawn. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

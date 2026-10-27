@@ -170,7 +170,6 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         <div key={`refs-${tab.id}`} className={styles.refs}>
           {historyPath === null ? (
             <RefsColumn
-              key={`refs-${tab.id}`}
               repoId={tab.id}
               onOpenRemotes={openRemotes}
               onCreatePullRequest={onCreatePullRequest}

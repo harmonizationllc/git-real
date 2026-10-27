@@ -1,13 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefLabel } from "../../lib/ipc";
-import { MAX_LABELS } from "./model/layout";
+import { LABEL_GAP_PX, MAX_LABELS, MESSAGE_GAP_PX } from "./model/layout";
 import { MORE_PILL_PX, SUBJECT_RESERVE_PX, fitLabels } from "./model/refLabelFit";
 import styles from "./RefLabels.module.css";
-
-/** The `.message` cell's gap between the pills and the subject. */
-const CELL_GAP_PX = 6;
-/** The root's gap between pills. */
-const PILL_GAP_PX = 4;
 
 export interface RefLabelsProps {
   refs: RefLabel[];
@@ -31,7 +26,9 @@ export function RefLabels({ refs }: RefLabelsProps) {
   const candidateKey = candidates.map((l) => `${l.kind}:${l.name}`).join("\n");
 
   // Measure on mount, when the candidates change and on every resize of the parent cell. React
-  // skips the re-render when the fitted count is unchanged.
+  // skips the re-render when the fitted count is unchanged. A changed fit measures once more, so
+  // a newly rendered +n pill's own width replaces the MORE_PILL_PX estimate; once the pill is
+  // drawn its width is fixed and the second pass returns the same count.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -44,24 +41,24 @@ export function RefLabels({ refs }: RefLabelsProps) {
         setFit(null);
         return;
       }
-      const budget = parent.clientWidth - SUBJECT_RESERVE_PX - CELL_GAP_PX;
+      const budget = parent.clientWidth - SUBJECT_RESERVE_PX - MESSAGE_GAP_PX;
       const moreWidth = moreRef.current?.offsetWidth || MORE_PILL_PX;
-      setFit(fitLabels(widths, PILL_GAP_PX, budget, moreWidth, total));
+      setFit(fitLabels(widths, LABEL_GAP_PX, budget, moreWidth, total));
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(parent);
     return () => ro.disconnect();
-    // candidateKey is the trigger; candidateCount follows from it.
+    // candidateKey and fit are the triggers; candidateCount follows from candidateKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateKey, total]);
+  }, [candidateKey, total, fit]);
 
   if (refs.length === 0) return null;
   const shown = Math.min(fit ?? candidateCount, candidateCount);
   const hidden = refs.slice(shown);
   const hiddenNames = hidden.map((l) => l.name);
   return (
-    <span ref={rootRef} className={styles.root}>
+    <span ref={rootRef} className={styles.root} style={{ gap: LABEL_GAP_PX }}>
       {candidates.map((label, i) => (
         <span
           key={`${label.kind}:${label.name}`}
@@ -81,9 +78,9 @@ export function RefLabels({ refs }: RefLabelsProps) {
           ref={moreRef}
           className={`${styles.pill} ${styles.more}`}
           title={hiddenNames.join("\n")}
-          aria-label={`${hidden.length} more: ${hiddenNames.join(", ")}`}
         >
           {`+${hidden.length}`}
+          <span className={styles.srOnly}>{` more: ${hiddenNames.join(", ")}`}</span>
         </span>
       )}
     </span>

@@ -10,6 +10,10 @@ export const LANE_WIDTH = 14;
 export const MAX_DRAWN_LANES = 12;
 /** Ref labels shown on a row before the rest collapse. */
 export const MAX_LABELS = 3;
+/** Gap between ref pills in pixels. */
+export const LABEL_GAP_PX = 4;
+/** Gap between the ref pills and the subject in a row's message cell, in pixels. */
+export const MESSAGE_GAP_PX = 6;
 export const SEARCH_DEBOUNCE_MS = 200;
 
 export const shortOid = (oid: string) => oid.slice(0, 7);
