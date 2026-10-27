@@ -44,7 +44,8 @@ added.
 - No signing key, GitHub secret, or extra capability is introduced by this story; Linux
   artifacts are unsigned, which is the norm for `.deb`/`.rpm`/AppImage.
 - Flatpak, macOS, Windows, and signed in-app updates are tracked as separate follow-up
-  tickets that build on these decisions.
+  tickets that build on these decisions. Windows builds landed in GR-24; see ADR 0006
+  for the per-platform configuration and the signing recipe.
 - Releases are reproducible from a tag with no manual build step, but the three version
   strings remain hand-edited and are kept in sync by a contract test and the release
   job's version guard.

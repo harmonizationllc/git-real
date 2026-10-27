@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "rpm", "appimage"],
+    "linux": {
+      "deb": {
+        "section": "vcs",
+        "recommends": ["git"],
+        "desktopTemplate": "packaging/git-real.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "packaging/git-real.desktop"
+      }
+    }
+  }
+}
