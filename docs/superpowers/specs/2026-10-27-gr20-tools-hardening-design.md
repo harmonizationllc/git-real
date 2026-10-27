@@ -224,16 +224,22 @@ The resolver splits `PATH` on `;` and recognises Windows-rooted entries
 
 Rules, used only under the Windows syntax:
 
+- The candidate names for a program are: the name **as given, only when
+  its last component already has an extension** (a `.` after the last
+  separator that is not its first character), then the name with each
+  `PATHEXT` extension appended, in `PATHEXT` order. A bare name is never
+  probed as given: a standard VS Code install puts an extensionless `sh`
+  script named `code` next to `code.cmd`, and `CreateProcess` cannot run
+  it, so `code` must resolve to `code.cmd` the way `cmd.exe` would
+  (amended 2026-10-27 after the Cycle B review).
 - If `program` contains a path separator (`\` or `/`) or a drive prefix,
-  it is not searched on `PATH`: try it as given, then with each `PATHEXT`
-  extension appended, in `PATHEXT` order; return the first that
-  `is_file`.
+  it is not searched on `PATH`: its candidates are probed where it points;
+  return the first that `is_file`.
 - Otherwise, for each absolute entry of `PATH` in order (empty and relative
-  entries skipped, as `git_cli::locate_in` does), try `dir\program` as
-  given, then `dir\program<ext>` for each `PATHEXT` extension; return the
-  first file found. Matching is on the file name as given; `PATHEXT`
-  entries are compared case-insensitively against an extension `program`
-  already has, so `Code.exe` is not probed as `Code.exe.exe` first.
+  entries skipped, as `git_cli::locate_in` does), probe `dir\<candidate>`
+  for each candidate; return the first file found. Extensions are probed
+  exactly as `PATHEXT` spells them (the filesystem is case-insensitive);
+  `Code.exe` is probed as given and only then as `Code.exe.COM` and so on.
 - `PATHEXT` falls back to `.COM;.EXE;.BAT;.CMD` when unset or empty.
 - `None` means "not found"; the spawn then reports
   `ToolError::Spawn { program, cause }` with the cause "not found on PATH"
