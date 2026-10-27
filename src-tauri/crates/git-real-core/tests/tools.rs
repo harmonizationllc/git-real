@@ -9,8 +9,8 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use git_real_core::{
-    DiffRange, EMPTY_TREE, ExternalDiffScope, RepoSession, ToolError, open_external_diff,
-    open_external_merge, open_in_editor, split_command,
+    CommandSyntax, DiffRange, EMPTY_TREE, ExternalDiffScope, RepoSession, ToolEnv, ToolError,
+    open_external_diff, open_external_merge, open_in_editor, open_in_editor_with, split_command,
 };
 
 // ─── Fake-git helper ──────────────────────────────────────────────────────────
@@ -486,4 +486,127 @@ fn resolve_maps_each_scope() {
         }
         other => panic!("expected DiffRange::Commit, got {:?}", other),
     }
+}
+
+// ─── open_in_editor_with (the Windows-syntax seam, exercised on Linux) ───────
+
+#[test]
+fn open_in_editor_with_windows_syntax_reports_a_program_missing_from_path() {
+    let env = ToolEnv {
+        path: r"C:\nowhere".into(),
+        pathext: ".CMD".into(),
+    };
+    let err = open_in_editor_with(
+        CommandSyntax::Windows,
+        &env,
+        "code --wait",
+        Path::new("/f"),
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        ToolError::Spawn {
+            program: "code".into(),
+            cause: "not found on PATH".into()
+        }
+    );
+}
+
+/// Writes an executable shell script and probes it (it exits at once when
+/// `SEAM_PROBE` is set) until the kernel stops answering ETXTBSY (os error 26).
+fn write_probed_script(path: &Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(
+        path,
+        format!("#!/bin/sh\n[ -n \"$SEAM_PROBE\" ] && exit 0\n{body}\n"),
+    )
+    .unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for _ in 0..100 {
+        match std::process::Command::new(path)
+            .env("SEAM_PROBE", "1")
+            .status()
+        {
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => panic!("probing script failed: {e}"),
+            Ok(_) => break,
+        }
+    }
+}
+
+fn wait_for_lines(file: &Path) -> Vec<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(file) {
+            let lines: Vec<String> = text.lines().map(|l| l.to_owned()).collect();
+            if lines.len() >= 2 {
+                return lines;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "argv file never appeared"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn open_in_editor_with_windows_syntax_spawns_a_rooted_program_with_the_path_appended() {
+    let dir = tempfile::tempdir().unwrap();
+    let argv_file = dir.path().join("argv.txt");
+    let script = dir.path().join("code.cmd");
+    write_probed_script(
+        &script,
+        &format!("printf '%s\\n' \"$@\" > '{}'", argv_file.display()),
+    );
+
+    let cmd = format!("{} --wait", script.display());
+    open_in_editor_with(
+        CommandSyntax::Windows,
+        &ToolEnv::default(),
+        &cmd,
+        Path::new("/some/file"),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        wait_for_lines(&argv_file),
+        vec!["--wait".to_string(), "/some/file".to_string()]
+    );
+}
+
+#[test]
+fn open_in_editor_with_posix_syntax_ignores_the_tool_env() {
+    let dir = tempfile::tempdir().unwrap();
+    let argv_file = dir.path().join("argv.txt");
+    let script = dir.path().join("editor.sh");
+    write_probed_script(
+        &script,
+        &format!("printf '%s\\n' \"$@\" > '{}'", argv_file.display()),
+    );
+
+    let env = ToolEnv {
+        path: r"C:\nowhere".into(),
+        pathext: ".CMD".into(),
+    };
+    // "sh <script>" keeps the kernel from exec'ing the freshly written file.
+    let cmd = format!("sh {} --wait", script.display());
+    open_in_editor_with(
+        CommandSyntax::Posix,
+        &env,
+        &cmd,
+        Path::new("/some/file"),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        wait_for_lines(&argv_file),
+        vec!["--wait".to_string(), "/some/file".to_string()]
+    );
 }
