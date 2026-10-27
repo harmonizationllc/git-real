@@ -88,7 +88,8 @@ download is named `Git.Real_<version>_amd64.deb`; quote the path:
   not yet code-signed, so Windows SmartScreen shows "Windows protected your PC":
   choose **More info**, then **Run anyway**. The installer is per-user and needs no
   administrator rights. For managed deployment use the per-machine MSI,
-  `msiexec /i "Git.Real_<version>_x64_en-US.msi"`. Windows 10 and 11 ship WebView2,
+  `msiexec /i "Git.Real_<version>_x64_en-US.msi"`, which needs an elevated
+  (administrator) prompt, unlike the per-user setup `.exe`. Windows 10 and 11 ship WebView2,
   and the installer downloads it on a machine that lacks it.
 
 The `.deb` recommends `git`, and you should have it on any install: every network

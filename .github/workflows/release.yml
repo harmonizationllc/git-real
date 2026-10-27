@@ -138,8 +138,8 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
           files: |
-            release-assets/*.deb
-            release-assets/*.rpm
-            release-assets/*.AppImage
-            release-assets/*.exe
-            release-assets/*.msi
+            release-assets/deb/*.deb
+            release-assets/rpm/*.rpm
+            release-assets/appimage/*.AppImage
+            release-assets/nsis/*.exe
+            release-assets/msi/*.msi

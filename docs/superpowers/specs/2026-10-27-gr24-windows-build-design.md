@@ -321,9 +321,11 @@ Jobs:
   `generate_release_notes: true`,
   `prerelease: ${{ contains(github.ref_name, '-') }}`,
   `fail_on_unmatched_files: true`, and five explicit globs:
-  `release-assets/*.deb`, `release-assets/*.rpm`,
-  `release-assets/*.AppImage`, `release-assets/*.exe`,
-  `release-assets/*.msi`. Five globs rather than `release-assets/*` so a
+  `release-assets/deb/*.deb`, `release-assets/rpm/*.rpm`,
+  `release-assets/appimage/*.AppImage`, `release-assets/nsis/*.exe`,
+  `release-assets/msi/*.msi`. `upload-artifact` keeps each file's path
+  relative to the common ancestor of its globs, `bundle/`, so each format
+  lands in its own folder. Five globs rather than `release-assets/*` so a
   missing format fails the publish instead of shipping four files.
 - Job-level `permissions: contents: write` may be scoped to `publish` only;
   the workflow-level grant may then be dropped. **Call**, builder's choice;
@@ -358,15 +360,21 @@ The proof is CI. The builder:
 One CI round, green on the first push (no Windows compile fix was needed).
 
 - Round 1: run 40567850881 on a13fb1c. `Package (Windows)`, `Core crate (Windows)`,
-  `Package (Linux)` and `build-and-test` succeeded. `Benchmarks (large
-repositories)` failed, as it already did on `main` at 4476849.
+  `Package (Linux)` and `build-and-test` succeeded. `Benchmarks (large repositories)`
+  failed, as it already did on `main` at 4476849.
+- Final run 40569906450 on 5d84c1c: `Package (Windows)` and `Package (Linux)`
+  green, with the benchmark job failing as it already did on `main`.
+- The final review found that the flat publish globs would have failed: the
+  artifacts keep their `deb/`, `rpm/`, `appimage/`, `nsis/` and `msi/` folders
+  after download. The globs were corrected to the folder form before merge.
 - Job durations: `Package (Windows)` 11m28s (19:18:06 to 19:29:34 UTC),
   `Package (Linux)` 9m13s (19:18:06 to 19:27:19 UTC). Under 20 minutes, so
   no `timeout-minutes` was added.
 - Artifact `git-real-windows-a13fb1c2cc269dd205a5bf2599b9eeeb1263e26f`:
   - `nsis/Git Real_0.1.0_x64-setup.exe`, 3 997 321 bytes
   - `msi/Git Real_0.1.0_x64_en-US.msi`, 5 316 608 bytes
-- The file names match the README and §3. The `.exe` is under the 5 MB
+- The file names match Tauri's naming and §3, and GitHub serves them with the
+  space replaced by a dot, as the README documents. The `.exe` is under the 5 MB
   heuristic from step 3. `file` identifies it as a genuine Nullsoft
   self-extracting installer; NSIS compresses with LZMA, so it is smaller
   than the MSI. The heuristic is relaxed for NSIS. The real check is the
