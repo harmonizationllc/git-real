@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use git_real_core::{CommandSyntax, ToolEnv, open_in_editor_with};
 
+// Only Windows clippy sees this file; the poll loop keeps its nested if as written.
+#[allow(clippy::collapsible_if)]
 #[test]
 fn a_bare_name_resolves_to_a_cmd_file_on_path_and_runs_through_cmd_exe() {
     let dir = tempfile::tempdir().unwrap();
