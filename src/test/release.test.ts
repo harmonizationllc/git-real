@@ -1,5 +1,6 @@
 /**
- * Contract tests for the Linux packaging and release pipeline (GR-15 Cycle 2).
+ * Contract tests for the packaging and release pipeline: GR-15 (Linux) and GR-24
+ * (Windows, per-platform Tauri overlays).
  *
  * All paths are resolved from __dirname (this file's directory) so the tests
  * are independent of the working directory when Vitest is invoked.
@@ -318,7 +319,7 @@ describe("icon source", () => {
 type Step = Record<string, unknown>;
 
 // §3 / R9 / R10 + GR-24: ci.yml has per-platform package jobs and workflow-level
-//                concurrency that cancels stale runs on the same ref.
+//   concurrency that cancels stale runs on the same ref.
 describe("ci workflow", () => {
   const ciText = readText(".github/workflows/ci.yml");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
