@@ -206,6 +206,8 @@ describe("RefLabels fit", () => {
 
   afterEach(() => {
     delete widths["+2"];
+    delete widths["+3"];
+    delete widths.d;
     vi.unstubAllGlobals();
     Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
     Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
@@ -243,8 +245,7 @@ describe("RefLabels fit", () => {
     expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
     const more = morePill();
     expect(more).not.toHaveAttribute("aria-label");
-    expect(more).toHaveAccessibleName("+2 more: b, c");
-    expect(more.firstChild?.textContent).toBe("+2");
+    expect(more).toHaveTextContent(/^\+2 more: b, c$/);
     expect(more).toHaveAttribute("title", "b\nc");
   });
 
@@ -276,7 +277,7 @@ describe("RefLabels fit", () => {
     cellWidth = 235;
     renderInCell([...three, ref("tag", "d")]);
     expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
-    expect(morePill()).toHaveAccessibleName("+2 more: c, d");
+    expect(morePill()).toHaveTextContent(/^\+2 more: c, d$/);
   });
 
   it("should re-measure when the observer fires", () => {
@@ -288,14 +289,17 @@ describe("RefLabels fit", () => {
   });
 
   it("should use the +N pill's measured width when it has one", () => {
-    // budget = 240 - 64 - 6 = 170; with the pill at 60, k=2 needs 40+80+60+8 = 188 > 170, so k=1.
+    // budget = 240 - 64 - 6 = 170. Estimate (pill 36): k=2 fits (164), so "+2" renders and measures 60.
+    // Measured: 40+80+60+8 = 188 > 170, so k=1 and the pill becomes "+3" (60): stable.
+    widths.d = 40;
     widths["+2"] = 60;
+    widths["+3"] = 60;
     cellWidth = 240;
-    renderInCell();
+    renderInCell([...three, ref("tag", "d")]);
     expect(screen.getByTitle("a")).not.toHaveAttribute("data-hidden");
     expect(screen.getByTitle("b")).toHaveAttribute("data-hidden", "true");
     expect(screen.getByTitle("c")).toHaveAttribute("data-hidden", "true");
-    expect(morePill().firstChild?.textContent).toBe("+2");
+    expect(morePill()).toHaveTextContent(/^\+3 more: b, c, d$/);
   });
 
   it("should show exactly three refs that all fit with no +N pill", () => {
