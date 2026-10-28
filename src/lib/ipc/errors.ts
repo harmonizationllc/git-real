@@ -68,6 +68,7 @@ const KINDS: Record<AppErrorKind, true> = {
   cannotRemoveMain: true,
   cannotRemoveCurrent: true,
   pathExists: true,
+  pathNotAbsolute: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

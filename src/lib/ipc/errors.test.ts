@@ -310,6 +310,7 @@ describe("isAppError linked worktree kinds", () => {
     "cannotRemoveMain",
     "cannotRemoveCurrent",
     "pathExists",
+    "pathNotAbsolute",
   ];
 
   it.each(worktreeKinds)("isAppError accepts kind %s", (kind) => {

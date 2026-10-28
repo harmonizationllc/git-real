@@ -107,7 +107,8 @@ export type AppErrorKind =
   | "worktreeLocked"
   | "cannotRemoveMain"
   | "cannotRemoveCurrent"
-  | "pathExists";
+  | "pathExists"
+  | "pathNotAbsolute";
 
 export interface AppError {
   kind: AppErrorKind;

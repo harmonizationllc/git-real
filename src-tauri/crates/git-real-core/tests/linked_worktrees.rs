@@ -456,6 +456,30 @@ fn add_into_non_empty_folder_is_path_exists() {
 }
 
 #[test]
+fn add_relative_path_is_path_not_absolute() {
+    let (_md, main, _wd, _root, _head) = fixture();
+    common::run_git_ok(&main, &["branch", "side"]);
+    // Unique per fixture, so a stray folder from another test cannot mask one made here.
+    let sibling = format!("{}-rel", main.file_name().unwrap().to_string_lossy());
+    let dotdot = PathBuf::from("..").join(&sibling);
+    let tilde = PathBuf::from("~").join(&sibling);
+    for p in [&dotdot, &tilde] {
+        for branch in [new_branch("feat", None), existing("side")] {
+            let err = session(&main).add_linked_worktree(p, &branch).unwrap_err();
+            assert!(
+                matches!(err, GitError::PathNotAbsolute(ref e) if e == p),
+                "{p:?} {branch:?}: {err:?}"
+            );
+        }
+    }
+    assert!(!main.parent().unwrap().join(&sibling).exists());
+    assert!(!main.join("~").exists());
+    assert!(!Path::new(&sibling).exists());
+    assert!(!Path::new("~").exists());
+    assert!(!branch_exists(&main, "feat"));
+}
+
+#[test]
 fn add_into_a_file_path_is_path_exists() {
     let (_md, main, _wd, root, _head) = fixture();
     let p = root.join("file.txt");
@@ -850,5 +874,9 @@ fn error_messages() {
     assert_eq!(
         GitError::PathExists("/w".into()).to_string(),
         "/w already exists and is not empty"
+    );
+    assert_eq!(
+        GitError::PathNotAbsolute("~/w".into()).to_string(),
+        "~/w is not an absolute path"
     );
 }

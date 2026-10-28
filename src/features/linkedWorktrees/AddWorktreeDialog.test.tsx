@@ -294,6 +294,11 @@ describe("AddWorktreeDialog errors", () => {
       "Folder",
     ],
     [
+      "pathNotAbsolute",
+      { kind: "pathNotAbsolute", message: "~/app-x is not an absolute path" },
+      "Folder",
+    ],
+    [
       "branchExists",
       { kind: "branchExists", message: "a branch named `x` already exists" },
       "Name",

@@ -87,7 +87,7 @@ function AddWorktreeDialogBody({
     (mode === "new" && startMode === "commit" && start.trim() === "");
 
   const fieldFor = (kind: AppErrorKind): RefObject<HTMLElement | null> => {
-    if (kind === "pathExists") return folderRef;
+    if (kind === "pathExists" || kind === "pathNotAbsolute") return folderRef;
     if (kind === "revisionNotFound") return commitRef;
     return mode === "new" ? nameRef : branchRef;
   };

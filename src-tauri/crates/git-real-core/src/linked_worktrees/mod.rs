@@ -63,6 +63,10 @@ impl RepoSession {
         path: &Path,
         branch: &WorktreeBranch,
     ) -> Result<(), GitError> {
+        // git resolves a relative path against the workdir and never expands `~`.
+        if !path.is_absolute() {
+            return Err(GitError::PathNotAbsolute(path.to_path_buf()));
+        }
         let target = path.to_string_lossy();
         let args: Vec<&str> = match branch {
             WorktreeBranch::New { name, start } => {

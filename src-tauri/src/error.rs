@@ -75,6 +75,7 @@ pub enum AppErrorKind {
     CannotRemoveMain,
     CannotRemoveCurrent,
     PathExists,
+    PathNotAbsolute,
 }
 
 /// What the UI needs to act on a network failure; stderr stays in `message`.
@@ -214,6 +215,7 @@ impl From<GitError> for AppError {
             GitError::CannotRemoveMain => AppErrorKind::CannotRemoveMain,
             GitError::CannotRemoveCurrent => AppErrorKind::CannotRemoveCurrent,
             GitError::PathExists(_) => AppErrorKind::PathExists,
+            GitError::PathNotAbsolute(_) => AppErrorKind::PathNotAbsolute,
             GitError::Git2(_) => AppErrorKind::Git,
         };
         let message = match &error {

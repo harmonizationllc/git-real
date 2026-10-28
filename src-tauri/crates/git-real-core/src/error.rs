@@ -160,6 +160,8 @@ pub enum GitError {
     CannotRemoveCurrent,
     #[error("{0} already exists and is not empty")]
     PathExists(PathBuf),
+    #[error("{0} is not an absolute path")]
+    PathNotAbsolute(PathBuf),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
