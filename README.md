@@ -93,11 +93,11 @@ download is named `Git.Real_<version>_amd64.deb`; quote the path:
   and the installer downloads it on a machine that lacks it.
 
 - **macOS** — download `Git.Real_<version>_universal.dmg`, one file for both Intel and
-  Apple Silicon, open it and drag Git Real to Applications. The app is not yet signed or
-  notarized, so macOS refuses the first launch. On macOS 15 and later, open System
-  Settings, then Privacy & Security, find the Git Real entry and choose **Open Anyway**.
-  On earlier versions Control-click the app and choose **Open**. If you prefer the
-  terminal, run:
+  Apple Silicon, open it and drag Git Real to Applications. The app is signed only
+  with an ad-hoc signature, not with a Developer ID, and not notarized, so macOS
+  refuses the first launch. On macOS 15 and later, open System Settings, then Privacy
+  & Security, find the Git Real entry and choose **Open Anyway**. On earlier versions
+  Control-click the app and choose **Open**. If you prefer the terminal, run:
 
   ```sh
   xattr -d com.apple.quarantine "/Applications/Git Real.app"
@@ -106,9 +106,9 @@ download is named `Git.Real_<version>_amd64.deb`; quote the path:
 The `.deb` recommends `git`, and you should have it on any install: every network
 operation (fetch, pull, push, clone over the network) and all commit signing shell out
 to the system `git` CLI, so Git Real needs it on your `PATH`. On Windows, install
-[Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`. On macOS, `git` comes with the Xcode Command Line Tools
-(`xcode-select --install`), which macOS offers to install the first time anything calls
-`git`.
+[Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`. On macOS,
+`git` comes with the Xcode Command Line Tools (`xcode-select --install`), which macOS
+offers to install the first time anything calls `git`.
 
 ## Wayland and X11
 

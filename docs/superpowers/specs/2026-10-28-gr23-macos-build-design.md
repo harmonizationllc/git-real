@@ -22,8 +22,8 @@ the Linux packages and Windows installers, built by the same workflow with
 no human step. CI builds the DMG on every push so a macOS compile break is
 caught when it lands. The release job is ready to sign the app with a
 Developer ID certificate and notarize the DMG the moment the six Apple
-repository secrets exist; until then it builds unsigned and says so in the
-job log.
+repository secrets exist; until then it builds with no Developer ID (ad-hoc
+signed, see R1 and R5) and says so in the job log.
 
 ### What already exists (not rebuilt here)
 
@@ -132,9 +132,12 @@ error` on every upload, `fail_on_unmatched_files: true` on publish.
 
 ## 2. Decisions
 
-- **R1 — Unsigned DMG now.** **Owner.** No Apple Developer account or
-  certificate exists. Gatekeeper will refuse the first launch; README
+- **R1 — No Developer ID now.** **Owner.** No Apple Developer account or
+  certificate exists, so "unsigned" means no Developer ID: the app is ad-hoc
+  signed (R5). Gatekeeper will refuse the first launch; README
   documents the "Open Anyway" path (§7).
+  _Amended 2026-10-28 during execution (controller ruling after the Task 2
+  review)._
 - **R2 — Signing and notarization are wired, dormant.** **Owner.** The
   release job carries everything needed to sign and notarize; only the six
   repository secrets are missing. Adding them turns signing on with no
@@ -180,8 +183,16 @@ secrets.APPLE_X }}` lines (an unset secret is the empty string, which the
     and requires the certificate pair whenever any of the three is set;
   - appends every variable that is set to `$GITHUB_ENV` using the heredoc
     form (`name<<EOF`), so a base64 value with line breaks survives;
-  - prints one line naming the outcome: `unsigned`, `signed, not
+  - with no `APPLE_CERTIFICATE`, after all validation has passed, also
+    exports `APPLE_SIGNING_IDENTITY=-`, the ad-hoc pseudo-identity, so the
+    `.app` carries a signature Apple Silicon accepts (a bundle with no
+    signature at all is refused as "damaged"). The bundler signs the `.app`
+    ad-hoc, skips self-signing the DMG and skips notarization. The notice is
+    `unsigned (ad-hoc identity, no Developer ID secrets)`;
+  - prints one line naming the outcome: that notice, `signed, not
 notarized`, or `signed and notarized`, as a workflow notice.
+    _Amended 2026-10-28 during execution (controller ruling after the Task 2
+    review)._
     GitHub masks secret values in logs whether they travel through `env:`
     or `GITHUB_ENV`. The script lives in its own file, not inline YAML, so
     the §6 tests can run it with controlled environments and a temporary
@@ -288,8 +299,10 @@ New job `package-macos`, display name "Package (macOS)", on `macos-latest`:
    `src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg`,
    `retention-days: 14`, `if-no-files-found: error`.
 
-No gate step, no secrets, no `shell:` override (the macOS default shell is
-bash). The existing jobs do not change.
+The job runs the `Prepare Apple signing` gate step after `npm ci` and before
+the build, without an `env:` block: CI never sees secrets, so the gate exports
+the ad-hoc identity. No secrets, no `shell:` override (the macOS default shell
+is bash). The existing jobs do not change.
 
 ### 4.3 `release.yml`
 

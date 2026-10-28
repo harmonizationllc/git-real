@@ -37,6 +37,14 @@ time without touching what the others own.
 - **R7 — CI builds the Windows bundles on every push.** A `package-windows` job sits
   beside `package-linux`, so the first Windows compile of a change does not happen on a
   tag push.
+- **R10 — withdrawn 2026-10-28.** GR-24 required numeric pre-release identifiers
+  (`X.Y.Z-N`) because WiX accepts only numeric version parts. The owner then decided
+  the project cuts no pre-release tags at all, so `check-version` accepts `X.Y.Z` only
+  and the publish step has no `prerelease` flag. This supersedes the pre-release clause
+  of ADR 0003 R3.
+- **R12 — Release download names carry a dot, not a space.** GitHub replaces the space
+  in `Git Real` with a dot when it serves a release file. The README documents the
+  `Git.Real_…` names. CI artifacts keep Tauri's original names.
 - **R13 — macOS signing and notarization are wired, dormant.** Unlike R4, the owner
   ruled (R2) that the macOS path ships wired, because it needs no code: the bundler
   signs and notarizes from environment variables alone, and an Apple Developer account
@@ -56,20 +64,16 @@ time without touching what the others own.
   `APPLE_TEAM_ID`. With them present the bundler signs the `.app`, notarizes it and
   staples the ticket to it; the DMG is code-signed only, not notarized or stapled. The
   job log carries a notice naming which of three outcomes applied: unsigned, signed
-  not notarized, signed and notarized.
+  not notarized, signed and notarized. With no certificate secrets the gate exports
+  `APPLE_SIGNING_IDENTITY=-`, the ad-hoc pseudo-identity, because Apple Silicon
+  refuses an app with no signature at all. The bundler then signs the `.app` ad-hoc
+  and, for `-`, skips self-signing the DMG and notarization, so the DMG is left
+  unsigned in that case.
 - **R14 — One universal DMG.** A single `--target universal-apple-darwin` build
   produces one `Git Real_X.Y.Z_universal.dmg` for Intel and Apple Silicon (R3 still
   holds: the job uploads it and `publish` releases it). A `--target` build writes under
   `src-tauri/target/universal-apple-darwin/release/bundle/`, not `target/release/`, so
   every macOS glob uses that path.
-- **R10 — withdrawn 2026-10-28.** GR-24 required numeric pre-release identifiers
-  (`X.Y.Z-N`) because WiX accepts only numeric version parts. The owner then decided
-  the project cuts no pre-release tags at all, so `check-version` accepts `X.Y.Z` only
-  and the publish step has no `prerelease` flag. This supersedes the pre-release clause
-  of ADR 0003 R3.
-- **R12 — Release download names carry a dot, not a space.** GitHub replaces the space
-  in `Git Real` with a dot when it serves a release file. The README documents the
-  `Git.Real_…` names. CI artifacts keep Tauri's original names.
 
 ## Consequences
 

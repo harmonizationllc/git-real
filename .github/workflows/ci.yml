@@ -220,6 +220,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Prepare Apple signing
+        run: .github/scripts/apple-signing-env.sh
+
       - name: Build macOS disk image
         run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
 

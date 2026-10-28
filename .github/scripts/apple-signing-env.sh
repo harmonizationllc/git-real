@@ -7,6 +7,12 @@
 # validates the six values and appends only the non-empty ones to GITHUB_ENV.
 # Later steps then inherit exactly what is set. Nothing is written until every
 # check has passed.
+#
+# With no certificate the script exports APPLE_SIGNING_IDENTITY=-, the ad-hoc
+# pseudo-identity. Apple Silicon refuses an app bundle that carries no signature
+# at all ("is damaged"), and an ad-hoc signature needs no Developer ID. The
+# Tauri bundler signs the .app ad-hoc, skips self-signing the DMG and skips
+# notarization when it sees "-".
 set -euo pipefail
 
 github_env="${GITHUB_ENV:-}"
@@ -55,6 +61,9 @@ export_var() {
 
 export_var APPLE_CERTIFICATE "$cert"
 export_var APPLE_CERTIFICATE_PASSWORD "$cert_password"
+if [ -z "$cert" ]; then
+  identity="-"
+fi
 export_var APPLE_SIGNING_IDENTITY "$identity"
 export_var APPLE_ID "$apple_id"
 export_var APPLE_PASSWORD "$apple_password"
@@ -65,5 +74,5 @@ if [ "$notarize" -eq 1 ]; then
 elif [ -n "$cert" ]; then
   echo "::notice::Apple signing: signed, not notarized"
 else
-  echo "::notice::Apple signing: unsigned"
+  echo "::notice::Apple signing: unsigned (ad-hoc identity, no Developer ID secrets)"
 fi
