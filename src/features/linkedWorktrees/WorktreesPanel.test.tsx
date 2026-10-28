@@ -310,12 +310,13 @@ describe("WorktreesPanel remove", () => {
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(notFound.message);
     await waitFor(() => expect(toggle()).toHaveTextContent("Worktrees (1)"));
-    expect(vi.mocked(listLinkedWorktrees).mock.calls.length).toBeGreaterThan(1);
+    // Fetched again by the remove's settle invalidation.
+    expect(listLinkedWorktrees).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("should show another remove failure inline without a force step or refetch", async () => {
+  it("should show another remove failure inline without a force step", async () => {
     vi.mocked(removeLinkedWorktree).mockRejectedValueOnce({
       kind: "worktreeLocked",
       message: "the worktree is locked",

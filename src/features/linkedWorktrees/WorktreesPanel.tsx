@@ -71,17 +71,14 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   ];
 
   // Closes at once, as the tag delete confirm does; a dirty worktree reopens it as the force step.
+  // Any other failure shows inline; the action's settle invalidation refreshes the list.
   const remove = async (c: Confirm) => {
     setConfirm(null);
     opener.clearError();
     const e = await actions.remove(c.path, c.force);
-    if (e === null) return;
-    if (e.kind === "worktreeDirty") {
-      actions.clearError();
-      setConfirm({ path: c.path, force: true });
-    } else if (e.kind === "worktreeNotFound") {
-      refetch();
-    }
+    if (e === null || e.kind !== "worktreeDirty") return;
+    actions.clearError();
+    setConfirm({ path: c.path, force: true });
   };
 
   const prune = () => {
