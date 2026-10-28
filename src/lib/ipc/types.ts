@@ -151,6 +151,8 @@ export interface Settings {
     branchesHeight: number | null;
     stashesHeight: number | null;
     tagsHeight: number | null;
+    worktreesCollapsed: boolean;
+    worktreesHeight: number | null;
     pullRequestsHeight: number | null;
   };
   updates: { checkOnStartup: boolean };

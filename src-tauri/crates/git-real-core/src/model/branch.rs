@@ -1,5 +1,7 @@
 //! Branch listing types sent to the refs column.
 
+use std::path::PathBuf;
+
 use serde::Serialize;
 
 /// What HEAD points at.
@@ -33,6 +35,8 @@ pub struct LocalBranch {
     pub oid: String,
     pub is_head: bool,
     pub tracking: Option<Tracking>,
+    /// The other worktree that has this branch checked out, if any.
+    pub worktree: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

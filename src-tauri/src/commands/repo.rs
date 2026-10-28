@@ -1,7 +1,7 @@
 //! Repository lifecycle commands: open, init, clone, close, recents, git CLI probe.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use git_real_core::git_cli;
 use git_real_core::remote::clone::clone;
@@ -131,7 +131,14 @@ pub fn check_git_cli_inner() -> GitCliInfo {
 
 /// Starts a watcher emitting [`REPO_CHANGED`] for `id`, unless one already runs.
 /// Blocking (a recursive watch walks the tree); a failure is logged and the repo stays open.
-fn ensure_watcher(app: &AppHandle, watchers: &WatcherRegistry, id: RepoId, path: &Path) {
+/// `extra` is a second root: a linked worktree's common dir.
+fn ensure_watcher(
+    app: &AppHandle,
+    watchers: &WatcherRegistry,
+    id: RepoId,
+    path: &Path,
+    extra: Option<&Path>,
+) {
     if watchers.contains(id) {
         return;
     }
@@ -140,7 +147,7 @@ fn ensure_watcher(app: &AppHandle, watchers: &WatcherRegistry, id: RepoId, path:
         // Best-effort: a closed window must not stop the watcher thread.
         let _ = app.emit(REPO_CHANGED, RepoChangedPayload { repo_id: id });
     };
-    match RepoWatcher::start(path, WATCH_DEBOUNCE, on_change) {
+    match RepoWatcher::start(path, extra, WATCH_DEBOUNCE, on_change) {
         Ok(watcher) => {
             watchers.insert(id, watcher);
         }
@@ -148,14 +155,22 @@ fn ensure_watcher(app: &AppHandle, watchers: &WatcherRegistry, id: RepoId, path:
     }
 }
 
-/// Starts the repo's watcher once the command has opened it.
+/// Starts the repo's watcher once the command has opened it, adding the common
+/// dir as a second root when it lies outside the workdir (a linked worktree).
 fn watch_opened(
     app: &AppHandle,
     watchers: &WatcherRegistry,
+    reg: &RepoRegistry,
     opened: Result<OpenedRepo, AppError>,
 ) -> Result<OpenedRepo, AppError> {
     if let Ok(repo) = &opened {
-        ensure_watcher(app, watchers, repo.id, &repo.summary.path);
+        let extra = reg.get(repo.id).and_then(|session| {
+            session
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .common_dir_outside_workdir()
+        });
+        ensure_watcher(app, watchers, repo.id, &repo.summary.path, extra.as_deref());
     }
     opened
 }
@@ -170,7 +185,8 @@ pub async fn open_repo(
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
     let watchers = Arc::clone(watchers.inner());
-    run_blocking(move || watch_opened(&app, &watchers, open_repo_inner(&reg, &recent, &path))).await
+    run_blocking(move || watch_opened(&app, &watchers, &reg, open_repo_inner(&reg, &recent, &path)))
+        .await
 }
 
 #[tauri::command]
@@ -183,7 +199,8 @@ pub async fn init_repo(
 ) -> Result<OpenedRepo, AppError> {
     let (reg, recent) = (Arc::clone(reg.inner()), Arc::clone(recent.inner()));
     let watchers = Arc::clone(watchers.inner());
-    run_blocking(move || watch_opened(&app, &watchers, init_repo_inner(&reg, &recent, &path))).await
+    run_blocking(move || watch_opened(&app, &watchers, &reg, init_repo_inner(&reg, &recent, &path)))
+        .await
 }
 
 #[tauri::command]
@@ -204,7 +221,7 @@ pub async fn clone_repo(
         let mut sink = EventProgressSink::new(app.clone(), clone_id);
         let auth = NetworkAuth::Accounts(&hosting);
         let opened = clone_repo_inner(&reg, &recent, &url, &dest, auth, &mut sink);
-        watch_opened(&app, &watchers, opened)
+        watch_opened(&app, &watchers, &reg, opened)
     })
     .await
 }

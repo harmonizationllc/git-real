@@ -109,6 +109,8 @@ pub struct LayoutSettings {
     pub branches_height: Option<u32>,
     pub stashes_height: Option<u32>,
     pub tags_height: Option<u32>,
+    pub worktrees_collapsed: bool,
+    pub worktrees_height: Option<u32>,
     pub pull_requests_height: Option<u32>,
 }
 
@@ -123,6 +125,8 @@ impl Default for LayoutSettings {
             branches_height: None,
             stashes_height: None,
             tags_height: None,
+            worktrees_collapsed: false,
+            worktrees_height: None,
             pull_requests_height: None,
         }
     }
@@ -333,6 +337,13 @@ pub struct LayoutPatch {
         skip_serializing_if = "Option::is_none"
     )]
     pub tags_height: Option<Option<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktrees_collapsed: Option<bool>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub worktrees_height: Option<Option<u32>>,
     #[serde(
         deserialize_with = "double_option",
         skip_serializing_if = "Option::is_none"
@@ -461,6 +472,7 @@ impl Settings {
             (&mut layout.branches_height, "layout.branchesHeight"),
             (&mut layout.stashes_height, "layout.stashesHeight"),
             (&mut layout.tags_height, "layout.tagsHeight"),
+            (&mut layout.worktrees_height, "layout.worktreesHeight"),
             (
                 &mut layout.pull_requests_height,
                 "layout.pullRequestsHeight",
@@ -655,6 +667,20 @@ impl Settings {
                     &mut w,
                 ),
                 tags_height: leaf(v, "layout", "tagsHeight", d.layout.tags_height, &mut w),
+                worktrees_collapsed: leaf(
+                    v,
+                    "layout",
+                    "worktreesCollapsed",
+                    d.layout.worktrees_collapsed,
+                    &mut w,
+                ),
+                worktrees_height: leaf(
+                    v,
+                    "layout",
+                    "worktreesHeight",
+                    d.layout.worktrees_height,
+                    &mut w,
+                ),
                 pull_requests_height: leaf(
                     v,
                     "layout",
@@ -758,6 +784,8 @@ impl Settings {
             set(&mut next.layout.branches_height, &p.branches_height);
             set(&mut next.layout.stashes_height, &p.stashes_height);
             set(&mut next.layout.tags_height, &p.tags_height);
+            set(&mut next.layout.worktrees_collapsed, &p.worktrees_collapsed);
+            set(&mut next.layout.worktrees_height, &p.worktrees_height);
             set(
                 &mut next.layout.pull_requests_height,
                 &p.pull_requests_height,

@@ -551,3 +551,70 @@ fn section_heights_round_trip_through_the_file_codec() {
     assert_eq!(back, s);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
+
+// --- GR-39: worktrees section layout ---
+
+#[test]
+fn worktrees_collapsed_defaults_to_false_and_round_trips_true() {
+    assert!(!Settings::default().layout.worktrees_collapsed);
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"worktreesCollapsed": true}
+    }));
+    assert!(s.layout.worktrees_collapsed);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let patched = Settings::default()
+        .apply(&patch(json!({"layout": {"worktreesCollapsed": true}})))
+        .unwrap();
+    assert!(patched.layout.worktrees_collapsed);
+    let text = serde_json::to_string_pretty(&SettingsFile::current(patched.clone())).unwrap();
+    let (back, _) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, patched);
+}
+
+#[test]
+fn lenient_worktrees_height_wrong_type_warns_and_small_clamps() {
+    assert_eq!(Settings::default().layout.worktrees_height, None);
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"worktreesHeight": "300"}
+    }));
+    assert_eq!(s.layout.worktrees_height, None);
+    assert_eq!(fields(&warnings), vec!["layout.worktreesHeight"]);
+
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"worktreesHeight": 10}
+    }));
+    assert_eq!(s.layout.worktrees_height, Some(72));
+    assert_eq!(fields(&warnings), vec!["layout.worktreesHeight"]);
+}
+
+#[test]
+fn patch_worktrees_height_clamps_zero_clears_null_and_sets() {
+    let mut base = Settings::default();
+    assert_eq!(
+        base.apply(&patch(json!({"layout": {"worktreesHeight": 0}})))
+            .unwrap()
+            .layout
+            .worktrees_height,
+        Some(72)
+    );
+    base.layout.worktrees_height = Some(300);
+    let kept = base
+        .apply(&patch(json!({"layout": {"refsWidth": 250}})))
+        .unwrap();
+    assert_eq!(kept.layout.worktrees_height, Some(300));
+    let cleared = base
+        .apply(&patch(json!({"layout": {"worktreesHeight": null}})))
+        .unwrap();
+    assert_eq!(cleared.layout.worktrees_height, None);
+    let set = base
+        .apply(&patch(json!({"layout": {"worktreesHeight": 410}})))
+        .unwrap();
+    assert_eq!(set.layout.worktrees_height, Some(410));
+}
+
+#[test]
+fn worktrees_height_null_is_serialized_in_the_file() {
+    let text = serde_json::to_string_pretty(&SettingsFile::current(Settings::default())).unwrap();
+    assert!(text.contains("\"worktreesHeight\": null"), "{text}");
+    assert!(text.contains("\"worktreesCollapsed\": false"), "{text}");
+}

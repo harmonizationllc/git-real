@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS: Settings = {
     branchesHeight: null,
     stashesHeight: null,
     tagsHeight: null,
+    worktreesCollapsed: false,
+    worktreesHeight: null,
     pullRequestsHeight: null,
   },
   updates: { checkOnStartup: true },

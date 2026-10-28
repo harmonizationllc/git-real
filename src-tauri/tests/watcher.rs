@@ -15,7 +15,7 @@ fn counter() -> Arc<AtomicUsize> {
 
 fn start(dir: &Path, count: &Arc<AtomicUsize>) -> RepoWatcher {
     let count = Arc::clone(count);
-    RepoWatcher::start(dir, DEBOUNCE, move || {
+    RepoWatcher::start(dir, None, DEBOUNCE, move || {
         count.fetch_add(1, Ordering::SeqCst);
     })
     .expect("start watcher")
@@ -197,7 +197,7 @@ fn watcher_start_fails_for_missing_directory() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist");
 
-    let result = RepoWatcher::start(&missing, DEBOUNCE, || {});
+    let result = RepoWatcher::start(&missing, None, DEBOUNCE, || {});
 
     assert!(result.is_err());
 }
@@ -224,7 +224,7 @@ fn is_relevant_rules() {
     ];
     let actual: Vec<(&str, bool)> = cases
         .iter()
-        .map(|(p, _)| (*p, is_relevant(w, Path::new(p))))
+        .map(|(p, _)| (*p, is_relevant(w, None, Path::new(p))))
         .collect();
     assert_eq!(actual, cases);
 }
@@ -233,18 +233,27 @@ fn is_relevant_rules() {
 fn is_relevant_allows_objects_directory_outside_dot_git() {
     assert!(is_relevant(
         Path::new("/w"),
+        None,
         Path::new("/w/vendor/objects/a.txt")
     ));
 }
 
 #[test]
 fn is_relevant_root_lock_file_is_relevant() {
-    assert!(is_relevant(Path::new("/w"), Path::new("/w/Cargo.lock")));
+    assert!(is_relevant(
+        Path::new("/w"),
+        None,
+        Path::new("/w/Cargo.lock")
+    ));
 }
 
 #[test]
 fn is_relevant_path_outside_workdir_is_relevant() {
-    assert!(is_relevant(Path::new("/w"), Path::new("/other/x.lock")));
+    assert!(is_relevant(
+        Path::new("/w"),
+        None,
+        Path::new("/other/x.lock")
+    ));
 }
 
 // Coverage audit additions.
@@ -271,7 +280,7 @@ fn is_relevant_nested_dot_git_and_lookalike_names() {
     ];
     let actual: Vec<(&str, bool)> = cases
         .iter()
-        .map(|(p, _)| (*p, is_relevant(w, Path::new(p))))
+        .map(|(p, _)| (*p, is_relevant(w, None, Path::new(p))))
         .collect();
     assert_eq!(actual, cases);
 }
@@ -312,7 +321,7 @@ fn watcher_noise_during_pending_window_postpones_notification() {
     let dir = dir_with_git_objects();
     let count = counter();
     let c = Arc::clone(&count);
-    let _watcher = RepoWatcher::start(dir.path(), Duration::from_millis(400), move || {
+    let _watcher = RepoWatcher::start(dir.path(), None, Duration::from_millis(400), move || {
         c.fetch_add(1, Ordering::SeqCst);
     })
     .expect("start watcher");
@@ -350,4 +359,74 @@ fn watcher_start_on_a_file_watches_that_file() {
     settle();
 
     assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+// GR-39: a linked worktree's common dir is watched as a second root.
+#[test]
+fn is_relevant_extra_root_rules() {
+    let w = Path::new("/w");
+    let extra = Some(Path::new("/c"));
+    let cases = [
+        ("/c/HEAD", true),
+        ("/c/refs/heads/main", true),
+        ("/c/worktrees/a/HEAD", true),
+        ("/c/objects/aa/bb", false),
+        ("/c/index.lock", false),
+        ("/c/refs/heads/main.lock", false),
+        ("/elsewhere/x", true),
+        // The workdir rules still apply under the workdir.
+        ("/w/.git/objects/aa/bb", false),
+        ("/w/src/a.rs", true),
+    ];
+    let actual: Vec<(&str, bool)> = cases
+        .iter()
+        .map(|(p, _)| (*p, is_relevant(w, extra, Path::new(p))))
+        .collect();
+    assert_eq!(actual, cases);
+}
+
+fn start_with_extra(dir: &Path, extra: &Path, count: &Arc<AtomicUsize>) -> RepoWatcher {
+    let count = Arc::clone(count);
+    RepoWatcher::start(dir, Some(extra), DEBOUNCE, move || {
+        count.fetch_add(1, Ordering::SeqCst);
+    })
+    .expect("start watcher")
+}
+
+#[test]
+fn start_with_extra_root_fires_for_a_change_there() {
+    let dir = tempfile::tempdir().unwrap();
+    let extra = tempfile::tempdir().unwrap();
+    let count = counter();
+    let _watcher = start_with_extra(dir.path(), extra.path(), &count);
+
+    std::fs::write(extra.path().join("HEAD"), "x").unwrap();
+    wait_for(&count, 1);
+    settle();
+
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn start_with_extra_root_ignores_objects_there() {
+    let dir = tempfile::tempdir().unwrap();
+    let extra = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(extra.path().join("objects/aa")).unwrap();
+    let count = counter();
+    let _watcher = start_with_extra(dir.path(), extra.path(), &count);
+
+    std::fs::write(extra.path().join("objects/aa/bbcc"), "x").unwrap();
+    settle();
+
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn start_with_a_missing_extra_root_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("does-not-exist");
+
+    let result = RepoWatcher::start(dir.path(), Some(&missing), DEBOUNCE, || {});
+
+    assert!(result.is_err());
 }

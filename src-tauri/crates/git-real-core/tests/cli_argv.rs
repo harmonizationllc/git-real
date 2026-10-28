@@ -1287,3 +1287,174 @@ fn tag_pushes_expose_the_validated_remote_name_and_workdir() {
     assert_eq!(std::fs::canonicalize(push.workdir()).unwrap(), canon);
     assert_eq!(std::fs::canonicalize(delete.workdir()).unwrap(), canon);
 }
+
+// ---------- GR-39: linked worktree argv ----------
+
+/// A main repo on the stand-in git plus a temp root for worktree folders.
+fn worktree_repo() -> (
+    tempfile::TempDir,
+    PathBuf,
+    tempfile::TempDir,
+    PathBuf,
+    RepoSession,
+) {
+    use_fake_git();
+    let (dir, path) = common::temp_repo_with_commit();
+    let root_dir = tempfile::tempdir().unwrap();
+    let root = root_dir.path().canonicalize().unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, root_dir, root, session)
+}
+
+/// Creates a clean linked worktree `name` at `<root>/<name>` with git2; returns its canonical path.
+fn git2_worktree(main: &Path, root: &Path, name: &str) -> PathBuf {
+    let path = root.join(name);
+    Repository::open(main)
+        .unwrap()
+        .worktree(name, &path, None)
+        .unwrap();
+    path.canonicalize().unwrap()
+}
+
+fn new_wt_branch(name: &str, start: Option<&str>) -> git_real_core::WorktreeBranch {
+    git_real_core::WorktreeBranch::New {
+        name: name.into(),
+        start: start.map(str::to_owned),
+    }
+}
+
+#[test]
+fn worktree_add_new_branch_passes_the_start_verbatim() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let target = root.join("wt");
+    session
+        .add_linked_worktree(&target, &new_wt_branch("feat", Some("HEAD~0")))
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        [
+            "worktree",
+            "add",
+            "-b",
+            "feat",
+            target.to_str().unwrap(),
+            "HEAD~0"
+        ]
+    );
+}
+
+#[test]
+fn worktree_add_new_branch_without_a_start_has_no_start_element() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let target = root.join("wt");
+    session
+        .add_linked_worktree(&target, &new_wt_branch("feat", None))
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["worktree", "add", "-b", "feat", target.to_str().unwrap()]
+    );
+}
+
+#[test]
+fn worktree_add_existing_branch_argv() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feat", &commit, false).unwrap();
+    }
+    let target = root.join("wt");
+    session
+        .add_linked_worktree(
+            &target,
+            &git_real_core::WorktreeBranch::Existing {
+                name: "feat".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["worktree", "add", target.to_str().unwrap(), "feat"]
+    );
+}
+
+#[test]
+fn worktree_add_passes_a_path_with_spaces_as_one_element() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let target = root.join("my work");
+    session
+        .add_linked_worktree(&target, &new_wt_branch("feat", None))
+        .unwrap();
+    let args = after_workdir(&path);
+    assert!(
+        args.contains(&format!("{}/my work", root.display())),
+        "{args:?}"
+    );
+}
+
+#[test]
+fn worktree_add_non_zero_exit_is_operation_failed() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    script_behaviour(&path, "echo 'fatal: nope' >&2; exit 128");
+    let err = session
+        .add_linked_worktree(&root.join("wt"), &new_wt_branch("feat", None))
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::OperationFailed { ref verb, code: Some(128), ref stderr, .. }
+            if verb == "worktree add" && stderr.contains("fatal: nope")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn worktree_remove_force_argv() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let wt = git2_worktree(&path, &root, "w");
+    session.remove_linked_worktree(&wt, true).unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["worktree", "remove", "--force", wt.to_str().unwrap()]
+    );
+}
+
+#[test]
+fn worktree_remove_without_force_argv() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let wt = git2_worktree(&path, &root, "w");
+    session.remove_linked_worktree(&wt, false).unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["worktree", "remove", wt.to_str().unwrap()]
+    );
+}
+
+#[test]
+fn worktree_remove_non_zero_exit_is_operation_failed() {
+    let (_d, path, _r, root, session) = worktree_repo();
+    let wt = git2_worktree(&path, &root, "w");
+    script_behaviour(&path, "exit 1");
+    let err = session.remove_linked_worktree(&wt, true).unwrap_err();
+    assert!(
+        matches!(err, GitError::OperationFailed { ref verb, .. } if verb == "worktree remove"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn worktree_prune_argv() {
+    let (_d, path, _r, _root, session) = worktree_repo();
+    session.prune_linked_worktrees().unwrap();
+    assert_eq!(after_workdir(&path), ["worktree", "prune"]);
+}
+
+#[test]
+fn worktree_prune_non_zero_exit_is_operation_failed() {
+    let (_d, path, _r, _root, session) = worktree_repo();
+    script_behaviour(&path, "exit 1");
+    let err = session.prune_linked_worktrees().unwrap_err();
+    assert!(
+        matches!(err, GitError::OperationFailed { ref verb, .. } if verb == "worktree prune"),
+        "{err:?}"
+    );
+}

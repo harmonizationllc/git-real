@@ -330,7 +330,7 @@ fn register_or_find_after_remove_inserts_with_a_fresh_id() {
 
 // WatcherRegistry: owns one watcher per repo id; removal reports whether one existed.
 fn watcher(dir: &TempDir) -> RepoWatcher {
-    RepoWatcher::start(dir.path(), Duration::from_millis(100), || {}).expect("start watcher")
+    RepoWatcher::start(dir.path(), None, Duration::from_millis(100), || {}).expect("start watcher")
 }
 
 #[test]

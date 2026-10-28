@@ -817,9 +817,10 @@ fn branch_list_serializes_with_camel_case_field_names_and_null_counts() {
                     "name": head,
                     "oid": oid,
                     "isHead": true,
-                    "tracking": {"upstream": "origin/nope", "ahead": null, "behind": null}
+                    "tracking": {"upstream": "origin/nope", "ahead": null, "behind": null},
+                    "worktree": null
                 },
-                {"name": "plain", "oid": oid, "isHead": false, "tracking": null}
+                {"name": "plain", "oid": oid, "isHead": false, "tracking": null, "worktree": null}
             ],
             "remotes": [
                 {
