@@ -40,7 +40,9 @@ impl RepoSession {
     pub fn list_branches(&self) -> Result<BranchList, GitError> {
         let repo = self.repo();
         let head = head_state(repo)?;
-        let elsewhere = self.checked_out_elsewhere()?;
+        // An unreadable worktree registry turns the annotation off rather than
+        // failing the list; the branch commands still refuse on it.
+        let elsewhere = self.checked_out_elsewhere().unwrap_or_default();
 
         let mut local = Vec::new();
         for item in repo.branches(Some(BranchType::Local))? {

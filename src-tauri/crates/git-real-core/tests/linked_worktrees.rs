@@ -832,6 +832,37 @@ fn list_branches_from_linked_marks_main_branch() {
     assert_eq!(by_name("feat/a").worktree, None);
 }
 
+/// An unreadable `.git/worktrees` makes `repo.worktrees()` fail (a regular
+/// file there reads as "no worktrees"). Skipped when the chmod has no effect,
+/// as for root.
+#[cfg(unix)]
+#[test]
+fn list_branches_survives_a_corrupt_worktree_registry() {
+    use std::os::unix::fs::PermissionsExt;
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    add_worktree(&main, &root, "a", "feat/a");
+    let registry = main.join(".git/worktrees");
+    let set_mode = |mode| {
+        std::fs::set_permissions(&registry, std::fs::Permissions::from_mode(mode)).unwrap()
+    };
+    set_mode(0o000);
+    if std::fs::read_dir(&registry).is_ok() {
+        set_mode(0o755);
+        return;
+    }
+    let s = session(&main);
+    let listed = s.list_branches();
+    let checkout = s.checkout_branch("feat/a");
+    set_mode(0o755);
+    let list = listed.unwrap();
+    assert!(list.local.iter().any(|b| b.name == "feat/a"), "{list:?}");
+    assert!(list.local.iter().all(|b| b.worktree.is_none()), "{list:?}");
+    assert!(checkout.is_err(), "{checkout:?}");
+}
+
 #[test]
 fn checkout_branch_checked_out_elsewhere_is_refused() {
     if !common::git_available() {
