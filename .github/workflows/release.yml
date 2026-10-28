@@ -116,9 +116,57 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  build-macos:
+    runs-on: macos-latest
+    needs: check-version
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Prepare Apple signing
+        run: .github/scripts/apple-signing-env.sh
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build macOS disk image
+        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          retention-days: 1
+          if-no-files-found: error
+
   publish:
     runs-on: ubuntu-latest
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-macos]
     permissions:
       contents: write
 
@@ -142,3 +190,4 @@ jobs:
             release-assets/appimage/*.AppImage
             release-assets/nsis/*.exe
             release-assets/msi/*.msi
+            release-assets/**/*.dmg

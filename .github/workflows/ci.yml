@@ -193,6 +193,44 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  package-macos:
+    name: Package (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build macOS disk image
+        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-real-macos-${{ github.sha }}
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          retention-days: 14
+          if-no-files-found: error
+
   bench:
     name: Benchmarks (large repositories)
     runs-on: ubuntu-latest
