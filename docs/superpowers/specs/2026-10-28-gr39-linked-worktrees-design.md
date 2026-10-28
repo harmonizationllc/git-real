@@ -65,13 +65,18 @@ worktree`, `features/worktree` and their IPC names keep meaning "the
   tab. The list has the main worktree first (when there is one, see below),
   then linked worktrees sorted by path; `isCurrent` marks the entry whose
   canonical path is the session root.
-- **The main row comes from the common dir, not its parent.** Core opens
-  `Repository::open(commondir())`: when that repository is not bare, its
-  `workdir()` is the main worktree (this also covers `--separate-git-dir`,
-  which libgit2 resolves through `core.worktree`). When it is bare (a
-  linked worktree of a bare repository), there is no main row and the
-  section lists linked worktrees only. A session that is itself bare lists
-  nothing and shows the bare message.
+- **The main row comes from the common dir, not its parent.** A main
+  session builds its own row. A linked session opens
+  `Repository::open(commondir())`: when that repository is not bare and its
+  `workdir()` opens onto the same common dir, that folder is the main row.
+  When it is bare (a linked worktree of a bare repository) there is no main
+  row and the section lists linked worktrees only. A session that is itself
+  bare lists nothing and shows the bare message. _Amended during
+  implementation:_ git sets no `core.worktree` for `--separate-git-dir`
+  layouts and `git worktree list` itself reports the git directory there,
+  so from a linked worktree of such a repository the app shows no main row
+  and cannot annotate the main worktree's branch; git's own refusal still
+  applies.
 - **A missing folder still holds its branch.** git keeps a worktree's HEAD
   in the admin dir (`<commondir>/worktrees/<name>/HEAD`) and refuses
   `switch`, `branch -D` and `worktree add` for that branch until the entry
@@ -195,12 +200,15 @@ out of scope).
 New: `BranchCheckedOut { name: String, worktree: PathBuf }`,
 `WorktreeNotFound(PathBuf)`, `WorktreeDirty(PathBuf)`,
 `WorktreeLocked(String)`, `CannotRemoveMain`, `CannotRemoveCurrent`,
-`PathExists(PathBuf)`. Reused: `BranchExists`, `BranchNotFound`,
-`RevisionNotFound`, `InvalidBranchName`, `OperationFailed`. `AppErrorKind`
-gains the camelCase twins (`branchCheckedOut`, `worktreeNotFound`,
-`worktreeDirty`, `worktreeLocked`, `cannotRemoveMain`,
-`cannotRemoveCurrent`, `pathExists`), mapped in `src-tauri/src/error.rs`
-and `src/lib/ipc/errors.ts`. `branchCheckedOut`'s message is
+`PathExists(PathBuf)`, `PathNotAbsolute(PathBuf)` (added in the final
+review: a relative or `~` folder would be resolved by git against the
+workdir, so `add` refuses it before any other check). Reused:
+`BranchExists`, `BranchNotFound`, `RevisionNotFound`, `InvalidBranchName`,
+`OperationFailed`. `AppErrorKind` gains the camelCase twins
+(`branchCheckedOut`, `worktreeNotFound`, `worktreeDirty`, `worktreeLocked`,
+`cannotRemoveMain`, `cannotRemoveCurrent`, `pathExists`,
+`pathNotAbsolute`), mapped in `src-tauri/src/error.rs` and
+`src/lib/ipc/errors.ts`. `branchCheckedOut`'s message is
 "<name> is checked out in worktree <folder>".
 
 ## 4. App layer (`src-tauri`)
@@ -401,6 +409,19 @@ Tests are written first by the tester role; the developer never edits them.
      "locked" badge, Remove disabled with "Locked: demo".
   8. Open a linked worktree from Recent repos on the start screen → opens
      like any repo; status, log, branches, stash and sync all work.
+
+### Walk results (2026-10-28)
+
+Steps 1–8 were driven through the WebKit inspector against the dev build
+at the final branch head (fix wave included), twice on fresh fixtures: all
+product checks passed, including the extra check that a `~/…` folder is
+refused inline and creates nothing. Step 4 was checked as a branch created
+in the main worktree appearing in the linked tab without a refresh (the
+common-dir watch). Step 8 was confirmed from a screenshot: header on the
+linked branch, graph, Changes, commit box, and a Worktrees section marking
+the main row and the current, locked row. The walk script and screenshots
+live in the session scratchpad and are attached to the Jira ticket per the
+owner's rule on temporary tooling.
 
 ## 8. Left to the builder
 
