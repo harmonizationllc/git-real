@@ -47,3 +47,9 @@
   flex: 1;
   min-width: 0;
 }
+
+/* Why Existing mode has nothing to pick; plain text, not an alert. */
+.hint {
+  margin: 0;
+  color: var(--color-text-muted);
+}

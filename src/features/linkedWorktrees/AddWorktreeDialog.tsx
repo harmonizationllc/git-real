@@ -53,6 +53,7 @@ function AddWorktreeDialogBody({
   const groupName = useId();
   const startName = useId();
   const branchId = useId();
+  const hintId = useId();
   const nameId = useId();
   const commitId = useId();
   const folderId = useId();
@@ -74,6 +75,8 @@ function AddWorktreeDialogBody({
   const folderRef = useRef<HTMLInputElement>(null);
 
   const local = branches?.local ?? [];
+  // Only once loaded, so the hint never flashes while the list is on its way.
+  const noneFree = branches !== undefined && local.every((b) => lockSuffix(b) !== null);
   const selected =
     existing !== "" ? existing : (local.find((b) => lockSuffix(b) === null)?.name ?? "");
   // A linked worktree of a bare or separate-git-dir repository has no main row.
@@ -193,6 +196,7 @@ function AddWorktreeDialogBody({
                 id={branchId}
                 value={selected}
                 disabled={pending}
+                aria-describedby={noneFree ? hintId : undefined}
                 onChange={(e) => setExisting(e.target.value)}
               >
                 {local.map((b) => {
@@ -204,6 +208,11 @@ function AddWorktreeDialogBody({
                   );
                 })}
               </select>
+              {noneFree && (
+                <p id={hintId} className={styles.hint}>
+                  Every branch is checked out in a worktree. Create a new one.
+                </p>
+              )}
             </div>
           ) : (
             <>

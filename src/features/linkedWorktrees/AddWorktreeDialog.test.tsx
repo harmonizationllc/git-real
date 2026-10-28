@@ -68,6 +68,7 @@ const folder = () => screen.getByRole("textbox", { name: "Folder" });
 const branchSelect = () => screen.getByRole("combobox", { name: "Branch" });
 const option = (name: string) => screen.getByRole("option", { name }) as HTMLOptionElement;
 const addButton = () => screen.getByRole("button", { name: "Add" });
+const NO_FREE_BRANCH = "Every branch is checked out in a worktree. Create a new one.";
 
 // Contract: nothing renders while closed; open it is the Add worktree modal.
 describe("AddWorktreeDialog rendering", () => {
@@ -154,11 +155,33 @@ describe("AddWorktreeDialog existing branch", () => {
     expect(addButton()).toBeDisabled();
   });
 
+  it("should explain when no branch is free in Existing mode", async () => {
+    vi.mocked(listBranches).mockResolvedValue({
+      ...branches(),
+      local: branches().local.slice(0, 2),
+    });
+    const { user } = await renderDialog();
+    expect(screen.queryByText(NO_FREE_BRANCH)).toBeNull();
+    await user.click(radio("Existing branch"));
+    const hint = await screen.findByText(NO_FREE_BRANCH);
+    expect(hint).not.toHaveRole("alert");
+    expect(branchSelect()).toHaveAccessibleDescription(NO_FREE_BRANCH);
+    expect(addButton()).toBeDisabled();
+  });
+
+  it("should not explain while a branch is free", async () => {
+    const { user } = await renderDialog();
+    await user.click(radio("Existing branch"));
+    await waitFor(() => expect(branchSelect()).toHaveValue("free"));
+    expect(screen.queryByText(NO_FREE_BRANCH)).toBeNull();
+  });
+
   it("should list nothing until the branches load", async () => {
     vi.mocked(listBranches).mockReturnValue(new Promise(() => undefined));
     const { user } = await renderDialog();
     await user.click(radio("Existing branch"));
     expect(screen.queryAllByRole("option")).toEqual([]);
+    expect(screen.queryByText(NO_FREE_BRANCH)).toBeNull();
   });
 
   it("should submit an existing branch", async () => {
