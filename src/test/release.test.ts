@@ -615,10 +615,12 @@ describe("release workflow", () => {
   });
 
   it("release workflow references Apple secrets only in the gate env block", () => {
-    const rest = readText(".github/workflows/release.yml")
-      .split("\n")
-      .filter((l) => !/^\s*APPLE_[A-Z_]+: \$\{\{ secrets\.APPLE_[A-Z_]+ \}\}\s*$/.test(l))
-      .join("\n");
+    const GATE_LINE = /^\s*(APPLE_[A-Z_]+): \$\{\{ secrets\.\1 \}\}\s*$/;
+    const lines = readText(".github/workflows/release.yml").split("\n");
+    // Exactly the six gate env lines may name an Apple secret
+    const dropped = lines.filter((l) => GATE_LINE.test(l));
+    const rest = lines.filter((l) => !GATE_LINE.test(l)).join("\n");
+    expect(dropped).toHaveLength(6);
     expect(rest).not.toContain("APPLE_");
   });
 

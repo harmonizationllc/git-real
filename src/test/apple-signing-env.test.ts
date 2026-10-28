@@ -148,14 +148,14 @@ describe.skipIf(!hasBash)("apple-signing-env", () => {
   it("password without the certificate fails naming the certificate", () => {
     const r = runGate({ APPLE_CERTIFICATE_PASSWORD: PW });
     expect(r.status).toBe(1);
-    expect(r.output).toContain("APPLE_CERTIFICATE");
+    expect(r.output).toMatch(/APPLE_CERTIFICATE(?!_)/);
     expect(r.envFile).toBe("");
   });
 
   it("identity alone fails naming the certificate", () => {
     const r = runGate({ APPLE_SIGNING_IDENTITY: ID });
     expect(r.status).toBe(1);
-    expect(r.output).toContain("APPLE_CERTIFICATE");
+    expect(r.output).toMatch(/APPLE_CERTIFICATE(?!_)/);
     expect(r.envFile).toBe("");
   });
 
@@ -169,7 +169,7 @@ describe.skipIf(!hasBash)("apple-signing-env", () => {
   it("notarization trio without a certificate fails naming the certificate", () => {
     const r = runGate({ APPLE_ID: AID, APPLE_PASSWORD: APW, APPLE_TEAM_ID: TEAM });
     expect(r.status).toBe(1);
-    expect(r.output).toContain("APPLE_CERTIFICATE");
+    expect(r.output).toMatch(/APPLE_CERTIFICATE(?!_)/);
     expect(r.envFile).toBe("");
   });
 
