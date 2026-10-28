@@ -129,7 +129,9 @@ impl RepoSession {
 
     /// Whether the listed worktree at `path` (as registered, or its canonical
     /// form) has changes, untracked files included; `false` when its folder
-    /// is missing.
+    /// is missing. An existing folder that cannot be opened for any reason
+    /// (a broken `.git` file, permissions) counts as dirty, so the UI offers
+    /// the force step.
     pub fn linked_worktree_dirty(&self, path: &Path) -> Result<bool, GitError> {
         is_dirty(&self.find_linked_worktree(path)?)
     }
@@ -140,12 +142,16 @@ impl RepoSession {
     pub fn prune_linked_worktrees(&self) -> Result<PrunedWorktrees, GitError> {
         let before = self.recorded_worktree_paths()?;
         self.run_worktree("worktree prune", &["prune"])?;
-        let after = self.worktree_names()?;
-        let mut paths: Vec<PathBuf> = before
-            .into_iter()
-            .filter(|(name, _)| !after.contains(name))
-            .map(|(_, path)| path)
-            .collect();
+        // The prune already ran: if the registry cannot be re-read, report from
+        // which admin dirs are gone instead of failing a finished operation.
+        let mut paths = match self.worktree_names() {
+            Ok(after) => before
+                .into_iter()
+                .filter(|(name, _)| !after.contains(name))
+                .map(|(_, path)| path)
+                .collect(),
+            Err(_) => pruned_without_relisting(self.repo().commondir(), before),
+        };
         paths.sort();
         Ok(PrunedWorktrees { paths })
     }
@@ -274,6 +280,19 @@ fn admin_head(common: &Path, name: &str) -> Option<HeadState> {
     })
 }
 
+/// The recorded paths of the `before` entries whose admin dir under
+/// `<common>/worktrees` is now confirmed absent, which is what a prune leaves
+/// of an entry it removed (kept and locked entries keep their dir). An admin
+/// dir that cannot be checked counts as kept.
+fn pruned_without_relisting(common: &Path, before: BTreeMap<String, PathBuf>) -> Vec<PathBuf> {
+    let admin = common.join("worktrees");
+    before
+        .into_iter()
+        .filter(|(name, _)| matches!(admin.join(name).try_exists(), Ok(false)))
+        .map(|(_, path)| path)
+        .collect()
+}
+
 /// `PathExists` unless `path` is absent or an empty directory.
 fn ensure_free_folder(path: &Path) -> Result<(), GitError> {
     if !path.exists() || (path.is_dir() && std::fs::read_dir(path)?.next().is_none()) {
@@ -284,8 +303,9 @@ fn ensure_free_folder(path: &Path) -> Result<(), GitError> {
 }
 
 /// Any change at all, untracked files included, ignored files not; a
-/// missing folder has none. A folder that does not open as a repository (a
-/// broken `.git` file) counts as dirty, so removing it takes `force`.
+/// missing folder has none. An existing folder that cannot be opened for any
+/// reason (a broken `.git` file, permissions) counts as dirty, so the UI
+/// offers the force step.
 fn is_dirty(entry: &LinkedWorktree) -> Result<bool, GitError> {
     if entry.missing {
         return Ok(false);
@@ -298,4 +318,28 @@ fn is_dirty(entry: &LinkedWorktree) -> Result<bool, GitError> {
         .recurse_untracked_dirs(true)
         .include_ignored(false);
     Ok(!repo.statuses(Some(&mut opts))?.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A registry that cannot be re-read after the prune still yields the
+    /// report: entries whose admin dir is gone were pruned, the rest were kept.
+    #[test]
+    fn prune_reports_recorded_paths_when_the_registry_cannot_be_reread() {
+        let common = tempfile::tempdir().unwrap();
+        let admin = common.path().join("worktrees");
+        let before: BTreeMap<String, PathBuf> = ["gone", "kept", "locked"]
+            .into_iter()
+            .map(|n| (n.to_owned(), PathBuf::from(format!("/wt/{n}"))))
+            .collect();
+        std::fs::create_dir_all(admin.join("kept")).unwrap();
+        std::fs::create_dir_all(admin.join("locked")).unwrap();
+        std::fs::write(admin.join("locked/locked"), "").unwrap();
+        assert_eq!(
+            pruned_without_relisting(common.path(), before),
+            vec![PathBuf::from("/wt/gone")]
+        );
+    }
 }

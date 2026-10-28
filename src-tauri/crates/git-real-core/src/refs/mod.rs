@@ -42,7 +42,10 @@ impl RepoSession {
         let head = head_state(repo)?;
         // An unreadable worktree registry turns the annotation off rather than
         // failing the list; the branch commands still refuse on it.
-        let elsewhere = self.checked_out_elsewhere().unwrap_or_default();
+        let elsewhere = self.checked_out_elsewhere().unwrap_or_else(|e| {
+            eprintln!("worktree registry unreadable; branch annotations off: {e}");
+            std::collections::BTreeMap::new()
+        });
 
         let mut local = Vec::new();
         for item in repo.branches(Some(BranchType::Local))? {

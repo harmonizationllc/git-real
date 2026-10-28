@@ -811,7 +811,7 @@ fn prune_returns_missing_paths_and_skips_locked() {
 /// made unreadable. Skipped when the chmod has no effect, as for root.
 #[cfg(unix)]
 #[test]
-fn prune_reports_an_entry_whose_gitdir_is_broken() {
+fn prune_reports_an_entry_whose_admin_files_are_unreadable() {
     use std::os::unix::fs::PermissionsExt;
     if !common::git_available() {
         return;
@@ -822,6 +822,7 @@ fn prune_reports_an_entry_whose_gitdir_is_broken() {
     let commondir = main.join(".git/worktrees/a/commondir");
     std::fs::set_permissions(&commondir, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::read(&commondir).is_ok() {
+        eprintln!("skipped: running as root, chmod has no effect");
         return;
     }
     let s = session(&main);
@@ -894,6 +895,7 @@ fn list_branches_survives_a_corrupt_worktree_registry() {
     set_mode(0o000);
     if std::fs::read_dir(&registry).is_ok() {
         set_mode(0o755);
+        eprintln!("skipped: running as root, chmod has no effect");
         return;
     }
     let s = session(&main);
@@ -903,7 +905,7 @@ fn list_branches_survives_a_corrupt_worktree_registry() {
     let list = listed.unwrap();
     assert!(list.local.iter().any(|b| b.name == "feat/a"), "{list:?}");
     assert!(list.local.iter().all(|b| b.worktree.is_none()), "{list:?}");
-    assert!(checkout.is_err(), "{checkout:?}");
+    assert!(matches!(checkout, Err(GitError::Git2(_))), "{checkout:?}");
 }
 
 #[test]
