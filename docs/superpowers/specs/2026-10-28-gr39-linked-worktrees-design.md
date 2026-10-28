@@ -93,10 +93,17 @@ worktree`, `features/worktree` and their IPC names keep meaning "the
   list is touched by `register_session` as for any repo. No new command.
 - **Dirty check in core, not stderr parsing.** Before a non-force remove,
   core opens the target worktree with git2 and runs a status that includes
-  untracked files; any entry means `WorktreeDirty`. The UI turns that into
-  the second confirmation. A refusal git still produces (for example a
-  change made between the check and the run) is an `OperationFailed` with
-  git's text.
+  untracked files; any entry means `WorktreeDirty`. The same helper backs
+  the read-only `linked_worktree_dirty(path) -> bool` query (command
+  `is_linked_worktree_dirty`) the UI asks before closing any tab (see
+  "Closing tabs" below). An existing folder that cannot be opened for any
+  reason (a broken `.git` file, permissions) counts as dirty, so the UI
+  offers the force step; git may still refuse such a folder even with
+  `--force`, and that refusal shows as `OperationFailed` with git's text.
+  A change made after the UI's check is caught by the remove's own check
+  (`WorktreeDirty`; the UI reopens the force step); the millisecond window
+  between that check and git's run is an `OperationFailed` with git's
+  text.
 - **Locked worktrees are shown, not removed.** `git worktree remove` refuses
   a locked worktree even with `--force` (it needs `--force --force`). The
   row shows a "locked" badge with the reason as `title`; Remove is disabled
@@ -127,13 +134,19 @@ worktree }` before running git, so the message is the app's and names the
   and the relevance rule treats it as a `.git` dir: `objects/` and `*.lock`
   are ignored, everything else refreshes. A main-worktree tab already sees
   linked worktrees' `HEAD` files under `.git/worktrees/<name>/`.
-- **Closing tabs of a removed worktree happens first (my call).** Before
-  running a remove (after the user's final confirmation) or a prune, the
-  front end closes every open tab whose `summary.path` is a target path
-  (via the existing `closeRepoTab`, which drops the session and its
-  recursive watcher), then runs the command. On Windows an open directory
-  watch can block deleting the folder, so the watcher must be gone before
-  git runs. If the command then fails, the tabs stay closed; the worktree
+- **Closing tabs of a removed worktree happens after the final
+  confirmation and before git runs (my call, amended in the follow-up
+  wave).** After the first confirm, the front end asks core whether the
+  worktree is dirty through the read-only `is_linked_worktree_dirty`
+  command, without closing anything: dirty → the force step; clean → the
+  remove. Only the final confirmation ("Remove" on a clean worktree or
+  "Remove anyway") closes every open tab whose `summary.path` is a target
+  path (via the existing `closeRepoTab`, awaited so the session and its
+  recursive watcher are gone), then runs the command. Prune does the same
+  for its candidates. On Windows an open directory watch can block
+  deleting the folder, so the watcher must be gone before git runs. A
+  cancelled force step therefore leaves the tab and its commit draft
+  untouched. If the command then fails, the tabs stay closed; the worktree
   is still listed and one double-click reopens it. Afterwards the hook
   invalidates the worktree, branch and recent queries. The recent-repos
   entry is left in place; opening it later fails with the existing

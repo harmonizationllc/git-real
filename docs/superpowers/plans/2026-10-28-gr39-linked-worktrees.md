@@ -414,3 +414,15 @@ git commit -m "feat(GR-39): badge and lock branches checked out in another workt
 
 - From `src-tauri`: `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`. From the root: `npm run test:coverage`, `npm run lint`, `npm run typecheck`, `npm run build`.
 - Acceptance walk per spec §7 (steps 1–8) on the running app, driven with the desktop-walk tooling; results recorded in a `docs(GR-39)` commit alongside the spec.
+
+---
+
+### Addendum: review fix waves (2026-10-28)
+
+The whole-branch review returned two Important findings, fixed in one wave: the tab close is awaited before `git worktree remove`/`prune` runs, and a relative or `~` folder is refused in core (`PathNotAbsolute`). The owner then ruled that every deferred minor is fixed on this branch rather than ticketed. That follow-up ran as two waves plus a closing round, each reviewed:
+
+- **Wave R (Rust):** a read-only `is_linked_worktree_dirty` command sharing the remove's dirty helper, and an unopenable existing folder counting as dirty; `list_branches` degrades its worktree annotation (with a log line) when the registry cannot be read while the guards keep propagating; prune reports every entry git removed by diffing the registry names before and after, falling back to the recorded candidate paths if the re-read fails; `rename_branch` refuses a branch held by a missing worktree (libgit2 updates a live holder's HEAD, verified by test); the admin `HEAD` fallback accepts 64-hex oids.
+- **Wave F (front end):** the panel asks core whether the worktree is dirty after the first confirm and closes tabs only on the final confirmation, so a cancelled force step keeps the tab and its commit draft; remote-branch Checkout and Create worktree… respect a local twin held elsewhere or current (title `Already checked out in this worktree`); Existing mode explains an empty choice (`Every branch is checked out in a worktree. Create a new one.`); tab matching tolerates a trailing separator (`samePath`); copy polish (`Add` label while pending, `Worktrees` without a count while loading, a text `Prune` control, no `flushSync`); the branches test asserts the dialog closed.
+- **Closing round (Rust):** root-run chmod tests announce their skip, the prune test is named for what it corrupts, the registry test matches the propagated variant, and the dirty doc comment states that any unopenable folder counts as dirty.
+
+Not fixable here: the separate-git-dir main row from a linked tab (git itself cannot name it) and Windows verbatim path prefixes (pre-existing, GR-34/35).
