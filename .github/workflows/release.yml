@@ -21,7 +21,7 @@ jobs:
           tag="${GITHUB_REF_NAME#v}"
           conf="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           test "$tag" = "$conf" || { echo "tag v$tag != tauri.conf.json $conf"; exit 1; }
-          [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]] || { echo "version $tag must be X.Y.Z or X.Y.Z-N; the Windows MSI accepts only a numeric pre-release identifier"; exit 1; }
+          [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version $tag must be X.Y.Z (release tags carry no pre-release suffix)"; exit 1; }
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -135,7 +135,6 @@ jobs:
         with:
           name: Git Real ${{ github.ref_name }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
           files: |
             release-assets/deb/*.deb

@@ -230,11 +230,8 @@ The `Release` workflow first checks the tag against the version, then builds the
 `.deb`, `.rpm` and AppImage on Linux and the NSIS `.exe` and `.msi` on Windows in
 parallel, then publishes one GitHub release carrying all five files with generated
 release notes. A tag whose version differs from `tauri.conf.json` fails before anything
-is built. A pre-release tag contains a hyphen followed by a plain integer (for example
-`vX.Y.Z-1`), because the Windows MSI format accepts only a numeric pre-release
-identifier; the workflow rejects any other shape. It is marked as a pre-release, and the
-in-app update check reads the latest non-prerelease release, so pre-releases do not
-prompt users to update.
+is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
+every release is a full release that the in-app update check can offer.
 
 ## Project layout
 
