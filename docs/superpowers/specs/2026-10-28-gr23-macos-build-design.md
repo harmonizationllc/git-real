@@ -108,7 +108,8 @@ Survey of `main` at 09b10ce:
 - API-key notarization (`APPLE_API_KEY`, `APPLE_API_ISSUER`,
   `APPLE_API_KEY_PATH`). The bundler supports it; this story wires the
   Apple ID form only, which is what the ticket and GR-37 name.
-- Signing in CI. `package-macos` never signs; signing is a release concern.
+- Developer ID signing in CI. `package-macos` never signs with a Developer ID
+  (it ad-hoc signs through the gate); Developer ID signing is a release concern.
 - Mac App Store, Homebrew cask, Sparkle or `tauri-plugin-updater` (GR-25),
   separate Intel and Apple Silicon downloads.
 - Running the app's integration tests (`src-tauri/tests`) on macOS. The
@@ -363,12 +364,15 @@ release workflow itself runs only on a tag; the GR-38 throwaway
 
 ### 5.1 Probe results
 
-One CI round, green on the first push (head 55e1f4f).
+One CI round, `Package (macOS)` green on the first push (head 55e1f4f).
 
 - Run 40733436169 on `feature/gr-23-macos-build`. `Package (macOS)`,
   `Package (Linux)`, `Package (Windows)`, `Core crate (Windows)` and
   `build-and-test` all succeeded. `Benchmarks (large repositories)` failed,
   as it has on `main` since 535677a; not acted on.
+- Final-head run 40737154994 on a5cfa51. `Package (macOS)`, `Package (Linux)`,
+  `Package (Windows)`, `Core crate (Windows)` and `build-and-test` succeeded.
+  `Benchmarks (large repositories)` failed, as it does on `main`.
 - `Package (macOS)` ran 17:17:17Z to 17:33:37Z, about 16 minutes 20 seconds.
   The two Rust targets compiled in 8m 52s and 5m 30s, then the bundler built
   the `.app` and the DMG.
@@ -443,7 +447,7 @@ packages, bench workflow) is untouched.
   notarized, so the first launch is refused: on macOS 15 and later, open
   System Settings › Privacy & Security, find the Git Real entry and choose
   **Open Anyway**; on earlier versions Control-click the app and choose
-  **Open**. The one-line `xattr -d com.apple.quarantine "/Applications/Git
+  **Open**. The one-line `xattr -dr com.apple.quarantine "/Applications/Git
 Real.app"` alternative is given for people who prefer the terminal. Git
   itself comes with the Xcode Command Line Tools (`xcode-select --install`),
   which macOS offers to install the first time anything calls `git`.
@@ -451,7 +455,7 @@ Real.app"` alternative is given for people who prefer the terminal. Git
   Windows installers and the macOS disk image in parallel, then publishes
   one release carrying all six files. One sentence: the macOS job signs
   and notarizes when the `APPLE_*` repository secrets are present (see
-  ADR 0006) and builds unsigned otherwise.
+  ADR 0006) and builds ad-hoc signed, without notarization, otherwise.
 - **README `## Development`**: a "Building on macOS" paragraph after the
   Windows one: Xcode Command Line Tools, Rust stable with both Apple
   targets added through `rustup target add`, Node 24, and

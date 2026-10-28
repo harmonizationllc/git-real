@@ -94,4 +94,9 @@ time without touching what the others own.
      certificate serves every app the business ships.
 - The macOS DMG ships unsigned until GR-37 adds the Apple secrets. Turning signing on
   is adding repository secrets and nothing else: no code, workflow or config change.
+  One precondition: the variables the gate writes to `GITHUB_ENV` are visible to every
+  later step of `build-macos`, including the post-job step of the third-party
+  `Swatinem/rust-cache@v2`. Before the secrets are added, GR-37 must scope them, either
+  by SHA-pinning the third-party actions in that job or by having the gate run the
+  build itself in one step, so the certificate and passwords never reach another step.
 - Tags are `vX.Y.Z` only; a hyphenated tag fails the version check before any build starts.

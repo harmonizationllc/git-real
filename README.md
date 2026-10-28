@@ -100,7 +100,7 @@ download is named `Git.Real_<version>_amd64.deb`; quote the path:
   Control-click the app and choose **Open**. If you prefer the terminal, run:
 
   ```sh
-  xattr -d com.apple.quarantine "/Applications/Git Real.app"
+  xattr -dr com.apple.quarantine "/Applications/Git Real.app"
   ```
 
 The `.deb` recommends `git`, and you should have it on any install: every network
@@ -250,8 +250,8 @@ The `Release` workflow first checks the tag against the version, then builds the
 universal `.dmg` on macOS in parallel, then publishes one GitHub release carrying all
 six files with generated release notes. The macOS job signs and notarizes the app when
 the `APPLE_*` repository secrets are present (see
-[ADR 0006](docs/adr/0006-per-platform-bundles-and-release.md)) and builds unsigned
-otherwise. A tag whose version differs from `tauri.conf.json` fails before anything
+[ADR 0006](docs/adr/0006-per-platform-bundles-and-release.md)) and builds ad-hoc
+signed, without notarization, otherwise. A tag whose version differs from `tauri.conf.json` fails before anything
 is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
 every release is a full release that the in-app update check can offer.
 
