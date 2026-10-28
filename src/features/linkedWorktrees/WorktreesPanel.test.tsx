@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addLinkedWorktree,
   closeRepo,
+  isLinkedWorktreeDirty,
   listBranches,
   listLinkedWorktrees,
   openRepo,
@@ -11,6 +12,7 @@ import {
   updateSettings,
 } from "../../lib/ipc";
 import type { AppError, BranchList, LinkedWorktree, OpenedRepo } from "../../lib/ipc";
+import { useCommitDraft } from "../../lib/store/commitDraft";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useSettings } from "../../lib/store/settings";
 import { oidOf } from "../../test/graphFixtures";
@@ -29,6 +31,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   listBranches: vi.fn(),
   openRepo: vi.fn(),
   closeRepo: vi.fn(),
+  isLinkedWorktreeDirty: vi.fn(),
 }));
 
 const main = linkedWorktree();
@@ -73,6 +76,8 @@ beforeEach(async () => {
   vi.mocked(pruneLinkedWorktrees).mockResolvedValue({ paths: [] });
   vi.mocked(openRepo).mockImplementation(async (path) => opened(9, path));
   vi.mocked(closeRepo).mockResolvedValue(undefined);
+  vi.mocked(isLinkedWorktreeDirty).mockResolvedValue(false);
+  useCommitDraft.setState({ drafts: {} });
 });
 
 async function renderPanel() {
@@ -87,6 +92,7 @@ const row = (folder: string) =>
 const toggle = () => screen.getByRole("button", { name: /^Worktrees \(/ });
 const plus = () => screen.getByRole("button", { name: "Add worktree…" });
 const pruneButton = () => screen.getByRole("button", { name: "Prune stale worktrees" });
+const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0] as number;
 const rightClick = (el: HTMLElement) => fireEvent.contextMenu(el, { clientX: 10, clientY: 20 });
 const menuItem = (name: string) => screen.getByRole("menuitem", { name });
 
@@ -264,7 +270,87 @@ describe("WorktreesPanel remove", () => {
     expect(removeLinkedWorktree).not.toHaveBeenCalled();
   });
 
-  it("should offer Remove anyway on worktreeDirty and remove with force", async () => {
+  it("should check dirtiness before closing the tab and skip the force step when clean", async () => {
+    useRepoTabs.getState().openTab(opened(5, a.path));
+    const { user } = await renderPanel();
+    await user.click(
+      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
+    );
+    await waitFor(() =>
+      expect(removeLinkedWorktree).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a", false),
+    );
+    expect(isLinkedWorktreeDirty).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a");
+    expect(closeRepo).toHaveBeenCalledExactlyOnceWith(5);
+    expect(order(isLinkedWorktreeDirty)).toBeLessThan(order(closeRepo));
+    expect(order(closeRepo)).toBeLessThan(order(removeLinkedWorktree));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should show the force step from the dirty check without closing the tab", async () => {
+    vi.mocked(isLinkedWorktreeDirty).mockResolvedValue(true);
+    useRepoTabs.getState().openTab(opened(5, a.path));
+    const { user } = await renderPanel();
+    await user.click(
+      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
+    );
+    const force = await screen.findByRole("dialog", { name: "app-feat-a has uncommitted changes" });
+    expect(force).toHaveTextContent("Removing it discards them. This can't be undone.");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(closeRepo).not.toHaveBeenCalled();
+    expect(removeLinkedWorktree).not.toHaveBeenCalled();
+    expect(useRepoTabs.getState().tabs.map((t) => t.id)).toEqual([5]);
+  });
+
+  it("should keep the tab and draft when the force step is cancelled", async () => {
+    vi.mocked(isLinkedWorktreeDirty).mockResolvedValue(true);
+    useRepoTabs.getState().openTab(opened(5, a.path));
+    useCommitDraft.getState().setSubject(5, "wip subject");
+    const { user } = await renderPanel();
+    await user.click(
+      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
+    );
+    const force = await screen.findByRole("dialog", { name: "app-feat-a has uncommitted changes" });
+    await user.click(within(force).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(removeLinkedWorktree).not.toHaveBeenCalled();
+    expect(closeRepo).not.toHaveBeenCalled();
+    expect(useRepoTabs.getState().tabs.map((t) => t.id)).toEqual([5]);
+    expect(useCommitDraft.getState().drafts[5]?.subject).toBe("wip subject");
+  });
+
+  it("should close the tab and remove with force on Remove anyway", async () => {
+    vi.mocked(isLinkedWorktreeDirty).mockResolvedValue(true);
+    useRepoTabs.getState().openTab(opened(5, a.path));
+    const { user } = await renderPanel();
+    await user.click(
+      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
+    );
+    const force = await screen.findByRole("dialog", { name: "app-feat-a has uncommitted changes" });
+    await user.click(within(force).getByRole("button", { name: "Remove anyway" }));
+    await waitFor(() =>
+      expect(removeLinkedWorktree).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a", true),
+    );
+    expect(closeRepo).toHaveBeenCalledExactlyOnceWith(5);
+    expect(order(closeRepo)).toBeLessThan(order(removeLinkedWorktree));
+    expect(useRepoTabs.getState().tabs).toEqual([]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should show a dirty-check error inline", async () => {
+    vi.mocked(isLinkedWorktreeDirty).mockRejectedValue({ kind: "git", message: "status broke" });
+    useRepoTabs.getState().openTab(opened(5, a.path));
+    const { user } = await renderPanel();
+    await user.click(
+      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("status broke");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(closeRepo).not.toHaveBeenCalled();
+    expect(removeLinkedWorktree).not.toHaveBeenCalled();
+    expect(useRepoTabs.getState().tabs.map((t) => t.id)).toEqual([5]);
+  });
+
+  it("should reopen the force step on worktreeDirty from the remove itself", async () => {
     vi.mocked(removeLinkedWorktree).mockRejectedValueOnce({
       kind: "worktreeDirty",
       message: "`/repos/app-feat-a` has uncommitted changes",
@@ -274,26 +360,14 @@ describe("WorktreesPanel remove", () => {
       within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
     );
     const force = await screen.findByRole("dialog", { name: "app-feat-a has uncommitted changes" });
-    expect(force).toHaveTextContent("Removing it discards them. This can't be undone.");
     expect(screen.queryByRole("alert")).toBeNull();
     await user.click(within(force).getByRole("button", { name: "Remove anyway" }));
     await waitFor(() =>
       expect(removeLinkedWorktree).toHaveBeenLastCalledWith(1, "/repos/app-feat-a", true),
     );
     expect(removeLinkedWorktree).toHaveBeenCalledTimes(2);
+    expect(isLinkedWorktreeDirty).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("should cancel the force step without removing", async () => {
-    vi.mocked(removeLinkedWorktree).mockRejectedValueOnce({ kind: "worktreeDirty", message: "d" });
-    const { user } = await renderPanel();
-    await user.click(
-      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
-    );
-    const force = await screen.findByRole("dialog", { name: "app-feat-a has uncommitted changes" });
-    await user.click(within(force).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(removeLinkedWorktree).toHaveBeenCalledOnce();
   });
 
   it("should show worktreeNotFound inline and refetch the list", async () => {

@@ -20,7 +20,7 @@ interface MenuState {
   worktree: LinkedWorktree;
 }
 
-/** The remove confirm on screen: the first step, or the force step after `worktreeDirty`. */
+/** The remove confirm on screen: the first step, or the force step for a dirty worktree. */
 interface Confirm {
   path: string;
   force: boolean;
@@ -70,8 +70,8 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
     },
   ];
 
-  // Closes at once, as the tag delete confirm does; a dirty worktree reopens it as the force step.
-  // Any other failure shows inline; the action's settle invalidation refreshes the list.
+  // The final confirmation: only this closes tabs. A dirty worktree (changed since the check)
+  // reopens the force step; any other failure shows inline and the settle invalidation refreshes.
   const remove = async (c: Confirm) => {
     setConfirm(null);
     opener.clearError();
@@ -79,6 +79,16 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
     if (e === null || e.kind !== "worktreeDirty") return;
     actions.clearError();
     setConfirm({ path: c.path, force: true });
+  };
+
+  // The first step checks dirtiness before anything closes, so cancelling the force step keeps
+  // the tab and its draft. A check failure shows inline and stops.
+  const confirmFirst = async (path: string) => {
+    setConfirm(null);
+    opener.clearError();
+    const dirty = await actions.checkDirty(path);
+    if (dirty === false) return remove({ path, force: false });
+    if (dirty === true) setConfirm({ path, force: true });
   };
 
   const prune = () => {
@@ -188,7 +198,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
           body="The folder and its contents are deleted. The branch is kept."
           confirmLabel="Remove"
           danger
-          onConfirm={() => void remove(confirm)}
+          onConfirm={() => void confirmFirst(confirm.path)}
           onCancel={() => setConfirm(null)}
           fallbackFocus={headingRef}
         />

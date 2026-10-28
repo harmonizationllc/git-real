@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addLinkedWorktree,
   closeRepo,
+  isLinkedWorktreeDirty,
   pruneLinkedWorktrees,
   removeLinkedWorktree,
 } from "../../lib/ipc";
@@ -18,6 +19,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   removeLinkedWorktree: vi.fn(),
   pruneLinkedWorktrees: vi.fn(),
   closeRepo: vi.fn(),
+  isLinkedWorktreeDirty: vi.fn(),
 }));
 
 const repo = (id: number, path: string): OpenedRepo => ({
@@ -175,6 +177,51 @@ describe("useLinkedWorktreeActions remove", () => {
     await act(() => result.current.remove("/elsewhere", false));
     expect(closeRepo).not.toHaveBeenCalled();
     expect(tabIds()).toEqual([1, 2]);
+  });
+});
+
+// Contract: checkDirty asks the backend without closing anything, and counts as pending.
+describe("useLinkedWorktreeActions checkDirty", () => {
+  it("should resolve the boolean without closing a tab", async () => {
+    vi.mocked(isLinkedWorktreeDirty).mockResolvedValue(true);
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.checkDirty("/repos/app-feat-a");
+    });
+    expect(outcome).toBe(true);
+    expect(isLinkedWorktreeDirty).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a");
+    expect(closeRepo).not.toHaveBeenCalled();
+    expect(tabIds()).toEqual([1, 2]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("should resolve the AppError of a failed check and set error", async () => {
+    const failed: AppError = { kind: "git", message: "status failed" };
+    vi.mocked(isLinkedWorktreeDirty).mockRejectedValue(failed);
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.checkDirty("/repos/app-feat-a");
+    });
+    expect(outcome).toEqual(failed);
+    expect(result.current.error).toEqual(failed);
+  });
+
+  it("should be pending while the check runs", async () => {
+    const gate = deferred<boolean>();
+    vi.mocked(isLinkedWorktreeDirty).mockReturnValue(gate.promise);
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let done!: Promise<boolean | AppError>;
+    act(() => {
+      done = result.current.checkDirty("/repos/app-feat-a");
+    });
+    expect(result.current.pending).toBe(true);
+    await act(async () => {
+      gate.resolve(false);
+      await done;
+    });
+    expect(result.current.pending).toBe(false);
   });
 });
 

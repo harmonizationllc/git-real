@@ -2,6 +2,7 @@ import { useIsMutating, useMutation, useQueryClient } from "@tanstack/react-quer
 import { useState } from "react";
 import {
   addLinkedWorktree,
+  isLinkedWorktreeDirty,
   pruneLinkedWorktrees,
   removeLinkedWorktree,
   toAppError,
@@ -14,6 +15,8 @@ import { closeRepoTab } from "../../app/closeRepoTab";
 /** Each action resolves with the AppError or null and never rejects. */
 export interface UseLinkedWorktreeActions {
   add(path: string, branch: WorktreeBranch): Promise<AppError | null>;
+  /** Whether `path` has uncommitted changes, or the AppError; read-only, closes nothing. */
+  checkDirty(path: string): Promise<boolean | AppError>;
   /** Closes the tabs open on `path` first; a failure leaves them closed. */
   remove(path: string, force: boolean): Promise<AppError | null>;
   /** Closes the tabs open on `paths` (the stale ones) first, then prunes. */
@@ -84,8 +87,22 @@ export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActio
       .finally(() => setBusy((n) => n - 1));
   };
 
+  // A read, so no mutation and no invalidation; it still counts as pending.
+  const checkDirty = (path: string): Promise<boolean | AppError> => {
+    setError(null);
+    setBusy((n) => n + 1);
+    return isLinkedWorktreeDirty(repoId, path)
+      .catch((e: unknown) => {
+        const err = toAppError(e);
+        setError(err);
+        return err;
+      })
+      .finally(() => setBusy((n) => n - 1));
+  };
+
   return {
     add: (path, branch) => run({ action: "add", path, branch }),
+    checkDirty,
     remove: (path, force) => run({ action: "remove", path, force }, closeTabsOn([path])),
     prune: (paths) => run({ action: "prune" }, closeTabsOn(paths)),
     pending: busy > 0 || elsewhere,
