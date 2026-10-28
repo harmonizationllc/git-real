@@ -40,10 +40,12 @@ async function execute(repoId: RepoId, req: Request): Promise<void> {
   }
 }
 
-/** A tab open on a removed folder would point at nothing, so it goes first. */
-function closeTabsOn(paths: string[]): void {
-  for (const tab of useRepoTabs.getState().tabs)
-    if (paths.includes(tab.summary.path)) closeRepoTab(tab.id);
+/** A tab open on a removed folder would point at nothing, so it goes first, watcher and all. */
+function closeTabsOn(paths: string[]): Promise<void>[] {
+  return useRepoTabs
+    .getState()
+    .tabs.filter((tab) => paths.includes(tab.summary.path))
+    .map((tab) => closeRepoTab(tab.id));
 }
 
 export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActions {
@@ -66,10 +68,12 @@ export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActio
       ]),
   });
 
-  const run = (req: Request): Promise<AppError | null> => {
+  /** `closing` settles before the command starts, so no watcher holds the folder git touches. */
+  const run = (req: Request, closing: Promise<void>[] = []): Promise<AppError | null> => {
     setError(null);
     setBusy((n) => n + 1);
-    return mutateAsync(req)
+    return Promise.all(closing)
+      .then(() => mutateAsync(req))
       .then(
         () => null,
         (e: AppError) => {
@@ -82,14 +86,8 @@ export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActio
 
   return {
     add: (path, branch) => run({ action: "add", path, branch }),
-    remove: (path, force) => {
-      closeTabsOn([path]);
-      return run({ action: "remove", path, force });
-    },
-    prune: (paths) => {
-      closeTabsOn(paths);
-      return run({ action: "prune" });
-    },
+    remove: (path, force) => run({ action: "remove", path, force }, closeTabsOn([path])),
+    prune: (paths) => run({ action: "prune" }, closeTabsOn(paths)),
     pending: busy > 0 || elsewhere,
     error,
     clearError: () => setError(null),

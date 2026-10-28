@@ -140,6 +140,36 @@ describe("useLinkedWorktreeActions remove", () => {
     expect(tabIds()).toEqual([1]);
   });
 
+  it("should not run the remove until closeRepo settles", async () => {
+    const gate = deferred<undefined>();
+    vi.mocked(closeRepo).mockReturnValue(gate.promise);
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let done!: Promise<AppError | null>;
+    act(() => {
+      done = result.current.remove("/repos/app-feat-a", false);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(removeLinkedWorktree).not.toHaveBeenCalled();
+    await act(async () => {
+      gate.resolve(undefined);
+      await done;
+    });
+    expect(removeLinkedWorktree).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a", false);
+  });
+
+  it("should still remove when closeRepo rejects with unknownRepo", async () => {
+    vi.mocked(closeRepo).mockRejectedValue({ kind: "unknownRepo", message: "unknown repo 2" });
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.remove("/repos/app-feat-a", false);
+    });
+    expect(outcome).toBeNull();
+    expect(removeLinkedWorktree).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a", false);
+  });
+
   it("should close no tab when none is on the path", async () => {
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
     await act(() => result.current.remove("/elsewhere", false));
@@ -162,6 +192,26 @@ describe("useLinkedWorktreeActions prune", () => {
     expect(pruneLinkedWorktrees).toHaveBeenCalledExactlyOnceWith(1);
     expect(order(closeRepo)).toBeLessThan(order(pruneLinkedWorktrees));
     expect(tabIds()).toEqual([1, 2]);
+  });
+
+  it("should not prune until closeRepo settles", async () => {
+    useRepoTabs.getState().openTab(repo(3, "/x"));
+    const gate = deferred<undefined>();
+    vi.mocked(closeRepo).mockReturnValue(gate.promise);
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    let done!: Promise<AppError | null>;
+    act(() => {
+      done = result.current.prune(["/x"]);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(pruneLinkedWorktrees).not.toHaveBeenCalled();
+    await act(async () => {
+      gate.resolve(undefined);
+      await done;
+    });
+    expect(pruneLinkedWorktrees).toHaveBeenCalledExactlyOnceWith(1);
   });
 
   it("should resolve the AppError of a failed prune", async () => {
