@@ -89,7 +89,7 @@ async function renderPanel() {
 const list = () => screen.getByRole("list", { name: "Worktree list" });
 const row = (folder: string) =>
   within(list()).getByText(folder).closest("button") as HTMLButtonElement;
-const toggle = () => screen.getByRole("button", { name: /^Worktrees \(/ });
+const toggle = () => screen.getByRole("button", { name: /^Worktrees( \(|$)/ });
 const plus = () => screen.getByRole("button", { name: "Add worktree…" });
 const pruneButton = () => screen.getByRole("button", { name: "Prune stale worktrees" });
 const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0] as number;
@@ -120,7 +120,12 @@ describe("WorktreesPanel list", () => {
     vi.mocked(listLinkedWorktrees).mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<WorktreesPanel repoId={1} />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading worktrees…");
-    expect(toggle()).toHaveTextContent("Worktrees (0)");
+  });
+
+  it("should show Worktrees without a count while loading", () => {
+    vi.mocked(listLinkedWorktrees).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<WorktreesPanel repoId={1} />);
+    expect(toggle()).toHaveTextContent(/^Worktrees$/);
   });
 
   it("should show the bare message for an empty list", async () => {
@@ -429,6 +434,11 @@ describe("WorktreesPanel remove", () => {
 
 // Contract: Prune is enabled only when a missing, unlocked worktree exists, and closes its tabs.
 describe("WorktreesPanel prune", () => {
+  it("should show Prune as a text button named Prune stale worktrees", async () => {
+    await renderPanel();
+    expect(pruneButton()).toHaveTextContent(/^Prune$/);
+  });
+
   it("should enable Prune only when a stale unlocked row exists", async () => {
     await renderPanel();
     expect(pruneButton()).toBeDisabled();

@@ -143,7 +143,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
             aria-controls={bodyId}
             onClick={() => setWorktreesCollapsed(!collapsed)}
           >
-            {`Worktrees (${list?.length ?? 0})`}
+            {list === undefined ? "Worktrees" : `Worktrees (${list.length})`}
           </button>
         </h2>
         {!bare && (
@@ -156,7 +156,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
               disabled={stale.length === 0 || actions.pending}
               onClick={prune}
             >
-              ⌫
+              Prune
             </button>
             <button
               type="button"

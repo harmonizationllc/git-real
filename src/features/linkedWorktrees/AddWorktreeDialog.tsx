@@ -1,6 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
-import { flushSync } from "react-dom";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import { pickFolder } from "../../lib/ipc";
 import type { AppError, AppErrorKind, LocalBranch, RepoId, WorktreeBranch } from "../../lib/ipc";
@@ -73,6 +72,8 @@ function AddWorktreeDialogBody({
   const nameRef = useRef<HTMLInputElement>(null);
   const commitRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  // Set by the Commit radio, so only a user change moves focus to the Commit field.
+  const focusCommit = useRef(false);
 
   const local = branches?.local ?? [];
   // Only once loaded, so the hint never flashes while the list is on its way.
@@ -101,6 +102,14 @@ function AddWorktreeDialogBody({
     ((mode === "new" ? nameRef : branchRef).current as HTMLElement).focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on open only
   }, []);
+
+  // The Commit field appears when the user picks Commit and takes focus; a prefilled start
+  // (Commit mode on mount) leaves focus on the first field.
+  useLayoutEffect(() => {
+    if (startMode !== "commit" || !focusCommit.current) return;
+    focusCommit.current = false;
+    (commitRef.current as HTMLInputElement).focus();
+  }, [startMode]);
 
   // Disabling the focused control drops focus to the body: hold it on the dialog while pending,
   // then hand it to the field the error concerns.
@@ -137,9 +146,8 @@ function AddWorktreeDialogBody({
   };
 
   const pickCommit = () => {
-    // Rendered synchronously so the new field can take focus at once.
-    flushSync(() => setStartMode("commit"));
-    (commitRef.current as HTMLInputElement).focus();
+    focusCommit.current = true;
+    setStartMode("commit");
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -297,7 +305,7 @@ function AddWorktreeDialogBody({
               Cancel
             </button>
             <button type="submit" disabled={blank || pending}>
-              {pending ? "Working…" : "Add"}
+              Add
             </button>
           </div>
         </form>

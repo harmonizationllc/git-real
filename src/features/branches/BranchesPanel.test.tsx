@@ -2772,6 +2772,7 @@ describe("BranchesPanel linked worktrees", () => {
 
   it("should open the new worktree after the dialog adds it", async () => {
     await addFromFree();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(openRepo).toHaveBeenCalledExactlyOnceWith("/repos/app-free"));
   });
 

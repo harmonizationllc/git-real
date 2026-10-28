@@ -263,8 +263,30 @@ describe("AddWorktreeDialog submit", () => {
     expect(folder()).toHaveValue("/repos/app-other");
   });
 
+  it("should keep the Add label while pending", async () => {
+    vi.mocked(addLinkedWorktree).mockReturnValue(new Promise(() => undefined));
+    const { user } = await renderDialog();
+    await user.type(nameField(), "x");
+    await user.click(addButton());
+    await waitFor(() => expect(addButton()).toBeDisabled());
+    expect(addButton()).toHaveTextContent(/^Add$/);
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
+  it("should focus the Commit field each time the user picks Commit", async () => {
+    const { user } = await renderDialog();
+    await user.click(radio("Commit"));
+    expect(commitField()).toHaveFocus();
+    await user.click(radio("Current HEAD"));
+    await user.click(nameField());
+    await user.click(radio("Commit"));
+    expect(commitField()).toHaveFocus();
+  });
+
   it("should prefill a new initial branch with a start", async () => {
     await renderDialog({ kind: "new", name: "feat/r", start: "origin/feat/r" });
+    // A prefilled Commit mode is not a user change: focus stays on the first field.
+    expect(nameField()).toHaveFocus();
     expect(radio("New branch")).toBeChecked();
     expect(nameField()).toHaveValue("feat/r");
     expect(radio("Commit")).toBeChecked();
@@ -297,7 +319,7 @@ describe("AddWorktreeDialog submit", () => {
     expect(addButton()).toBeDisabled();
     await user.type(folder(), "/w/x");
     await user.click(addButton());
-    expect(screen.getByRole("button", { name: "Working…" })).toBeDisabled();
+    expect(addButton()).toBeDisabled();
     expect(screen.getByRole("dialog")).toHaveFocus();
     expect(nameField()).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
