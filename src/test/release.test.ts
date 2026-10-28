@@ -1,6 +1,6 @@
 /**
- * Contract tests for the packaging and release pipeline: GR-15 (Linux) and GR-24
- * (Windows, per-platform Tauri overlays).
+ * Contract tests for the packaging and release pipeline: GR-15 (Linux), GR-24
+ * (Windows, per-platform Tauri overlays) and GR-23 (universal macOS DMG).
  *
  * All paths are resolved from __dirname (this file's directory) so the tests
  * are independent of the working directory when Vitest is invoked.
@@ -196,8 +196,8 @@ describe("platform overlays", () => {
       ? readJson(`src-tauri/tauri.${platform}.conf.json`)
       : {};
 
-  it("exactly linux and windows overlays exist and each names its targets", () => {
-    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "windows"]);
+  it("exactly linux, macos and windows overlays exist and each names its targets", () => {
+    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "macos", "windows"]);
     for (const file of overlayFiles) {
       const bundle = readJson(`src-tauri/${file}`) as { bundle?: { targets?: unknown } };
       const targets = bundle.bundle?.targets;
@@ -233,8 +233,22 @@ describe("platform overlays", () => {
     }
   });
 
+  it("macos overlay has the dmg target and nothing else", () => {
+    expect(overlay("macos").bundle?.targets).toEqual(["dmg"]);
+    expect(Object.keys(overlay("macos").bundle ?? {})).toEqual(["targets"]);
+  });
+
+  // Tauri's key is `macOS` with a capital OS. Signing is decided by the
+  // environment alone (spec R4, R5), so no signing key may be configured.
+  it("macos overlay has no signing keys", () => {
+    expect(fileExists("src-tauri/tauri.macos.conf.json")).toBe(true);
+    for (const key of ["signingIdentity", "providerShortName", "entitlements"]) {
+      expect(overlay("macos").bundle?.macOS ?? {}).not.toHaveProperty(key);
+    }
+  });
+
   it("overlays carry the Tauri schema", () => {
-    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "windows"]);
+    expect(overlayFiles.map(platformOf).sort()).toEqual(["linux", "macos", "windows"]);
     for (const file of overlayFiles) {
       expect((readJson(`src-tauri/${file}`) as { $schema?: string }).$schema).toBe(
         "https://schema.tauri.app/config/2",
@@ -325,10 +339,11 @@ describe("ci workflow", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ciConf = parse(ciText) as any;
 
-  it("has build-and-test, package-linux and package-windows jobs and no package job", () => {
+  it("has build-and-test, package-linux, package-windows and package-macos jobs and no package job", () => {
     expect(ciConf.jobs).toHaveProperty("build-and-test");
     expect(ciConf.jobs).toHaveProperty("package-linux");
     expect(ciConf.jobs).toHaveProperty("package-windows");
+    expect(ciConf.jobs).toHaveProperty("package-macos");
     expect(ciConf.jobs).not.toHaveProperty("package");
   });
 
@@ -396,6 +411,46 @@ describe("ci workflow", () => {
     expect(w["retention-days"]).toBe(14);
   });
 
+  it("package-macos builds a universal dmg on macos-latest and uploads it", () => {
+    const mac = ciConf.jobs?.["package-macos"];
+    expect(mac?.["runs-on"]).toBe("macos-latest");
+    expect(mac?.name).toBe("Package (macOS)");
+
+    const steps: Step[] = mac?.steps ?? [];
+    const rust = steps.find((s) => s.uses === "dtolnay/rust-toolchain@stable");
+    expect(rust).toBeDefined();
+    const targets = String((rust?.with as Record<string, unknown> | undefined)?.targets);
+    expect(targets).toContain("aarch64-apple-darwin");
+    expect(targets).toContain("x86_64-apple-darwin");
+
+    const runs = steps.filter((s) => typeof s.run === "string");
+    const buildStep = runs.find((s) => (s.run as string).includes("npm run tauri build"));
+    expect(buildStep).toBeDefined();
+    expect(String(buildStep?.run)).toContain("--target universal-apple-darwin");
+    expect(String(buildStep?.run)).toContain("--bundles dmg");
+    for (const s of runs) {
+      expect(s.run as string).not.toContain("apt-get");
+    }
+
+    const uploadStep = steps.find(
+      (s) =>
+        typeof s.uses === "string" && (s.uses as string).startsWith("actions/upload-artifact@v4"),
+    );
+    expect(uploadStep).toBeDefined();
+    const w = (uploadStep?.with ?? {}) as Record<string, unknown>;
+    expect(String(w["name"])).toContain("git-real-macos-");
+    const path = String(w.path);
+    expect(path).toContain("src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg");
+    expect(path).not.toContain("src-tauri/target/release/bundle");
+    expect(w["if-no-files-found"]).toBe("error");
+    expect(w["retention-days"]).toBe(14);
+  });
+
+  // Apple signing secrets belong to the release workflow's gate step only.
+  it("ci workflow never references Apple secrets", () => {
+    expect(ciText).not.toContain("APPLE_");
+  });
+
   it("cancels in-progress runs per ref", () => {
     const concurrency = ciConf.concurrency as Record<string, unknown>;
     expect(String(concurrency.group)).toContain("ci-");
@@ -408,8 +463,8 @@ describe("ci workflow", () => {
 // ---------------------------------------------------------------------------
 
 // §6 / R3 / R6 + GR-24: release.yml triggers on v* tags only, checks the tag
-//   against the version, builds Linux and Windows in parallel, then one publish
-//   job uploads every installer to a single release.
+//   against the version, builds Linux, Windows and macOS in parallel, then one
+//   publish job uploads every installer to a single release.
 describe("release workflow", () => {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const conf = parse(readText(".github/workflows/release.yml")) as any;
@@ -438,9 +493,10 @@ describe("release workflow", () => {
     expect(push).not.toHaveProperty("branches");
   });
 
-  it("has check-version, build-linux, build-windows and publish jobs", () => {
+  it("has check-version, build-linux, build-windows, build-macos and publish jobs", () => {
     expect(Object.keys(jobs).sort()).toEqual([
       "build-linux",
+      "build-macos",
       "build-windows",
       "check-version",
       "publish",
@@ -460,10 +516,15 @@ describe("release workflow", () => {
     expect(run).not.toContain("(-[0-9]+)?");
   });
 
-  it("both builds need check-version and publish needs both builds", () => {
+  it("all builds need check-version and publish needs all three builds", () => {
     expect(needsOf(jobs["build-linux"])).toEqual(["check-version"]);
     expect(needsOf(jobs["build-windows"])).toEqual(["check-version"]);
-    expect(needsOf(jobs["publish"]).sort()).toEqual(["build-linux", "build-windows"]);
+    expect(needsOf(jobs["build-macos"])).toEqual(["check-version"]);
+    expect(needsOf(jobs["publish"]).sort()).toEqual([
+      "build-linux",
+      "build-macos",
+      "build-windows",
+    ]);
   });
 
   it("build-linux builds the Linux bundles on ubuntu-22.04 and uploads release-linux", () => {
@@ -500,7 +561,68 @@ describe("release workflow", () => {
     expect(w["retention-days"]).toBe(1);
   });
 
-  it("publish downloads both artifacts then releases all five globs once", () => {
+  it("build-macos builds a universal dmg on macos-latest and uploads release-macos", () => {
+    expect(jobs["build-macos"]?.["runs-on"]).toBe("macos-latest");
+    const rust = stepsOf("build-macos").find((s) => s.uses === "dtolnay/rust-toolchain@stable");
+    expect(rust).toBeDefined();
+    const targets = String((rust?.with as Record<string, unknown> | undefined)?.targets);
+    expect(targets).toContain("aarch64-apple-darwin");
+    expect(targets).toContain("x86_64-apple-darwin");
+    expect(buildRunOf("build-macos")).toContain("--target universal-apple-darwin");
+    expect(buildRunOf("build-macos")).toContain("--bundles dmg");
+    const upload = uploadOf("build-macos");
+    expect(upload).toBeDefined();
+    const w = (upload?.with ?? {}) as Record<string, unknown>;
+    expect(w["name"]).toBe("release-macos");
+    const path = String(w.path);
+    expect(path).toContain("src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg");
+    expect(path).not.toContain("src-tauri/target/release/bundle");
+    expect(w["if-no-files-found"]).toBe("error");
+    expect(w["retention-days"]).toBe(1);
+  });
+
+  // Signing is dormant until the owner adds secrets: one gate step maps them,
+  // the script exports only what is set, and the build step inherits via GITHUB_ENV.
+  it("build-macos gates Apple signing through the script before the build", () => {
+    const steps = stepsOf("build-macos");
+    const gateIdx = steps.findIndex(
+      (s) =>
+        typeof s.run === "string" &&
+        (s.run as string).trim() === ".github/scripts/apple-signing-env.sh" &&
+        s.name === "Prepare Apple signing",
+    );
+    const buildIdx = steps.findIndex(
+      (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
+    );
+    expect(gateIdx).toBeGreaterThanOrEqual(0);
+    expect(buildIdx).toBeGreaterThanOrEqual(0);
+    expect(gateIdx).toBeLessThan(buildIdx);
+
+    const names: string[] = [
+      "APPLE_CERTIFICATE",
+      "APPLE_CERTIFICATE_PASSWORD",
+      "APPLE_SIGNING_IDENTITY",
+      "APPLE_ID",
+      "APPLE_PASSWORD",
+      "APPLE_TEAM_ID",
+    ];
+    const env = (steps[gateIdx]?.env ?? {}) as Record<string, unknown>;
+    expect(Object.keys(env).sort()).toEqual([...names].sort());
+    for (const name of names) {
+      expect(env[name]).toBe("${{ secrets." + name + " }}");
+    }
+    expect(steps[buildIdx]).not.toHaveProperty("env");
+  });
+
+  it("release workflow references Apple secrets only in the gate env block", () => {
+    const rest = readText(".github/workflows/release.yml")
+      .split("\n")
+      .filter((l) => !/^\s*APPLE_[A-Z_]+: \$\{\{ secrets\.APPLE_[A-Z_]+ \}\}\s*$/.test(l))
+      .join("\n");
+    expect(rest).not.toContain("APPLE_");
+  });
+
+  it("publish downloads all three artifacts then releases all six globs once", () => {
     const steps = stepsOf("publish");
     const downloadIdx = steps.findIndex(
       (s) =>
@@ -542,11 +664,15 @@ describe("release workflow", () => {
     for (const glob of uploadedGlobs) {
       expect(files).toContain(`release-assets/${glob}`);
     }
+    // The macOS upload has one glob whose only wildcard is the file name, so
+    // upload-artifact@v4 puts the DMG at the artifact root; `**` matches the
+    // root and a `dmg/` folder alike (spec R7).
+    expect(files).toContain("release-assets/**/*.dmg");
     const fileLines = files
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    expect(fileLines).toHaveLength(5);
+    expect(fileLines).toHaveLength(6);
     // A flat release-assets/*.ext glob matches nothing after the merge
     for (const line of fileLines) {
       expect(line, `flat glob ${line}`).not.toMatch(/^release-assets\/\*\./);
@@ -623,6 +749,18 @@ describe("README", () => {
     expect(readme.slice(0, readme.indexOf("\n## "))).not.toMatch(/Windows[^.\n]*follow-on/);
   });
 
+  it("intro no longer calls macOS a follow-on target", () => {
+    expect(readme.slice(0, readme.indexOf("\n## "))).not.toMatch(/macOS[^.\n]*follow-on/);
+  });
+
+  it("install section documents the universal DMG and the Gatekeeper path", () => {
+    const install = section(readme, "Install");
+    expect(install).toContain(".dmg");
+    expect(install).toContain("universal");
+    expect(install).toContain("Git.Real_");
+    expect(install).toContain("Open Anyway");
+  });
+
   it("install section documents the Windows installers and the SmartScreen prompt", () => {
     const install = section(readme, "Install");
     expect(install).toContain("-setup.exe");
@@ -640,6 +778,8 @@ describe("README", () => {
   it("releasing section mentions Windows installers and no pre-release convention", () => {
     const releasing = section(readme, "Releasing");
     expect(releasing).toContain("Windows");
+    expect(releasing).toContain("macOS");
+    expect(releasing).toContain("six");
     expect(releasing).not.toContain("pre-release");
     expect(releasing).not.toContain("-beta");
   });
@@ -648,8 +788,17 @@ describe("README", () => {
     expect(section(readme, "Development")).toContain("Building on Windows");
   });
 
+  it("development section has a macOS build paragraph", () => {
+    expect(section(readme, "Development")).toContain("Building on macOS");
+  });
+
   it("ADR 0006 exists and ADR 0003 points to it", () => {
     expect(fileExists("docs/adr/0006-per-platform-bundles-and-release.md")).toBe(true);
+    const adr = readText("docs/adr/0006-per-platform-bundles-and-release.md");
+    expect(adr).toContain("build-macos");
+    expect(adr).toContain("APPLE_CERTIFICATE");
+    expect(adr).toContain("Windows signing stays out of the code");
+    expect(adr).not.toContain("— Signing stays out of the code");
     expect(readText("docs/adr/0003-release-pipeline-and-update-check.md")).toContain("ADR 0006");
   });
 });
