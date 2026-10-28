@@ -275,7 +275,10 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
   /** `list` is unfiltered, so a filtered-out twin still counts as existing. */
   const menuItems = ({ target, dropMenu }: MenuState, list: BranchList): MenuItem[] => {
     if (dropMenu) return integrationItems(target, list.head);
-    const elsewhere = target.kind === "local" ? target.branch.worktree : null;
+    // A remote row acts on its local twin when one exists, so the twin's worktree locks it too.
+    const twin =
+      target.kind === "remote" ? list.local.find((b) => b.name === target.branch.name) : undefined;
+    const elsewhere = target.kind === "local" ? target.branch.worktree : (twin?.worktree ?? null);
     const lockedTitle =
       elsewhere === null ? undefined : `Checked out in worktree ${folderName(elsewhere)}`;
     const checkout: MenuItem = {
@@ -287,20 +290,25 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
     };
     if (target.kind === "remote") {
       const { remote, name } = target.branch;
-      const hasLocal = list.local.some((b) => b.name === name);
+      const worktreeTitle = twin?.isHead ? "Already checked out in this worktree" : lockedTitle;
       return [
         {
           ...checkout,
-          title: hasLocal ? undefined : `Creates a local branch tracking ${remote}/${name}`,
+          title:
+            twin === undefined ? `Creates a local branch tracking ${remote}/${name}` : lockedTitle,
         },
         {
           id: "worktree",
           label: "Create worktree…",
-          disabled: pending,
+          disabled: pending || worktreeTitle !== undefined,
+          title: worktreeTitle,
           onSelect: () =>
             openDialog({
               kind: "worktree",
-              initial: { kind: "new", name, start: `${remote}/${name}` },
+              initial:
+                twin === undefined
+                  ? { kind: "new", name, start: `${remote}/${name}` }
+                  : { kind: "existing", name },
             }),
         },
         ...rebaseItems(target, list.head),

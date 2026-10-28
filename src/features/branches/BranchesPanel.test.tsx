@@ -2700,6 +2700,63 @@ describe("BranchesPanel linked worktrees", () => {
     expect(within(dialog).getByRole("textbox", { name: "Commit" })).toHaveValue("origin/topic");
   });
 
+  // Remote rows whose name matches a local twin: free, held elsewhere, and the current branch.
+  const withTwins = () =>
+    list({
+      local: [
+        localBranch("main", true),
+        { ...localBranch("feat/a"), worktree: elsewhere },
+        localBranch("free"),
+      ],
+      remotes: [
+        {
+          remote: "origin",
+          branches: ["main", "feat/a", "free"].map((name) => ({
+            remote: "origin",
+            name,
+            oid: oid("c"),
+          })),
+        },
+      ],
+    });
+
+  it("should disable remote Checkout when the local twin is checked out elsewhere", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "feat/a"));
+    expect(menuItem("Checkout")).toBeDisabled();
+    expect(menuItem("Checkout")).toHaveAttribute("title", "Checked out in worktree app-feat-a");
+  });
+
+  it("should open Existing mode with the free local twin from a remote branch", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "free"));
+    expect(menuItem("Create worktree…")).toBeEnabled();
+    fireEvent.click(menuItem("Create worktree…"));
+    const dialog = await dialogNamed("Add worktree");
+    expect(within(dialog).getByRole("radio", { name: "Existing branch" })).toBeChecked();
+    expect(within(dialog).getByRole("combobox", { name: "Branch" })).toHaveValue("free");
+  });
+
+  it("should disable remote Create worktree… when the local twin is checked out elsewhere", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "feat/a"));
+    expect(menuItem("Create worktree…")).toBeDisabled();
+    expect(menuItem("Create worktree…")).toHaveAttribute(
+      "title",
+      "Checked out in worktree app-feat-a",
+    );
+  });
+
+  it("should disable remote Create worktree… when the local twin is the current branch", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "main"));
+    expect(menuItem("Create worktree…")).toBeDisabled();
+    expect(menuItem("Create worktree…")).toHaveAttribute(
+      "title",
+      "Already checked out in this worktree",
+    );
+  });
+
   async function addFromFree() {
     await renderPanel(withWorktree());
     rightClick(localRow("free"));
