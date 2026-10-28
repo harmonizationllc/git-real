@@ -191,17 +191,18 @@ secrets.APPLE_X }}` lines (an unset secret is the empty string, which the
     `unsigned (ad-hoc identity, no Developer ID secrets)`;
   - prints one line naming the outcome: that notice, `signed, not
 notarized`, or `signed and notarized`, as a workflow notice.
-    _Amended 2026-10-28 during execution (controller ruling after the Task 2
-    review)._
     GitHub masks secret values in logs whether they travel through `env:`
     or `GITHUB_ENV`. The script lives in its own file, not inline YAML, so
     the §6 tests can run it with controlled environments and a temporary
     `GITHUB_ENV` file. The build step that follows has no `env:` block.
+    _Amended 2026-10-28 during execution (controller ruling after the Task 2
+    review)._
 - **R6 — CI gets a `package-macos` job.** **Call**, flagged to the owner as
   in GR-24 R7. Without it the first macOS compile of any change happens on
   a tag push. The job runs the same universal build command as the release
-  job so both Rust targets are compiled on every push, never signs, and
-  uploads the DMG for 14 days.
+  job so both Rust targets are compiled on every push, never sees secrets
+  and therefore ad-hoc signs the `.app` through the gate, and uploads the
+  DMG for 14 days.
 - **R7 — The DMG artifact lands at the artifact root; the publish glob
   is `release-assets/**/*.dmg`.** **Call.** `upload-artifact@v4` keeps the
   path hierarchy after the first wildcard of its search paths. The Linux
@@ -293,15 +294,16 @@ New job `package-macos`, display name "Package (macOS)", on `macos-latest`:
    `targets: aarch64-apple-darwin, x86_64-apple-darwin`.
 4. Cache Rust build (`Swatinem/rust-cache@v2`, `workspaces: src-tauri`).
 5. `npm ci`.
-6. `npm run tauri build -- --target universal-apple-darwin --bundles dmg`.
-7. Upload with `actions/upload-artifact@v4`: name
+6. Gate step "Prepare Apple signing", running
+   `.github/scripts/apple-signing-env.sh` with no `env:` block: CI never sees
+   secrets, so the gate exports the ad-hoc identity.
+7. `npm run tauri build -- --target universal-apple-darwin --bundles dmg`.
+8. Upload with `actions/upload-artifact@v4`: name
    `git-real-macos-${{ github.sha }}`, path
    `src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg`,
    `retention-days: 14`, `if-no-files-found: error`.
 
-The job runs the `Prepare Apple signing` gate step after `npm ci` and before
-the build, without an `env:` block: CI never sees secrets, so the gate exports
-the ad-hoc identity. No secrets, no `shell:` override (the macOS default shell
+No secrets, no `shell:` override (the macOS default shell
 is bash). The existing jobs do not change.
 
 ### 4.3 `release.yml`
@@ -310,7 +312,7 @@ Trigger, `check-version`, `build-linux`, `build-windows` and concurrency are
 unchanged.
 
 - New job `build-macos` on `macos-latest`, `needs: check-version`: the
-  `package-macos` steps 1 to 5, then the gate step "Prepare Apple signing"
+  `package-macos` steps 1 to 5, then the gate step 6 "Prepare Apple signing"
   running `.github/scripts/apple-signing-env.sh` with an `env:` block that
   maps each of the six `APPLE_*` names to `${{ secrets.APPLE_* }}` of the
   same name, then the build step (no `env:`), then upload artifact
@@ -361,7 +363,22 @@ release workflow itself runs only on a tag; the GR-38 throwaway
 
 ### 5.1 Probe results
 
-Filled in by the builder: runs, rounds, artifact name and size, durations.
+One CI round, green on the first push (head 55e1f4f).
+
+- Run 40733436169 on `feature/gr-23-macos-build`. `Package (macOS)`,
+  `Package (Linux)`, `Package (Windows)`, `Core crate (Windows)` and
+  `build-and-test` all succeeded. `Benchmarks (large repositories)` failed,
+  as it has on `main` since 535677a; not acted on.
+- `Package (macOS)` ran 17:17:17Z to 17:33:37Z, about 16 minutes 20 seconds.
+  The two Rust targets compiled in 8m 52s and 5m 30s, then the bundler built
+  the `.app` and the DMG.
+- The gate logged `unsigned (ad-hoc identity, no Developer ID secrets)`. The
+  bundler logged the expected "skipping app notarization" warning.
+- The bundler wrote the DMG to
+  `src-tauri/target/universal-apple-darwin/release/bundle/dmg/`.
+- Artifact `git-real-macos-55e1f4f60521d16a53b9df9132503618b1a008fa` holds one
+  file at its root, with no `dmg/` folder: `Git Real_0.1.0_universal.dmg`,
+  9 657 038 bytes. The name matches the §3 table and the README.
 
 ## 6. Tests (`src/test/release.test.ts` and a new script test)
 
