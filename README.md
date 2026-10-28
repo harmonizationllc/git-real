@@ -5,7 +5,8 @@ Tauri 2 and Rust on the backend and React with TypeScript on the front end, and 
 to cover the everyday Git workflows of a developer in one fast, native-feeling window.
 
 Linux (Wayland, with the COSMIC desktop as the primary target) is the first-class
-platform. macOS and Windows are follow-on targets.
+platform. Windows installers are built alongside the Linux packages; macOS is the
+follow-on target.
 
 ## Features
 
@@ -58,33 +59,43 @@ to the front end over typed IPC commands.
 
 ## Install
 
-Pre-built Linux packages are published on each release. Download the one for your
-distribution from the [GitHub Releases](https://github.com/harmonizationllc/git-real/releases)
-page (`<version>` is the release, for example `0.1.0`). The file names carry the product
-name with a space in it — `Git Real_<version>_amd64.deb` — so quote the path:
+Pre-built Linux packages and Windows installers are published on each release. Download
+the one for your system from the [GitHub Releases](https://github.com/harmonizationllc/git-real/releases)
+page (`<version>` is the release, for example `0.1.0`). The product name has a space in
+it, and GitHub replaces that space with a dot when it serves a release file, so a
+download is named `Git.Real_<version>_amd64.deb`; quote the path:
 
 - **Debian, Ubuntu, Pop!\_OS** — the `.deb`:
 
   ```sh
-  sudo apt install "./Git Real_<version>_amd64.deb"
+  sudo apt install "./Git.Real_<version>_amd64.deb"
   ```
 
 - **Fedora, RHEL, openSUSE** — the `.rpm`:
 
   ```sh
-  sudo dnf install "./Git Real-<version>-1.x86_64.rpm"
+  sudo dnf install "./Git.Real-<version>-1.x86_64.rpm"
   ```
 
 - **Any distribution** — the AppImage, which installs nothing:
 
   ```sh
-  chmod +x "Git Real_<version>_amd64.AppImage"
-  "./Git Real_<version>_amd64.AppImage"
+  chmod +x "Git.Real_<version>_amd64.AppImage"
+  "./Git.Real_<version>_amd64.AppImage"
   ```
+
+- **Windows** — download `Git.Real_<version>_x64-setup.exe` and run it. The installer is
+  not yet code-signed, so Windows SmartScreen shows "Windows protected your PC":
+  choose **More info**, then **Run anyway**. The installer is per-user and needs no
+  administrator rights. For managed deployment use the per-machine MSI,
+  `msiexec /i "Git.Real_<version>_x64_en-US.msi"`, which needs an elevated
+  (administrator) prompt, unlike the per-user setup `.exe`. Windows 10 and 11 ship WebView2,
+  and the installer downloads it on a machine that lacks it.
 
 The `.deb` recommends `git`, and you should have it on any install: every network
 operation (fetch, pull, push, clone over the network) and all commit signing shell out
-to the system `git` CLI, so Git Real needs it on your `PATH`.
+to the system `git` CLI, so Git Real needs it on your `PATH`. On Windows, install
+[Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`.
 
 ## Wayland and X11
 
@@ -117,6 +128,12 @@ Prerequisites:
     file \
     patchelf
   ```
+
+- **Building on Windows**: Rust stable with the MSVC toolchain (rustup's default on
+  Windows), Node.js 24, Visual Studio Build Tools 2022 with the "Desktop development
+  with C++" workload, and WebView2 (preinstalled on Windows 10 and 11).
+  `npm run tauri build -- --bundles nsis,msi` produces the installers under
+  `src-tauri\target\release\bundle\`.
 
 Getting started:
 
@@ -209,12 +226,15 @@ workflow refuses a tag that does not match.
    git push origin main vX.Y.Z
    ```
 
-The `Release` workflow then builds the `.deb`, `.rpm`, and AppImage and publishes a
-GitHub release carrying them, with generated release notes. A tag whose version differs
-from `tauri.conf.json` fails before anything is built. A pre-release tag contains a
-hyphen (for example `vX.Y.Z-beta.1`) and is marked as a pre-release; the in-app update
-check reads the latest non-prerelease release, so pre-releases do not prompt users to
-update.
+The `Release` workflow first checks the tag against the version, then builds the
+`.deb`, `.rpm` and AppImage on Linux and the NSIS `.exe` and `.msi` on Windows in
+parallel, then publishes one GitHub release carrying all five files with generated
+release notes. A tag whose version differs from `tauri.conf.json` fails before anything
+is built. A pre-release tag contains a hyphen followed by a plain integer (for example
+`vX.Y.Z-1`), because the Windows MSI format accepts only a numeric pre-release
+identifier; the workflow rejects any other shape. It is marked as a pre-release, and the
+in-app update check reads the latest non-prerelease release, so pre-releases do not
+prompt users to update.
 
 ## Project layout
 
@@ -231,7 +251,7 @@ docs/superpowers/    Feature design specs and implementation plans
 ## Status
 
 Git Real is at version 0.1.0 and under active development. The features above are
-implemented and tested, Linux packages are published on each release, and a benchmark
+implemented and tested, Linux packages and Windows installers are published on each release, and a benchmark
 suite holds the app to its performance budgets on 100,000-commit repositories in CI.
 
 ## License

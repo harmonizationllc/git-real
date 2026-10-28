@@ -35,7 +35,7 @@ added.
 - **R6 — Hand-written release workflow.** The release job is explicit steps
   (`npm run tauri build`, then `softprops/action-gh-release@v2` with file globs and
   generated notes) rather than `tauri-apps/tauri-action`. Every step is visible in the
-  YAML and the build step is shared verbatim with the CI `package` job.
+  YAML and the build step is shared verbatim with the CI `package-linux` job.
 
 ## Consequences
 
@@ -44,7 +44,8 @@ added.
 - No signing key, GitHub secret, or extra capability is introduced by this story; Linux
   artifacts are unsigned, which is the norm for `.deb`/`.rpm`/AppImage.
 - Flatpak, macOS, Windows, and signed in-app updates are tracked as separate follow-up
-  tickets that build on these decisions.
+  tickets that build on these decisions. Windows builds landed in GR-24; see ADR 0006
+  for the per-platform configuration and the signing recipe.
 - Releases are reproducible from a tag with no manual build step, but the three version
   strings remain hand-edited and are kept in sync by a contract test and the release
   job's version guard.

@@ -17,7 +17,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "appimage"],
     "category": "DeveloperTool",
     "shortDescription": "Lightweight desktop Git client",
     "longDescription": "Git Real is a lightweight, cross-platform desktop Git client: stage, commit, branch, merge, rebase, stash, tag, sync with remotes and work with pull requests and issues on GitHub, GitLab and Bitbucket.",
@@ -31,16 +30,6 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "linux": {
-      "deb": {
-        "section": "vcs",
-        "recommends": ["git"],
-        "desktopTemplate": "packaging/git-real.desktop"
-      },
-      "rpm": {
-        "desktopTemplate": "packaging/git-real.desktop"
-      }
-    }
+    ]
   }
 }
