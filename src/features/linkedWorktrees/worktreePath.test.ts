@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { defaultWorktreePath, folderName, parentFolder } from "./worktreePath";
+import { defaultWorktreePath, folderName, parentFolder, samePath } from "./worktreePath";
+
+// Contract: two paths are the same when they match after dropping trailing separators.
+describe("samePath", () => {
+  it("ignores a trailing slash", () => {
+    expect(samePath("/repos/app-feat-a/", "/repos/app-feat-a")).toBe(true);
+    expect(samePath("/repos/app-feat-a", "/repos/app-feat-a//")).toBe(true);
+  });
+
+  it("ignores a trailing backslash", () => {
+    expect(samePath("C:\\src\\app\\", "C:\\src\\app")).toBe(true);
+  });
+
+  it("tells different paths apart", () => {
+    expect(samePath("/repos/app", "/repos/app-feat-a")).toBe(false);
+    expect(samePath("/repos/app/x", "/repos/app")).toBe(false);
+  });
+});
 
 // Contract: the default folder is a sibling of the main worktree named after the branch.
 describe("defaultWorktreePath", () => {

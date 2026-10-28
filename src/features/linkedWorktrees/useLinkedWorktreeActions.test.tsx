@@ -172,6 +172,14 @@ describe("useLinkedWorktreeActions remove", () => {
     expect(removeLinkedWorktree).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a", false);
   });
 
+  it("should close a tab whose path has a trailing slash", async () => {
+    useRepoTabs.getState().openTab(repo(3, "/repos/app-feat-b/"));
+    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
+    await act(() => result.current.remove("/repos/app-feat-b", false));
+    expect(closeRepo).toHaveBeenCalledExactlyOnceWith(3);
+    expect(tabIds()).toEqual([1, 2]);
+  });
+
   it("should close no tab when none is on the path", async () => {
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
     await act(() => result.current.remove("/elsewhere", false));

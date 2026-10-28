@@ -11,6 +11,7 @@ import type { AppError, RepoId, WorktreeBranch } from "../../lib/ipc";
 import { mutationKeys, queryKeys } from "../../lib/query/keys";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { closeRepoTab } from "../../app/closeRepoTab";
+import { samePath } from "./worktreePath";
 
 /** Each action resolves with the AppError or null and never rejects. */
 export interface UseLinkedWorktreeActions {
@@ -47,7 +48,7 @@ async function execute(repoId: RepoId, req: Request): Promise<void> {
 function closeTabsOn(paths: string[]): Promise<void>[] {
   return useRepoTabs
     .getState()
-    .tabs.filter((tab) => paths.includes(tab.summary.path))
+    .tabs.filter((tab) => paths.some((p) => samePath(p, tab.summary.path)))
     .map((tab) => closeRepoTab(tab.id));
 }
 
