@@ -267,7 +267,9 @@ fn admin_head(common: &Path, name: &str) -> Option<HeadState> {
             name: branch.to_owned(),
         });
     }
-    (line.len() == 40 && line.bytes().all(|b| b.is_ascii_hexdigit())).then(|| HeadState::Detached {
+    // A SHA-1 or SHA-256 object id.
+    let is_oid = matches!(line.len(), 40 | 64) && line.bytes().all(|b| b.is_ascii_hexdigit());
+    is_oid.then(|| HeadState::Detached {
         oid: line.to_owned(),
     })
 }

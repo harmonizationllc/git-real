@@ -205,6 +205,21 @@ fn list_missing_detached_reads_oid_from_admin_head() {
 }
 
 #[test]
+fn list_missing_detached_reads_a_64_hex_admin_head() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let d = root.join("d");
+    common::run_git_ok(&main, &["worktree", "add", "--detach", d.to_str().unwrap()]);
+    std::fs::remove_dir_all(&d).unwrap();
+    let oid = "ab".repeat(32);
+    std::fs::write(main.join(".git/worktrees/d/HEAD"), format!("{oid}\n")).unwrap();
+    let list = session(&main).list_linked_worktrees().unwrap();
+    assert_eq!(entry(&list, &d).head, Some(HeadState::Detached { oid }));
+}
+
+#[test]
 fn list_corrupt_admin_head_has_no_head() {
     if !common::git_available() {
         return;
