@@ -59,6 +59,7 @@ import {
   addLinkedWorktree,
   removeLinkedWorktree,
   pruneLinkedWorktrees,
+  isLinkedWorktreeDirty,
   mergeBranch,
   openRepo,
   pull,
@@ -1524,6 +1525,15 @@ describe("linked worktree wrappers", () => {
     expect(calls).toEqual([
       { cmd: "remove_linked_worktree", args: { id: 2, path: "/repos/app-a", force: true } },
     ]);
+  });
+
+  it("isLinkedWorktreeDirty sends is_linked_worktree_dirty with id and path and returns the flag", async () => {
+    const calls = mockWith(true);
+    const result = await isLinkedWorktreeDirty(2, "/repos/app-a");
+    expect(calls).toEqual([
+      { cmd: "is_linked_worktree_dirty", args: { id: 2, path: "/repos/app-a" } },
+    ]);
+    expect(result).toBe(true);
   });
 
   it("pruneLinkedWorktrees sends prune_linked_worktrees with id and returns the paths", async () => {

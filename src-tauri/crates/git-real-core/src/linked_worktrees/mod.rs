@@ -105,12 +105,7 @@ impl RepoSession {
     /// registered, or its canonical form). Without `force` a worktree whose
     /// folder still exists must have no changes, untracked files included.
     pub fn remove_linked_worktree(&self, path: &Path, force: bool) -> Result<(), GitError> {
-        let canonical = path.canonicalize().ok();
-        let list = self.list_linked_worktrees()?;
-        let entry = list
-            .iter()
-            .find(|w| w.path == path || canonical.as_deref() == Some(w.path.as_path()))
-            .ok_or_else(|| GitError::WorktreeNotFound(path.to_path_buf()))?;
+        let entry = self.find_linked_worktree(path)?;
         if entry.is_main {
             return Err(GitError::CannotRemoveMain);
         }
@@ -120,7 +115,7 @@ impl RepoSession {
         if let Some(reason) = &entry.locked {
             return Err(GitError::WorktreeLocked(reason.clone()));
         }
-        if !force && !entry.missing && is_dirty(&entry.path)? {
+        if !force && is_dirty(&entry)? {
             return Err(GitError::WorktreeDirty(entry.path.clone()));
         }
         let target = entry.path.to_string_lossy();
@@ -130,6 +125,13 @@ impl RepoSession {
         }
         args.push(&target);
         self.run_worktree("worktree remove", &args)
+    }
+
+    /// Whether the listed worktree at `path` (as registered, or its canonical
+    /// form) has changes, untracked files included; `false` when its folder
+    /// is missing.
+    pub fn linked_worktree_dirty(&self, path: &Path) -> Result<bool, GitError> {
+        is_dirty(&self.find_linked_worktree(path)?)
     }
 
     /// `git worktree prune`; returns the entries it removes: the missing,
@@ -163,6 +165,15 @@ impl RepoSession {
                 _ => None,
             })
             .collect())
+    }
+
+    /// The listed worktree at `path`, matched as registered or canonically.
+    fn find_linked_worktree(&self, path: &Path) -> Result<LinkedWorktree, GitError> {
+        let canonical = path.canonicalize().ok();
+        self.list_linked_worktrees()?
+            .into_iter()
+            .find(|w| w.path == path || canonical.as_deref() == Some(w.path.as_path()))
+            .ok_or_else(|| GitError::WorktreeNotFound(path.to_path_buf()))
     }
 
     /// The main worktree's row. A main session is its own; a linked session
@@ -239,9 +250,16 @@ fn ensure_free_folder(path: &Path) -> Result<(), GitError> {
     }
 }
 
-/// Any change at all, untracked files included, ignored files not.
-fn is_dirty(path: &Path) -> Result<bool, GitError> {
-    let repo = Repository::open(path)?;
+/// Any change at all, untracked files included, ignored files not; a
+/// missing folder has none. A folder that does not open as a repository (a
+/// broken `.git` file) counts as dirty, so removing it takes `force`.
+fn is_dirty(entry: &LinkedWorktree) -> Result<bool, GitError> {
+    if entry.missing {
+        return Ok(false);
+    }
+    let Ok(repo) = Repository::open(&entry.path) else {
+        return Ok(true);
+    };
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)

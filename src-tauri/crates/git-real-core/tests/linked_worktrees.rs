@@ -669,6 +669,85 @@ fn remove_accepts_the_canonical_path_of_a_symlinked_worktree() {
     assert_eq!(paths(&s.list_linked_worktrees().unwrap()), vec![main]);
 }
 
+#[test]
+fn linked_worktree_dirty_is_false_for_a_clean_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    assert!(!session(&main).linked_worktree_dirty(&a).unwrap());
+}
+
+#[test]
+fn linked_worktree_dirty_is_true_for_a_modified_tracked_file() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    common::write_file(&a, "README.md", "changed\n");
+    assert!(session(&main).linked_worktree_dirty(&a).unwrap());
+}
+
+#[test]
+fn linked_worktree_dirty_is_true_for_untracked_only() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    common::write_file(&a, "new/deep.txt", "new\n");
+    assert!(session(&main).linked_worktree_dirty(&a).unwrap());
+}
+
+#[test]
+fn linked_worktree_dirty_is_false_for_a_missing_folder() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    std::fs::remove_dir_all(&a).unwrap();
+    assert!(!session(&main).linked_worktree_dirty(&a).unwrap());
+}
+
+#[test]
+fn linked_worktree_dirty_unknown_path_is_worktree_not_found() {
+    let (_md, main, _wd, root, _head) = fixture();
+    let p = root.join("nowhere");
+    let err = session(&main).linked_worktree_dirty(&p).unwrap_err();
+    assert!(
+        matches!(err, GitError::WorktreeNotFound(ref e) if *e == p),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn remove_unopenable_folder_without_force_is_worktree_dirty() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    std::fs::write(a.join(".git"), "gitdir: /nonexistent\n").unwrap();
+    let s = session(&main);
+    let err = s.remove_linked_worktree(&a, false).unwrap_err();
+    assert!(
+        matches!(err, GitError::WorktreeDirty(ref p) if *p == a),
+        "{err:?}"
+    );
+    assert!(s.linked_worktree_dirty(&a).unwrap());
+    // git refuses even `--force` here: "validation failed, cannot remove
+    // working tree: '<a>/.git' is not a .git file".
+    let err = s.remove_linked_worktree(&a, true).unwrap_err();
+    assert!(
+        matches!(err, GitError::OperationFailed { ref verb, .. } if verb == "worktree remove"),
+        "{err:?}"
+    );
+    assert!(a.exists());
+}
+
 // --- prune ---
 
 #[test]

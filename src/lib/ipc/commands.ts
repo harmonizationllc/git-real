@@ -547,6 +547,11 @@ export function removeLinkedWorktree(id: RepoId, path: string, force: boolean): 
   return invoke<void>("remove_linked_worktree", { id, path, force });
 }
 
+/** Whether the linked worktree at `path` has uncommitted changes; false when its folder is missing. */
+export function isLinkedWorktreeDirty(id: RepoId, path: string): Promise<boolean> {
+  return invoke<boolean>("is_linked_worktree_dirty", { id, path });
+}
+
 /** Prunes the stale (missing, unlocked) worktree entries. */
 export function pruneLinkedWorktrees(id: RepoId): Promise<PrunedWorktrees> {
   return invoke<PrunedWorktrees>("prune_linked_worktrees", { id });

@@ -1,4 +1,4 @@
-//! Linked worktree commands: list, add, remove and prune (GR-39).
+//! Linked worktree commands: list, add, remove, dirty check and prune (GR-39).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -33,6 +33,14 @@ pub fn remove_linked_worktree_inner(
     force: bool,
 ) -> Result<(), AppError> {
     with_session(reg, id, |s| s.remove_linked_worktree(path, force))
+}
+
+pub fn is_linked_worktree_dirty_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    path: &Path,
+) -> Result<bool, AppError> {
+    with_session(reg, id, |s| s.linked_worktree_dirty(path))
 }
 
 pub fn prune_linked_worktrees_inner(
@@ -71,6 +79,16 @@ pub async fn remove_linked_worktree(
 ) -> Result<(), AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || remove_linked_worktree_inner(&reg, id, Path::new(&path), force)).await
+}
+
+#[tauri::command]
+pub async fn is_linked_worktree_dirty(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    path: String,
+) -> Result<bool, AppError> {
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || is_linked_worktree_dirty_inner(&reg, id, Path::new(&path))).await
 }
 
 #[tauri::command]

@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 use git_real_core::{PrunedWorktrees, RepoSession, WorktreeBranch};
 use git_real_lib::commands::linked_worktrees::{
-    add_linked_worktree_inner, list_linked_worktrees_inner, prune_linked_worktrees_inner,
-    remove_linked_worktree_inner,
+    add_linked_worktree_inner, is_linked_worktree_dirty_inner, list_linked_worktrees_inner,
+    prune_linked_worktrees_inner, remove_linked_worktree_inner,
 };
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::state::{RepoId, RepoRegistry};
@@ -107,8 +107,24 @@ fn linked_worktree_inner_functions_reject_an_unknown_repo() {
         prune_linked_worktrees_inner(&reg, MISSING_ID)
             .unwrap_err()
             .kind,
+        is_linked_worktree_dirty_inner(&reg, MISSING_ID, &wt)
+            .unwrap_err()
+            .kind,
     ];
-    assert_eq!(kinds, [AppErrorKind::UnknownRepo; 4]);
+    assert_eq!(kinds, [AppErrorKind::UnknownRepo; 5]);
+}
+
+#[test]
+fn is_linked_worktree_dirty_inner_reports_changes() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, _r, root, reg, id) = setup();
+    let wt = root.join("feat");
+    add_linked_worktree_inner(&reg, id, &wt, &feat()).unwrap();
+    assert!(!is_linked_worktree_dirty_inner(&reg, id, &wt).unwrap());
+    common::write_file(&wt, "README.md", "changed\n");
+    assert!(is_linked_worktree_dirty_inner(&reg, id, &wt).unwrap());
 }
 
 #[test]

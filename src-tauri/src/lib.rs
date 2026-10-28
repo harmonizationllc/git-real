@@ -83,6 +83,7 @@ pub fn run() {
             commands::linked_worktrees::list_linked_worktrees,
             commands::linked_worktrees::add_linked_worktree,
             commands::linked_worktrees::remove_linked_worktree,
+            commands::linked_worktrees::is_linked_worktree_dirty,
             commands::linked_worktrees::prune_linked_worktrees,
             commands::commit::get_commit_config,
             commands::commit::get_head_message,
