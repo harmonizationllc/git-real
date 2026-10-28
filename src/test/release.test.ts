@@ -750,7 +750,7 @@ describe("README", () => {
   });
 
   it("intro no longer calls macOS a follow-on target", () => {
-    expect(readme.slice(0, readme.indexOf("\n## "))).not.toMatch(/macOS[^.\n]*follow-on/);
+    expect(readme.slice(0, readme.indexOf("\n## "))).not.toMatch(/macOS[^.]*follow-on/);
   });
 
   it("install section documents the universal DMG and the Gatekeeper path", () => {
