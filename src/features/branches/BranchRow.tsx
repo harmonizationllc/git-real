@@ -1,5 +1,6 @@
 import type { DragEvent, KeyboardEvent } from "react";
 import type { LocalBranch, RemoteBranch, Tracking } from "../../lib/ipc";
+import { folderName } from "../linkedWorktrees/worktreePath";
 import styles from "./BranchRow.module.css";
 
 export type BranchTarget =
@@ -112,6 +113,14 @@ export function BranchRow({ target, current, drag, onActivate, onContextMenu }: 
         <span className={styles.name}>{branch.name}</span>
         {target.kind === "local" && target.branch.tracking !== null && (
           <TrackingBadge tracking={target.branch.tracking} />
+        )}
+        {target.kind === "local" && target.branch.worktree !== null && (
+          <span
+            className={styles.badge}
+            title={`Checked out in worktree ${target.branch.worktree}`}
+          >
+            {folderName(target.branch.worktree)}
+          </span>
         )}
       </button>
     </li>

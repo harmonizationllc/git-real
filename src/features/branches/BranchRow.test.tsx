@@ -476,3 +476,17 @@ describe("BranchRow non-target", () => {
     expect(drag.onDragLeave).not.toHaveBeenCalled();
   });
 });
+
+// Contract: a local branch checked out in another worktree shows that worktree's folder.
+describe("BranchRow worktree badge", () => {
+  it("should badge a branch checked out in another worktree", () => {
+    renderRow({ target: local({ worktree: "/repos/app-feat-a" }) });
+    const badge = screen.getByText("app-feat-a");
+    expect(badge).toHaveAttribute("title", "Checked out in worktree /repos/app-feat-a");
+  });
+
+  it("should render no badge when worktree is null", () => {
+    renderRow({ target: local({ worktree: null }) });
+    expect(screen.queryByTitle(/Checked out in worktree/)).toBeNull();
+  });
+});

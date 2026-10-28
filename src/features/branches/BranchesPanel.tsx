@@ -6,6 +6,9 @@ import { deleteRemoteBranch } from "../../lib/ipc";
 import type { AppError, BranchList, HeadState, RepoId } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { IN_PROGRESS_TITLE, headName } from "../merge/operationCopy";
+import { AddWorktreeDialog } from "../linkedWorktrees/AddWorktreeDialog";
+import { folderName } from "../linkedWorktrees/worktreePath";
+import type { WorktreeBranch } from "../../lib/ipc";
 import { RebaseDialog } from "../merge/rebase/RebaseDialog";
 import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
@@ -18,6 +21,7 @@ import type { RemotesTarget } from "../remotes/remotesTarget";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import { useRemoteActions } from "../remotes/useRemoteActions";
 import { RepoError } from "../repo/RepoError";
+import { useOpenRepo } from "../repo/useOpenRepo";
 import { BranchGroup } from "./BranchGroup";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
 import styles from "./BranchesPanel.module.css";
@@ -55,7 +59,8 @@ type Dialog =
   | { kind: "forceDelete"; name: string }
   | { kind: "deleteRemote"; remote: string; name: string }
   | { kind: "removeRemote"; name: string }
-  | { kind: "rebase"; base: string };
+  | { kind: "rebase"; base: string }
+  | { kind: "worktree"; initial: WorktreeBranch };
 
 type CreateDialog = Extract<Dialog, { kind: "create" }>;
 
@@ -92,7 +97,8 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
   const [remoteError, setRemoteError] = useState<AppError | null>(null);
   const pending =
     actions.pending || integration.pending || network.pending || remoteActions.pending;
-  const panelError = actions.error ?? integration.error ?? remoteError;
+  const opener = useOpenRepo();
+  const panelError = actions.error ?? integration.error ?? remoteError ?? opener.error;
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -114,6 +120,7 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
     actions.clearError();
     integration.clearError();
     setRemoteError(null);
+    opener.clearError();
   };
 
   // A newer integration failure must not hide behind an older, undismissed panel error.
@@ -269,10 +276,14 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
   /** `list` is unfiltered, so a filtered-out twin still counts as existing. */
   const menuItems = ({ target, dropMenu }: MenuState, list: BranchList): MenuItem[] => {
     if (dropMenu) return integrationItems(target, list.head);
+    const elsewhere = target.kind === "local" ? target.branch.worktree : null;
+    const lockedTitle =
+      elsewhere === null ? undefined : `Checked out in worktree ${folderName(elsewhere)}`;
     const checkout: MenuItem = {
       id: "checkout",
       label: "Checkout",
-      disabled: pending,
+      disabled: pending || elsewhere !== null,
+      title: lockedTitle,
       onSelect: () => activate(target),
     };
     if (target.kind === "remote") {
@@ -282,6 +293,16 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
         {
           ...checkout,
           title: hasLocal ? undefined : `Creates a local branch tracking ${remote}/${name}`,
+        },
+        {
+          id: "worktree",
+          label: "Create worktree…",
+          disabled: pending,
+          onSelect: () =>
+            openDialog({
+              kind: "worktree",
+              initial: { kind: "new", name, start: `${remote}/${name}` },
+            }),
         },
         ...rebaseItems(target, list.head),
         {
@@ -295,7 +316,7 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
     }
     const { name, isHead } = target.branch;
     return [
-      { ...checkout, disabled: pending || isHead },
+      { ...checkout, disabled: pending || isHead || elsewhere !== null },
       ...(isHead && onCreatePullRequest
         ? [{ id: "createPr", label: "Create pull request…", onSelect: onCreatePullRequest }]
         : []),
@@ -307,6 +328,13 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
         onSelect: () => openDialog(createDialog(`New branch from ${name}`, name)),
       },
       {
+        id: "worktree",
+        label: "Create worktree…",
+        disabled: pending || elsewhere !== null,
+        title: lockedTitle,
+        onSelect: () => openDialog({ kind: "worktree", initial: { kind: "existing", name } }),
+      },
+      {
         id: "rename",
         label: "Rename…",
         disabled: pending,
@@ -316,7 +344,8 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
         id: "delete",
         label: "Delete…",
         danger: true,
-        disabled: pending || isHead,
+        disabled: pending || isHead || elsewhere !== null,
+        title: lockedTitle,
         onSelect: () => openDialog({ kind: "deleteLocal", name }),
       },
     ];
@@ -553,6 +582,16 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
           pending={remoteActions.pending}
           onConfirm={() => void confirmRemoveRemote(dialog.name)}
           onCancel={closeDialog}
+          fallbackFocus={rootRef}
+        />
+      )}
+      {dialog?.kind === "worktree" && (
+        <AddWorktreeDialog
+          repoId={repoId}
+          open
+          initial={dialog.initial}
+          onClose={closeDialog}
+          onAdded={(path) => void opener.open(path)}
           fallbackFocus={rootRef}
         />
       )}
