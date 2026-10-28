@@ -96,7 +96,7 @@ function parseCargoVersion(toml: string): string {
 // ---------------------------------------------------------------------------
 
 // R8: version strings in package.json, tauri.conf.json and Cargo.toml must
-//     be equal and semver-shaped (MAJOR.MINOR.PATCH, optionally -N).
+//     be equal and semver-shaped (MAJOR.MINOR.PATCH).
 describe("versions", () => {
   const tauriConf = readJson("src-tauri/tauri.conf.json") as Record<string, unknown>;
   const pkgJson = readJson("package.json") as Record<string, unknown>;
@@ -108,8 +108,8 @@ describe("versions", () => {
     expect(pkgJson.version).toBe(cargoVersion);
   });
 
-  it("version is MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-N", () => {
-    expect(String(pkgJson.version)).toMatch(/^\d+\.\d+\.\d+(-\d+)?$/);
+  it("version is MAJOR.MINOR.PATCH", () => {
+    expect(String(pkgJson.version)).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 
@@ -447,7 +447,7 @@ describe("release workflow", () => {
     ]);
   });
 
-  it("check-version guards the tag and rejects non-numeric pre-release identifiers", () => {
+  it("check-version guards the tag and rejects pre-release suffixes", () => {
     const step = stepsOf("check-version").find(
       (s) => s["name"] === "Check the tag matches the app version",
     );
@@ -455,8 +455,9 @@ describe("release workflow", () => {
     const run = String(step?.run ?? "");
     expect(run).toContain("GITHUB_REF_NAME");
     expect(run).toContain("tauri.conf.json");
-    // MSI needs a numeric pre-release identifier, so only -N is accepted
-    expect(run).toContain("(-[0-9]+)?");
+    // Release tags are vX.Y.Z only; no pre-release suffix
+    expect(run).toContain("^[0-9]+\\.[0-9]+\\.[0-9]+$");
+    expect(run).not.toContain("(-[0-9]+)?");
   });
 
   it("both builds need check-version and publish needs both builds", () => {
@@ -522,7 +523,8 @@ describe("release workflow", () => {
     const w = (steps[releaseIdx]?.with ?? {}) as Record<string, unknown>;
     expect(w["generate_release_notes"]).toBe(true);
     expect(w["fail_on_unmatched_files"]).toBe(true);
-    expect(String(w["prerelease"])).toContain("contains(github.ref_name, '-')");
+    expect(w).not.toHaveProperty("prerelease");
+    expect(readText(".github/workflows/release.yml")).not.toContain("prerelease");
     expect(String(w["name"])).toContain("Git Real");
     const files = String(w["files"]);
     // upload-artifact@v4 keeps paths relative to the globs' common ancestor, so
@@ -634,10 +636,10 @@ describe("README", () => {
     expect(install).not.toContain("Git Real_");
   });
 
-  it("releasing section mentions Windows installers and a numeric pre-release example", () => {
+  it("releasing section mentions Windows installers and no pre-release convention", () => {
     const releasing = section(readme, "Releasing");
     expect(releasing).toContain("Windows");
-    expect(releasing).toContain("vX.Y.Z-1");
+    expect(releasing).not.toContain("pre-release");
     expect(releasing).not.toContain("-beta");
   });
 
