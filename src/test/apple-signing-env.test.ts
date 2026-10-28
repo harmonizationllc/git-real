@@ -81,18 +81,23 @@ describe.skipIf(!hasBash)("apple-signing-env", () => {
     expect(statSync(SCRIPT).mode & 0o111).not.toBe(0);
   });
 
-  it("nothing set: unsigned, writes nothing", () => {
+  // No Developer ID secrets: the script itself exports the ad-hoc pseudo-identity
+  // "-" so the bundle is still code-signed (Apple Silicon refuses an unsigned app).
+  const ADHOC_NOTICE =
+    "::notice::Apple signing: unsigned (ad-hoc identity, no Developer ID secrets)";
+
+  it("nothing set: ad-hoc identity, unsigned", () => {
     const r = runGate({});
     expect(r.status).toBe(0);
-    expect(r.envFile).toBe("");
-    expect(r.output).toContain("::notice::Apple signing: unsigned");
+    expect(parseGithubEnv(r.envFile)).toEqual({ APPLE_SIGNING_IDENTITY: "-" });
+    expect(r.output).toContain(ADHOC_NOTICE);
   });
 
   it("empty strings behave as unset", () => {
     const r = runGate(Object.fromEntries(NAMES.map((n) => [n, ""])));
     expect(r.status).toBe(0);
-    expect(r.envFile).toBe("");
-    expect(r.output).toContain("::notice::Apple signing: unsigned");
+    expect(parseGithubEnv(r.envFile)).toEqual({ APPLE_SIGNING_IDENTITY: "-" });
+    expect(r.output).toContain(ADHOC_NOTICE);
   });
 
   it("all six set round-trip, including a multi-line certificate", () => {
@@ -154,6 +159,14 @@ describe.skipIf(!hasBash)("apple-signing-env", () => {
 
   it("identity alone fails naming the certificate", () => {
     const r = runGate({ APPLE_SIGNING_IDENTITY: ID });
+    expect(r.status).toBe(1);
+    expect(r.output).toMatch(/APPLE_CERTIFICATE(?!_)/);
+    expect(r.envFile).toBe("");
+  });
+
+  // The "-" is the script's own; a secret-supplied identity needs a certificate.
+  it('a secret identity of "-" without a certificate still fails', () => {
+    const r = runGate({ APPLE_SIGNING_IDENTITY: "-" });
     expect(r.status).toBe(1);
     expect(r.output).toMatch(/APPLE_CERTIFICATE(?!_)/);
     expect(r.envFile).toBe("");

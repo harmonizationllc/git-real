@@ -427,6 +427,23 @@ describe("ci workflow", () => {
     const buildStep = runs.find((s) => (s.run as string).includes("npm run tauri build"));
     expect(buildStep).toBeDefined();
     expect(String(buildStep?.run)).toContain("--target universal-apple-darwin");
+
+    // The gate runs in CI too (ad-hoc identity), but CI never sees secrets
+    const gateIdx = steps.findIndex(
+      (s) =>
+        s.name === "Prepare Apple signing" &&
+        typeof s.run === "string" &&
+        (s.run as string).trim() === ".github/scripts/apple-signing-env.sh",
+    );
+    const installIdx = steps.findIndex((s) => s.run === "npm ci");
+    const buildIdx = steps.findIndex(
+      (s) => typeof s.run === "string" && (s.run as string).includes("npm run tauri build"),
+    );
+    expect(gateIdx).toBeGreaterThanOrEqual(0);
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(gateIdx).toBeGreaterThan(installIdx);
+    expect(gateIdx).toBeLessThan(buildIdx);
+    expect(steps[gateIdx]).not.toHaveProperty("env");
     expect(String(buildStep?.run)).toContain("--bundles dmg");
     for (const s of runs) {
       expect(s.run as string).not.toContain("apt-get");
