@@ -5,8 +5,8 @@ Tauri 2 and Rust on the backend and React with TypeScript on the front end, and 
 to cover the everyday Git workflows of a developer in one fast, native-feeling window.
 
 Linux (Wayland, with the COSMIC desktop as the primary target) is the first-class
-platform. Windows installers are built alongside the Linux packages; macOS is the
-follow-on target.
+platform. Windows installers and a macOS disk image are built alongside the Linux
+packages.
 
 ## Features
 
@@ -59,7 +59,7 @@ to the front end over typed IPC commands.
 
 ## Install
 
-Pre-built Linux packages and Windows installers are published on each release. Download
+Pre-built Linux packages, Windows installers and a macOS disk image are published on each release. Download
 the one for your system from the [GitHub Releases](https://github.com/harmonizationllc/git-real/releases)
 page (`<version>` is the release, for example `0.1.0`). The product name has a space in
 it, and GitHub replaces that space with a dot when it serves a release file, so a
@@ -92,10 +92,23 @@ download is named `Git.Real_<version>_amd64.deb`; quote the path:
   (administrator) prompt, unlike the per-user setup `.exe`. Windows 10 and 11 ship WebView2,
   and the installer downloads it on a machine that lacks it.
 
+- **macOS** — download `Git.Real_<version>_universal.dmg`, one file for both Intel and
+  Apple Silicon, open it and drag Git Real to Applications. The app is signed only
+  with an ad-hoc signature, not with a Developer ID, and not notarized, so macOS
+  refuses the first launch. On macOS 15 and later, open System Settings, then Privacy
+  & Security, find the Git Real entry and choose **Open Anyway**. On earlier versions
+  Control-click the app and choose **Open**. If you prefer the terminal, run:
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/Git Real.app"
+  ```
+
 The `.deb` recommends `git`, and you should have it on any install: every network
 operation (fetch, pull, push, clone over the network) and all commit signing shell out
 to the system `git` CLI, so Git Real needs it on your `PATH`. On Windows, install
-[Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`.
+[Git for Windows](https://gitforwindows.org/) and let it add `git` to `PATH`. On macOS,
+`git` comes with the Xcode Command Line Tools (`xcode-select --install`), which macOS
+offers to install the first time anything calls `git`.
 
 ## Wayland and X11
 
@@ -134,6 +147,12 @@ Prerequisites:
   with C++" workload, and WebView2 (preinstalled on Windows 10 and 11).
   `npm run tauri build -- --bundles nsis,msi` produces the installers under
   `src-tauri\target\release\bundle\`.
+
+- **Building on macOS**: the Xcode Command Line Tools, Rust stable with both Apple
+  targets added (`rustup target add aarch64-apple-darwin x86_64-apple-darwin`), and
+  Node.js 24. `npm run tauri build -- --target universal-apple-darwin --bundles dmg`
+  produces one universal disk image under
+  `src-tauri/target/universal-apple-darwin/release/bundle/`.
 
 Getting started:
 
@@ -227,9 +246,12 @@ workflow refuses a tag that does not match.
    ```
 
 The `Release` workflow first checks the tag against the version, then builds the
-`.deb`, `.rpm` and AppImage on Linux and the NSIS `.exe` and `.msi` on Windows in
-parallel, then publishes one GitHub release carrying all five files with generated
-release notes. A tag whose version differs from `tauri.conf.json` fails before anything
+`.deb`, `.rpm` and AppImage on Linux, the NSIS `.exe` and `.msi` on Windows and the
+universal `.dmg` on macOS in parallel, then publishes one GitHub release carrying all
+six files with generated release notes. The macOS job signs and notarizes the app when
+the `APPLE_*` repository secrets are present (see
+[ADR 0006](docs/adr/0006-per-platform-bundles-and-release.md)) and builds ad-hoc
+signed, without notarization, otherwise. A tag whose version differs from `tauri.conf.json` fails before anything
 is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
 every release is a full release that the in-app update check can offer.
 
@@ -248,7 +270,7 @@ docs/superpowers/    Feature design specs and implementation plans
 ## Status
 
 Git Real is at version 0.1.0 and under active development. The features above are
-implemented and tested, Linux packages and Windows installers are published on each release, and a benchmark
+implemented and tested, Linux packages, Windows installers and a macOS disk image are published on each release, and a benchmark
 suite holds the app to its performance budgets on 100,000-commit repositories in CI.
 
 ## License
