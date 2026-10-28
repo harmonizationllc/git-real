@@ -35,10 +35,7 @@ time without touching what the others own.
 - **R7 — CI builds the Windows bundles on every push.** A `package-windows` job sits
   beside `package-linux`, so the first Windows compile of a change does not happen on a
   tag push.
-- **R10 — Pre-release identifiers are numeric.** WiX accepts only numeric version
-  parts, so a pre-release version is `X.Y.Z-N` with `N` an integer. `check-version`
-  enforces this shape, because a tag the MSI bundler rejects would publish nothing,
-  Linux included.
+- **R10 — withdrawn 2026-10-28.** GR-24 required numeric pre-release identifiers (`X.Y.Z-N`) because WiX accepts only numeric version parts. The owner then decided the project cuts no pre-release tags at all, so `check-version` accepts `X.Y.Z` only and the publish step has no `prerelease` flag.
 - **R12 — Release download names carry a dot, not a space.** GitHub replaces the space
   in `Git Real` with a dot when it serves a release file. The README documents the
   `Git.Real_…` names. CI artifacts keep Tauri's original names.
@@ -60,5 +57,4 @@ time without touching what the others own.
      keep signing out until this story.
   5. Note that SmartScreen reputation accrues to the publisher certificate, so one
      certificate serves every app the business ships.
-- A pre-release tag must look like `vX.Y.Z-N`; `vX.Y.Z-beta.1` now fails the version
-  check before any build starts.
+- Tags are `vX.Y.Z` only; a hyphenated tag fails the version check before any build starts.
