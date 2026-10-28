@@ -928,6 +928,45 @@ fn delete_branch_checked_out_elsewhere_is_refused() {
 }
 
 #[test]
+fn rename_branch_updates_a_live_linked_worktree_head() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    session(&main)
+        .rename_branch("feat/a", "feat/renamed")
+        .unwrap();
+    assert_eq!(head_shorthand(&a), "feat/renamed");
+    assert!(!branch_exists(&main, "feat/a"));
+}
+
+#[test]
+fn rename_branch_held_by_a_missing_worktree_is_refused() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    std::fs::remove_dir_all(&a).unwrap();
+    let admin_head = main.join(".git/worktrees/a/HEAD");
+    let before = std::fs::read_to_string(&admin_head).unwrap();
+    let err = session(&main)
+        .rename_branch("feat/a", "feat/renamed")
+        .unwrap_err();
+    match err {
+        GitError::BranchCheckedOut { name, worktree } => {
+            assert_eq!(name, "feat/a");
+            assert_eq!(worktree, a);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(branch_exists(&main, "feat/a"));
+    assert!(!branch_exists(&main, "feat/renamed"));
+    assert_eq!(std::fs::read_to_string(&admin_head).unwrap(), before);
+}
+
+#[test]
 fn checkout_remote_branch_with_local_checked_out_elsewhere_is_refused() {
     if !common::git_available() {
         return;

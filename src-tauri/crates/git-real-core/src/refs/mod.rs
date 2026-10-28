@@ -122,14 +122,24 @@ impl RepoSession {
         })
     }
 
-    /// Renames a local branch; libgit2 moves HEAD and the branch's config
-    /// section with it.
+    /// Renames a local branch; libgit2 moves HEAD, the HEAD of every other
+    /// worktree it can open, and the branch's config section with it. A
+    /// branch held by a worktree whose folder is missing is refused: libgit2
+    /// cannot update that worktree's HEAD.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<(), GitError> {
         validate_branch_name(new)?;
         let repo = self.repo();
         let mut branch = find_local(repo, old)?;
         if repo.find_branch(new, BranchType::Local).is_ok() {
             return Err(GitError::BranchExists(new.to_owned()));
+        }
+        if let Some(worktree) = self.checked_out_elsewhere()?.remove(old)
+            && !worktree.exists()
+        {
+            return Err(GitError::BranchCheckedOut {
+                name: old.to_owned(),
+                worktree,
+            });
         }
         branch.rename(new, false)?;
         Ok(())
