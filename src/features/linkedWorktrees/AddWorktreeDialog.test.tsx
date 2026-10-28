@@ -155,6 +155,20 @@ describe("AddWorktreeDialog existing branch", () => {
     expect(addButton()).toBeDisabled();
   });
 
+  it("should show no hint when the repository has no local branches", async () => {
+    vi.mocked(listBranches).mockResolvedValue({
+      head: { kind: "unborn", name: "main" },
+      local: [],
+      remotes: [],
+    });
+    const { user } = await renderDialog();
+    await user.click(radio("Existing branch"));
+    await waitFor(() => expect(listBranches).toHaveBeenCalled());
+    expect(branchSelect()).toBeInTheDocument();
+    expect(screen.queryByText(/Every branch is checked out/)).toBeNull();
+    expect(addButton()).toBeDisabled();
+  });
+
   it("should explain when no branch is free in Existing mode", async () => {
     vi.mocked(listBranches).mockResolvedValue({
       ...branches(),

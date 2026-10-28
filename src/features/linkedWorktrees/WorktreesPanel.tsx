@@ -89,6 +89,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
     const dirty = await actions.checkDirty(path);
     if (dirty === false) return remove({ path, force: false });
     if (dirty === true) setConfirm({ path, force: true });
+    // Otherwise an AppError: already shown inline through actions.error, nothing more to do.
   };
 
   const prune = () => {

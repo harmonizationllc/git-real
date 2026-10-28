@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { defaultWorktreePath, folderName, parentFolder, samePath } from "./worktreePath";
+import {
+  defaultWorktreePath,
+  folderName,
+  parentFolder,
+  samePath,
+  trimTrailingSeparators,
+} from "./worktreePath";
 
 // Contract: two paths are the same when they match after dropping trailing separators.
 describe("samePath", () => {
@@ -71,5 +77,21 @@ describe("parentFolder", () => {
   it("is empty for a top-level or bare name", () => {
     expect(parentFolder("/app")).toBe("");
     expect(parentFolder("app")).toBe("");
+  });
+});
+
+describe("trimTrailingSeparators", () => {
+  it("drops trailing slashes and backslashes", () => {
+    expect(trimTrailingSeparators("/repos/app//")).toBe("/repos/app");
+    expect(trimTrailingSeparators("C:\\src\\app\\")).toBe("C:\\src\\app");
+  });
+
+  it("leaves a path without a trailing separator alone", () => {
+    expect(trimTrailingSeparators("/repos/app")).toBe("/repos/app");
+  });
+
+  it("reduces a separator-only string to empty", () => {
+    expect(trimTrailingSeparators("/")).toBe("");
+    expect(trimTrailingSeparators("\\")).toBe("");
   });
 });

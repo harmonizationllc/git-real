@@ -77,7 +77,8 @@ function AddWorktreeDialogBody({
 
   const local = branches?.local ?? [];
   // Only once loaded, so the hint never flashes while the list is on its way.
-  const noneFree = branches !== undefined && local.every((b) => lockSuffix(b) !== null);
+  const noneFree =
+    branches !== undefined && local.length > 0 && local.every((b) => lockSuffix(b) !== null);
   const selected =
     existing !== "" ? existing : (local.find((b) => lockSuffix(b) === null)?.name ?? "");
   // A linked worktree of a bare or separate-git-dir repository has no main row.

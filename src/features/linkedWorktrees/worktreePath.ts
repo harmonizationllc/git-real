@@ -8,15 +8,19 @@ export function folderName(path: string): string {
   );
 }
 
+/** `path` without any trailing `/` or `\` separators. */
+export function trimTrailingSeparators(path: string): string {
+  return path.replace(/[\\/]+$/, "");
+}
+
 /** Whether `a` and `b` name the same folder, ignoring trailing `/` or `\` separators. */
 export function samePath(a: string, b: string): boolean {
-  const trim = (p: string) => p.replace(/[\\/]+$/, "");
-  return trim(a) === trim(b);
+  return trimTrailingSeparators(a) === trimTrailingSeparators(b);
 }
 
 /** `path` without its last segment (and any trailing separator); "" when it has no parent. */
 export function parentFolder(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const trimmed = trimTrailingSeparators(path);
   const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return cut < 0 ? "" : trimmed.slice(0, cut);
 }
