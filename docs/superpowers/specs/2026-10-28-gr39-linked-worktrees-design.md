@@ -43,7 +43,7 @@ worktree has every feature the main checkout has.
 - Silent force. A remove that would discard uncommitted changes always
   needs the second, explicitly worded confirmation.
 - Renaming or re-routing the existing working-tree commands. `commands::
-  worktree`, `features/worktree` and their IPC names keep meaning "the
+worktree`, `features/worktree` and their IPC names keep meaning "the
   working tree"; everything new is namespaced `linked_worktree(s)`.
 
 ## 2. Decisions
@@ -102,7 +102,7 @@ worktree has every feature the main checkout has.
   has the branch checked out (never the current session's own worktree,
   which `isHead` already covers). Core refuses `checkout_branch` and
   `delete_branch` for such a branch with the new `BranchCheckedOut { name,
-  worktree }` before running git, so the message is the app's and names the
+worktree }` before running git, so the message is the app's and names the
   folder. The menu items are disabled with the same text, so the error is
   only reached from a stale list.
 - **Section placement (my call).** `REFS_SECTIONS` becomes
@@ -163,13 +163,13 @@ pub struct PrunedWorktrees { pub paths: Vec<PathBuf> }   // entries removed by p
 
 ### 3.2 `src/linked_worktrees/mod.rs` — `impl RepoSession`
 
-| Method | Backend | Behaviour |
-| --- | --- | --- |
-| `list_linked_worktrees() -> Vec<LinkedWorktree>` | git2 | Bare session → empty vec. Main entry (§2): `Repository::open(commondir())`; if not bare, its canonical `workdir()` with `head_state` of that repository; if bare, no main row. Then one entry per `repo.worktrees()` name: `find_worktree`, `path()` (canonicalized when it exists), `missing = !path.exists()`, `locked = is_locked()` reason, `head` via `Repository::open_from_worktree` when the folder exists, else parsed from `<commondir>/worktrees/<name>/HEAD` (`ref: refs/heads/<b>` → `Branch`, a 40-hex line → `Detached`, anything else → `None`). A worktree whose `find_worktree` fails is skipped. Sorted by path after the main entry. |
-| `add_linked_worktree(path: &Path, branch: WorktreeBranch) -> ()` | CLI | Validates: `New` name through `validate_branch_name`, then `BranchExists` if a local branch of that name exists; `Existing` name must be a local branch (`BranchNotFound`) and not checked out in any worktree including this one (`BranchCheckedOut`); `start`, when given, must resolve to a commit (`RevisionNotFound`); `path` must not exist, or be an empty directory (`PathExists(path)`). Then `git -C <workdir> worktree add [-b <name>] <path> [<existing>|<start>]`. Non-zero exit → `OperationFailed { verb: "worktree add" }`. |
-| `remove_linked_worktree(path: &Path, force: bool) -> ()` | git2 + CLI | `path` must be a listed linked worktree (`WorktreeNotFound(path)`); main → `CannotRemoveMain`; current session root → `CannotRemoveCurrent`; locked → `WorktreeLocked(reason)`. When `!force` and the folder exists: open it with git2, `statuses` with untracked included and ignored excluded; any entry → `WorktreeDirty(path)`. Then `git -C <workdir> worktree remove [--force] <path>`. A missing folder is removed without `--force` (git only drops the entry). Non-zero → `OperationFailed { verb: "worktree remove" }`. |
-| `prune_linked_worktrees() -> PrunedWorktrees` | git2 + CLI | Collects the paths of entries with `missing && locked.is_none()` (the entries git will prune), runs `git -C <workdir> worktree prune`, returns those paths. Non-zero → `OperationFailed { verb: "worktree prune" }`. |
-| `common_dir_outside_workdir() -> Option<PathBuf>` | git2 | `commondir()` canonicalized when it is not under the session root; None for the main worktree. Used by the app layer's watcher. |
+| Method                                                           | Backend    | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_linked_worktrees() -> Vec<LinkedWorktree>`                 | git2       | Bare session → empty vec. Main entry (§2): `Repository::open(commondir())`; if not bare, its canonical `workdir()` with `head_state` of that repository; if bare, no main row. Then one entry per `repo.worktrees()` name: `find_worktree`, `path()` (canonicalized when it exists), `missing = !path.exists()`, `locked = is_locked()` reason, `head` via `Repository::open_from_worktree` when the folder exists, else parsed from `<commondir>/worktrees/<name>/HEAD` (`ref: refs/heads/<b>` → `Branch`, a 40-hex line → `Detached`, anything else → `None`). A worktree whose `find_worktree` fails is skipped. Sorted by path after the main entry. |
+| `add_linked_worktree(path: &Path, branch: WorktreeBranch) -> ()` | CLI        | Validates: `New` name through `validate_branch_name`, then `BranchExists` if a local branch of that name exists; `Existing` name must be a local branch (`BranchNotFound`) and not checked out in any worktree including this one (`BranchCheckedOut`); `start`, when given, must resolve to a commit (`RevisionNotFound`); `path` must not exist, or be an empty directory (`PathExists(path)`). Then `git -C <workdir> worktree add [-b <name>] <path> [<existing>                                                                                                                                                                                     | <start>]`. Non-zero exit → `OperationFailed { verb: "worktree add" }`. |
+| `remove_linked_worktree(path: &Path, force: bool) -> ()`         | git2 + CLI | `path` must be a listed linked worktree (`WorktreeNotFound(path)`); main → `CannotRemoveMain`; current session root → `CannotRemoveCurrent`; locked → `WorktreeLocked(reason)`. When `!force` and the folder exists: open it with git2, `statuses` with untracked included and ignored excluded; any entry → `WorktreeDirty(path)`. Then `git -C <workdir> worktree remove [--force] <path>`. A missing folder is removed without `--force` (git only drops the entry). Non-zero → `OperationFailed { verb: "worktree remove" }`.                                                                                                                        |
+| `prune_linked_worktrees() -> PrunedWorktrees`                    | git2 + CLI | Collects the paths of entries with `missing && locked.is_none()` (the entries git will prune), runs `git -C <workdir> worktree prune`, returns those paths. Non-zero → `OperationFailed { verb: "worktree prune" }`.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `common_dir_outside_workdir() -> Option<PathBuf>`                | git2       | `commondir()` canonicalized when it is not under the session root; None for the main worktree. Used by the app layer's watcher.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 `list_branches` (refs/mod.rs) fills `LocalBranch.worktree`: for each
 worktree other than the current session (the main one included when the
@@ -208,12 +208,12 @@ and `src/lib/ipc/errors.ts`. `branchCheckedOut`'s message is
 `src/commands/linked_worktrees.rs`, registered in `lib.rs`, each an
 `*_inner` plus an async command using `with_session` + `run_blocking`:
 
-| Command | Args | Returns |
-| --- | --- | --- |
-| `list_linked_worktrees` | `id` | `LinkedWorktree[]` |
-| `add_linked_worktree` | `id, path, branch: { kind: "existing", name } \| { kind: "new", name, start: string \| null }` | `void` |
-| `remove_linked_worktree` | `id, path, force` | `void` |
-| `prune_linked_worktrees` | `id` | `{ paths: string[] }` |
+| Command                  | Args                                                                                           | Returns               |
+| ------------------------ | ---------------------------------------------------------------------------------------------- | --------------------- |
+| `list_linked_worktrees`  | `id`                                                                                           | `LinkedWorktree[]`    |
+| `add_linked_worktree`    | `id, path, branch: { kind: "existing", name } \| { kind: "new", name, start: string \| null }` | `void`                |
+| `remove_linked_worktree` | `id, path, force`                                                                              | `void`                |
+| `prune_linked_worktrees` | `id`                                                                                           | `{ paths: string[] }` |
 
 `ensure_watcher` passes `session.common_dir_outside_workdir()` as the second
 root. `RepoWatcher::start(workdir, extra: Option<&Path>, …)` watches both
@@ -322,18 +322,18 @@ unaffected (merging a branch checked out elsewhere is allowed).
 
 ## 6. Error handling summary
 
-| Situation | Kind | UI |
-| --- | --- | --- |
-| Checkout/delete a branch checked out elsewhere | `branchCheckedOut` | Menu item disabled with reason; inline error when reached from a stale list |
-| Remove a worktree with changes, no force | `worktreeDirty` | Second confirmation "Remove anyway" |
-| Remove locked worktree | `worktreeLocked` | Menu item disabled with reason; inline error fallback |
-| Remove main / current | `cannotRemoveMain` / `cannotRemoveCurrent` | Menu item disabled with reason; inline error fallback |
-| Remove an entry that vanished | `worktreeNotFound` | Inline error, list refetched |
-| Add into an existing non-empty folder | `pathExists` | Inline in dialog, dialog stays open |
-| Add with bad or taken branch name | `invalidBranchName` / `branchExists` | Inline in dialog |
-| Add with unknown start point | `revisionNotFound` | Inline in dialog |
-| git refuses add/remove/prune | `operationFailed` (stderr) | Inline with git's text |
-| Open a missing worktree | — | Open disabled "Folder not found" |
+| Situation                                      | Kind                                       | UI                                                                          |
+| ---------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| Checkout/delete a branch checked out elsewhere | `branchCheckedOut`                         | Menu item disabled with reason; inline error when reached from a stale list |
+| Remove a worktree with changes, no force       | `worktreeDirty`                            | Second confirmation "Remove anyway"                                         |
+| Remove locked worktree                         | `worktreeLocked`                           | Menu item disabled with reason; inline error fallback                       |
+| Remove main / current                          | `cannotRemoveMain` / `cannotRemoveCurrent` | Menu item disabled with reason; inline error fallback                       |
+| Remove an entry that vanished                  | `worktreeNotFound`                         | Inline error, list refetched                                                |
+| Add into an existing non-empty folder          | `pathExists`                               | Inline in dialog, dialog stays open                                         |
+| Add with bad or taken branch name              | `invalidBranchName` / `branchExists`       | Inline in dialog                                                            |
+| Add with unknown start point                   | `revisionNotFound`                         | Inline in dialog                                                            |
+| git refuses add/remove/prune                   | `operationFailed` (stderr)                 | Inline with git's text                                                      |
+| Open a missing worktree                        | —                                          | Open disabled "Folder not found"                                            |
 
 ## 7. Testing
 
@@ -376,7 +376,7 @@ Tests are written first by the tester role; the developer never edits them.
   gating and **Create worktree…** prefill for local and remote;
   `refsLayout` and `RefsColumn` with six sections; settings store.
 - **Gate:** `cargo test --workspace`, `cargo clippy --workspace
-  --all-targets -- -D warnings`, `cargo fmt --check`, `npm test` with 100 %
+--all-targets -- -D warnings`, `cargo fmt --check`, `npm test` with 100 %
   statements/branches/functions/lines, `npm run lint`, `npm run typecheck`,
   final architect approval.
 - **Acceptance walk** (running app, WebKit inspector tooling):

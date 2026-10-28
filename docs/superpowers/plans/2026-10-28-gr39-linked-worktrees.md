@@ -218,9 +218,20 @@ git commit -m "feat(GR-39): linked worktree core ops, branch guards, commands, c
 
 ```ts
 // types.ts
-export interface LinkedWorktree { name: string | null; path: string; head: HeadState | null; isMain: boolean; isCurrent: boolean; missing: boolean; locked: string | null }
-export type WorktreeBranch = { kind: "existing"; name: string } | { kind: "new"; name: string; start: string | null };
-export interface PrunedWorktrees { paths: string[] }
+export interface LinkedWorktree {
+  name: string | null;
+  path: string;
+  head: HeadState | null;
+  isMain: boolean;
+  isCurrent: boolean;
+  missing: boolean;
+  locked: string | null;
+}
+export type WorktreeBranch =
+  { kind: "existing"; name: string } | { kind: "new"; name: string; start: string | null };
+export interface PrunedWorktrees {
+  paths: string[];
+}
 // commands.ts
 export function listLinkedWorktrees(id: RepoId): Promise<LinkedWorktree[]>;
 export function addLinkedWorktree(id: RepoId, path: string, branch: WorktreeBranch): Promise<void>;
@@ -231,25 +242,42 @@ export function pruneLinkedWorktrees(id: RepoId): Promise<PrunedWorktrees>;
 export function defaultWorktreePath(mainPath: string, branch: string): string;
 export function folderName(path: string): string;
 // worktreeCopy.ts
-export function headText(head: HeadState | null): string;        // per Global Constraints copy
+export function headText(head: HeadState | null): string; // per Global Constraints copy
 export function removeTitle(w: LinkedWorktree): string | undefined; // the disabled reason for Remove…, undefined when allowed
-export function openTitle(w: LinkedWorktree): string | undefined;   // same for Open
+export function openTitle(w: LinkedWorktree): string | undefined; // same for Open
 // useLinkedWorktrees.ts
-export interface UseLinkedWorktrees { list: LinkedWorktree[] | undefined; error: AppError | null; refetch(): void }
+export interface UseLinkedWorktrees {
+  list: LinkedWorktree[] | undefined;
+  error: AppError | null;
+  refetch(): void;
+}
 export function useLinkedWorktrees(repoId: RepoId): UseLinkedWorktrees;
 // useLinkedWorktreeActions.ts
 export interface UseLinkedWorktreeActions {
   add(path: string, branch: WorktreeBranch): Promise<AppError | null>;
-  remove(path: string, force: boolean): Promise<AppError | null>;   // closes matching tabs first
-  prune(paths: string[]): Promise<AppError | null>;                 // closes tabs on `paths` first
-  pending: boolean; error: AppError | null; clearError(): void;
+  remove(path: string, force: boolean): Promise<AppError | null>; // closes matching tabs first
+  prune(paths: string[]): Promise<AppError | null>; // closes tabs on `paths` first
+  pending: boolean;
+  error: AppError | null;
+  clearError(): void;
 }
 export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActions;
 // AddWorktreeDialog.tsx
-export interface AddWorktreeDialogProps { repoId: RepoId; open: boolean; initial?: WorktreeBranch; onClose(): void; onAdded(path: string): void; fallbackFocus?: RefObject<HTMLElement | null> }
+export interface AddWorktreeDialogProps {
+  repoId: RepoId;
+  open: boolean;
+  initial?: WorktreeBranch;
+  onClose(): void;
+  onAdded(path: string): void;
+  fallbackFocus?: RefObject<HTMLElement | null>;
+}
 export function AddWorktreeDialog(props: AddWorktreeDialogProps): React.JSX.Element | null;
 // WorktreeRow.tsx
-export interface WorktreeRowProps { worktree: LinkedWorktree; onOpen(): void; onContextMenu(x: number, y: number): void }
+export interface WorktreeRowProps {
+  worktree: LinkedWorktree;
+  onOpen(): void;
+  onContextMenu(x: number, y: number): void;
+}
 // WorktreesPanel.tsx
 export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Element;
 ```
@@ -271,6 +299,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
 `WorktreeRow.test.tsx`: renders folder name, `title` = full path, head text, the `main`/`current`/`missing`/`locked` badges (locked title = reason or `Locked`); double-click and Enter call `onOpen`; Shift+F10, ContextMenu key and right-click call `onContextMenu`.
 
 `WorktreesPanel.test.tsx`:
+
 - "should list the worktrees with the heading count" (`Worktrees (2)`, list `aria-label` `Worktree list`, rows in list order).
 - "should show the bare message for an empty list" (`Not available for bare repositories`, no `+`, no prune button).
 - "should open a worktree on double-click and Enter" (`openRepo` called with the path).
@@ -287,6 +316,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
 - "should show an open failure inline" (`openRepo` rejects → `RepoError` with Dismiss).
 
 `AddWorktreeDialog.test.tsx`:
+
 - "should start in New branch mode with the folder tracking the name" (typing `feat/x` makes Folder `/repos/app-feat-x`; blank name → `/repos/app-worktree`).
 - "should stop tracking once the folder was edited".
 - "should list local branches in Existing mode and disable current and checked-out ones" (`main (current)`, `feat/a (checked out in app-feat-a)` disabled; a free branch enabled; switching to a branch updates the folder).
@@ -348,6 +378,7 @@ git commit -m "feat(GR-39): Worktrees section, add dialog, open/remove/prune act
 `BranchRow.test.tsx`: "should badge a branch checked out in another worktree" (`worktree: "/repos/app-feat-a"` → badge text `app-feat-a`, title `Checked out in worktree /repos/app-feat-a`); "should render no badge when worktree is null".
 
 `BranchesPanel.test.tsx`:
+
 - "should disable Checkout and Delete… for a branch checked out elsewhere with the worktree title" (both items `aria-disabled`, title `Checked out in worktree app-feat-a`).
 - "should disable Create worktree… for a branch checked out elsewhere".
 - "should open the add dialog in Existing mode from a local branch" (`Create worktree…` on `free` → dialog with `Existing branch` checked and `free` selected).
@@ -363,7 +394,7 @@ Expected: failures on the missing badge, items and dialog.
 
 - [ ] **Step 3: Implement**
 
-`BranchRow`: after `TrackingBadge`, for a local branch with `worktree !== null` render `<span className={styles.badge} title={\`Checked out in worktree ${worktree}\`}>{folderName(worktree)}</span>`. `BranchesPanel`: `const elsewhere = target.kind === "local" ? target.branch.worktree : null; const lockedTitle = elsewhere === null ? undefined : \`Checked out in worktree ${folderName(elsewhere)}\`;` checkout `disabled: pending || isHead || elsewhere !== null, title: lockedTitle`; delete likewise; new item `{ id: "worktree", label: "Create worktree…", disabled: pending || elsewhere !== null, title: lockedTitle, onSelect: () => openDialog({ kind: "worktree", initial: { kind: "existing", name } }) }` after `create` for local rows and `{ id: "worktree", label: "Create worktree…", disabled: pending, onSelect: () => openDialog({ kind: "worktree", initial: { kind: "new", name, start: \`${remote}/${name}\` } }) }` after checkout for remote rows; render `<AddWorktreeDialog repoId={repoId} open initial={dialog.initial} onClose={closeDialog} onAdded={(path) => void opener.open(path)} fallbackFocus={rootRef} />`; `opener = useOpenRepo()` joins `panelError` (`?? opener.error`) and `clearErrors` (`opener.clearError()`).
+`BranchRow`: after `TrackingBadge`, for a local branch with `worktree !== null` render `<span className={styles.badge} title={\`Checked out in worktree ${worktree}\`}>{folderName(worktree)}</span>`. `BranchesPanel`: `const elsewhere = target.kind === "local" ? target.branch.worktree : null; const lockedTitle = elsewhere === null ? undefined : \`Checked out in worktree ${folderName(elsewhere)}\`;`checkout`disabled: pending || isHead || elsewhere !== null, title: lockedTitle`; delete likewise; new item `{ id: "worktree", label: "Create worktree…", disabled: pending || elsewhere !== null, title: lockedTitle, onSelect: () => openDialog({ kind: "worktree", initial: { kind: "existing", name } }) }`after`create`for local rows and`{ id: "worktree", label: "Create worktree…", disabled: pending, onSelect: () => openDialog({ kind: "worktree", initial: { kind: "new", name, start: \`${remote}/${name}\` } }) }`after checkout for remote rows; render`<AddWorktreeDialog repoId={repoId} open initial={dialog.initial} onClose={closeDialog} onAdded={(path) => void opener.open(path)} fallbackFocus={rootRef} />`; `opener = useOpenRepo()`joins`panelError` (`?? opener.error`) and `clearErrors` (`opener.clearError()`).
 
 - [ ] **Step 4: Run the front-end checks**
 
