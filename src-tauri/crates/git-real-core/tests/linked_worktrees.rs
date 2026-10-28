@@ -791,6 +791,35 @@ fn prune_returns_missing_paths_and_skips_locked() {
     assert!(row.locked.is_some());
 }
 
+/// libgit2 skips an entry whose admin files it cannot read; `gitdir` itself
+/// must stay readable for the path to be known, so `commondir` is the file
+/// made unreadable. Skipped when the chmod has no effect, as for root.
+#[cfg(unix)]
+#[test]
+fn prune_reports_an_entry_whose_gitdir_is_broken() {
+    use std::os::unix::fs::PermissionsExt;
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    let a = add_worktree(&main, &root, "a", "feat/a");
+    std::fs::remove_dir_all(&a).unwrap();
+    let commondir = main.join(".git/worktrees/a/commondir");
+    std::fs::set_permissions(&commondir, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&commondir).is_ok() {
+        return;
+    }
+    let s = session(&main);
+    assert!(!paths(&s.list_linked_worktrees().unwrap()).contains(&a));
+    assert_eq!(
+        s.prune_linked_worktrees().unwrap(),
+        PrunedWorktrees {
+            paths: vec![a.clone()]
+        }
+    );
+    assert!(!main.join(".git/worktrees/a").exists());
+}
+
 // --- branch listing and guards ---
 
 #[test]
@@ -845,9 +874,8 @@ fn list_branches_survives_a_corrupt_worktree_registry() {
     let (_md, main, _wd, root, _head) = fixture();
     add_worktree(&main, &root, "a", "feat/a");
     let registry = main.join(".git/worktrees");
-    let set_mode = |mode| {
-        std::fs::set_permissions(&registry, std::fs::Permissions::from_mode(mode)).unwrap()
-    };
+    let set_mode =
+        |mode| std::fs::set_permissions(&registry, std::fs::Permissions::from_mode(mode)).unwrap();
     set_mode(0o000);
     if std::fs::read_dir(&registry).is_ok() {
         set_mode(0o755);

@@ -3,7 +3,7 @@
 //! `git worktree` from this session's own workdir, so git resolves the common
 //! dir itself and its checks and messages match the command line (ADR 0001).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use git2::{BranchType, Repository, StatusOptions, WorktreeLockStatus};
@@ -134,16 +134,19 @@ impl RepoSession {
         is_dirty(&self.find_linked_worktree(path)?)
     }
 
-    /// `git worktree prune`; returns the entries it removes: the missing,
-    /// unlocked ones as listed just before.
+    /// `git worktree prune`; returns the recorded path of every entry it
+    /// removes, sorted, including entries the list skips because libgit2
+    /// cannot read them.
     pub fn prune_linked_worktrees(&self) -> Result<PrunedWorktrees, GitError> {
-        let paths = self
-            .list_linked_worktrees()?
-            .into_iter()
-            .filter(|w| w.missing && w.locked.is_none())
-            .map(|w| w.path)
-            .collect();
+        let before = self.recorded_worktree_paths()?;
         self.run_worktree("worktree prune", &["prune"])?;
+        let after = self.worktree_names()?;
+        let mut paths: Vec<PathBuf> = before
+            .into_iter()
+            .filter(|(name, _)| !after.contains(name))
+            .map(|(_, path)| path)
+            .collect();
+        paths.sort();
         Ok(PrunedWorktrees { paths })
     }
 
@@ -163,6 +166,34 @@ impl RepoSession {
             .filter_map(|w| match w.head {
                 Some(HeadState::Branch { name }) => Some((name, w.path)),
                 _ => None,
+            })
+            .collect())
+    }
+
+    /// The entry names libgit2 finds under `<common>/worktrees`.
+    fn worktree_names(&self) -> Result<BTreeSet<String>, GitError> {
+        Ok(self
+            .repo()
+            .worktrees()?
+            .iter()
+            .flatten()
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// Entry name to the worktree path its admin `gitdir` file records
+    /// (`<path>/.git`); an entry whose file cannot be read is left out.
+    fn recorded_worktree_paths(&self) -> Result<BTreeMap<String, PathBuf>, GitError> {
+        let admin = self.repo().commondir().join("worktrees");
+        Ok(self
+            .worktree_names()?
+            .into_iter()
+            .filter_map(|name| {
+                let dir = admin.join(&name);
+                let text = std::fs::read_to_string(dir.join("gitdir")).ok()?;
+                // A relative record is relative to the entry's admin folder.
+                let path = dir.join(text.trim()).parent()?.to_path_buf();
+                Some((name, path))
             })
             .collect())
     }
