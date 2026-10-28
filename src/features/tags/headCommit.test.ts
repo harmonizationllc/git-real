@@ -6,8 +6,8 @@ import { headCommit } from "./headCommit";
 const list = (over: Partial<BranchList> = {}): BranchList => ({
   head: { kind: "branch", name: "main" },
   local: [
-    { name: "other", oid: oidOf(5), isHead: false, tracking: null },
-    { name: "main", oid: oidOf(1), isHead: true, tracking: null },
+    { name: "other", oid: oidOf(5), isHead: false, tracking: null, worktree: null },
+    { name: "main", oid: oidOf(1), isHead: true, tracking: null, worktree: null },
   ],
   remotes: [],
   ...over,
@@ -36,7 +36,9 @@ describe("headCommit", () => {
   it("should be null on a branch with no isHead local branch in the list", () => {
     expect(
       headCommit(
-        list({ local: [{ name: "other", oid: oidOf(5), isHead: false, tracking: null }] }),
+        list({
+          local: [{ name: "other", oid: oidOf(5), isHead: false, tracking: null, worktree: null }],
+        }),
       ),
     ).toBeNull();
   });

@@ -15,7 +15,14 @@ const fixed = (natural: number, height: number): SectionInput => ({ natural, fix
 describe("refsLayout constants", () => {
   it("should pin SECTION_MIN and the section order", () => {
     expect(SECTION_MIN).toBe(72);
-    expect(REFS_SECTIONS).toEqual(["branches", "stashes", "tags", "pullRequests", "issues"]);
+    expect(REFS_SECTIONS).toEqual([
+      "branches",
+      "stashes",
+      "tags",
+      "worktrees",
+      "pullRequests",
+      "issues",
+    ]);
   });
 });
 

@@ -1,10 +1,11 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   hostingListIssues,
   hostingListPullRequests,
   hostingRepoContext,
   listBranches,
+  listLinkedWorktrees,
   listRemotes,
   listStashes,
   listTags,
@@ -17,6 +18,7 @@ import { useWorkspace } from "../lib/store/workspace";
 import { resetSettings, seedSettings } from "../test/settingsStore";
 import { remoteInfo } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
+import { linkedWorktree } from "../test/worktreeFixtures";
 import { RefsColumn } from "./RefsColumn";
 import { REFS_SECTIONS } from "./refsLayout";
 
@@ -29,6 +31,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   hostingListPullRequests: vi.fn(),
   hostingRepoContext: vi.fn(),
   listBranches: vi.fn(),
+  listLinkedWorktrees: vi.fn(),
   listRemotes: vi.fn(),
   listStashes: vi.fn(),
   listTags: vi.fn(),
@@ -43,6 +46,7 @@ const branchList = (): BranchList => ({
       oid: "a".repeat(40),
       isHead: true,
       tracking: { upstream: "origin/main", ahead: 0, behind: 0 },
+      worktree: null,
     },
   ],
   remotes: [],
@@ -73,13 +77,15 @@ const wrapper = (s: string) => root().querySelector(`[data-section="${s}"]`) as 
 const content = (s: string) => wrapper(s).firstElementChild as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 
-// Root 624 (= 600 + 4 handles of 6); naturals for branches, stashes, tags, pullRequests, issues.
-const NATURALS = [200, 60, 150, 36, 36];
+// Root 666 (= 636 + 5 handles of 6); naturals for branches, stashes, tags, worktrees, pullRequests,
+// issues. Worktrees adds 36 + one handle of 6 to the five-section column, so every figure below
+// keeps the value it had with five sections.
+const NATURALS = [200, 60, 150, 36, 36, 36];
 const sectionEntries = () =>
   REFS_SECTIONS.map((s, i) => ({ target: content(s), height: NATURALS[i] as number }));
 
 function measure() {
-  act(() => observer().fire([{ target: root(), height: 624 }, ...sectionEntries()]));
+  act(() => observer().fire([{ target: root(), height: 666 }, ...sectionEntries()]));
 }
 
 function measureAt(rootHeight: number, heights: number[]) {
@@ -92,9 +98,9 @@ function measureAt(rootHeight: number, heights: number[]) {
 }
 
 // Without a hosting context the pull requests and issues panels render nothing, so they measure 0.
-// Three handles render, so the container is 624 - 3 * 6 = 606.
+// Four handles render, so the container is 666 - 4 * 6 = 642.
 function measureWithZeroHostingSections() {
-  measureAt(624, [200, 60, 150, 0, 0]);
+  measureAt(666, [200, 60, 150, 36, 0, 0]);
 }
 
 async function renderColumn() {
@@ -122,6 +128,7 @@ beforeEach(async () => {
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(listStashes).mockResolvedValue([]);
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
+  vi.mocked(listLinkedWorktrees).mockResolvedValue([linkedWorktree()]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
   vi.mocked(hostingRepoContext).mockResolvedValue(null);
   vi.mocked(hostingListPullRequests).mockResolvedValue([]);
@@ -132,22 +139,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Contract: five sections in column order with four labelled horizontal handles between them.
+// Contract: six sections in column order with five labelled horizontal handles between them.
 describe("RefsColumn structure", () => {
-  it("should render the five sections in order with four horizontal handles between them", async () => {
+  it("should render the six sections in order with five horizontal handles between them", async () => {
     await renderColumn();
     const sections = [...root().querySelectorAll("[data-section]")].map((e) =>
       e.getAttribute("data-section"),
     );
-    expect(sections).toEqual(["branches", "stashes", "tags", "pullRequests", "issues"]);
+    expect(sections).toEqual([
+      "branches",
+      "stashes",
+      "tags",
+      "worktrees",
+      "pullRequests",
+      "issues",
+    ]);
     const handles = screen.getAllByRole("separator");
     expect(handles.map((h) => h.getAttribute("aria-label"))).toEqual([
       "Resize Branches section",
       "Resize Stashes section",
       "Resize Tags section",
+      "Resize Worktrees section",
       "Resize Pull requests section",
     ]);
     for (const h of handles) expect(h).toHaveAttribute("aria-orientation", "horizontal");
+  });
+
+  it("should render the Worktrees panel in the worktrees wrapper", async () => {
+    await renderColumn();
+    expect(
+      await within(wrapper("worktrees")).findByRole("button", { name: "Worktrees (1)" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -155,7 +177,7 @@ describe("RefsColumn structure", () => {
 describe("RefsColumn measurement", () => {
   it("should set no inline heights until the root and every section are measured", async () => {
     await renderColumn();
-    act(() => observer().fire([{ target: root(), height: 624 }]));
+    act(() => observer().fire([{ target: root(), height: 666 }]));
     expect(wrapper("tags").style.height).toBe("");
   });
 
@@ -171,6 +193,7 @@ describe("RefsColumn measurement", () => {
     measureWithZeroHostingSections();
     expect(wrapper("branches").style.height).toBe("396px");
     expect(wrapper("tags").style.height).toBe("150px");
+    expect(wrapper("worktrees").style.height).toBe("36px");
     expect(wrapper("pullRequests").style.height).toBe("0px");
   });
 
@@ -182,6 +205,7 @@ describe("RefsColumn measurement", () => {
       "Resize Branches section",
       "Resize Stashes section",
       "Resize Tags section",
+      "Resize Worktrees section",
     ]) {
       expect(handle(name)).toBeInTheDocument();
     }
@@ -189,7 +213,7 @@ describe("RefsColumn measurement", () => {
 
   it("should ignore an entry for an unknown target", async () => {
     await renderColumn();
-    act(() => observer().fire([{ target: document.body, height: 624 }, ...sectionEntries()]));
+    act(() => observer().fire([{ target: document.body, height: 666 }, ...sectionEntries()]));
     expect(wrapper("tags").style.height).toBe("");
   });
 
@@ -197,14 +221,14 @@ describe("RefsColumn measurement", () => {
     await renderColumn();
     act(() =>
       observer().callback(
-        [{ contentRect: { height: 624 } } as ResizeObserverEntry],
+        [{ contentRect: { height: 666 } } as ResizeObserverEntry],
         observer() as never,
       ),
     );
     expect(wrapper("tags").style.height).toBe("");
   });
 
-  it("should observe the root and the five content wrappers with one observer and disconnect on unmount", async () => {
+  it("should observe the root and the six content wrappers with one observer and disconnect on unmount", async () => {
     const { unmount } = await renderColumn();
     expect(StubResizeObserver.instances).toHaveLength(1);
     const targets = observer().observe.mock.calls.map(([t]) => t);
@@ -270,8 +294,8 @@ describe("RefsColumn handles", () => {
 
   it("should expose whole-pixel values", async () => {
     await renderColumn();
-    // container 600; over 232 shared by room: branches 400 - 263.14, tags 300 - 204.86
-    measureAt(624, [400, 60, 300, 36, 36]);
+    // container 636; over 232 shared by room: branches 400 - 263.14, tags 300 - 204.86
+    measureAt(666, [400, 60, 300, 36, 36, 36]);
     expect(wrapper("branches").style.height).toBe("263px");
     expect(wrapper("tags").style.height).toBe("205px");
     expect(handle("Resize Branches section")).toHaveAttribute("aria-valuenow", "263");
@@ -288,8 +312,8 @@ describe("RefsColumn handles", () => {
 
   it("should persist an ArrowUp resize to the section's height leaf", async () => {
     await renderColumn();
-    // container 976: everything fits, so Tags renders at its natural 300
-    measureAt(1000, [200, 60, 300, 36, 36]);
+    // container 1012: everything fits, so Tags renders at its natural 300
+    measureAt(1042, [200, 60, 300, 36, 36, 36]);
     fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowUp" });
     expect(useSettings.getState().settings.layout.tagsHeight).toBe(284);
   });

@@ -7,7 +7,14 @@ import type { BranchDrag, BranchRowProps, BranchTarget } from "./BranchRow";
 
 const local = (over: Partial<LocalBranch> = {}): BranchTarget => ({
   kind: "local",
-  branch: { name: "main", oid: "a".repeat(40), isHead: false, tracking: null, ...over },
+  branch: {
+    name: "main",
+    oid: "a".repeat(40),
+    isHead: false,
+    tracking: null,
+    worktree: null,
+    ...over,
+  },
 });
 const remote = (over: Partial<RemoteBranch> = {}): BranchTarget => ({
   kind: "remote",

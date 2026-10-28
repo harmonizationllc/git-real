@@ -13,7 +13,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 
 const list: BranchList = {
   head: { kind: "branch", name: "main" },
-  local: [{ name: "main", oid: "a".repeat(40), isHead: true, tracking: null }],
+  local: [{ name: "main", oid: "a".repeat(40), isHead: true, tracking: null, worktree: null }],
   remotes: [],
 };
 

@@ -621,3 +621,14 @@ describe("queryKeys settings (GR-29)", () => {
     expect(queryKeys.settingsPath).not.toEqual(queryKeys.settingsHealth);
   });
 });
+
+// Contract: the GR-39 linked worktree keys.
+describe("linked worktree keys", () => {
+  it("should define linkedWorktrees(id) under the repo prefix", () => {
+    expect(queryKeys.linkedWorktrees(1)).toEqual(["repo", 1, "linkedWorktrees"]);
+  });
+
+  it("should define the linkedWorktree mutation key outside the repo prefix", () => {
+    expect(mutationKeys.linkedWorktree(1)).toEqual(["linkedWorktree", 1]);
+  });
+});

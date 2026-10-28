@@ -24,6 +24,7 @@ import type {
   HunkAction,
   HunkSelection,
   Issue,
+  LinkedWorktree,
   LocalBranch,
   LogPage,
   LogSummary,
@@ -31,6 +32,7 @@ import type {
   OpenedRepo,
   OperationOutcome,
   OperationState,
+  PrunedWorktrees,
   PullMode,
   PullRequest,
   PullRequestDraft,
@@ -46,6 +48,7 @@ import type {
   StashFiles,
   StashOutcome,
   TagList,
+  WorktreeBranch,
   WorkingTreeStatus,
 } from "./types";
 
@@ -527,4 +530,24 @@ export function hostingCreatePullRequest(
   credentials: Credentials | null = null,
 ): Promise<PullRequest> {
   return invoke<PullRequest>("hosting_create_pull_request", { id, request, credentials });
+}
+
+/** Every worktree of the repository, main first; empty for a bare session. */
+export function listLinkedWorktrees(id: RepoId): Promise<LinkedWorktree[]> {
+  return invoke<LinkedWorktree[]>("list_linked_worktrees", { id });
+}
+
+/** Adds a worktree at `path` checking out `branch`. */
+export function addLinkedWorktree(id: RepoId, path: string, branch: WorktreeBranch): Promise<void> {
+  return invoke<void>("add_linked_worktree", { id, path, branch });
+}
+
+/** Removes the linked worktree at `path`; `force` discards its uncommitted changes. */
+export function removeLinkedWorktree(id: RepoId, path: string, force: boolean): Promise<void> {
+  return invoke<void>("remove_linked_worktree", { id, path, force });
+}
+
+/** Prunes the stale (missing, unlocked) worktree entries. */
+export function pruneLinkedWorktrees(id: RepoId): Promise<PrunedWorktrees> {
+  return invoke<PrunedWorktrees>("prune_linked_worktrees", { id });
 }

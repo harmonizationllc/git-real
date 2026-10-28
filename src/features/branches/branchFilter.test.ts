@@ -6,9 +6,9 @@ import { filterBranches, filterTags, isFiltering } from "./branchFilter";
 const list: BranchList = {
   head: { kind: "branch", name: "main" },
   local: [
-    { name: "main", oid: "a".repeat(40), isHead: true, tracking: null },
-    { name: "Feature/Login", oid: "b".repeat(40), isHead: false, tracking: null },
-    { name: "release", oid: "c".repeat(40), isHead: false, tracking: null },
+    { name: "main", oid: "a".repeat(40), isHead: true, tracking: null, worktree: null },
+    { name: "Feature/Login", oid: "b".repeat(40), isHead: false, tracking: null, worktree: null },
+    { name: "release", oid: "c".repeat(40), isHead: false, tracking: null, worktree: null },
   ],
   remotes: [
     {
@@ -111,9 +111,9 @@ describe("filterBranches literal matching", () => {
   const accented: BranchList = {
     head: { kind: "branch", name: "main" },
     local: [
-      { name: "Éclair", oid: "a".repeat(40), isHead: false, tracking: null },
-      { name: "feature-x", oid: "b".repeat(40), isHead: false, tracking: null },
-      { name: "feature login", oid: "c".repeat(40), isHead: false, tracking: null },
+      { name: "Éclair", oid: "a".repeat(40), isHead: false, tracking: null, worktree: null },
+      { name: "feature-x", oid: "b".repeat(40), isHead: false, tracking: null, worktree: null },
+      { name: "feature login", oid: "c".repeat(40), isHead: false, tracking: null, worktree: null },
     ],
     remotes: [],
   };

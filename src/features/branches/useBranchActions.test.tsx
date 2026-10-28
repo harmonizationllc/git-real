@@ -24,7 +24,13 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 type Request = Parameters<UseBranchActions["run"]>[0];
 
 const exists: AppError = { kind: "branchExists", message: "taken" };
-const created = { name: "topic", oid: "a".repeat(40), isHead: true, tracking: null };
+const created = {
+  name: "topic",
+  oid: "a".repeat(40),
+  isHead: true,
+  tracking: null,
+  worktree: null,
+};
 
 // Runs a request inside act and returns what run resolved with.
 async function run(actions: () => UseBranchActions, req: Request): Promise<AppError | null> {

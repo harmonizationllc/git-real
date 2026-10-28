@@ -53,6 +53,7 @@ const localBranch = (name: string, isHead = false): LocalBranch => ({
   oid: oid("a"),
   isHead,
   tracking: null,
+  worktree: null,
 });
 const list = (over: Partial<BranchList> = {}): BranchList => ({
   head: { kind: "branch", name: "main" },

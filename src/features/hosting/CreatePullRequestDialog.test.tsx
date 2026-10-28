@@ -48,7 +48,7 @@ function branchList(
   const { tracking = synced, origin = ["main", "develop", "feat"] } = over;
   return {
     head: over.head ?? { kind: "branch", name: "feat" },
-    local: [{ name: "feat", oid: oidOf(1), isHead: true, tracking }],
+    local: [{ name: "feat", oid: oidOf(1), isHead: true, tracking, worktree: null }],
     remotes:
       origin === null
         ? []
@@ -290,6 +290,7 @@ describe("CreatePullRequestDialog source and target", () => {
           oid: oidOf(1),
           isHead: true,
           tracking: { ...synced, upstream: "origin/main" },
+          worktree: null,
         },
       ],
       remotes: [
@@ -925,8 +926,8 @@ describe("CreatePullRequestDialog when HEAD moves", () => {
     vi.mocked(listBranches).mockResolvedValue({
       head: { kind: "branch", name: "other" },
       local: [
-        { name: "feat", oid: oidOf(1), isHead: false, tracking: synced },
-        { name: "other", oid: oidOf(3), isHead: true, tracking: null },
+        { name: "feat", oid: oidOf(1), isHead: false, tracking: synced, worktree: null },
+        { name: "other", oid: oidOf(3), isHead: true, tracking: null, worktree: null },
       ],
       remotes: branchList().remotes,
     });
@@ -1003,6 +1004,7 @@ describe("CreatePullRequestDialog reopened on another branch", () => {
           oid: oidOf(3),
           isHead: true,
           tracking: { upstream: "origin/other", ahead: 0, behind: 0 },
+          worktree: null,
         },
       ],
       remotes: branchList({ origin: ["main", "develop", "other"] }).remotes,

@@ -1,0 +1,28 @@
+/* The RefsColumn wrapper sizes and scrolls the section; its handle draws the divider. */
+.root {
+  composes: root from "../tags/TagsPanel.module.css";
+}
+
+.header {
+  composes: header from "../tags/TagsPanel.module.css";
+}
+
+.heading {
+  composes: heading from "../tags/TagsPanel.module.css";
+}
+
+.toggle {
+  composes: toggle from "../tags/TagsPanel.module.css";
+}
+
+.action {
+  flex: none;
+}
+
+.list {
+  composes: list from "../tags/TagsPanel.module.css";
+}
+
+.empty {
+  composes: empty from "../tags/TagsPanel.module.css";
+}
