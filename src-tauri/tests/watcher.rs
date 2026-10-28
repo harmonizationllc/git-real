@@ -422,11 +422,15 @@ fn start_with_extra_root_ignores_objects_there() {
 }
 
 #[test]
-fn start_with_a_missing_extra_root_is_an_error() {
+fn start_with_a_missing_extra_root_still_watches_the_workdir() {
     let dir = tempfile::tempdir().unwrap();
-    let missing = dir.path().join("does-not-exist");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let missing = elsewhere.path().join("does-not-exist");
+    let count = counter();
+    let _watcher = start_with_extra(dir.path(), &missing, &count);
 
-    let result = RepoWatcher::start(dir.path(), Some(&missing), DEBOUNCE, || {});
+    std::fs::write(dir.path().join("f.txt"), "x").unwrap();
+    wait_for(&count, 1);
 
-    assert!(result.is_err());
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }

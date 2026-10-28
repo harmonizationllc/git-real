@@ -26,7 +26,8 @@ pub struct RepoWatcher {
 
 impl RepoWatcher {
     /// Starts a recursive watch on `workdir`, and on `extra` when given, firing
-    /// `on_change` after `debounce` of quiet. A missing root is an error.
+    /// `on_change` after `debounce` of quiet. A missing `workdir` is an error;
+    /// `extra` is best-effort, so failing to watch it is logged and skipped.
     pub fn start(
         workdir: &Path,
         extra: Option<&Path>,
@@ -34,15 +35,16 @@ impl RepoWatcher {
         on_change: impl Fn() + Send + 'static,
     ) -> Result<Self, notify::Error> {
         let workdir = workdir.canonicalize().map_err(notify::Error::io)?;
-        let extra = extra
-            .map(|p| p.canonicalize().map_err(notify::Error::io))
-            .transpose()?;
         let (tx, rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(tx)?;
         watcher.watch(&workdir, RecursiveMode::Recursive)?;
-        if let Some(extra) = &extra {
-            watcher.watch(extra, RecursiveMode::Recursive)?;
-        }
+        let extra = extra.and_then(|p| match watch_extra(&mut watcher, p) {
+            Ok(extra) => Some(extra),
+            Err(e) => {
+                eprintln!("watching {} failed: {e}", p.display());
+                None
+            }
+        });
         let roots = Roots { workdir, extra };
         let thread = std::thread::spawn(move || debounce_loop(&rx, &roots, debounce, on_change));
         Ok(Self {
@@ -60,6 +62,13 @@ impl Drop for RepoWatcher {
             let _ = thread.join();
         }
     }
+}
+
+/// Adds a recursive watch on `extra`; returns its canonical path.
+fn watch_extra(watcher: &mut RecommendedWatcher, extra: &Path) -> Result<PathBuf, notify::Error> {
+    let extra = extra.canonicalize().map_err(notify::Error::io)?;
+    watcher.watch(&extra, RecursiveMode::Recursive)?;
+    Ok(extra)
 }
 
 /// The canonical roots the debounce thread classifies paths against.
