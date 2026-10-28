@@ -31,7 +31,8 @@ added.
 - **R3 — Tag push publishes immediately.** A `v*` tag publishes a non-draft release with
   GitHub's generated notes, marked pre-release when the tag contains a hyphen. The
   acceptance criterion says "published on tag push", and the update check reads
-  `releases/latest`, which ignores drafts.
+  `releases/latest`, which ignores drafts. The pre-release clause was withdrawn in
+  GR-38; tags are `vX.Y.Z` only and every release is a full release (ADR 0006, R10).
 - **R6 — Hand-written release workflow.** The release job is explicit steps
   (`npm run tauri build`, then `softprops/action-gh-release@v2` with file globs and
   generated notes) rather than `tauri-apps/tauri-action`. Every step is visible in the

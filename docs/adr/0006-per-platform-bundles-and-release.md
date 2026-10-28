@@ -35,7 +35,11 @@ time without touching what the others own.
 - **R7 — CI builds the Windows bundles on every push.** A `package-windows` job sits
   beside `package-linux`, so the first Windows compile of a change does not happen on a
   tag push.
-- **R10 — withdrawn 2026-10-28.** GR-24 required numeric pre-release identifiers (`X.Y.Z-N`) because WiX accepts only numeric version parts. The owner then decided the project cuts no pre-release tags at all, so `check-version` accepts `X.Y.Z` only and the publish step has no `prerelease` flag.
+- **R10 — withdrawn 2026-10-28.** GR-24 required numeric pre-release identifiers
+  (`X.Y.Z-N`) because WiX accepts only numeric version parts. The owner then decided
+  the project cuts no pre-release tags at all, so `check-version` accepts `X.Y.Z` only
+  and the publish step has no `prerelease` flag. This supersedes the pre-release clause
+  of ADR 0003 R3.
 - **R12 — Release download names carry a dot, not a space.** GitHub replaces the space
   in `Git Real` with a dot when it serves a release file. The README documents the
   `Git.Real_…` names. CI artifacts keep Tauri's original names.

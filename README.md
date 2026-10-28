@@ -230,7 +230,8 @@ The `Release` workflow first checks the tag against the version, then builds the
 `.deb`, `.rpm` and AppImage on Linux and the NSIS `.exe` and `.msi` on Windows in
 parallel, then publishes one GitHub release carrying all five files with generated
 release notes. A tag whose version differs from `tauri.conf.json` fails before anything
-is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and every release is a full release that the in-app update check can offer.
+is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
+every release is a full release that the in-app update check can offer.
 
 ## Project layout
 
