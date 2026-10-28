@@ -606,8 +606,9 @@ describe("apt packages", () => {
 // README
 // ---------------------------------------------------------------------------
 
-// GR-24: the README documents the Windows installers and the numeric
-//        pre-release tag rule, and the ADRs record the decision.
+// GR-24/GR-38: the README documents the Windows install steps and the dotted
+//        download names, and states no pre-release tag convention; the ADRs
+//        record the decision.
 describe("README", () => {
   const readme = readText("README.md");
   /** Text from `\n## <heading>` to the next `\n## ` (or the end). */
