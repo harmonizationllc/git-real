@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { ShortcutBindings } from "../../lib/ipc";
 import {
@@ -42,9 +42,13 @@ export function ShortcutSettings() {
   const effective = useEffectiveBindings();
   const overrides = useSettings((s) => s.settings.shortcuts.bindings);
   const [capture, setCapture] = useState<Capture | null>(null);
-  const captureButton = useRef<HTMLButtonElement>(null);
+  const chordButtons = useRef(new Map<ShortcutId, HTMLButtonElement | null>());
   const replaceButton = useRef<HTMLButtonElement>(null);
   const { mod, alt } = modifierLabels();
+  const descriptionId = useId();
+
+  /** Puts focus on a row's chord button, e.g. after the control that had it goes away. */
+  const focusChord = (id: ShortcutId) => chordButtons.current.get(id)?.focus();
 
   const phase = capture?.phase;
   useEffect(() => {
@@ -52,16 +56,16 @@ export function ShortcutSettings() {
   }, [phase]);
 
   /** Ends a conflict and puts focus back on the row's chord button. */
-  const endConflict = () => {
-    captureButton.current?.focus();
+  const endConflict = (id: ShortcutId) => {
+    focusChord(id);
     setCapture(null);
   };
 
   /** Escape on Replace or Cancel cancels the conflict, without closing the Settings dialog. */
-  const onConflictKey = (e: KeyboardEvent) => {
+  const onConflictKey = (id: ShortcutId, e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.stopPropagation();
-    endConflict();
+    endConflict(id);
   };
 
   const onCaptureKey = (id: ShortcutId, e: KeyboardEvent) => {
@@ -93,6 +97,12 @@ export function ShortcutSettings() {
     const next = { ...overrides };
     delete next[id];
     commit(next);
+    focusChord(id);
+  };
+
+  const resetAll = () => {
+    commit({});
+    focusChord(SHORTCUTS[0].id);
   };
 
   return (
@@ -104,7 +114,9 @@ export function ShortcutSettings() {
             <tr>
               <th scope="col">Action</th>
               <th scope="col">Shortcut</th>
-              <td />
+              <th scope="col">
+                <span className={styles.srOnly}>Reset</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -119,10 +131,17 @@ export function ShortcutSettings() {
                     <td>
                       <button
                         type="button"
-                        ref={mine !== null ? captureButton : undefined}
+                        ref={(el) => {
+                          chordButtons.current.set(s.id, el);
+                        }}
                         aria-label={`Change shortcut for ${s.label}`}
+                        aria-describedby={`${descriptionId}-${s.id}`}
                         className={styles.chord}
-                        onClick={() => setCapture({ id: s.id, phase: "listening" })}
+                        onClick={(e) => {
+                          // WebKit on macOS does not focus a button on click; the capture needs it.
+                          e.currentTarget.focus();
+                          setCapture({ id: s.id, phase: "listening" });
+                        }}
                         onKeyDown={listening ? (e) => onCaptureKey(s.id, e) : undefined}
                         onBlur={listening ? () => setCapture(null) : undefined}
                       >
@@ -140,6 +159,9 @@ export function ShortcutSettings() {
                           />
                         )}
                       </button>
+                      <span id={`${descriptionId}-${s.id}`} hidden>
+                        {keys === null ? "Unbound" : formatKeys(keys)}
+                      </span>
                     </td>
                     <td>
                       {mine?.phase === "conflict" ? (
@@ -147,7 +169,7 @@ export function ShortcutSettings() {
                           role="group"
                           aria-label="Shortcut conflict"
                           className={styles.row}
-                          onKeyDown={onConflictKey}
+                          onKeyDown={(e) => onConflictKey(s.id, e)}
                         >
                           <span className={styles.conflict}>
                             Already used by {shortcut(mine.otherId).label}
@@ -157,12 +179,12 @@ export function ShortcutSettings() {
                             ref={replaceButton}
                             onClick={() => {
                               commit({ ...overrides, [s.id]: mine.chord, [mine.otherId]: null });
-                              endConflict();
+                              endConflict(s.id);
                             }}
                           >
                             Replace
                           </button>
-                          <button type="button" onClick={endConflict}>
+                          <button type="button" onClick={() => endConflict(s.id)}>
                             Cancel
                           </button>
                         </span>
@@ -202,11 +224,7 @@ export function ShortcutSettings() {
         Press a key combination with {mod} or {alt}, or a function key. Changes apply at once.
       </p>
       <div className={styles.row}>
-        <button
-          type="button"
-          disabled={Object.keys(overrides).length === 0}
-          onClick={() => commit({})}
-        >
+        <button type="button" disabled={Object.keys(overrides).length === 0} onClick={resetAll}>
           Reset all to defaults
         </button>
       </div>

@@ -48,10 +48,9 @@ const chordButton = (label: string) =>
 
 const kbdParts = (el: HTMLElement) => [...el.querySelectorAll("kbd")].map((k) => k.textContent);
 
-/** Focuses and clicks the row's chord button, as a real click does, to start listening. */
+/** Clicks the row's chord button to start listening; the click itself focuses the button. */
 function listen(label: string): HTMLElement {
   const button = chordButton(label);
-  act(() => button.focus());
   fireEvent.click(button);
   return button;
 }
@@ -81,6 +80,21 @@ describe("ShortcutSettings layout", () => {
     expect(screen.queryByRole("button", { name: "Reset Pull to default" })).toBeNull();
   });
 
+  it("each table has Action, Shortcut and a visually hidden Reset column header", () => {
+    setup();
+    const table = screen.getByRole("table", { name: "Repository" });
+    const headers = within(table).getAllByRole("columnheader");
+    expect(headers.map((h) => h.textContent)).toEqual(["Action", "Shortcut", "Reset"]);
+    expect(headers[2]).toHaveAttribute("scope", "col");
+  });
+
+  it("the chord button describes the current chord or Unbound", async () => {
+    await seed({ palette: null });
+    setup();
+    expect(chordButton("Fetch")).toHaveAccessibleDescription("Ctrl+Shift+F");
+    expect(chordButton("Command palette")).toHaveAccessibleDescription("Unbound");
+  });
+
   it("the hint uses platform words", () => {
     setup();
     expect(
@@ -99,6 +113,14 @@ describe("ShortcutSettings capture", () => {
     expect(button).toHaveTextContent("Press keys…");
     expect(button).toHaveFocus();
     expect(screen.getByRole("status")).toHaveTextContent(LISTENING);
+  });
+
+  it("a click focuses the chord button even when the webview does not", () => {
+    setup();
+    const button = chordButton("Fetch");
+    fireEvent.click(button);
+    expect(button).toHaveFocus();
+    expect(button).toHaveTextContent("Press keys…");
   });
 
   it("Escape cancels without saving", () => {
@@ -288,6 +310,20 @@ describe("ShortcutSettings reset", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset Fetch to default" }));
     expect(await bindings()).toEqual({ palette: null });
+  });
+
+  it("Reset moves focus to the row's chord button", async () => {
+    await seed({ fetch: "Mod+Alt+F" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Fetch to default" }));
+    expect(chordButton("Fetch")).toHaveFocus();
+  });
+
+  it("Reset all moves focus to the first chord button", async () => {
+    await seed({ fetch: "Mod+Alt+F" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset all to defaults" }));
+    expect(chordButton("Command palette")).toHaveFocus();
   });
 
   it("Reset all to defaults sends an empty map and is disabled when nothing is overridden", async () => {
