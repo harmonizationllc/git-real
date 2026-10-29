@@ -47,6 +47,8 @@ const defaultSettings: Settings = {
     branchesHeight: null,
     stashesHeight: null,
     tagsHeight: null,
+    worktreesCollapsed: false,
+    worktreesHeight: null,
     pullRequestsHeight: null,
   },
   updates: { checkOnStartup: true },

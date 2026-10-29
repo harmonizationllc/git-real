@@ -4,6 +4,7 @@ mod branch;
 mod commit;
 mod diff;
 mod history;
+mod linked_worktree;
 mod log;
 mod merge;
 mod progress;
@@ -21,6 +22,7 @@ pub use diff::{
     HunkSelection, TextEncoding,
 };
 pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry};
+pub use linked_worktree::{LinkedWorktree, PrunedWorktrees, WorktreeBranch};
 pub use log::{
     CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,
 };

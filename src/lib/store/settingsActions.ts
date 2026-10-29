@@ -60,6 +60,10 @@ export function setTagsCollapsed(tagsCollapsed: boolean): void {
   setPref({ layout: { tagsCollapsed } });
 }
 
+export function setWorktreesCollapsed(worktreesCollapsed: boolean): void {
+  setPref({ layout: { worktreesCollapsed } });
+}
+
 export function setPullRequestsCollapsed(pullRequestsCollapsed: boolean): void {
   setPref({ layout: { pullRequestsCollapsed } });
 }

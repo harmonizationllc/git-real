@@ -1,12 +1,15 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addLinkedWorktree,
   checkoutBranch,
   checkoutRemoteBranch,
   createBranch,
   deleteBranch,
   deleteRemoteBranch,
   listBranches,
+  listLinkedWorktrees,
+  openRepo,
   rebasePlan,
   removeRemote,
   renameBranch,
@@ -17,12 +20,14 @@ import type {
   FastForwardCheck,
   HeadState,
   LocalBranch,
+  OpenedRepo,
   OperationState,
   RebaseCommit,
 } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { authError, networkError } from "../../test/remoteFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
+import { linkedWorktree } from "../../test/worktreeFixtures";
 import { IN_PROGRESS_TITLE } from "../merge/operationCopy";
 import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions } from "../merge/useIntegrationActions";
@@ -43,6 +48,9 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
   deleteRemoteBranch: vi.fn(),
+  addLinkedWorktree: vi.fn(),
+  listLinkedWorktrees: vi.fn(),
+  openRepo: vi.fn(),
   rebasePlan: vi.fn(),
   removeRemote: vi.fn(),
 }));
@@ -53,6 +61,7 @@ const localBranch = (name: string, isHead = false): LocalBranch => ({
   oid: oid("a"),
   isHead,
   tracking: null,
+  worktree: null,
 });
 const list = (over: Partial<BranchList> = {}): BranchList => ({
   head: { kind: "branch", name: "main" },
@@ -122,6 +131,14 @@ beforeEach(() => {
   vi.mocked(deleteRemoteBranch).mockResolvedValue(undefined);
   vi.mocked(rebasePlan).mockResolvedValue([]);
   vi.mocked(removeRemote).mockResolvedValue(undefined);
+  vi.mocked(listLinkedWorktrees).mockResolvedValue([linkedWorktree()]);
+  vi.mocked(addLinkedWorktree).mockResolvedValue(undefined);
+  vi.mocked(openRepo).mockImplementation(async (path) => opened(path));
+});
+
+const opened = (path: string): OpenedRepo => ({
+  id: 9,
+  summary: { path, name: path.split("/").at(-1) as string, headBranch: "main", isBare: false },
 });
 
 async function renderPanel(data: BranchList = list()) {
@@ -355,6 +372,7 @@ describe("BranchesPanel context menu", () => {
       "Rebase main onto feature",
       "Rebase main onto feature interactively…",
       "Create branch here…",
+      "Create worktree…",
       "Rename…",
       "Delete…",
     ]);
@@ -396,6 +414,7 @@ describe("BranchesPanel context menu", () => {
     rightClick(remoteRow("origin", "other"));
     expect(itemLabels()).toEqual([
       "Checkout",
+      "Create worktree…",
       "Merge origin/other into main",
       "Fast-forward main to origin/other",
       "Rebase main onto origin/other",
@@ -1386,6 +1405,7 @@ describe("BranchesPanel busy state after failure", () => {
     const items = screen.getAllByRole("menuitem");
     expect(items.map((i) => i.textContent)).toEqual([
       "Checkout",
+      "Create worktree…",
       "Merge origin/other into main",
       "Fast-forward main to origin/other",
       "Rebase main onto origin/other",
@@ -1454,7 +1474,7 @@ describe("BranchesPanel integration menu items", () => {
   it("should name the remote branch with its remote on a remote row", async () => {
     await renderPanel();
     rightClick(remoteRow("origin", "other"));
-    expect(itemLabels().slice(1, 4)).toEqual([
+    expect(itemLabels().slice(2, 5)).toEqual([
       "Merge origin/other into main",
       "Fast-forward main to origin/other",
       "Rebase main onto origin/other",
@@ -1877,7 +1897,7 @@ describe("BranchesPanel integration gaps", () => {
     await renderPanel();
     rightClick(remoteRow("origin", "other"));
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(6);
+    expect(items).toHaveLength(7);
     for (const item of items) expect(item).toBeDisabled();
   });
 
@@ -2624,5 +2644,153 @@ describe("BranchesPanel Create pull request menu item edge cases", () => {
     dropOn(localRow("main"));
     expect(itemLabels()).toHaveLength(3);
     expect(itemLabels()).not.toContain("Create pull request…");
+  });
+});
+
+// Contract: a branch checked out in another worktree is locked, and branches can start a worktree.
+describe("BranchesPanel linked worktrees", () => {
+  const elsewhere = "/repos/app-feat-a";
+  const withWorktree = () =>
+    list({
+      local: [
+        localBranch("main", true),
+        { ...localBranch("feat/a"), worktree: elsewhere },
+        localBranch("free"),
+      ],
+      remotes: [
+        { remote: "origin", branches: [{ remote: "origin", name: "topic", oid: oid("c") }] },
+      ],
+    });
+
+  it("should disable Checkout and Delete… for a branch checked out elsewhere with the worktree title", async () => {
+    await renderPanel(withWorktree());
+    rightClick(localRow("feat/a"));
+    for (const name of ["Checkout", "Delete…"]) {
+      expect(menuItem(name)).toBeDisabled();
+      expect(menuItem(name)).toHaveAttribute("title", "Checked out in worktree app-feat-a");
+    }
+  });
+
+  it("should disable Create worktree… for a branch checked out elsewhere", async () => {
+    await renderPanel(withWorktree());
+    rightClick(localRow("feat/a"));
+    expect(menuItem("Create worktree…")).toBeDisabled();
+    expect(menuItem("Create worktree…")).toHaveAttribute(
+      "title",
+      "Checked out in worktree app-feat-a",
+    );
+  });
+
+  it("should open the add dialog in Existing mode from a local branch", async () => {
+    await renderPanel(withWorktree());
+    rightClick(localRow("free"));
+    fireEvent.click(menuItem("Create worktree…"));
+    const dialog = await dialogNamed("Add worktree");
+    expect(within(dialog).getByRole("radio", { name: "Existing branch" })).toBeChecked();
+    expect(within(dialog).getByRole("combobox", { name: "Branch" })).toHaveValue("free");
+  });
+
+  it("should open the add dialog in New mode from a remote branch", async () => {
+    await renderPanel(withWorktree());
+    rightClick(remoteRow("origin", "topic"));
+    fireEvent.click(menuItem("Create worktree…"));
+    const dialog = await dialogNamed("Add worktree");
+    expect(within(dialog).getByRole("radio", { name: "New branch" })).toBeChecked();
+    expect(within(dialog).getByRole("textbox", { name: "Name" })).toHaveValue("topic");
+    expect(within(dialog).getByRole("textbox", { name: "Commit" })).toHaveValue("origin/topic");
+  });
+
+  // Remote rows whose name matches a local twin: free, held elsewhere, and the current branch.
+  const withTwins = () =>
+    list({
+      local: [
+        localBranch("main", true),
+        { ...localBranch("feat/a"), worktree: elsewhere },
+        localBranch("free"),
+      ],
+      remotes: [
+        {
+          remote: "origin",
+          branches: ["main", "feat/a", "free"].map((name) => ({
+            remote: "origin",
+            name,
+            oid: oid("c"),
+          })),
+        },
+      ],
+    });
+
+  it("should disable remote Checkout when the local twin is checked out elsewhere", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "feat/a"));
+    expect(menuItem("Checkout")).toBeDisabled();
+    expect(menuItem("Checkout")).toHaveAttribute("title", "Checked out in worktree app-feat-a");
+  });
+
+  it("should open Existing mode with the free local twin from a remote branch", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "free"));
+    expect(menuItem("Create worktree…")).toBeEnabled();
+    fireEvent.click(menuItem("Create worktree…"));
+    const dialog = await dialogNamed("Add worktree");
+    expect(within(dialog).getByRole("radio", { name: "Existing branch" })).toBeChecked();
+    expect(within(dialog).getByRole("combobox", { name: "Branch" })).toHaveValue("free");
+  });
+
+  it("should disable remote Create worktree… when the local twin is checked out elsewhere", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "feat/a"));
+    expect(menuItem("Create worktree…")).toBeDisabled();
+    expect(menuItem("Create worktree…")).toHaveAttribute(
+      "title",
+      "Checked out in worktree app-feat-a",
+    );
+  });
+
+  it("should disable remote Create worktree… when the local twin is the current branch", async () => {
+    await renderPanel(withTwins());
+    rightClick(remoteRow("origin", "main"));
+    expect(menuItem("Create worktree…")).toBeDisabled();
+    expect(menuItem("Create worktree…")).toHaveAttribute(
+      "title",
+      "Already checked out in this worktree",
+    );
+  });
+
+  async function addFromFree() {
+    await renderPanel(withWorktree());
+    rightClick(localRow("free"));
+    fireEvent.click(menuItem("Create worktree…"));
+    const dialog = await dialogNamed("Add worktree");
+    await waitFor(() =>
+      expect(within(dialog).getByRole("textbox", { name: "Folder" })).toHaveValue(
+        "/repos/app-free",
+      ),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+  }
+
+  it("should open the new worktree after the dialog adds it", async () => {
+    await addFromFree();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(openRepo).toHaveBeenCalledExactlyOnceWith("/repos/app-free"));
+  });
+
+  it("should show an open failure in the panel error area", async () => {
+    vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "not a repo" });
+    await addFromFree();
+    expect(await screen.findByRole("alert")).toHaveTextContent("not a repo");
+  });
+
+  it("should show branchCheckedOut inline after a double-click checkout", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue({
+      kind: "branchCheckedOut",
+      message: "feat/a is checked out in worktree app-feat-a",
+    });
+    await renderPanel(withWorktree());
+    fireEvent.doubleClick(localRow("feat/a"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "feat/a is checked out in worktree app-feat-a",
+    );
   });
 });

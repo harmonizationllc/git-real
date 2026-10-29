@@ -40,15 +40,23 @@ impl RepoSession {
     pub fn list_branches(&self) -> Result<BranchList, GitError> {
         let repo = self.repo();
         let head = head_state(repo)?;
+        // An unreadable worktree registry turns the annotation off rather than
+        // failing the list; the branch commands still refuse on it.
+        let elsewhere = self.checked_out_elsewhere().unwrap_or_else(|e| {
+            eprintln!("worktree registry unreadable; branch annotations off: {e}");
+            std::collections::BTreeMap::new()
+        });
 
         let mut local = Vec::new();
         for item in repo.branches(Some(BranchType::Local))? {
             let (branch, _) = item?;
+            let name = lossy_name(&branch);
             local.push(LocalBranch {
-                name: lossy_name(&branch),
+                worktree: elsewhere.get(&name).cloned(),
                 oid: tip(&branch),
                 is_head: branch.is_head(),
                 tracking: tracking(repo, &branch),
+                name,
             });
         }
         local.sort_by(|a, b| a.name.cmp(&b.name));
@@ -113,17 +121,28 @@ impl RepoSession {
             oid: commit.id().to_string(),
             is_head: false,
             tracking: None,
+            worktree: None,
         })
     }
 
-    /// Renames a local branch; libgit2 moves HEAD and the branch's config
-    /// section with it.
+    /// Renames a local branch; libgit2 moves HEAD, the HEAD of every other
+    /// worktree it can open, and the branch's config section with it. A
+    /// branch held by a worktree whose folder is missing is refused: libgit2
+    /// cannot update that worktree's HEAD.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<(), GitError> {
         validate_branch_name(new)?;
         let repo = self.repo();
         let mut branch = find_local(repo, old)?;
         if repo.find_branch(new, BranchType::Local).is_ok() {
             return Err(GitError::BranchExists(new.to_owned()));
+        }
+        if let Some(worktree) = self.checked_out_elsewhere()?.remove(old)
+            && !worktree.exists()
+        {
+            return Err(GitError::BranchCheckedOut {
+                name: old.to_owned(),
+                worktree,
+            });
         }
         branch.rename(new, false)?;
         Ok(())
@@ -137,6 +156,7 @@ impl RepoSession {
         if branch.is_head() {
             return Err(GitError::CannotDeleteCurrent(name.to_owned()));
         }
+        self.refuse_checked_out_elsewhere(name)?;
         if !force && !is_merged_into_head(repo, &branch)? {
             return Err(GitError::BranchNotMerged(name.to_owned()));
         }
@@ -167,6 +187,7 @@ impl RepoSession {
             oid: commit.id().to_string(),
             is_head: true,
             tracking: None,
+            worktree: None,
         })
     }
 
@@ -174,6 +195,7 @@ impl RepoSession {
     pub fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
         validate_branch_name(name)?;
         find_local(self.repo(), name)?;
+        self.refuse_checked_out_elsewhere(name)?;
         let git = git_cli::locate()?;
         switch::run(&git, self.workdir()?, switch::SwitchTarget::Local(name))
     }
@@ -186,6 +208,7 @@ impl RepoSession {
         let git = git_cli::locate()?;
         let workdir = self.workdir()?;
         let target = if self.repo().find_branch(name, BranchType::Local).is_ok() {
+            self.refuse_checked_out_elsewhere(name)?;
             switch::SwitchTarget::Local(name)
         } else {
             switch::SwitchTarget::NewTracking {
@@ -285,9 +308,20 @@ impl RepoSession {
         }))
     }
 
+    /// `BranchCheckedOut` when another worktree has `name` checked out.
+    pub(crate) fn refuse_checked_out_elsewhere(&self, name: &str) -> Result<(), GitError> {
+        match self.checked_out_elsewhere()?.remove(name) {
+            Some(worktree) => Err(GitError::BranchCheckedOut {
+                name: name.to_owned(),
+                worktree,
+            }),
+            None => Ok(()),
+        }
+    }
+
     /// The pre-checks for a new branch: a valid, free name and a start point
     /// that resolves to a commit. Returns that commit.
-    fn new_branch_target(
+    pub(crate) fn new_branch_target(
         &self,
         name: &str,
         start_point: Option<&str>,
@@ -312,7 +346,7 @@ impl RepoSession {
     }
 }
 
-fn head_state(repo: &Repository) -> Result<HeadState, GitError> {
+pub(crate) fn head_state(repo: &Repository) -> Result<HeadState, GitError> {
     match repo.head() {
         Ok(head) if head.is_branch() => Ok(HeadState::Branch {
             name: String::from_utf8_lossy(head.shorthand_bytes()).into_owned(),
@@ -381,7 +415,7 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
     Ok(head == tip || repo.graph_descendant_of(head, tip)?)
 }
 
-fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
+pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
     match repo.find_branch(name, BranchType::Local) {
         Ok(branch) => Ok(branch),
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),

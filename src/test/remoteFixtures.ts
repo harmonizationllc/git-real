@@ -39,6 +39,6 @@ export const trackedList = (
   head: HeadState = { kind: "branch", name: "main" },
 ): BranchList => ({
   head,
-  local: [{ name: "main", oid: oidOf(1), isHead: true, tracking }],
+  local: [{ name: "main", oid: oidOf(1), isHead: true, tracking, worktree: null }],
   remotes: [],
 });

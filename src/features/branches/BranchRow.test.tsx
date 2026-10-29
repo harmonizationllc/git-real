@@ -7,7 +7,14 @@ import type { BranchDrag, BranchRowProps, BranchTarget } from "./BranchRow";
 
 const local = (over: Partial<LocalBranch> = {}): BranchTarget => ({
   kind: "local",
-  branch: { name: "main", oid: "a".repeat(40), isHead: false, tracking: null, ...over },
+  branch: {
+    name: "main",
+    oid: "a".repeat(40),
+    isHead: false,
+    tracking: null,
+    worktree: null,
+    ...over,
+  },
 });
 const remote = (over: Partial<RemoteBranch> = {}): BranchTarget => ({
   kind: "remote",
@@ -467,5 +474,19 @@ describe("BranchRow non-target", () => {
     renderRow({ drag });
     fireEvent.dragLeave(item());
     expect(drag.onDragLeave).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a local branch checked out in another worktree shows that worktree's folder.
+describe("BranchRow worktree badge", () => {
+  it("should badge a branch checked out in another worktree", () => {
+    renderRow({ target: local({ worktree: "/repos/app-feat-a" }) });
+    const badge = screen.getByText("app-feat-a");
+    expect(badge).toHaveAttribute("title", "Checked out in worktree /repos/app-feat-a");
+  });
+
+  it("should render no badge when worktree is null", () => {
+    renderRow({ target: local({ worktree: null }) });
+    expect(screen.queryByTitle(/Checked out in worktree/)).toBeNull();
   });
 });

@@ -33,6 +33,9 @@ import type {
   BranchList,
   HeadState,
   LocalBranch,
+  LinkedWorktree,
+  PrunedWorktrees,
+  WorktreeBranch,
   RemoteBranch,
   RemoteGroup,
   Tracking,
@@ -197,9 +200,15 @@ describe("commit DTO shapes", () => {
 describe("branch DTO shapes", () => {
   it("should accept a Tracking and a LocalBranch carrying every field", () => {
     const tracking: Tracking = { upstream: "origin/main", ahead: 1, behind: null };
-    const branch: LocalBranch = { name: "main", oid: "abc", isHead: true, tracking };
+    const branch: LocalBranch = {
+      name: "main",
+      oid: "abc",
+      isHead: true,
+      tracking,
+      worktree: null,
+    };
     expect(Object.keys(tracking).sort()).toEqual(["ahead", "behind", "upstream"]);
-    expect(Object.keys(branch).sort()).toEqual(["isHead", "name", "oid", "tracking"]);
+    expect(Object.keys(branch).sort()).toEqual(["isHead", "name", "oid", "tracking", "worktree"]);
   });
 
   it("should accept a RemoteBranch, RemoteGroup and BranchList carrying every field", () => {
@@ -620,5 +629,49 @@ describe("hosting types", () => {
       { kind: "needsReset", branch: "pr/7" },
     ];
     expect(outcomes.map((o) => o.kind)).toEqual(["checkedOut", "needsReset"]);
+  });
+});
+
+// Contract: the GR-39 linked worktree shapes.
+describe("linked worktree types", () => {
+  it("should accept a LinkedWorktree carrying every field", () => {
+    const w: LinkedWorktree = {
+      name: "a",
+      path: "/w/a",
+      head: null,
+      isMain: false,
+      isCurrent: false,
+      missing: true,
+      locked: "on a USB disk",
+    };
+    expect(Object.keys(w).sort()).toEqual([
+      "head",
+      "isCurrent",
+      "isMain",
+      "locked",
+      "missing",
+      "name",
+      "path",
+    ]);
+  });
+
+  it("should accept both WorktreeBranch shapes", () => {
+    const branches: WorktreeBranch[] = [
+      { kind: "existing", name: "a" },
+      { kind: "new", name: "b", start: null },
+    ];
+    expect(branches.map((b) => b.kind)).toEqual(["existing", "new"]);
+  });
+
+  it("should accept PrunedWorktrees and a LocalBranch checked out in a worktree", () => {
+    const pruned: PrunedWorktrees = { paths: ["/w/a"] };
+    const branch: LocalBranch = {
+      name: "a",
+      oid: "abc",
+      isHead: false,
+      tracking: null,
+      worktree: "/w/a",
+    };
+    expect([pruned.paths, branch.worktree]).toEqual([["/w/a"], "/w/a"]);
   });
 });

@@ -21,6 +21,7 @@ pub mod history;
 pub mod hosting;
 pub mod ignore;
 pub mod index_ops;
+pub mod linked_worktrees;
 pub mod log;
 pub mod merge;
 pub mod model;

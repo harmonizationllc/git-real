@@ -55,6 +55,11 @@ import {
   listRecent,
   listStashes,
   listTags,
+  listLinkedWorktrees,
+  addLinkedWorktree,
+  removeLinkedWorktree,
+  pruneLinkedWorktrees,
+  isLinkedWorktreeDirty,
   mergeBranch,
   openRepo,
   pull,
@@ -106,6 +111,8 @@ import type {
   StashEntry,
   StashFiles,
   TagList,
+  LinkedWorktree,
+  PrunedWorktrees,
   WorkingTreeStatus,
 } from "./types";
 
@@ -427,10 +434,16 @@ describe("commit commands", () => {
 describe("branch commands", () => {
   const list: BranchList = {
     head: { kind: "branch", name: "main" },
-    local: [{ name: "main", oid: "abc", isHead: true, tracking: null }],
+    local: [{ name: "main", oid: "abc", isHead: true, tracking: null, worktree: null }],
     remotes: [],
   };
-  const created: LocalBranch = { name: "topic", oid: "abc", isHead: false, tracking: null };
+  const created: LocalBranch = {
+    name: "topic",
+    oid: "abc",
+    isHead: false,
+    tracking: null,
+    worktree: null,
+  };
 
   it("listBranches sends list_branches with the id and returns the list", async () => {
     const calls = mockWith(list);
@@ -1458,5 +1471,76 @@ describe("GR-13b hosting command wrappers", () => {
   ])("%s rejects with the backend AppError", async (_name, call) => {
     mockThrowing(failure);
     await expect(call()).rejects.toEqual(failure);
+  });
+});
+
+// Contract: the GR-39 linked worktree wrappers invoke the pinned commands with camelCase args.
+describe("linked worktree wrappers", () => {
+  const row: LinkedWorktree = {
+    name: null,
+    path: "/repos/app",
+    head: { kind: "branch", name: "main" },
+    isMain: true,
+    isCurrent: true,
+    missing: false,
+    locked: null,
+  };
+
+  it("listLinkedWorktrees sends list_linked_worktrees with id", async () => {
+    const calls = mockWith([row]);
+    const result = await listLinkedWorktrees(2);
+    expect(calls).toEqual([{ cmd: "list_linked_worktrees", args: { id: 2 } }]);
+    expect(result).toEqual([row]);
+  });
+
+  it("addLinkedWorktree sends add_linked_worktree with id, path and an existing branch", async () => {
+    const calls = mockWith(null);
+    await addLinkedWorktree(2, "/repos/app-a", { kind: "existing", name: "a" });
+    expect(calls).toEqual([
+      {
+        cmd: "add_linked_worktree",
+        args: { id: 2, path: "/repos/app-a", branch: { kind: "existing", name: "a" } },
+      },
+    ]);
+  });
+
+  it("addLinkedWorktree sends a new branch with its start", async () => {
+    const calls = mockWith(null);
+    await addLinkedWorktree(2, "/repos/app-b", { kind: "new", name: "b", start: "origin/b" });
+    expect(calls).toEqual([
+      {
+        cmd: "add_linked_worktree",
+        args: {
+          id: 2,
+          path: "/repos/app-b",
+          branch: { kind: "new", name: "b", start: "origin/b" },
+        },
+      },
+    ]);
+  });
+
+  it("removeLinkedWorktree sends remove_linked_worktree with id, path and force", async () => {
+    const calls = mockWith(null);
+    await removeLinkedWorktree(2, "/repos/app-a", true);
+    expect(calls).toEqual([
+      { cmd: "remove_linked_worktree", args: { id: 2, path: "/repos/app-a", force: true } },
+    ]);
+  });
+
+  it("isLinkedWorktreeDirty sends is_linked_worktree_dirty with id and path and returns the flag", async () => {
+    const calls = mockWith(true);
+    const result = await isLinkedWorktreeDirty(2, "/repos/app-a");
+    expect(calls).toEqual([
+      { cmd: "is_linked_worktree_dirty", args: { id: 2, path: "/repos/app-a" } },
+    ]);
+    expect(result).toBe(true);
+  });
+
+  it("pruneLinkedWorktrees sends prune_linked_worktrees with id and returns the paths", async () => {
+    const pruned: PrunedWorktrees = { paths: ["/gone"] };
+    const calls = mockWith(pruned);
+    const result = await pruneLinkedWorktrees(2);
+    expect(calls).toEqual([{ cmd: "prune_linked_worktrees", args: { id: 2 } }]);
+    expect(result).toEqual(pruned);
   });
 });

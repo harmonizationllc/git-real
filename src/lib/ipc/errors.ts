@@ -61,6 +61,14 @@ const KINDS: Record<AppErrorKind, true> = {
   noExternalTool: true,
   externalToolFailed: true,
   updateCheckFailed: true,
+  branchCheckedOut: true,
+  worktreeNotFound: true,
+  worktreeDirty: true,
+  worktreeLocked: true,
+  cannotRemoveMain: true,
+  cannotRemoveCurrent: true,
+  pathExists: true,
+  pathNotAbsolute: true,
 };
 
 export function isAppError(e: unknown): e is AppError {

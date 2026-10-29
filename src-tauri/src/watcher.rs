@@ -1,8 +1,9 @@
-//! Debounced recursive file watcher for an open repository's working tree.
+//! Debounced recursive file watcher for an open repository's working tree and,
+//! for a linked worktree, its common dir (where refs and the other worktrees' HEADs live).
 //!
 //! Knows nothing about Tauri or repo ids: the caller passes a plain `on_change` closure.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -24,9 +25,12 @@ pub struct RepoWatcher {
 }
 
 impl RepoWatcher {
-    /// Starts a recursive watch on `workdir`, firing `on_change` after `debounce` of quiet.
+    /// Starts a recursive watch on `workdir`, and on `extra` when given, firing
+    /// `on_change` after `debounce` of quiet. A missing `workdir` is an error;
+    /// `extra` is best-effort, so failing to watch it is logged and skipped.
     pub fn start(
         workdir: &Path,
+        extra: Option<&Path>,
         debounce: Duration,
         on_change: impl Fn() + Send + 'static,
     ) -> Result<Self, notify::Error> {
@@ -34,7 +38,15 @@ impl RepoWatcher {
         let (tx, rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(tx)?;
         watcher.watch(&workdir, RecursiveMode::Recursive)?;
-        let thread = std::thread::spawn(move || debounce_loop(&rx, &workdir, debounce, on_change));
+        let extra = extra.and_then(|p| match watch_extra(&mut watcher, p) {
+            Ok(extra) => Some(extra),
+            Err(e) => {
+                eprintln!("watching {} failed: {e}", p.display());
+                None
+            }
+        });
+        let roots = Roots { workdir, extra };
+        let thread = std::thread::spawn(move || debounce_loop(&rx, &roots, debounce, on_change));
         Ok(Self {
             watcher: Some(watcher),
             thread: Some(thread),
@@ -52,11 +64,24 @@ impl Drop for RepoWatcher {
     }
 }
 
+/// Adds a recursive watch on `extra`; returns its canonical path.
+fn watch_extra(watcher: &mut RecommendedWatcher, extra: &Path) -> Result<PathBuf, notify::Error> {
+    let extra = extra.canonicalize().map_err(notify::Error::io)?;
+    watcher.watch(&extra, RecursiveMode::Recursive)?;
+    Ok(extra)
+}
+
+/// The canonical roots the debounce thread classifies paths against.
+struct Roots {
+    workdir: PathBuf,
+    extra: Option<PathBuf>,
+}
+
 /// Idles until a relevant event, then waits for `debounce` of quiet and fires once.
 /// Returns when the channel closes, without firing for a pending burst.
-fn debounce_loop(rx: &EventRx, workdir: &Path, debounce: Duration, on_change: impl Fn()) {
+fn debounce_loop(rx: &EventRx, roots: &Roots, debounce: Duration, on_change: impl Fn()) {
     loop {
-        if !wait_for_relevant(rx, workdir) {
+        if !wait_for_relevant(rx, roots) {
             return;
         }
         loop {
@@ -75,10 +100,10 @@ fn debounce_loop(rx: &EventRx, workdir: &Path, debounce: Duration, on_change: im
 }
 
 /// Blocks until a relevant event arrives (`true`) or the channel closes (`false`).
-fn wait_for_relevant(rx: &EventRx, workdir: &Path) -> bool {
+fn wait_for_relevant(rx: &EventRx, roots: &Roots) -> bool {
     loop {
         match rx.recv() {
-            Ok(Ok(event)) if is_relevant_event(workdir, &event) => return true,
+            Ok(Ok(event)) if is_relevant_event(roots, &event) => return true,
             Ok(Ok(_)) => {}
             Ok(Err(e)) => log_error(&e),
             Err(_) => return false,
@@ -92,19 +117,33 @@ fn log_error(error: &notify::Error) {
 
 /// Access events are noise; otherwise one relevant path (or none reported) is enough,
 /// so a rename of `index.lock` onto `index` still counts.
-fn is_relevant_event(workdir: &Path, event: &Event) -> bool {
+fn is_relevant_event(roots: &Roots, event: &Event) -> bool {
+    let extra = roots.extra.as_deref();
     !matches!(event.kind, EventKind::Access(_))
-        && (event.paths.is_empty() || event.paths.iter().any(|p| is_relevant(workdir, p)))
+        && (event.paths.is_empty()
+            || event
+                .paths
+                .iter()
+                .any(|p| is_relevant(&roots.workdir, extra, p)))
 }
 
-/// Whether a change at `path` should refresh the UI: false under `.git/objects` and for
-/// `*.lock` files under `.git`. Paths outside `workdir` are conservatively relevant.
-pub fn is_relevant(workdir: &Path, path: &Path) -> bool {
-    let Ok(rel) = path.strip_prefix(workdir) else {
-        return true;
-    };
-    if rel.starts_with(".git/objects") {
-        return false;
+/// Whether a change at `path` should refresh the UI. Under `workdir`: false under
+/// `.git/objects` and for `*.lock` files under `.git`. Under `extra` (a common dir):
+/// false under `objects/` and for any `*.lock` file. Paths outside both roots are
+/// conservatively relevant.
+pub fn is_relevant(workdir: &Path, extra: Option<&Path>, path: &Path) -> bool {
+    if let Ok(rel) = path.strip_prefix(workdir) {
+        if rel.starts_with(".git/objects") {
+            return false;
+        }
+        return !(rel.starts_with(".git") && is_lock(rel));
     }
-    !(rel.starts_with(".git") && rel.extension().is_some_and(|ext| ext == "lock"))
+    match extra.and_then(|e| path.strip_prefix(e).ok()) {
+        Some(rel) => !(rel.starts_with("objects") || is_lock(rel)),
+        None => true,
+    }
+}
+
+fn is_lock(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "lock")
 }

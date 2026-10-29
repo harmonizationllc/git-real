@@ -46,6 +46,8 @@ export const queryKeys = {
   stashes: (id: RepoId) => ["repo", id, "stashes"] as const,
   /** The tag list; under the repo prefix so a repo change refreshes it. */
   tags: (id: RepoId) => ["repo", id, "tags"] as const,
+  /** Every worktree of the repo; under the repo prefix so a repo change refreshes it. */
+  linkedWorktrees: (id: RepoId) => ["repo", id, "linkedWorktrees"] as const,
   /** Configured remotes; under the repo prefix so a repo change refreshes them. */
   remotes: (id: RepoId) => ["repo", id, "remotes"] as const,
   /** The default pull mode (config); under the repo prefix. */
@@ -78,6 +80,8 @@ export const mutationKeys = {
   network: (id: RepoId) => ["network", id] as const,
   /** Remote config edits of a repo (add, update, remove); they never touch the network. */
   remote: (id: RepoId) => ["remote", id] as const,
+  /** Every linked worktree action of a repo (add, remove, prune): one key, so the panel and the add dialog share one busy state. */
+  linkedWorktree: (id: RepoId) => ["linkedWorktree", id] as const,
   /** Connecting or disconnecting a hosting account. */
   hostingAccount: ["hostingAccount"] as const,
 };

@@ -21,6 +21,7 @@ import {
   hostingRepoContext,
   hostingRepoInfo,
   listBranches,
+  listLinkedWorktrees,
   listRemotes,
   listStashes,
   listTags,
@@ -101,6 +102,7 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   listRemotes: vi.fn(),
   listStashes: vi.fn(),
   listTags: vi.fn(),
+  listLinkedWorktrees: vi.fn(),
   listTrackedFiles: vi.fn(),
   onRepoChanged: vi.fn(),
   pull: vi.fn(),
@@ -122,6 +124,7 @@ const branchList = (over: Partial<BranchList> = {}): BranchList => ({
       oid: "a".repeat(40),
       isHead: true,
       tracking: { upstream: "origin/main", ahead: 0, behind: 0 },
+      worktree: null,
     },
   ],
   remotes: [],
@@ -173,6 +176,7 @@ beforeEach(async () => {
   vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
   vi.mocked(hostingPullRequestDraft).mockResolvedValue(prDraft());
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
+  vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
   vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
   vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
@@ -1848,6 +1852,7 @@ describe("RepoPane create pull request", () => {
             oid: oidOf(1),
             isHead: true,
             tracking: { upstream: "origin/feat", ahead: 0, behind: 0 },
+            worktree: null,
           },
         ],
         remotes: [
@@ -1894,6 +1899,7 @@ describe("RepoPane create pull request", () => {
             oid: oidOf(1),
             isHead: true,
             tracking: { upstream: "origin/feat", ahead: 0, behind: 0 },
+            worktree: null,
           },
         ],
         head: { kind: "branch", name: "feat" },

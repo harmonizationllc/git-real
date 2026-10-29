@@ -146,6 +146,19 @@ describe("layout setters", () => {
       { layout: { tagsCollapsed: false, pullRequestsCollapsed: true, issuesCollapsed: false } },
     ]);
   });
+
+  it("setWorktreesCollapsed sets its flag", async () => {
+    actions.setWorktreesCollapsed(true);
+    expect(settings().layout.worktreesCollapsed).toBe(true);
+    expect(await patches()).toEqual([{ layout: { worktreesCollapsed: true } }]);
+  });
+
+  it("the defaults show the worktrees section expanded at automatic height", () => {
+    expect(DEFAULT_SETTINGS.layout).toMatchObject({
+      worktreesCollapsed: false,
+      worktreesHeight: null,
+    });
+  });
 });
 
 describe("clone and updates setters", () => {

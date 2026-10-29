@@ -44,7 +44,7 @@ const threeTags = (over: Partial<TagList> = {}): TagList =>
 
 const onMain = (): BranchList => ({
   head: { kind: "branch", name: "main" },
-  local: [{ name: "main", oid: oidOf(0), isHead: true, tracking: null }],
+  local: [{ name: "main", oid: oidOf(0), isHead: true, tracking: null, worktree: null }],
   remotes: [],
 });
 

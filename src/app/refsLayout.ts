@@ -1,4 +1,11 @@
-export const REFS_SECTIONS = ["branches", "stashes", "tags", "pullRequests", "issues"] as const;
+export const REFS_SECTIONS = [
+  "branches",
+  "stashes",
+  "tags",
+  "worktrees",
+  "pullRequests",
+  "issues",
+] as const;
 
 export type RefsSection = (typeof REFS_SECTIONS)[number];
 

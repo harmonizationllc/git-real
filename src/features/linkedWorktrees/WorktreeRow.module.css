@@ -1,0 +1,58 @@
+.item {
+  display: flex;
+}
+
+.row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 8px 3px 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--color-surface-hover);
+}
+
+.current .name {
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Matches the branch row's badges. */
+.badge {
+  flex: none;
+  color: var(--color-text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  font-weight: normal;
+}
+
+.head {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: 0.8em;
+}

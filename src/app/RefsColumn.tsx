@@ -6,6 +6,7 @@ import { IssuesPanel } from "../features/hosting/IssuesPanel";
 import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { StashesPanel } from "../features/stash/StashesPanel";
+import { WorktreesPanel } from "../features/linkedWorktrees/WorktreesPanel";
 import { TagsPanel } from "../features/tags/TagsPanel";
 import type { RepoId } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
@@ -25,6 +26,7 @@ const LABELS: Record<ResizableSection, string> = {
   branches: "Resize Branches section",
   stashes: "Resize Stashes section",
   tags: "Resize Tags section",
+  worktrees: "Resize Worktrees section",
   pullRequests: "Resize Pull requests section",
 };
 
@@ -35,8 +37,8 @@ interface Measured {
 }
 
 /**
- * The refs column (spec §3): Branches, Stashes, Tags, Pull requests and Issues, each sized by
- * its content and fitted to the column, with a horizontal handle below each resizable section.
+ * The refs column (spec §3): Branches, Stashes, Tags, Worktrees, Pull requests and Issues, each
+ * sized by its content and fitted to the column, with a horizontal handle below each resizable section.
  */
 export function RefsColumn({
   repoId,
@@ -96,6 +98,7 @@ export function RefsColumn({
     ),
     stashes: <StashesPanel repoId={repoId} />,
     tags: <TagsPanel repoId={repoId} />,
+    worktrees: <WorktreesPanel repoId={repoId} />,
     pullRequests: <PullRequestsPanel repoId={repoId} onCreatePullRequest={onCreatePullRequest} />,
     issues: <IssuesPanel repoId={repoId} />,
   };

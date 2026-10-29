@@ -1,6 +1,6 @@
 //! Error type shared by all core operations.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -145,8 +145,41 @@ pub enum GitError {
     /// The in-app update check could not complete; `message` says why.
     #[error("update check failed: {message}")]
     UpdateCheckFailed { message: String },
+    #[error("{name} is checked out in worktree {}", folder_name(.worktree))]
+    BranchCheckedOut { name: String, worktree: PathBuf },
+    #[error("{0} is not a worktree of this repository")]
+    WorktreeNotFound(PathBuf),
+    #[error("{0} has uncommitted changes")]
+    WorktreeDirty(PathBuf),
+    /// The lock reason; empty when the worktree was locked without one.
+    #[error("the worktree is locked{}", lock_suffix(.0))]
+    WorktreeLocked(String),
+    #[error("the main worktree cannot be removed")]
+    CannotRemoveMain,
+    #[error("the worktree open in this tab cannot be removed from here")]
+    CannotRemoveCurrent,
+    #[error("{0} already exists and is not empty")]
+    PathExists(PathBuf),
+    #[error("{0} is not an absolute path")]
+    PathNotAbsolute(PathBuf),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Git2(#[from] git2::Error),
+}
+
+/// The folder name of a worktree path, or the whole path when it has none.
+fn folder_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+fn lock_suffix(reason: &str) -> String {
+    if reason.is_empty() {
+        String::new()
+    } else {
+        format!(": {reason}")
+    }
 }

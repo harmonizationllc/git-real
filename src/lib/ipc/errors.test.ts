@@ -299,3 +299,26 @@ describe("isAppError GR-14 kinds", () => {
     },
   );
 });
+
+// Contract: the GR-39 linked worktree kinds are recognised.
+describe("isAppError linked worktree kinds", () => {
+  const worktreeKinds: AppErrorKind[] = [
+    "branchCheckedOut",
+    "worktreeNotFound",
+    "worktreeDirty",
+    "worktreeLocked",
+    "cannotRemoveMain",
+    "cannotRemoveCurrent",
+    "pathExists",
+    "pathNotAbsolute",
+  ];
+
+  it.each(worktreeKinds)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+
+  it.each(worktreeKinds)("toAppError passes kind %s through unchanged", (kind) => {
+    const e = { kind, message: "m" };
+    expect(toAppError(e)).toBe(e);
+  });
+});

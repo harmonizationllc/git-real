@@ -100,7 +100,15 @@ export type AppErrorKind =
   | "gitCliInvalid"
   | "noExternalTool"
   | "externalToolFailed"
-  | "updateCheckFailed";
+  | "updateCheckFailed"
+  | "branchCheckedOut"
+  | "worktreeNotFound"
+  | "worktreeDirty"
+  | "worktreeLocked"
+  | "cannotRemoveMain"
+  | "cannotRemoveCurrent"
+  | "pathExists"
+  | "pathNotAbsolute";
 
 export interface AppError {
   kind: AppErrorKind;
@@ -151,6 +159,8 @@ export interface Settings {
     branchesHeight: number | null;
     stashesHeight: number | null;
     tagsHeight: number | null;
+    worktreesCollapsed: boolean;
+    worktreesHeight: number | null;
     pullRequestsHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
@@ -273,6 +283,34 @@ export interface LocalBranch {
   oid: string;
   isHead: boolean;
   tracking: Tracking | null;
+  /** The worktree path the branch is checked out in, other than this session's; null otherwise. */
+  worktree: string | null;
+}
+
+/** One worktree of the repository: the main one or a linked one (GR-39). */
+export interface LinkedWorktree {
+  /** The admin name of a linked worktree; null for the main worktree. */
+  name: string | null;
+  /** Canonical when the folder exists. */
+  path: string;
+  /** Null when the worktree's HEAD could not be read. */
+  head: HeadState | null;
+  isMain: boolean;
+  /** The worktree this session has open. */
+  isCurrent: boolean;
+  /** The folder is gone; prune clears it unless locked. */
+  missing: boolean;
+  /** The lock reason ("" when locked without one); null when unlocked. */
+  locked: string | null;
+}
+
+/** The branch a new worktree checks out: an existing local branch, or a new one at `start` (HEAD when null). */
+export type WorktreeBranch =
+  { kind: "existing"; name: string } | { kind: "new"; name: string; start: string | null };
+
+/** The worktree paths a prune removed. */
+export interface PrunedWorktrees {
+  paths: string[];
 }
 
 export interface RemoteBranch {

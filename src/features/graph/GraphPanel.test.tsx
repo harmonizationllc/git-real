@@ -89,7 +89,7 @@ const summary = (over: Partial<LogSummary> = {}): LogSummary => ({
 
 const branchList = (head: BranchList["head"] = { kind: "branch", name: "main" }): BranchList => ({
   head,
-  local: [{ name: "main", oid: oidOf(0), isHead: true, tracking: null }],
+  local: [{ name: "main", oid: oidOf(0), isHead: true, tracking: null, worktree: null }],
   remotes: [],
 });
 
@@ -132,6 +132,7 @@ beforeEach(() => {
     oid: oidOf(0),
     isHead: false,
     tracking: null,
+    worktree: null,
   });
   vi.mocked(copyText).mockResolvedValue(undefined);
   vi.mocked(createTag).mockResolvedValue(undefined);
