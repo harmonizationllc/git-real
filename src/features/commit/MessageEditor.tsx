@@ -31,7 +31,8 @@ export type IssueRefInserter = (text: string) => void;
 type Field = "subject" | "body";
 
 /**
- * Ctrl/Cmd+Enter submits; plain Enter runs `onPlainEnter` when given, else keeps its default.
+ * The commit chord submits; plain or Shift+Enter runs `onPlainEnter` when given, else keeps its
+ * default. Ctrl/Meta/Alt+Enter that is not the commit chord is left alone.
  * An Enter that confirms an IME composition is left untouched in both fields.
  */
 function handleEnter(
@@ -45,6 +46,8 @@ function handleEnter(
     return;
   }
   if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
+  // A modified Enter that is not the commit chord belongs to the window listeners.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (onPlainEnter !== null) {
     e.preventDefault();
     onPlainEnter();

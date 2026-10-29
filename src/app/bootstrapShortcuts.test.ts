@@ -31,7 +31,8 @@ async function load(bindings: Settings["shortcuts"]["bindings"]) {
   const ipc = await import("../lib/ipc");
   vi.mocked(ipc.updateSettings).mockImplementation(async (patch: SettingsPatch) => {
     server = { ...server, ...(patch as Partial<Settings>) };
-    return server;
+    // Like the real store after a save: every section arrives as a fresh object.
+    return structuredClone(server);
   });
   return {
     ...(await import("./bootstrapShortcuts")),

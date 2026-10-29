@@ -77,9 +77,13 @@ describe("MessageEditor", () => {
     const subject = screen.getByLabelText("Subject");
     fireEvent.keyDown(subject, { key: "s", code: "KeyS", ctrlKey: true });
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(subject, { key: "Enter", ctrlKey: true });
-    expect(onSubmit).toHaveBeenCalledTimes(1);
     await user.click(subject);
+    // A modifier-decorated Enter that is not the commit chord is left to the window listeners.
+    expect(fireEvent.keyDown(subject, { key: "Enter", ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(subject, { key: "Enter", metaKey: true })).toBe(true);
+    expect(fireEvent.keyDown(subject, { key: "Enter", altKey: true })).toBe(true);
+    expect(subject).toHaveFocus();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
     await user.keyboard("{Enter}");
     expect(screen.getByLabelText("Body")).toHaveFocus();
     expect(onSubmit).toHaveBeenCalledTimes(1);

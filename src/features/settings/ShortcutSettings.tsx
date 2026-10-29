@@ -16,7 +16,7 @@ import type { ShortcutId } from "../../lib/shortcuts";
 import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
 import { useSettings } from "../../lib/store/settings";
 import { setShortcutBindings } from "../../lib/store/settingsActions";
-import { Section } from "./SettingsDialog";
+import { Section } from "./Section";
 import { KeyParts } from "./ShortcutsDialog";
 import dialogStyles from "./ShortcutsDialog.module.css";
 import styles from "./SettingsDialog.module.css";

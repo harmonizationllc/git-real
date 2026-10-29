@@ -42,4 +42,23 @@ describe("useEffectiveBindings", () => {
     expect(result.current).not.toBe(first);
     expect(result.current.fetch).toBe("Mod+Alt+F");
   });
+
+  it("keeps its result when a save replaces the bindings with an equal map", async () => {
+    // The real backend answers every save with fresh section objects.
+    const answer = vi.mocked(updateSettings).getMockImplementation()!;
+    vi.mocked(updateSettings).mockImplementation(async (patch) =>
+      structuredClone(await answer(patch)),
+    );
+    await seedSettings({ shortcuts: { bindings: { fetch: "Mod+Alt+F" } } });
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useEffectiveBindings();
+    });
+    const first = result.current;
+    const before = renders;
+    await act(() => seedSettings({ appearance: { theme: "dark" } }));
+    expect(result.current).toBe(first);
+    expect(renders).toBe(before);
+  });
 });

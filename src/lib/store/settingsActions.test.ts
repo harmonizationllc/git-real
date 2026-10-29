@@ -181,4 +181,13 @@ describe("shortcut setters", () => {
       { shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } },
     ]);
   });
+
+  it("setShortcutBindings replaces the map wholesale, dropping keys left out", async () => {
+    actions.setShortcutBindings({ fetch: "Mod+G" });
+    await vi.advanceTimersByTimeAsync(300);
+    actions.setShortcutBindings({ pull: "Mod+U" });
+    await vi.advanceTimersByTimeAsync(300);
+    await useSettings.getState().flush();
+    expect(settings().shortcuts.bindings).toEqual({ pull: "Mod+U" });
+  });
 });
