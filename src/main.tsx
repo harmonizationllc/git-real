@@ -5,8 +5,10 @@ import "./styles/global.css";
 import "./styles/syntax.css";
 import App from "./app/App";
 import { bootstrapAppearance } from "./app/applyAppearance";
+import { bootstrapShortcuts } from "./app/bootstrapShortcuts";
 
 bootstrapAppearance();
+bootstrapShortcuts();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -1,7 +1,8 @@
 import type { RepoId } from "../lib/ipc";
 import { useShell } from "../lib/store/shell";
 import type { RepoTab } from "../lib/store/repoTabs";
-import { formatKeys, shortcut } from "../lib/shortcuts";
+import { formatKeys } from "../lib/shortcuts";
+import { useShortcutKeys } from "../lib/shortcuts/useShortcutKeys";
 import styles from "./TabBar.module.css";
 
 export interface TabBarProps {
@@ -11,7 +12,14 @@ export interface TabBarProps {
   onClose(id: RepoId): void;
 }
 
+/** A shell button's tooltip: the label, with its chord when bound. */
+function titleFor(label: string, keys: string | null): string {
+  return keys === null ? label : `${label} (${formatKeys(keys)})`;
+}
+
 export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): React.JSX.Element {
+  const paletteKeys = useShortcutKeys("palette");
+  const settingsKeys = useShortcutKeys("settings");
   return (
     <nav className={styles.root} aria-label="Repositories">
       <div role="tablist" aria-label="Open repositories" className={styles.list}>
@@ -52,7 +60,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
       <button
         type="button"
         aria-label="Command palette"
-        title={`Command palette (${formatKeys(shortcut("palette").keys)})`}
+        title={titleFor("Command palette", paletteKeys)}
         className={styles.shell}
         onClick={() => useShell.getState().open({ kind: "palette" })}
       >
@@ -61,7 +69,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
       <button
         type="button"
         aria-label="Settings"
-        title={`Settings (${formatKeys(shortcut("settings").keys)})`}
+        title={titleFor("Settings", settingsKeys)}
         className={styles.shell}
         onClick={() => useShell.getState().open({ kind: "settings" })}
       >

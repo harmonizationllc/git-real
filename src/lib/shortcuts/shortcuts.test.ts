@@ -2,15 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SHORTCUT_GROUPS,
   SHORTCUTS,
+  activeKeys,
   formatKeyParts,
   formatKeys,
   matchesShortcut,
+  resolveBindings,
+  setActiveBindings,
   shortcut,
 } from "./index";
 import type { ShortcutId } from "./index";
+import type { ShortcutBindings } from "../ipc/types";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  setActiveBindings(resolveBindings({}));
 });
 
 // Contract: 14-row registry with unique ids and keys.
@@ -269,5 +274,98 @@ describe("formatKeys", () => {
   it("joins with nothing (no separator) on macOS", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     expect(formatKeys("Mod+Shift+F")).toBe("⌘⇧F");
+  });
+});
+
+// Contract (spec §5): overrides pass in registry order, then defaults pass.
+describe("resolveBindings", () => {
+  const defaults = Object.fromEntries(SHORTCUTS.map((s) => [s.id, s.keys]));
+
+  it("resolves no overrides to every registry default", () => {
+    expect(resolveBindings({})).toEqual(defaults);
+  });
+
+  it("applies a custom chord and keeps every other default", () => {
+    expect(resolveBindings({ fetch: "Mod+Alt+F" })).toEqual({ ...defaults, fetch: "Mod+Alt+F" });
+  });
+
+  it("unbinds an id overridden with null", () => {
+    expect(resolveBindings({ fetch: null })).toEqual({ ...defaults, fetch: null });
+  });
+
+  it.each<[ShortcutBindings, string]>([
+    [{ nope: "Mod+Alt+N" }, "unknown id"],
+    [{ fetch: "Shift+Mod+F" }, "malformed"],
+    [{ fetch: "Shift+A" }, "unbindable"],
+  ])("ignores %j (%s)", (overrides) => {
+    expect(resolveBindings(overrides)).toEqual(defaults);
+  });
+
+  it("two overrides on one chord keep the first in registry order", () => {
+    const resolved = resolveBindings({ pull: "Mod+G", fetch: "Mod+G" });
+    expect(resolved.fetch).toBe("Mod+G");
+    expect(resolved.pull).toBe("Mod+Shift+L");
+  });
+
+  it("an override on another id's default leaves that id unbound", () => {
+    const resolved = resolveBindings({ fetch: "Mod+K" });
+    expect(resolved.fetch).toBe("Mod+K");
+    expect(resolved.palette).toBeNull();
+  });
+});
+
+// Contract: matchesShortcut reads the active bindings.
+describe("active bindings", () => {
+  function press(overrides: Partial<KeyboardEvent>): React.KeyboardEvent {
+    return {
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+      key: "",
+      code: "",
+      repeat: false,
+      defaultPrevented: false,
+      isComposing: false,
+      keyCode: 0,
+      nativeEvent: { isComposing: false, keyCode: 0 },
+      ...overrides,
+    } as unknown as React.KeyboardEvent;
+  }
+
+  it("activeKeys returns the defaults initially", () => {
+    expect(activeKeys("fetch")).toBe("Mod+Shift+F");
+  });
+
+  it("a custom chord fires and the default no longer does", () => {
+    setActiveBindings(resolveBindings({ fetch: "Mod+Alt+F" }));
+    expect(activeKeys("fetch")).toBe("Mod+Alt+F");
+    expect(
+      matchesShortcut(press({ ctrlKey: true, altKey: true, key: "f", code: "KeyF" }), "fetch"),
+    ).toBe(true);
+    expect(
+      matchesShortcut(press({ ctrlKey: true, shiftKey: true, key: "F", code: "KeyF" }), "fetch"),
+    ).toBe(false);
+  });
+
+  it("matchesShortcut fires a custom Alt chord by code", () => {
+    setActiveBindings(resolveBindings({ fetch: "Mod+Alt+F" }));
+    expect(
+      matchesShortcut(press({ ctrlKey: true, altKey: true, key: "ф", code: "KeyF" }), "fetch"),
+    ).toBe(true);
+    expect(
+      matchesShortcut(press({ ctrlKey: true, altKey: false, key: "ф", code: "KeyF" }), "fetch"),
+    ).toBe(false);
+  });
+
+  it("an unbound id never matches", () => {
+    setActiveBindings(resolveBindings({ fetch: null }));
+    expect(activeKeys("fetch")).toBeNull();
+    expect(
+      matchesShortcut(press({ ctrlKey: true, shiftKey: true, key: "F", code: "KeyF" }), "fetch"),
+    ).toBe(false);
+    expect(
+      matchesShortcut(press({ ctrlKey: true, altKey: true, key: "f", code: "KeyF" }), "fetch"),
+    ).toBe(false);
   });
 });

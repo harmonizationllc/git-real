@@ -39,11 +39,13 @@ function handleEnter(
   onSubmit: () => void,
   onPlainEnter: (() => void) | null,
 ): void {
-  if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
   if (matchesShortcut(e, "commit")) {
     e.preventDefault();
     onSubmit();
-  } else if (onPlainEnter !== null) {
+    return;
+  }
+  if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
+  if (onPlainEnter !== null) {
     e.preventDefault();
     onPlainEnter();
   }

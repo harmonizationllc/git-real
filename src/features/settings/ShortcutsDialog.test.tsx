@@ -1,8 +1,21 @@
 import { createRef } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { updateSettings } from "../../lib/ipc";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { ShortcutsDialog } from "./ShortcutsDialog";
+
+vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+}));
+
+beforeEach(async () => {
+  vi.mocked(updateSettings).mockReset();
+  await resetSettings();
+});
 
 function setup(onClose = vi.fn()) {
   const fallbackFocus = createRef<HTMLElement | null>();
@@ -124,5 +137,26 @@ describe("ShortcutsDialog focus restoration", () => {
     // The dialog component calls onClose; after unmount focus should return.
     // We test that useRestoreFocus is in play via the fallbackFocus prop being accepted.
     expect(div).toBeInTheDocument();
+  });
+});
+
+// Contract (GR-18): rows show the effective chords, and an unbound row shows Unbound.
+describe("ShortcutsDialog effective bindings", () => {
+  /** The Shortcut cell of the row labelled `label` inside the `group` table. */
+  function shortcutCell(group: string, label: string): HTMLElement {
+    const table = screen.getByRole("table", { name: group });
+    const row = within(table).getByText(label).closest("tr") as HTMLElement;
+    return row.querySelectorAll("td")[1] as HTMLElement;
+  }
+
+  it("rows show effective chords and Unbound", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await seedSettings({ shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } });
+    setup();
+    const fetchKbds = shortcutCell("Repository", "Fetch").querySelectorAll("kbd");
+    expect([...fetchKbds].map((k) => k.textContent)).toEqual(["Ctrl", "Alt", "F"]);
+    const palette = shortcutCell("Application", "Command palette");
+    expect(palette).toHaveTextContent(/^Unbound$/);
+    expect(palette.querySelector("kbd")).toBeNull();
   });
 });

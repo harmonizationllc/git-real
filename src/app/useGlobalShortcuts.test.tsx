@@ -1,5 +1,6 @@
 import { fireEvent } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveBindings, setActiveBindings } from "../lib/shortcuts";
 import { useRepoTabs } from "../lib/store/repoTabs";
 import { useShell } from "../lib/store/shell";
 import type { ShellActions } from "../lib/store/shell";
@@ -26,11 +27,24 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+afterEach(() => {
+  setActiveBindings(resolveBindings({}));
+});
+
 // Contract: Mod+K, Mod+/, Mod+, open the palette/shortcuts/settings dialogs via the shell store.
 describe("useGlobalShortcuts dialog shortcuts", () => {
   it("Mod+K opens the palette dialog", () => {
     setup();
     fireEvent.keyDown(window, { ctrlKey: true, key: "k", code: "KeyK" });
+    expect(useShell.getState().dialog).toEqual({ kind: "palette" });
+  });
+
+  it("a rebound palette chord opens the palette and the default no longer does", () => {
+    setActiveBindings(resolveBindings({ palette: "Mod+Alt+P" }));
+    setup();
+    fireEvent.keyDown(window, { ctrlKey: true, key: "k", code: "KeyK" });
+    expect(useShell.getState().dialog).toBeNull();
+    fireEvent.keyDown(window, { ctrlKey: true, altKey: true, key: "p", code: "KeyP" });
     expect(useShell.getState().dialog).toEqual({ kind: "palette" });
   });
 

@@ -2,7 +2,8 @@ import { useId, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
-import type { ShortcutGroup } from "../../lib/shortcuts";
+import type { EffectiveBindings, ShortcutGroup } from "../../lib/shortcuts";
+import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
 import styles from "./ShortcutsDialog.module.css";
 
 export interface ShortcutsDialogProps {
@@ -10,10 +11,13 @@ export interface ShortcutsDialogProps {
   fallbackFocus: RefObject<HTMLElement | null>;
 }
 
-/** A plain Action/Shortcut row: either a registry shortcut or one of the static Navigation rows. */
+/**
+ * A plain Action/Shortcut row: either a registry shortcut or one of the static Navigation rows.
+ * `parts` is `null` for an unbound shortcut.
+ */
 interface Row {
   label: string;
-  parts: string[];
+  parts: string[] | null;
 }
 
 /** The extra Navigation rows that describe behaviour without a single chord. */
@@ -22,11 +26,11 @@ const STATIC_NAVIGATION: Row[] = [
   { label: "Move within lists and menus", parts: ["Arrow keys"] },
 ];
 
-function rowsFor(group: ShortcutGroup): Row[] {
-  const rows: Row[] = SHORTCUTS.filter((s) => s.group === group).map((s) => ({
-    label: s.label,
-    parts: formatKeyParts(s.keys),
-  }));
+function rowsFor(group: ShortcutGroup, bindings: EffectiveBindings): Row[] {
+  const rows: Row[] = SHORTCUTS.filter((s) => s.group === group).map((s) => {
+    const keys = bindings[s.id];
+    return { label: s.label, parts: keys === null ? null : formatKeyParts(keys) };
+  });
   return group === "Navigation" ? [...rows, ...STATIC_NAVIGATION] : rows;
 }
 
@@ -34,6 +38,7 @@ function rowsFor(group: ShortcutGroup): Row[] {
 export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const bindings = useEffectiveBindings();
 
   useRestoreFocus(fallbackFocus);
   useLayoutEffect(() => {
@@ -69,15 +74,19 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
               </tr>
             </thead>
             <tbody>
-              {rowsFor(group).map((row) => (
+              {rowsFor(group, bindings).map((row) => (
                 <tr key={row.label}>
                   <td>{row.label}</td>
                   <td className={styles.keys}>
-                    {row.parts.map((part, i) => (
-                      <kbd key={i} className={styles.kbd}>
-                        {part}
-                      </kbd>
-                    ))}
+                    {row.parts === null ? (
+                      <span className={styles.unbound}>Unbound</span>
+                    ) : (
+                      row.parts.map((part, i) => (
+                        <kbd key={i} className={styles.kbd}>
+                          {part}
+                        </kbd>
+                      ))
+                    )}
                   </td>
                 </tr>
               ))}
