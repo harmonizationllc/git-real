@@ -57,8 +57,17 @@ export function ShortcutSettings() {
     setCapture(null);
   };
 
+  /** Escape on Replace or Cancel cancels the conflict, without closing the Settings dialog. */
+  const onConflictKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    endConflict();
+  };
+
   const onCaptureKey = (id: ShortcutId, e: KeyboardEvent) => {
-    // Every key belongs to the capture: neither the webview nor the window shortcuts may act.
+    // Tab moves focus as usual; the blur that follows cancels the capture.
+    if (e.key === "Tab") return;
+    // Every other key belongs to the capture: neither the webview nor the window shortcuts may act.
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") return setCapture(null);
@@ -134,7 +143,12 @@ export function ShortcutSettings() {
                     </td>
                     <td>
                       {mine?.phase === "conflict" ? (
-                        <span className={styles.row}>
+                        <span
+                          role="group"
+                          aria-label="Shortcut conflict"
+                          className={styles.row}
+                          onKeyDown={onConflictKey}
+                        >
                           <span className={styles.conflict}>
                             Already used by {shortcut(mine.otherId).label}
                           </span>

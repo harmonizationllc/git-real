@@ -159,6 +159,24 @@ describe("ShortcutSettings capture", () => {
     expectNoSave();
   });
 
+  it("Tab while listening is not captured and leaves through blur", () => {
+    setup();
+    const button = listen("Fetch");
+    const e = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      button.dispatchEvent(e);
+    });
+    expect(e.defaultPrevented).toBe(false);
+    fireEvent.blur(button);
+    expect(kbdParts(button)).toEqual(["Ctrl", "Shift", "F"]);
+    expectNoSave();
+  });
+
   it("starting a second row stops the first", () => {
     setup();
     listen("Fetch");
@@ -223,6 +241,33 @@ describe("ShortcutSettings conflict", () => {
     expect(kbdParts(button)).toEqual(["Ctrl", "Shift", "L"]);
     expect(screen.queryByRole("button", { name: "Replace" })).toBeNull();
     expectNoSave();
+  });
+
+  it("Escape in the conflict cancels it without reaching the dialog", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const parentKeyDown = vi.fn();
+    renderWithProviders(
+      <div onKeyDown={parentKeyDown}>
+        <ShortcutSettings />
+      </div>,
+    );
+    const button = listen("Pull");
+    fireEvent.keyDown(button, { key: "k", code: "KeyK", ctrlKey: true });
+    const replace = screen.getByRole("button", { name: "Replace" });
+    expect(replace).toHaveFocus();
+    fireEvent.keyDown(replace, { key: "Escape", code: "Escape" });
+    expect(screen.queryByText("Already used by Command palette")).toBeNull();
+    expect(kbdParts(button)).toEqual(["Ctrl", "Shift", "L"]);
+    expect(button).toHaveFocus();
+    expect(parentKeyDown).not.toHaveBeenCalled();
+    expectNoSave();
+  });
+
+  it("other keys in the conflict are left alone", () => {
+    conflictOnPull();
+    const replace = screen.getByRole("button", { name: "Replace" });
+    fireEvent.keyDown(replace, { key: "ArrowRight", code: "ArrowRight" });
+    expect(screen.getByText("Already used by Command palette")).toBeInTheDocument();
   });
 
   it("Replace and Cancel return focus to the chord button", () => {
