@@ -52,6 +52,7 @@ import { networkError, remoteInfo, trackedList } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { stashEntry, stashFiles } from "../test/stashFixtures";
 import { FULL_DIFF_LINES } from "../features/diff/model/limits";
+import { resolveBindings, setActiveBindings } from "../lib/shortcuts";
 import { RepoPane } from "./RepoPane";
 
 vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
@@ -195,6 +196,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setActiveBindings(resolveBindings({}));
 });
 
 // Contract: header as before, then a body with the changes panel and the detail pane.
@@ -1398,6 +1400,14 @@ describe("RepoPane sync toolbar and shortcuts", () => {
   it("should fetch on Ctrl+Shift+F", async () => {
     await renderReady();
     press(ctrlShift("F"));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null));
+  });
+
+  it("a rebound fetch chord fetches and the default no longer does", async () => {
+    setActiveBindings(resolveBindings({ fetch: "Mod+Alt+F" }));
+    await renderReady();
+    press(ctrlShift("F"));
+    press({ ctrlKey: true, altKey: true, key: "f", code: "KeyF" });
     await waitFor(() => expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null));
   });
 

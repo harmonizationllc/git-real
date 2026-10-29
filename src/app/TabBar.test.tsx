@@ -1,9 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { updateSettings } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { useShell } from "../lib/store/shell";
+import { resetSettings, seedSettings } from "../test/settingsStore";
 import { TabBar } from "./TabBar";
+
+vi.mock(import("../lib/ipc"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+}));
 
 const tab = (id: number, name: string): RepoTab => ({
   id,
@@ -11,8 +19,10 @@ const tab = (id: number, name: string): RepoTab => ({
 });
 const tabs = [tab(1, "alpha"), tab(2, "beta")];
 
-beforeEach(() => {
+beforeEach(async () => {
   useShell.setState({ dialog: null, repoActions: null });
+  vi.mocked(updateSettings).mockReset();
+  await resetSettings();
 });
 
 function setup(activeId: number | null = 1, list: RepoTab[] = tabs) {
@@ -104,5 +114,18 @@ describe("TabBar shell buttons (GR-14)", () => {
     const { user } = setup();
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
+  });
+});
+
+// Contract (GR-18): the shell button titles follow the effective bindings.
+describe("TabBar shortcut titles", () => {
+  it("titles follow the effective bindings", async () => {
+    await seedSettings({ shortcuts: { bindings: { palette: "Mod+Alt+P", settings: null } } });
+    setup();
+    expect(screen.getByRole("button", { name: "Command palette" })).toHaveAttribute(
+      "title",
+      "Command palette (Ctrl+Alt+P)",
+    );
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
   });
 });

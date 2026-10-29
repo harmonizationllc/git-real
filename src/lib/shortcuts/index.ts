@@ -1,3 +1,17 @@
+import type { ShortcutBindings } from "../ipc/types";
+import {
+  MAC_LABELS,
+  PC_LABELS,
+  chordToString,
+  codeForKey,
+  isBindable,
+  isMac,
+  parseChord,
+} from "./chord";
+import type { Chord } from "./chord";
+
+export * from "./chord";
+
 export type ShortcutId =
   | "palette"
   | "shortcuts"
@@ -103,12 +117,47 @@ export function shortcut(id: ShortcutId): Shortcut {
   return BY_ID.get(id) as Shortcut;
 }
 
-/** The physical `e.code` expected for one key token, so chords work on non-Latin layouts. */
-function expectedCode(token: string): string | null {
-  if (/^[A-Za-z]$/.test(token)) return `Key${token.toUpperCase()}`;
-  if (token === ",") return "Comma";
-  if (token === "/") return "Slash";
-  return token; // Enter, PageDown, PageUp
+export type EffectiveBindings = Record<ShortcutId, string | null>;
+
+/**
+ * Resolves the file's overrides against the registry; deterministic, never throws. Overrides are
+ * assigned first, in registry order, each claiming its chord; then every id still unassigned takes
+ * its default unless an override already claimed that chord, in which case it is unbound.
+ */
+export function resolveBindings(overrides: ShortcutBindings): EffectiveBindings {
+  const resolved = {} as Record<ShortcutId, string | null | undefined>;
+  const claimed = new Set<string>();
+  for (const s of SHORTCUTS) {
+    const override = overrides[s.id];
+    if (override === undefined) continue;
+    if (override === null) {
+      resolved[s.id] = null;
+      continue;
+    }
+    const chord = parseChord(override);
+    if (chord === null || !isBindable(chord)) continue;
+    const keys = chordToString(chord);
+    if (claimed.has(keys)) continue;
+    claimed.add(keys);
+    resolved[s.id] = keys;
+  }
+  for (const s of SHORTCUTS) {
+    if (resolved[s.id] !== undefined) continue;
+    resolved[s.id] = claimed.has(s.keys) ? null : s.keys;
+  }
+  return resolved as EffectiveBindings;
+}
+
+let active: EffectiveBindings = resolveBindings({});
+
+/** Replaces the bindings `matchesShortcut` reads. */
+export function setActiveBindings(bindings: EffectiveBindings): void {
+  active = bindings;
+}
+
+/** The effective chord for `id`, or `null` when unbound. */
+export function activeKeys(id: ShortcutId): string | null {
+  return active[id];
 }
 
 type AnyKeyEvent = KeyboardEvent | React.KeyboardEvent;
@@ -123,27 +172,16 @@ function isComposing(e: AnyKeyEvent): boolean {
   );
 }
 
-/** True when `e` is the exact chord for `id`, ignoring repeats, consumed and composing events. */
+/** True when `e` is the exact effective chord for `id`, ignoring repeats, consumed and composing events. */
 export function matchesShortcut(e: AnyKeyEvent, id: ShortcutId): boolean {
   if (e.repeat || e.defaultPrevented || isComposing(e)) return false;
-  const parts = shortcut(id).keys.split("+");
-  const token = parts[parts.length - 1];
-  const wantMod = parts.includes("Mod");
-  const wantShift = parts.includes("Shift");
-
-  if ((e.ctrlKey || e.metaKey) !== wantMod) return false;
-  if (e.shiftKey !== wantShift) return false;
-  if (e.altKey) return false;
-
-  const code = expectedCode(token);
-  return e.key.toLowerCase() === token.toLowerCase() || (code !== null && e.code === code);
-}
-
-const MAC_LABELS: Record<string, string> = { Mod: "⌘", Shift: "⇧", Alt: "⌥" };
-const PC_LABELS: Record<string, string> = { Mod: "Ctrl", Shift: "Shift", Alt: "Alt" };
-
-function isMac(): boolean {
-  return navigator.platform.startsWith("Mac");
+  const keys = activeKeys(id);
+  if (keys === null) return false;
+  const chord = parseChord(keys) as Chord;
+  if ((e.ctrlKey || e.metaKey) !== chord.mod) return false;
+  if (e.altKey !== chord.alt) return false;
+  if (e.shiftKey !== chord.shift) return false;
+  return e.code === codeForKey(chord.key) || e.key.toLowerCase() === chord.key.toLowerCase();
 }
 
 /** Human labels for each part of a `keys` string, e.g. `["Ctrl","Shift","F"]` or `["⌘","⇧","F"]`. */

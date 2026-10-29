@@ -1,8 +1,13 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveBindings, setActiveBindings } from "../../lib/shortcuts";
 import { MessageEditor } from "./MessageEditor";
+
+afterEach(() => {
+  setActiveBindings(resolveBindings({}));
+});
 
 function setup(over: Partial<React.ComponentProps<typeof MessageEditor>> = {}) {
   const props = {
@@ -64,6 +69,24 @@ describe("MessageEditor", () => {
     await user.click(screen.getByLabelText("Body"));
     await user.keyboard("{Control>}{Enter}{/Control}");
     expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it("with commit rebound to Mod+S, Ctrl+S submits and Ctrl+Enter does not", async () => {
+    setActiveBindings(resolveBindings({ commit: "Mod+S" }));
+    const { user, onSubmit } = setup();
+    const subject = screen.getByLabelText("Subject");
+    fireEvent.keyDown(subject, { key: "s", code: "KeyS", ctrlKey: true });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await user.click(subject);
+    // A modifier-decorated Enter that is not the commit chord is left to the window listeners.
+    expect(fireEvent.keyDown(subject, { key: "Enter", ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(subject, { key: "Enter", metaKey: true })).toBe(true);
+    expect(fireEvent.keyDown(subject, { key: "Enter", altKey: true })).toBe(true);
+    expect(subject).toHaveFocus();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await user.keyboard("{Enter}");
+    expect(screen.getByLabelText("Body")).toHaveFocus();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it("Meta+Enter also submits", async () => {

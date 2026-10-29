@@ -626,3 +626,45 @@ fn update_rejects_an_invalid_patch_before_spawning_git() {
     assert!(!path.exists(), "nothing may be saved");
     assert_eq!(configured_path(), None);
 }
+
+// ─── shortcuts (GR-18) ────────────────────────────────────────────────────────
+
+const SHORTCUT_PATCH: &str = r#"{"shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null}}}"#;
+
+fn shortcut_map() -> std::collections::BTreeMap<String, Option<String>> {
+    [
+        ("fetch".to_owned(), Some("Mod+Alt+F".to_owned())),
+        ("palette".to_owned(), None),
+    ]
+    .into_iter()
+    .collect()
+}
+
+#[test]
+fn update_persists_shortcut_bindings_and_round_trips() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(SHORTCUT_PATCH).unwrap();
+
+    let result = store.update(&patch).unwrap();
+    assert_eq!(result.shortcuts.bindings, shortcut_map());
+
+    let reloaded = SettingsStore::load(path.clone());
+    assert_eq!(reloaded.get().shortcuts.bindings, shortcut_map());
+    let content = fs::read_to_string(&path).unwrap();
+    assert!(content.contains("\"palette\": null"), "{content}");
+}
+
+#[test]
+fn init_script_carries_the_shortcuts_section() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(SHORTCUT_PATCH).unwrap();
+    store.update(&patch).unwrap();
+
+    let script = store.to_init_script();
+    assert!(
+        script.contains(r#""shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null}}"#),
+        "{script}"
+    );
+}

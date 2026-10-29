@@ -66,6 +66,10 @@
   border-radius: 4px;
 }
 
+.unbound {
+  color: var(--color-text-muted);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

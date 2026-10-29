@@ -5,7 +5,7 @@ import type { UpdateInfo } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useSettings } from "../../lib/store/settings";
 import { setCheckOnStartup } from "../../lib/store/settingsActions";
-import { Section } from "./SettingsDialog";
+import { Section } from "./Section";
 import styles from "./SettingsDialog.module.css";
 
 /** The repository's source and issues page. */

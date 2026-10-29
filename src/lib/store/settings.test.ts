@@ -53,6 +53,11 @@ describe("defaults", () => {
     expect(DEFAULT_SETTINGS).toEqual(fixture);
   });
 
+  it("DEFAULT_SETTINGS.shortcuts is an empty bindings map", async () => {
+    const { DEFAULT_SETTINGS } = await load();
+    expect(DEFAULT_SETTINGS.shortcuts).toEqual({ bindings: {} });
+  });
+
   it("exports the clamp constants", async () => {
     const m = await load();
     expect([m.DIFF_FONT_MIN, m.DIFF_FONT_MAX, m.DIFF_FONT_DEFAULT]).toEqual([10, 24, 13]);

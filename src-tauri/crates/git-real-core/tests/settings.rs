@@ -618,3 +618,123 @@ fn worktrees_height_null_is_serialized_in_the_file() {
     assert!(text.contains("\"worktreesHeight\": null"), "{text}");
     assert!(text.contains("\"worktreesCollapsed\": false"), "{text}");
 }
+
+// --- Shortcuts (GR-18) ---
+
+fn bindings(pairs: &[(&str, Option<&str>)]) -> std::collections::BTreeMap<String, Option<String>> {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), v.map(str::to_owned)))
+        .collect()
+}
+
+#[test]
+fn shortcuts_default_to_an_empty_map() {
+    assert!(Settings::default().shortcuts.bindings.is_empty());
+    let value = serde_json::to_value(Settings::default()).unwrap();
+    assert_eq!(value["shortcuts"], json!({"bindings": {}}));
+}
+
+#[test]
+fn shortcut_bindings_round_trip_through_the_file_codec() {
+    let mut s = Settings::default();
+    s.shortcuts.bindings = bindings(&[("fetch", Some("Mod+Alt+F")), ("palette", None)]);
+    let text = serde_json::to_string_pretty(&SettingsFile::current(s.clone())).unwrap();
+    assert!(text.contains("\"palette\": null"), "{text}");
+    let (back, warnings) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, s);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn lenient_bindings_not_an_object_warns_and_uses_empty() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"bindings": 3},
+        "appearance": {"diffFontSize": 16}
+    }));
+    assert!(s.shortcuts.bindings.is_empty());
+    assert_eq!(s.appearance.diff_font_size, 16);
+    assert_eq!(fields(&warnings), vec!["shortcuts.bindings"]);
+    assert_eq!(warnings[0].message, "not an object; using the defaults");
+}
+
+#[test]
+fn lenient_binding_entry_of_wrong_type_is_dropped_with_a_warning() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"bindings": {"fetch": 5, "pull": "Mod+P", "push": null}}
+    }));
+    assert_eq!(
+        s.shortcuts.bindings,
+        bindings(&[("pull", Some("Mod+P")), ("push", None)])
+    );
+    assert_eq!(fields(&warnings), vec!["shortcuts.bindings.fetch"]);
+    assert!(warnings[0].message.ends_with("; dropped"), "{warnings:?}");
+}
+
+#[test]
+fn lenient_binding_blank_is_dropped_and_whitespace_trimmed() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"bindings": {"fetch": "  Mod+G ", "pull": "   "}}
+    }));
+    assert_eq!(s.shortcuts.bindings, bindings(&[("fetch", Some("Mod+G"))]));
+    assert_eq!(fields(&warnings), vec!["shortcuts.bindings.pull"]);
+    assert_eq!(warnings[0].message, "blank; dropped");
+}
+
+#[test]
+fn lenient_keeps_unknown_shortcut_ids() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"bindings": {"notAShortcut": "Mod+Q"}}
+    }));
+    assert_eq!(
+        s.shortcuts.bindings,
+        bindings(&[("notAShortcut", Some("Mod+Q"))])
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn lenient_shortcuts_section_not_an_object_warns() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({"shortcuts": []}));
+    assert_eq!(s, Settings::default());
+    assert_eq!(fields(&warnings), vec!["shortcuts"]);
+}
+
+#[test]
+fn patch_bindings_absent_keeps_present_replaces_wholesale() {
+    let mut base = Settings::default();
+    base.shortcuts.bindings = bindings(&[("fetch", Some("Mod+G")), ("pull", None)]);
+
+    let kept = base
+        .apply(&patch(json!({"appearance": {"theme": "dark"}})))
+        .unwrap();
+    assert_eq!(kept.shortcuts.bindings, base.shortcuts.bindings);
+
+    let replaced = base
+        .apply(&patch(
+            json!({"shortcuts": {"bindings": {"push": "Mod+U"}}}),
+        ))
+        .unwrap();
+    assert_eq!(
+        replaced.shortcuts.bindings,
+        bindings(&[("push", Some("Mod+U"))])
+    );
+
+    let emptied = base
+        .apply(&patch(json!({"shortcuts": {"bindings": {}}})))
+        .unwrap();
+    assert!(emptied.shortcuts.bindings.is_empty());
+}
+
+#[test]
+fn patch_bindings_trims_and_drops_blank() {
+    let next = Settings::default()
+        .apply(&patch(
+            json!({"shortcuts": {"bindings": {"fetch": " Mod+G ", "pull": ""}}}),
+        ))
+        .unwrap();
+    assert_eq!(
+        next.shortcuts.bindings,
+        bindings(&[("fetch", Some("Mod+G"))])
+    );
+}

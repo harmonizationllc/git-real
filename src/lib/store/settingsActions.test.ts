@@ -172,3 +172,22 @@ describe("clone and updates setters", () => {
     ]);
   });
 });
+
+describe("shortcut setters", () => {
+  it("setShortcutBindings sends the whole map under shortcuts.bindings", async () => {
+    actions.setShortcutBindings({ fetch: "Mod+Alt+F", palette: null });
+    expect(settings().shortcuts.bindings).toEqual({ fetch: "Mod+Alt+F", palette: null });
+    expect(await patches()).toEqual([
+      { shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } },
+    ]);
+  });
+
+  it("setShortcutBindings replaces the map wholesale, dropping keys left out", async () => {
+    actions.setShortcutBindings({ fetch: "Mod+G" });
+    await vi.advanceTimersByTimeAsync(300);
+    actions.setShortcutBindings({ pull: "Mod+U" });
+    await vi.advanceTimersByTimeAsync(300);
+    await useSettings.getState().flush();
+    expect(settings().shortcuts.bindings).toEqual({ pull: "Mod+U" });
+  });
+});

@@ -52,6 +52,7 @@ const defaultSettings: Settings = {
     pullRequestsHeight: null,
   },
   updates: { checkOnStartup: true },
+  shortcuts: { bindings: {} },
   window: { width: 1280, height: 800, maximized: false },
 };
 

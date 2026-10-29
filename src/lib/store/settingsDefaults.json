@@ -36,6 +36,9 @@
   "updates": {
     "checkOnStartup": true
   },
+  "shortcuts": {
+    "bindings": {}
+  },
   "window": {
     "width": 1280,
     "height": 800,
