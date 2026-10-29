@@ -407,6 +407,11 @@ lint`, `npm run typecheck`.
 4. `Ctrl+/` → `Customize…` lands in the section.
 5. Reset all to defaults → every Reset disappears; the file's `bindings`
    is `{}`.
+6. While a row is listening, press bare `Space` and bare `Enter`: the error
+   line shows and no click re-triggers the button (WebKitGTK keyup
+   activation).
+7. With the dialog at its default size, the four three-column tables fit
+   without horizontal overflow on COSMIC.
 
 ## 9. Builder's calls (the owner skipped the questions)
 
