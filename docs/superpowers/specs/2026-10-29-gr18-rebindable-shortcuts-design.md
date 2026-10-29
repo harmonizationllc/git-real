@@ -332,6 +332,17 @@ and cancels through `blur`.
 | Hand edit: an entry that is a number/object | that entry dropped with a warning, rest kept                                                              |
 | Pressed chord outside the token set         | ignored, keep listening                                                                                   |
 
+### Known limits
+
+- Display follows the physical key (`e.code`), so on AZERTY, Dvorak or QWERTZ
+  layouts the shown letter can differ from the keycap pressed. This is the
+  builder's call in §9.3: bindings stay stable across layouts.
+- On macOS, Option+letter chords compete with accented-character input.
+- A row that is unbound only because another id's hand-edited override claimed
+  its default shows `Unbound` with no `Reset`. The dialog never produces this
+  state. Recovery is pressing the chord on that row and choosing `Replace`, or
+  `Reset all`.
+
 ## 8. Testing
 
 Tests first, by the test role; the gate is the usual one: `cargo test
@@ -419,3 +430,20 @@ lint`, `npm run typecheck`.
 - Whether `useEffectiveBindings` memoises with `useMemo` or a module-level
   cache keyed on the bindings object.
 - Test fixtures and helper names.
+
+## 11. Rulings during the build (2026-10-29)
+
+- Tab while listening is let through, so focus moves and the blur cancels the
+  capture. §6 wins over the plan's "preventDefault on every keydown".
+- Escape in the conflict phase cancels the conflict, is stopped before it
+  reaches the dialog, and returns focus to the row's chord button.
+- `Replace`, `Cancel`, `Reset` and `Reset all` return focus to a chord button;
+  `Reset all` focuses the first row's.
+- The chord button calls `focus()` on click, because WKWebView does not focus
+  buttons on a mouse click.
+- In the commit editor, a modifier-decorated Enter (Ctrl, Meta or Alt) that is
+  not the commit chord is left to the window listeners. Shift+Enter keeps its
+  behaviour.
+- The chord button keeps its accessible name and exposes the current chord, or
+  `Unbound`, through `aria-describedby`.
+- The `Replace`/`Cancel` pair is grouped under the label `Shortcut conflict`.
