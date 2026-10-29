@@ -88,7 +88,16 @@ describe("SettingsDialog sections", () => {
   it("renders the sections in order with their headings", async () => {
     await setup();
     const names = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(names).toEqual(["Appearance", "Diff", "Clone", "Tools", "Git", "File", "About"]);
+    expect(names).toEqual([
+      "Appearance",
+      "Diff",
+      "Clone",
+      "Tools",
+      "Git",
+      "Keyboard shortcuts",
+      "File",
+      "About",
+    ]);
   });
 
   it("renders with role=dialog and heading Settings", async () => {
@@ -548,6 +557,16 @@ describe("SettingsDialog section focus", () => {
   it('section="file" focuses the File section', async () => {
     await setup({ section: "file" });
     expect(screen.getByRole("button", { name: "Show in folder" })).toHaveFocus();
+  });
+
+  it('renders the Keyboard shortcuts section after Git and focuses it for section="shortcuts"', async () => {
+    await setup({ section: "shortcuts" });
+    expect(
+      screen.getByRole("heading", { name: "Keyboard shortcuts", level: 3 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Change shortcut for Command palette" }),
+    ).toHaveFocus();
   });
 
   it("focuses About for section about", async () => {

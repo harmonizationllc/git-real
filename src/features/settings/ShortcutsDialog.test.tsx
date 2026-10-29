@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../../lib/ipc";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
+import { useShell } from "../../lib/store/shell";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 
@@ -158,5 +159,15 @@ describe("ShortcutsDialog effective bindings", () => {
     const palette = shortcutCell("Application", "Command palette");
     expect(palette).toHaveTextContent(/^Unbound$/);
     expect(palette.querySelector("kbd")).toBeNull();
+  });
+});
+
+// Contract (GR-18): Customize… jumps to the Keyboard shortcuts section of Settings.
+describe("ShortcutsDialog Customize…", () => {
+  it("Customize… opens Settings at the shortcuts section", () => {
+    useShell.setState({ dialog: { kind: "shortcuts" } });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Customize…" }));
+    expect(useShell.getState().dialog).toEqual({ kind: "settings", section: "shortcuts" });
   });
 });

@@ -4,6 +4,7 @@ import { useRestoreFocus } from "../../components/useRestoreFocus";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
 import type { EffectiveBindings, ShortcutGroup } from "../../lib/shortcuts";
 import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
+import { useShell } from "../../lib/store/shell";
 import styles from "./ShortcutsDialog.module.css";
 
 export interface ShortcutsDialogProps {
@@ -32,6 +33,16 @@ function rowsFor(group: ShortcutGroup, bindings: EffectiveBindings): Row[] {
     return { label: s.label, parts: keys === null ? null : formatKeyParts(keys) };
   });
   return group === "Navigation" ? [...rows, ...STATIC_NAVIGATION] : rows;
+}
+
+/** A chord's `<kbd>` parts, or `Unbound` when `parts` is `null`. */
+export function KeyParts({ parts }: { parts: string[] | null }) {
+  if (parts === null) return <span className={styles.unbound}>Unbound</span>;
+  return parts.map((part, i) => (
+    <kbd key={i} className={styles.kbd}>
+      {part}
+    </kbd>
+  ));
 }
 
 /** The reference of every keyboard shortcut, grouped into one table per group. */
@@ -78,15 +89,7 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
                 <tr key={row.label}>
                   <td>{row.label}</td>
                   <td className={styles.keys}>
-                    {row.parts === null ? (
-                      <span className={styles.unbound}>Unbound</span>
-                    ) : (
-                      row.parts.map((part, i) => (
-                        <kbd key={i} className={styles.kbd}>
-                          {part}
-                        </kbd>
-                      ))
-                    )}
+                    <KeyParts parts={row.parts} />
                   </td>
                 </tr>
               ))}
@@ -94,6 +97,12 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
           </table>
         ))}
         <div className={styles.actions}>
+          <button
+            type="button"
+            onClick={() => useShell.getState().open({ kind: "settings", section: "shortcuts" })}
+          >
+            Customize…
+          </button>
           <button type="button" onClick={onClose}>
             Close
           </button>

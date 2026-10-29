@@ -19,6 +19,7 @@ import { setDiffFontFamily, setDiffFontSize, setTheme } from "../../lib/store/se
 import { useShell } from "../../lib/store/shell";
 import type { SettingsSection } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
+import { ShortcutSettings } from "./ShortcutSettings";
 import { TextSetting } from "./TextSetting";
 import styles from "./SettingsDialog.module.css";
 
@@ -84,6 +85,7 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
         <CloneSettings />
         <ToolsSettings />
         <GitSettings />
+        <ShortcutSettings />
         <FileSettings />
         <AboutSettings />
         <div className={styles.actions}>
