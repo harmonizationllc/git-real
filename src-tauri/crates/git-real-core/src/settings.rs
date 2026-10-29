@@ -13,6 +13,7 @@
 //!
 //! Both run the same [`Settings::normalise`] so clamps and trims cannot drift.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::de::DeserializeOwned;
@@ -47,6 +48,7 @@ pub struct Settings {
     pub diff: DiffSettings,
     pub layout: LayoutSettings,
     pub updates: UpdateSettings,
+    pub shortcuts: ShortcutSettings,
     pub window: WindowGeometry,
 }
 
@@ -146,6 +148,16 @@ impl Default for UpdateSettings {
     }
 }
 
+/// Keyboard-shortcut overrides, keyed by shortcut id. A string is a chord, a
+/// `null` means the shortcut is unbound, and an absent id keeps its built-in
+/// default. Rust checks the shape only: the chord grammar and the set of known
+/// ids belong to the front end, so unknown ids are kept as written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShortcutSettings {
+    pub bindings: BTreeMap<String, Option<String>>,
+}
+
 /// The main window's size in logical px, and whether it is maximised.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -240,6 +252,8 @@ pub struct SettingsPatch {
     pub layout: Option<LayoutPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updates: Option<UpdatesPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shortcuts: Option<ShortcutsPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window: Option<WindowPatch>,
 }
@@ -356,6 +370,14 @@ pub struct LayoutPatch {
 pub struct UpdatesPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_on_startup: Option<bool>,
+}
+
+/// A present `bindings` replaces the whole map; an absent one keeps it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShortcutsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<BTreeMap<String, Option<String>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -482,6 +504,21 @@ impl Settings {
                 *height = Some(bounded(h, SECTION_HEIGHT_MIN, u32::MAX, field, warnings));
             }
         }
+        self.shortcuts.bindings.retain(|id, chord| {
+            let Some(raw) = chord else { return true };
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                warnings.push(SettingsWarning::new(
+                    &format!("shortcuts.bindings.{id}"),
+                    "blank; dropped".to_owned(),
+                ));
+                return false;
+            }
+            if trimmed.len() != raw.len() {
+                *raw = trimmed.to_owned();
+            }
+            true
+        });
         let window = self.window.clone().clamp_to_min();
         if window != self.window {
             warnings.push(SettingsWarning::new(
@@ -551,7 +588,7 @@ fn bounded(
 
 // --- Load mode ----------------------------------------------------------------
 
-const SECTIONS: [&str; 8] = [
+const SECTIONS: [&str; 9] = [
     "git",
     "clone",
     "tools",
@@ -559,6 +596,7 @@ const SECTIONS: [&str; 8] = [
     "diff",
     "layout",
     "updates",
+    "shortcuts",
     "window",
 ];
 
@@ -698,6 +736,9 @@ impl Settings {
                     &mut w,
                 ),
             },
+            shortcuts: ShortcutSettings {
+                bindings: read_bindings(v, &mut w),
+            },
             window: WindowGeometry {
                 width: leaf(v, "window", "width", d.window.width, &mut w),
                 height: leaf(v, "window", "height", d.window.height, &mut w),
@@ -708,6 +749,39 @@ impl Settings {
         let settings = read.drop_relative_paths(&mut w).normalise(&mut w);
         (settings, w)
     }
+}
+
+/// Reads `shortcuts.bindings`. A missing section or key is the empty map
+/// silently; a `bindings` that is not an object is the empty map with one
+/// warning; an entry that is neither a string nor `null` is dropped with a
+/// warning on `shortcuts.bindings.<id>`.
+fn read_bindings(
+    obj: &Value,
+    warnings: &mut Vec<SettingsWarning>,
+) -> BTreeMap<String, Option<String>> {
+    let Some(raw) = obj.get("shortcuts").and_then(|s| s.get("bindings")) else {
+        return BTreeMap::new();
+    };
+    let Some(entries) = raw.as_object() else {
+        warnings.push(SettingsWarning::new(
+            "shortcuts.bindings",
+            "not an object; using the defaults".to_owned(),
+        ));
+        return BTreeMap::new();
+    };
+    let mut bindings = BTreeMap::new();
+    for (id, value) in entries {
+        match Option::<String>::deserialize(value) {
+            Ok(chord) => {
+                bindings.insert(id.clone(), chord);
+            }
+            Err(err) => warnings.push(SettingsWarning::new(
+                &format!("shortcuts.bindings.{id}"),
+                format!("{err}; dropped"),
+            )),
+        }
+    }
+    bindings
 }
 
 /// Reads `obj.section.key` as `T`. Missing (or a non-object section) is the
@@ -793,6 +867,9 @@ impl Settings {
         }
         if let Some(p) = &patch.updates {
             set(&mut next.updates.check_on_startup, &p.check_on_startup);
+        }
+        if let Some(p) = &patch.shortcuts {
+            set(&mut next.shortcuts.bindings, &p.bindings);
         }
         if let Some(p) = &patch.window {
             set(&mut next.window.width, &p.width);

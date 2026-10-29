@@ -172,3 +172,13 @@ describe("clone and updates setters", () => {
     ]);
   });
 });
+
+describe("shortcut setters", () => {
+  it("setShortcutBindings sends the whole map under shortcuts.bindings", async () => {
+    actions.setShortcutBindings({ fetch: "Mod+Alt+F", palette: null });
+    expect(settings().shortcuts.bindings).toEqual({ fetch: "Mod+Alt+F", palette: null });
+    expect(await patches()).toEqual([
+      { shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } },
+    ]);
+  });
+});

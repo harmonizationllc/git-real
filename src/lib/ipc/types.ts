@@ -143,6 +143,12 @@ export type DiffMode = "split" | "unified";
 /** Which of a hosted repository's clone URLs the clone dialog fills in. */
 export type CloneUrlForm = "https" | "ssh";
 
+/**
+ * Shortcut overrides by shortcut id: a string is a chord, `null` means unbound,
+ * an absent id keeps its default. Rust checks the shape only.
+ */
+export type ShortcutBindings = Record<string, string | null>;
+
 /** Every user preference, as Rust stores it in settings.json (version 2, nested). */
 export interface Settings {
   git: { executable: string | null };
@@ -164,6 +170,7 @@ export interface Settings {
     pullRequestsHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
+  shortcuts: { bindings: ShortcutBindings };
   window: { width: number; height: number; maximized: boolean };
 }
 
