@@ -286,8 +286,14 @@ fn checkout_remote_case_variant_of_local_branch_is_case_collision() {
     );
     assert_eq!(head_ref(&path), head);
     let repo = Repository::open(&path).unwrap();
-    assert!(repo.find_reference("refs/heads/Alpha").is_ok());
-    assert!(repo.find_reference("refs/heads/alpha").is_err());
+    // `find_reference` would find `Alpha` for `alpha` on a case-insensitive filesystem, so compare listed names instead.
+    let names: Vec<String> = repo
+        .branches(Some(BranchType::Local))
+        .unwrap()
+        .map(|b| b.unwrap().0.name().unwrap().unwrap().to_owned())
+        .collect();
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
 }
 
 #[test]
