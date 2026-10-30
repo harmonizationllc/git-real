@@ -28,6 +28,154 @@ fn validate_url(url: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Escapes the POSIX-regex metacharacters of `s` for a config key pattern.
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if ".^$*+?()[]{}|\\".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `Config::set_multivar` writes its value verbatim (unlike `set_str`), so a
+/// backslash or quote has to be escaped by hand; libgit2 still adds the
+/// surrounding quotes when the value needs them.
+fn config_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Variable names of `remote.<name>.*` entries, skipping a dotted sibling such
+/// as `remote.<name>.bar.url` (a remote called `<name>.bar`).
+fn remote_entries(config: &git2::Config, name: &str) -> Result<Vec<(String, String)>, GitError> {
+    let prefix = format!("remote.{name}.");
+    let mut out = Vec::new();
+    let mut iter = config.entries(Some(&format!("^remote\\.{}\\.", regex_escape(name))))?;
+    while let Some(entry) = iter.next() {
+        let entry = entry?;
+        if let (Some(n), Some(v)) = (entry.name(), entry.value())
+            && let Some(key) = n.strip_prefix(&prefix)
+            && !key.contains('.')
+        {
+            out.push((key.to_owned(), v.to_owned()));
+        }
+    }
+    Ok(out)
+}
+
+/// Renames a remote without `Repository::remote_rename`: libgit2 copies each
+/// `remote.<old>.*` value back into the config unescaped, so a backslash URL
+/// (`C:\srv\a.git`) corrupts `.git/config` ("invalid escape") and a second
+/// fetch refspec trips its multivar check (GR-35). Like `git remote rename`,
+/// this copies every entry through `Config::set_str` / `set_multivar`
+/// (escaped, every fetch refspec into `refs/remotes/<old>/` rewritten), moves
+/// the tracking refs, repoints `branch.*.remote`, `branch.*.pushRemote` and
+/// `remote.pushDefault`, then drops the old section. Leftover
+/// `remote.<new>.*` keys without a URL are refused as `RemoteExists`, so they
+/// are never merged into the renamed remote. Stale `refs/remotes/<new>/*` refs
+/// are overwritten, as `git remote rename` does. Known limit: an empty
+/// `[remote "<old>"]` header stays in `.git/config` (git2 cannot drop a section).
+fn rename_remote(repo: &git2::Repository, old: &str, new: &str) -> Result<(), GitError> {
+    let mut config = repo.config()?.open_level(git2::ConfigLevel::Local)?;
+    if !remote_entries(&config, new)?.is_empty() {
+        return Err(GitError::RemoteExists(new.to_owned()));
+    }
+    let entries = remote_entries(&config, old)?;
+    let old_dst = format!(":refs/remotes/{old}/");
+    let new_dst = format!(":refs/remotes/{new}/");
+
+    let mut seen = std::collections::HashSet::new();
+    for (key, value) in &entries {
+        let value = if key == "fetch" {
+            value.replace(&old_dst, &new_dst)
+        } else {
+            value.clone()
+        };
+        let target = format!("remote.{new}.{key}");
+        if seen.insert(key.as_str()) {
+            config.set_str(&target, &value)?;
+        } else {
+            // An anchor after a literal never matches, even an empty value, so
+            // this always appends.
+            config.set_multivar(&target, "a^", &config_escape(&value))?;
+        }
+    }
+
+    let old_ref_prefix = format!("refs/remotes/{old}/");
+    let mut direct = Vec::new();
+    let mut symbolic = Vec::new();
+    for reference in repo.references()? {
+        let reference = reference?;
+        let Some(name) = reference.name() else {
+            continue;
+        };
+        let Some(rest) = name.strip_prefix(&old_ref_prefix) else {
+            continue;
+        };
+        let new_name = format!("refs/remotes/{new}/{rest}");
+        match reference.symbolic_target() {
+            Some(target) => symbolic.push((
+                name.to_owned(),
+                new_name,
+                target.replacen(&old_ref_prefix, &format!("refs/remotes/{new}/"), 1),
+            )),
+            None => direct.push((name.to_owned(), new_name)),
+        }
+    }
+    for (old_name, new_name) in direct {
+        repo.find_reference(&old_name)?
+            .rename(&new_name, true, "remote rename")?;
+    }
+    for (old_name, new_name, target) in symbolic {
+        repo.reference_symbolic(&new_name, &target, true, "remote rename")?;
+        repo.find_reference(&old_name)?.delete()?;
+    }
+
+    let mut branches = Vec::new();
+    {
+        let mut iter = config.entries(Some(r"^branch\..*\.(remote|pushremote)$"))?;
+        while let Some(entry) = iter.next() {
+            let entry = entry?;
+            if let (Some(n), Some(v)) = (entry.name(), entry.value())
+                && v == old
+            {
+                branches.push(n.to_owned());
+            }
+        }
+    }
+    for key in branches {
+        config.set_str(&key, new)?;
+    }
+    if config
+        .get_string("remote.pushdefault")
+        .is_ok_and(|v| v == old)
+    {
+        config.set_str("remote.pushdefault", new)?;
+    }
+
+    for (key, _) in &entries {
+        // Ignore NotFound: a multivar key is removed whole on its first pass.
+        match config.remove_multivar(&format!("remote.{old}.{key}"), ".*") {
+            Err(e) if is_not_found(&e) => {}
+            result => result?,
+        }
+    }
+    Ok(())
+}
+
 impl RepoSession {
     /// Every remote, sorted by name, with the URLs as configured (not rewritten).
     pub fn list_remotes(&self) -> Result<Vec<RemoteInfo>, GitError> {
@@ -66,8 +214,8 @@ impl RepoSession {
         Ok(())
     }
 
-    /// Renames first (git2 moves the tracking refs and `branch.*.remote`), then
-    /// sets the URL and the push URL (`None` clears it).
+    /// Renames first (see `rename_remote`), then sets the URL and the push URL
+    /// (`None` clears it).
     pub fn update_remote(
         &self,
         name: &str,
@@ -84,7 +232,7 @@ impl RepoSession {
             if repo.find_remote(new_name).is_ok() {
                 return Err(GitError::RemoteExists(new_name.to_owned()));
             }
-            repo.remote_rename(name, new_name)?;
+            rename_remote(repo, name, new_name)?;
         }
         repo.remote_set_url(new_name, url)?;
         match repo.remote_set_pushurl(new_name, push_url) {

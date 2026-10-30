@@ -31,7 +31,17 @@ fn fx() -> Fx {
     let (d2, bare) = common::temp_bare_clone(&path);
     common::add_remote_and_fetch(&path, &bare, &head);
     let d3 = tempfile::tempdir().unwrap();
-    common::run_git_ok(d3.path(), &["clone", "-q", bare.to_str().unwrap(), "other"]);
+    common::run_git_ok(
+        d3.path(),
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "other",
+        ],
+    );
     let other = d3.path().join("other");
     common::configure_identity(&other);
     let session = RepoSession::open(&path).unwrap();
@@ -1205,8 +1215,65 @@ fn update_remote_sets_the_urls_and_none_clears_the_push_url() {
     );
 }
 
-// GR-35: git2 writes an unescaped C:\ URL into .git/config on rename.
-#[cfg(unix)]
+#[test]
+fn update_remote_rename_keeps_backslash_url() {
+    let (_d, path, session) = plain();
+    session
+        .add_remote("origin", r"C:\srv\a.git", Some(r"\\host\share\p.git"))
+        .unwrap();
+    session
+        .update_remote(
+            "origin",
+            "upstream",
+            r"C:\srv\a.git",
+            Some(r"\\host\share\p.git"),
+        )
+        .unwrap();
+    assert_eq!(
+        session.list_remotes().unwrap(),
+        [info(
+            "upstream",
+            r"C:\srv\a.git",
+            Some(r"\\host\share\p.git")
+        )]
+    );
+    let repo = Repository::open(&path).unwrap();
+    repo.config().unwrap().snapshot().unwrap();
+}
+
+#[test]
+fn update_remote_rename_keeps_extra_refspecs() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_multivar("remote.origin.fetch", "^$", "+refs/tags/*:refs/tags/*")
+            .unwrap();
+        cfg.set_multivar("remote.origin.push", "^$", "refs/heads/*:refs/heads/*")
+            .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    let multi = |key: &str| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut it = cfg.multivar(key, None).unwrap();
+        while let Some(e) = it.next() {
+            out.push(e.unwrap().value().unwrap().to_owned());
+        }
+        out
+    };
+    let fetch = multi("remote.upstream.fetch");
+    assert!(fetch.contains(&"+refs/heads/*:refs/remotes/upstream/*".to_owned()));
+    assert!(fetch.contains(&"+refs/tags/*:refs/tags/*".to_owned()));
+    assert_eq!(multi("remote.upstream.push"), ["refs/heads/*:refs/heads/*"]);
+    let mut entries = cfg.entries(Some(r"remote\.origin\..*")).unwrap();
+    assert!(entries.next().is_none());
+}
+
 #[test]
 fn update_remote_rename_moves_tracking_refs_and_upstream_config() {
     let (_d1, _d2, path, head, session) = tracked();
@@ -1232,6 +1299,273 @@ fn update_remote_rename_moves_tracking_refs_and_upstream_config() {
         session.list_remotes().unwrap(),
         [info("upstream", &url, None)]
     );
+}
+
+fn multivar(cfg: &git2::Config, key: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = cfg.multivar(key, None).unwrap();
+    while let Some(e) = it.next() {
+        out.push(e.unwrap().value().unwrap().to_owned());
+    }
+    out
+}
+
+#[test]
+fn update_remote_rename_keeps_special_characters_in_repeated_keys() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    let first = r"C:\srv\a";
+    let second = r#"+refs\"q" b\\:refs/x/b"#;
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_multivar("remote.origin.note", "^$", r"C:\\srv\\a")
+            .unwrap();
+        cfg.set_multivar(
+            "remote.origin.note",
+            "^$",
+            r#""+refs\\\"q\" b\\\\:refs/x/b""#,
+        )
+        .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    let notes = multivar(&cfg, "remote.upstream.note");
+    assert_eq!(notes, [first, second]);
+}
+
+#[test]
+fn update_remote_rename_leaves_a_dotted_sibling_remote_alone() {
+    let (_d, path, session) = plain();
+    session.add_remote("foo", "/srv/a.git", None).unwrap();
+    session.add_remote("foo.bar", "/srv/b.git", None).unwrap();
+    session
+        .update_remote("foo", "new", "/srv/a.git", None)
+        .unwrap();
+    assert_eq!(
+        session.list_remotes().unwrap(),
+        [
+            info("foo.bar", "/srv/b.git", None),
+            info("new", "/srv/a.git", None)
+        ]
+    );
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    assert_eq!(
+        multivar(&cfg, "remote.foo.bar.fetch"),
+        ["+refs/heads/*:refs/remotes/foo.bar/*"]
+    );
+}
+
+#[test]
+fn update_remote_rename_rewrites_every_tracking_refspec() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_multivar(
+            "remote.origin.fetch",
+            "^$",
+            "+refs/heads/main:refs/remotes/origin/main",
+        )
+        .unwrap();
+        cfg.set_multivar(
+            "remote.origin.fetch",
+            "^$",
+            "+refs/pull/*:refs/remotes/origin/pr/*",
+        )
+        .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    assert_eq!(
+        multivar(&cfg, "remote.upstream.fetch"),
+        [
+            "+refs/heads/*:refs/remotes/upstream/*",
+            "+refs/heads/main:refs/remotes/upstream/main",
+            "+refs/pull/*:refs/remotes/upstream/pr/*"
+        ]
+    );
+}
+
+#[test]
+fn update_remote_rename_repoints_push_remote_and_push_default() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    session.add_remote("other", "/srv/b.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_str("remote.pushDefault", "origin").unwrap();
+        cfg.set_str("branch.main.pushRemote", "origin").unwrap();
+        cfg.set_str("branch.dev.pushRemote", "other").unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    assert_eq!(cfg.get_string("remote.pushDefault").unwrap(), "upstream");
+    assert_eq!(
+        cfg.get_string("branch.main.pushRemote").unwrap(),
+        "upstream"
+    );
+    assert_eq!(cfg.get_string("branch.dev.pushRemote").unwrap(), "other");
+}
+
+#[test]
+fn update_remote_rename_refuses_orphan_keys_of_the_new_name() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_str(
+            "remote.upstream.fetch",
+            "+refs/heads/*:refs/remotes/upstream/*",
+        )
+        .unwrap();
+    }
+    assert!(matches!(
+        session.update_remote("origin", "upstream", "/srv/a.git", None),
+        Err(GitError::RemoteExists(_))
+    ));
+    assert_eq!(
+        session.list_remotes().unwrap(),
+        [info("origin", "/srv/a.git", None)]
+    );
+}
+
+#[test]
+fn update_remote_rename_overwrites_stale_refs_under_the_new_name() {
+    // `git remote rename` and libgit2 both overwrite a leftover
+    // refs/remotes/<new>/*, so the rename completes instead of half-renaming.
+    let (_d1, _d2, path, head, session) = tracked();
+    let url = session.list_remotes().unwrap()[0].fetch_url.clone();
+    let tip = {
+        let repo = Repository::open(&path).unwrap();
+        let tip = repo
+            .find_reference(&format!("refs/remotes/origin/{head}"))
+            .unwrap()
+            .target()
+            .unwrap();
+        let stale = repo
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .parents()
+            .next();
+        let other = match stale {
+            Some(parent) => parent.id(),
+            None => {
+                let sig = git2::Signature::now("T", "t@example.com").unwrap();
+                let tree = repo
+                    .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+                    .unwrap();
+                repo.commit(None, &sig, &sig, "stale", &tree, &[]).unwrap()
+            }
+        };
+        repo.reference(
+            &format!("refs/remotes/upstream/{head}"),
+            other,
+            true,
+            "stale",
+        )
+        .unwrap();
+        tip
+    };
+    session
+        .update_remote("origin", "upstream", &url, None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    assert_eq!(
+        repo.find_reference(&format!("refs/remotes/upstream/{head}"))
+            .unwrap()
+            .target(),
+        Some(tip)
+    );
+    assert!(
+        repo.find_reference(&format!("refs/remotes/origin/{head}"))
+            .is_err()
+    );
+    assert_eq!(
+        session.list_remotes().unwrap(),
+        [info("upstream", &url, None)]
+    );
+}
+
+#[test]
+fn update_remote_rename_appends_after_an_empty_repeated_value() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_str("remote.origin.note", "").unwrap();
+        cfg.set_multivar("remote.origin.note", "a^", "second")
+            .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    assert_eq!(multivar(&cfg, "remote.upstream.note"), ["", "second"]);
+}
+
+#[test]
+fn update_remote_rename_escapes_backspace_in_repeated_values() {
+    let (_d, path, session) = plain();
+    session.add_remote("origin", "/srv/a.git", None).unwrap();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let mut cfg = repo.config().unwrap();
+        cfg.set_str("remote.origin.note", "one").unwrap();
+        cfg.set_multivar("remote.origin.note", "a^", "a\u{8}b")
+            .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", "/srv/a.git", None)
+        .unwrap();
+    let text = std::fs::read_to_string(path.join(".git/config")).unwrap();
+    assert!(!text.contains('\u{8}'), "raw backspace in config: {text:?}");
+    let repo = Repository::open(&path).unwrap();
+    let cfg = repo.config().unwrap();
+    assert_eq!(multivar(&cfg, "remote.upstream.note"), ["one", "a\u{8}b"]);
+}
+
+#[test]
+fn update_remote_rename_retargets_the_symbolic_remote_head() {
+    let (_d1, _d2, path, head, session) = tracked();
+    let url = session.list_remotes().unwrap()[0].fetch_url.clone();
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            &format!("refs/remotes/origin/{head}"),
+            true,
+            "test",
+        )
+        .unwrap();
+    }
+    session
+        .update_remote("origin", "upstream", &url, None)
+        .unwrap();
+    let repo = Repository::open(&path).unwrap();
+    let new_head = repo.find_reference("refs/remotes/upstream/HEAD").unwrap();
+    assert_eq!(
+        new_head.symbolic_target(),
+        Some(format!("refs/remotes/upstream/{head}").as_str())
+    );
+    assert!(repo.find_reference("refs/remotes/origin/HEAD").is_err());
 }
 
 #[test]

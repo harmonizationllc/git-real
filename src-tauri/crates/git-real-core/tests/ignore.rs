@@ -381,3 +381,20 @@ fn add_to_gitignore_line_break_in_filename_writes_nothing() {
     let _ = session(&path).add_to_gitignore("a\nb.txt");
     assert!(!path.join(".gitignore").exists());
 }
+
+#[test]
+fn add_to_gitignore_ignores_names_with_glob_and_comment_prefixes() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    for name in ["#x.txt", "!x.txt", "[a].txt", "a.txt"] {
+        common::write_file(&path, name, "noise\n");
+    }
+    for name in ["#x.txt", "!x.txt", "[a].txt"] {
+        session(&path).add_to_gitignore(name).expect("ignore");
+    }
+    let status = session(&path).status().expect("status");
+    let listed: Vec<_> = status.entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(listed.contains(&"a.txt"), "{listed:?}");
+    for name in ["#x.txt", "!x.txt", "[a].txt"] {
+        assert!(!listed.contains(&name), "{name} still listed: {listed:?}");
+    }
+}

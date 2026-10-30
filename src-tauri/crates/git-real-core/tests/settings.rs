@@ -1,15 +1,11 @@
 //! Settings v2: the nested shape, lenient per-field loading (Load mode), the
 //! nested patch (Patch mode) and the versioned file codec.
 
-// The cfg(unix) imports serve only the GR-36 unix-gated tests below.
-#[cfg(unix)]
 use std::path::PathBuf;
 
-#[cfg(unix)]
-use git_real_core::settings::SettingsError;
 use git_real_core::settings::{
-    CloneUrlForm, DiffMode, SETTINGS_VERSION, Settings, SettingsFile, SettingsFileError,
-    SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
+    CloneUrlForm, DiffMode, SETTINGS_VERSION, Settings, SettingsError, SettingsFile,
+    SettingsFileError, SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
 };
 use serde_json::{Value, json};
 
@@ -22,6 +18,24 @@ const TOKENS_CSS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../src/styles/tokens.css"
 );
+
+/// An absolute path that does not exist, shaped for the host: a bare `/x` is
+/// not absolute on Windows.
+fn missing_abs() -> &'static str {
+    if cfg!(windows) {
+        r"C:\definitely\missing"
+    } else {
+        "/definitely/missing"
+    }
+}
+
+fn missing_git() -> &'static str {
+    if cfg!(windows) {
+        r"C:\definitely\missing\git"
+    } else {
+        "/definitely/missing/git"
+    }
+}
 
 fn patch(json: Value) -> SettingsPatch {
     serde_json::from_value(json).unwrap()
@@ -252,8 +266,6 @@ fn lenient_wrong_type_falls_back_per_field() {
 /// Load mode cannot fail: every relative form of either path leaf is dropped
 /// to the default with one warning per leaf, and a missing absolute path is
 /// kept (Load never checks existence).
-// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
-#[cfg(unix)]
 #[test]
 fn lenient_relative_paths_never_panic() {
     for rel in ["rel/dir", "", ".", "..", "./git", "~/git"] {
@@ -271,17 +283,11 @@ fn lenient_relative_paths_never_panic() {
     }
 
     let (s, warnings) = Settings::from_json_lenient(&json!({
-        "clone": {"defaultDir": "/definitely/missing"},
-        "git": {"executable": "/definitely/missing/git"}
+        "clone": {"defaultDir": missing_abs()},
+        "git": {"executable": missing_git()}
     }));
-    assert_eq!(
-        s.clone.default_dir,
-        Some(PathBuf::from("/definitely/missing"))
-    );
-    assert_eq!(
-        s.git.executable,
-        Some(PathBuf::from("/definitely/missing/git"))
-    );
+    assert_eq!(s.clone.default_dir, Some(PathBuf::from(missing_abs())));
+    assert_eq!(s.git.executable, Some(PathBuf::from(missing_git())));
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
@@ -338,20 +344,16 @@ fn patch_non_nullable_leaf_absent_keeps() {
     assert_eq!(set.diff.mode, DiffMode::Split);
 }
 
-// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
-#[cfg(unix)]
 #[test]
 fn apply_rejects_a_missing_clone_dir_and_a_relative_git_path() {
     let base = Settings::default();
 
     let err = base
-        .apply(&patch(
-            json!({"clone": {"defaultDir": "/definitely/missing"}}),
-        ))
+        .apply(&patch(json!({"clone": {"defaultDir": missing_abs()}})))
         .unwrap_err();
     assert_eq!(
         err,
-        SettingsError::NotADirectory(PathBuf::from("/definitely/missing"))
+        SettingsError::NotADirectory(PathBuf::from(missing_abs()))
     );
 
     let err = base
@@ -371,14 +373,12 @@ fn apply_rejects_a_missing_clone_dir_and_a_relative_git_path() {
     assert_eq!(ok.clone.default_dir.as_deref(), Some(dir.path()));
 }
 
-// GR-36: /definitely/missing is not absolute on Windows; test data is Unix-shaped.
-#[cfg(unix)]
 #[test]
 fn apply_does_not_recheck_an_unpatched_missing_clone_dir() {
     // A file copied from another machine keeps a dir that does not exist here;
     // changing an unrelated setting must still succeed.
     let mut base = Settings::default();
-    base.clone.default_dir = Some(PathBuf::from("/definitely/missing"));
+    base.clone.default_dir = Some(PathBuf::from(missing_abs()));
     let next = base
         .apply(&patch(json!({"appearance": {"theme": "dark"}})))
         .unwrap();

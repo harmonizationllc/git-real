@@ -6,12 +6,34 @@ use std::path::{Path, PathBuf};
 use git2::{Repository, Signature};
 use tempfile::TempDir;
 
+/// `Repository::init` with `core.autocrlf` pinned to false in the repo's own
+/// config, so a host with system-wide autocrlf=true (Git for Windows) never
+/// changes fixture bytes. Use it for every non-bare fixture repo.
+pub fn init_repo(path: &Path) -> Repository {
+    let repo = Repository::init(path).expect("init repo");
+    repo.config()
+        .expect("config")
+        .set_bool("core.autocrlf", false)
+        .expect("pin core.autocrlf");
+    repo
+}
+
+/// Sets the repo-local `core.autocrlf` to `"true"`, `"input"` or `"false"`.
+pub fn set_autocrlf(path: &Path, value: &str) {
+    Repository::open(path)
+        .expect("open repo")
+        .config()
+        .expect("config")
+        .set_str("core.autocrlf", value)
+        .expect("set core.autocrlf");
+}
+
 /// Creates a temp repo with a single commit containing `README.md`.
 /// The returned `TempDir` must be kept alive for the repo to exist.
 pub fn temp_repo_with_commit() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    let repo = Repository::init(&path).expect("init repo");
+    let repo = init_repo(&path);
 
     std::fs::write(path.join("README.md"), "# fixture\n").expect("write README");
     let mut index = repo.index().expect("open index");
@@ -46,7 +68,7 @@ pub fn temp_bare_clone(src: &Path) -> (TempDir, PathBuf) {
 pub fn temp_repo_with_unsupported_format() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    init_repo(&path);
     let config = path.join(".git").join("config");
     let text = std::fs::read_to_string(&config).expect("read config");
     assert!(text.contains("repositoryformatversion = 0"));
@@ -226,7 +248,7 @@ pub fn run_git_ok(root: &Path, args: &[&str]) -> std::process::Output {
 pub fn temp_repo_unborn() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    init_repo(&path);
     (dir, path)
 }
 
@@ -411,7 +433,7 @@ pub fn commit_tree_at(
 pub fn merge_fixture() -> (TempDir, PathBuf, git2::Oid, git2::Oid, git2::Oid, git2::Oid) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    init_repo(&path);
     let at = signature_at;
     let r = commit_tree_at(
         &path,
@@ -475,7 +497,7 @@ pub fn tag_annotated(path: &Path, name: &str, target: git2::Oid) {
 pub fn rename_fixture() -> (TempDir, PathBuf, Vec<git2::Oid>) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    init_repo(&path);
     let c1 = commit_file(&path, "a.txt", "one\n", "add a");
     let c2 = commit_file(&path, "a.txt", "one\ntwo\n", "modify a");
     let c3 = {

@@ -292,6 +292,7 @@ fn list_separate_git_dir_main_row_is_the_workdir() {
             work.to_str().unwrap(),
         ],
     );
+    common::set_autocrlf(&work, "false");
     common::configure_identity(&work);
     common::commit_file(&work, "a.txt", "a\n", "first");
     let work = common::canonical(&work);

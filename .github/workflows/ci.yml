@@ -76,11 +76,16 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Disable autocrlf (Git for Windows sets it system-wide)
+      - name: Check out sources byte-for-byte (Git for Windows sets autocrlf system-wide)
         run: git config --system core.autocrlf false
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      # The suite must pass under Git for Windows' default (GR-33): the fixtures
+      # pin autocrlf per repository, so the host setting must not matter.
+      - name: Restore Git for Windows' default autocrlf
+        run: git config --system core.autocrlf true
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable

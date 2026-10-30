@@ -7,14 +7,14 @@
 use std::path::{Path, PathBuf};
 
 use git2::build::CheckoutBuilder;
-use git2::{Commit, ErrorCode, Index, IndexAddOption, ObjectType};
+use git2::{Commit, ErrorCode, Index, IndexAddOption, IndexEntry, IndexTime, ObjectType};
 
 use crate::error::GitError;
-use crate::paths::{checked_relative, escape_pathspec};
+use crate::paths::checked_relative;
 use crate::repo::RepoSession;
 
-/// Characters that end a libgit2 pathspec early, so a path containing one
-/// cannot be expressed as a literal pathspec.
+/// Control whitespace that `unstage_paths` rejects. No pathspec is built any
+/// more (it edits index entries); the rejection stays for behaviour stability.
 const PATHSPEC_BREAKS: [char; 5] = ['\n', '\r', '\t', '\x0b', '\x0c'];
 
 impl RepoSession {
@@ -59,7 +59,7 @@ impl RepoSession {
     /// Resets each path's index entry to HEAD (or removes it when unborn).
     ///
     /// A path containing control whitespace is rejected with
-    /// [`GitError::BadSelection`], since it cannot be a literal pathspec.
+    /// [`GitError::BadSelection`], as it always has been.
     pub fn unstage_paths(&self, paths: &[String]) -> Result<(), GitError> {
         if paths.is_empty() {
             return Ok(());
@@ -69,8 +69,7 @@ impl RepoSession {
         let head = self.head_commit()?;
         let tree = head.as_ref().map(Commit::tree).transpose()?;
         for p in &paths {
-            // libgit2 stops a pathspec at these characters (and drops one that
-            // starts with a newline), which would widen the reset.
+            // Kept from when this built a pathspec; see `PATHSPEC_BREAKS`.
             if p.contains(PATHSPEC_BREAKS) {
                 return Err(GitError::BadSelection);
             }
@@ -83,22 +82,43 @@ impl RepoSession {
                 return Err(GitError::PathNotFound(PathBuf::from(p)));
             }
         }
-        let unstaged = match head {
-            Some(commit) => self
-                .repo()
-                .reset_default(
-                    Some(commit.as_object()),
-                    paths.iter().map(|p| escape_pathspec(p)),
-                )
-                .map_err(GitError::from),
-            None => (|| {
-                for p in &paths {
-                    index.remove_path(Path::new(p))?;
+        // Edit the index entries directly: a pathspec cannot name every
+        // path portably (libgit2 on Windows treats `\` as a separator).
+        let unstaged = (|| {
+            for p in &paths {
+                let rel = Path::new(p);
+                for stage in 0..=3 {
+                    match index.remove(rel, stage) {
+                        Ok(()) => {}
+                        Err(e) if e.code() == ErrorCode::NotFound => {}
+                        Err(e) => return Err(e.into()),
+                    }
                 }
-                index.write()?;
-                Ok(())
-            })(),
-        };
+                let head_entry = tree.as_ref().and_then(|t| {
+                    t.get_path(rel)
+                        .ok()
+                        .filter(|e| e.kind() != Some(ObjectType::Tree))
+                });
+                if let Some(e) = head_entry {
+                    index.add(&IndexEntry {
+                        ctime: IndexTime::new(0, 0),
+                        mtime: IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: e.filemode() as u32,
+                        uid: 0,
+                        gid: 0,
+                        file_size: 0,
+                        id: e.id(),
+                        flags: 0,
+                        flags_extended: 0,
+                        path: p.clone().into_bytes(),
+                    })?;
+                }
+            }
+            index.write()?;
+            Ok(())
+        })();
         reload_on_error(&mut index, unstaged)
     }
 
