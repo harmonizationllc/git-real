@@ -353,6 +353,38 @@ fn merge_creates_a_merge_commit_even_when_ff_is_possible() {
     assert_eq!(parents_of_head(&path), [before, tip]);
 }
 
+// With both `Alpha` and `alpha` present on a case-insensitive repo, the exact spelling is merged.
+#[cfg(unix)]
+#[test]
+fn merge_resolves_exact_spelling_when_both_spellings_exist() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path) = common::temp_repo_with_commit();
+    let tip = {
+        let repo = Repository::open(&path).unwrap();
+        let base = repo.head().unwrap().peel_to_commit().unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+        let tree = base.tree().unwrap();
+        let y = repo
+            .commit(None, &sig, &sig, "ahead", &tree, &[&base])
+            .unwrap();
+        repo.branch("Alpha", &base, false).unwrap();
+        repo.reference("refs/heads/alpha", y, false, "test")
+            .unwrap();
+        y
+    };
+    common::set_ignorecase(&path, true);
+    let session = open(&path);
+
+    let outcome = session
+        .merge_branch("alpha", MergeMode::FastForward)
+        .unwrap();
+
+    assert_eq!(outcome, OperationOutcome::Completed);
+    assert_eq!(head_oid(&path), tip);
+}
+
 // Mode FastForward moves the branch pointer and creates no commit.
 #[test]
 fn fast_forward_moves_head_without_a_commit() {

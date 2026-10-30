@@ -145,9 +145,16 @@ impl RepoSession {
         if name.starts_with('-') {
             return Err(GitError::BranchNotFound(name.to_owned()));
         }
-        [BranchType::Local, BranchType::Remote]
-            .into_iter()
-            .find_map(|kind| self.repo().find_branch(name, kind).ok()?.get().target())
+        crate::refs::find_local(self.repo(), name)
+            .ok()
+            .and_then(|b| b.get().target())
+            .or_else(|| {
+                self.repo()
+                    .find_branch(name, BranchType::Remote)
+                    .ok()?
+                    .get()
+                    .target()
+            })
             .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))
     }
 

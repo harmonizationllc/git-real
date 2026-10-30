@@ -8,15 +8,15 @@
 
 use std::path::PathBuf;
 
-use git2::{BranchType, Oid, Reference};
+use git2::{Oid, Reference};
 
 use super::auth::{Credentials, origin_of};
 use super::remotes::Direction;
 use super::run_network;
 use crate::error::GitError;
 use crate::model::CheckoutPrOutcome;
-use crate::refs::is_not_found;
 use crate::refs::switch::{self, SwitchTarget};
+use crate::refs::{find_local, is_not_found, refuse_duplicate_branch};
 use crate::repo::RepoSession;
 
 /// A validated fetch of one ref, ready to run once the session lock is released.
@@ -97,10 +97,13 @@ impl RepoSession {
         let oid = fetched_oid(repo, &fetch.refspec)?
             .ok_or_else(|| GitError::RevisionNotFound("FETCH_HEAD".to_owned()))?;
         let name = format!("pr/{number}");
-        let current = match repo.find_branch(&name, BranchType::Local) {
+        let current = match find_local(repo, &name) {
             Ok(branch) => branch.get().target(),
-            Err(e) if is_not_found(&e) => None,
-            Err(e) => return Err(e.into()),
+            Err(GitError::BranchNotFound(_)) => {
+                refuse_duplicate_branch(repo, &name, None)?;
+                None
+            }
+            Err(e) => return Err(e),
         };
         let (git, workdir) = self.git()?;
         let hex = oid.to_string();

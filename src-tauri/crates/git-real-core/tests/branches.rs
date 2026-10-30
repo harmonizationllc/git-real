@@ -1313,3 +1313,60 @@ fn case_collision_message_names_both_spellings() {
         "a branch named Alpha already exists, and this repository's filesystem does not distinguish alpha from it by case"
     );
 }
+
+/// Two branches that differ only by case, created before `core.ignorecase`
+/// is switched on (the session refuses the second spelling once it is).
+#[cfg(unix)]
+fn fixture_both_spellings() -> (tempfile::TempDir, PathBuf, RepoSession) {
+    let (dir, path) = common::temp_repo_with_commit();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Alpha", &head, false).unwrap();
+        repo.branch("alpha", &head, false).unwrap();
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session)
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_removes_exact_spelling_when_both_spellings_exist() {
+    let (_d, _p, session) = fixture_both_spellings();
+    session.delete_branch("alpha", true).unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_moves_exact_spelling_when_both_spellings_exist() {
+    let (_d, _p, session) = fixture_both_spellings();
+    session.rename_branch("alpha", "gamma").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(
+        names.contains(&"Alpha".to_owned()) && names.contains(&"gamma".to_owned()),
+        "{names:?}"
+    );
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn fresh_repo_on_windows_does_not_resolve_case_variant_lookups() {
+    let (_d, _p, session, _h) = fixture(); // no ignorecase override: git wrote true at init
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.delete_branch("alpha", true).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"),
+        "{err:?}"
+    );
+    let err = session.checkout_branch("alpha").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"),
+        "{err:?}"
+    );
+    assert!(local_names(&session.list_branches().unwrap()).contains(&"Alpha".to_owned()));
+}

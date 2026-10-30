@@ -255,6 +255,42 @@ fn checkout_remote_with_an_existing_local_branch_does_not_add_tracking() {
 }
 
 #[test]
+fn checkout_remote_case_variant_of_local_branch_is_case_collision() {
+    if !git_available() {
+        return;
+    }
+    // Remote branch `alpha`; local branch `Alpha`.
+    let (_d, _b, path, _bare, head) = remote_fixture(false);
+    common::run_git_ok(&path, &["branch", "alpha", "origin/feature"]);
+    common::push_branch(&path, "alpha");
+    common::fetch_remote(&path, "origin");
+    {
+        let repo = Repository::open(&path).unwrap();
+        repo.find_branch("alpha", BranchType::Local)
+            .unwrap()
+            .delete()
+            .unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Alpha", &commit, false).unwrap();
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+
+    let err = session
+        .checkout_remote_branch("origin", "alpha")
+        .unwrap_err();
+
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing } if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+    assert_eq!(head_ref(&path), head);
+    let repo = Repository::open(&path).unwrap();
+    assert!(repo.find_reference("refs/heads/Alpha").is_ok());
+    assert!(repo.find_reference("refs/heads/alpha").is_err());
+}
+
+#[test]
 fn checkout_remote_with_an_unknown_remote_fails() {
     let (_d, _b, path, _bare, _head) = remote_fixture(false);
     let session = RepoSession::open(&path).unwrap();

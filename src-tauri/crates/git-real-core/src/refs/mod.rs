@@ -211,14 +211,19 @@ impl RepoSession {
         let upstream = self.remote_branch_ref(remote, name)?;
         let git = git_cli::locate()?;
         let workdir = self.workdir()?;
-        let target = if self.repo().find_branch(name, BranchType::Local).is_ok() {
-            self.refuse_checked_out_elsewhere(name)?;
-            switch::SwitchTarget::Local(name)
-        } else {
-            switch::SwitchTarget::NewTracking {
-                name,
-                upstream: &upstream,
+        let target = match find_local(self.repo(), name) {
+            Ok(_) => {
+                self.refuse_checked_out_elsewhere(name)?;
+                switch::SwitchTarget::Local(name)
             }
+            Err(GitError::BranchNotFound(_)) => {
+                refuse_duplicate_branch(self.repo(), name, None)?;
+                switch::SwitchTarget::NewTracking {
+                    name,
+                    upstream: &upstream,
+                }
+            }
+            Err(e) => return Err(e),
         };
         switch::run(&git, workdir, target)
     }
@@ -417,7 +422,19 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
     Ok(head == tip || repo.graph_descendant_of(head, tip)?)
 }
 
+/// Finds the local branch called exactly `name`. With `core.ignorecase` set
+/// libgit2's `find_branch` matches case-insensitively, so the branches are
+/// compared by name instead and `alpha` never resolves to `Alpha`.
 pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
+    if ignores_case(repo) {
+        for branch in repo.branches(Some(BranchType::Local))? {
+            let (branch, _) = branch?;
+            if lossy_name(&branch) == name {
+                return Ok(branch);
+            }
+        }
+        return Err(GitError::BranchNotFound(name.to_owned()));
+    }
     match repo.find_branch(name, BranchType::Local) {
         Ok(branch) => Ok(branch),
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),
@@ -437,7 +454,7 @@ fn ignores_case(repo: &Repository) -> bool {
 /// never by `find_branch`: on a case-insensitive filesystem that lookup
 /// finds `Alpha` when asked for `alpha`. When `core.ignorecase` is true a
 /// case-only match (other than `keep`) is a `BranchCaseCollision`.
-fn refuse_duplicate_branch(
+pub(crate) fn refuse_duplicate_branch(
     repo: &Repository,
     name: &str,
     keep: Option<&str>,
