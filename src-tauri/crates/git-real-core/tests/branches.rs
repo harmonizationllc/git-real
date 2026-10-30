@@ -1234,6 +1234,28 @@ fn garbage_ignorecase_value_counts_as_false() {
     session.create_branch("alpha", None).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn exact_match_wins_over_case_collision_when_both_spellings_exist() {
+    let (_d, path) = common::temp_repo_with_commit();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Alpha", &head, false).unwrap();
+        repo.branch("alpha", &head, false).unwrap();
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    // Both spellings: whichever one libgit2 lists first, the exact match wins.
+    for requested in ["alpha", "Alpha"] {
+        let err = session.create_branch(requested, None).unwrap_err();
+        assert!(
+            matches!(err, GitError::BranchExists(ref n) if n == requested),
+            "{err:?}"
+        );
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn fresh_repo_on_windows_refuses_case_variant() {

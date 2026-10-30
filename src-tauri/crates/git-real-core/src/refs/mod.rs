@@ -128,7 +128,10 @@ impl RepoSession {
     /// Renames a local branch; libgit2 moves HEAD, the HEAD of every other
     /// worktree it can open, and the branch's config section with it. A
     /// branch held by a worktree whose folder is missing is refused: libgit2
-    /// cannot update that worktree's HEAD.
+    /// cannot update that worktree's HEAD. On a repository whose filesystem
+    /// does not distinguish case (`core.ignorecase`), a new name that differs
+    /// only by case from another branch is refused with `BranchCaseCollision`;
+    /// changing only the case of the branch's own name is allowed.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<(), GitError> {
         validate_branch_name(new)?;
         let repo = self.repo();
@@ -428,25 +431,30 @@ fn refuse_duplicate_branch(
     name: &str,
     keep: Option<&str>,
 ) -> Result<(), GitError> {
-    let ignorecase = repo
-        .config()?
-        .get_bool("core.ignorecase")
-        .unwrap_or(false);
+    let ignorecase = repo.config()?.get_bool("core.ignorecase").unwrap_or(false);
     let folded = name.to_lowercase();
+    let mut collision = None;
     for branch in repo.branches(Some(BranchType::Local))? {
         let (branch, _) = branch?;
         let existing = lossy_name(&branch);
         if existing == name {
             return Err(GitError::BranchExists(name.to_owned()));
         }
-        if ignorecase && Some(existing.as_str()) != keep && existing.to_lowercase() == folded {
-            return Err(GitError::BranchCaseCollision {
-                requested: name.to_owned(),
-                existing,
-            });
+        if collision.is_none()
+            && ignorecase
+            && Some(existing.as_str()) != keep
+            && existing.to_lowercase() == folded
+        {
+            collision = Some(existing);
         }
     }
-    Ok(())
+    match collision {
+        Some(existing) => Err(GitError::BranchCaseCollision {
+            requested: name.to_owned(),
+            existing,
+        }),
+        None => Ok(()),
+    }
 }
 
 pub(crate) fn is_not_found(e: &git2::Error) -> bool {
