@@ -50,7 +50,8 @@ new `shortcuts` group.
 - Rebinding the two static Navigation rows (`Escape`, `Arrow keys`), the
   palette's own list navigation, or CodeMirror's editor keys.
 - An explicit "Unbind" action. A shortcut becomes unbound only as the
-  outcome of replacing a conflict; "Reset" restores it.
+  outcome of replacing a conflict; "Reset" restores it. (Superseded by the
+  GR-18b follow-ups spec: Unbind exists.)
 - Live reload of a hand-edited file (GR-29 non-goal: next launch is fine).
 - Import/export of bindings. Copying the file is the feature.
 - Showing chords in the command palette (it does not today).
@@ -271,6 +272,8 @@ Each row:
 
 Hint copy (the modifier words come from the platform label maps, so macOS
 reads `⌘ or ⌥`): `Press a key combination with Ctrl or Alt, or a function key. Changes apply at once.`
+(GR-18b follow-ups spec §5 replaced this hint text with the cross-platform
+version.)
 
 ### Capture flow (one row at a time)
 
@@ -309,7 +312,8 @@ Component state: `null`, or
 registry default, the id's entry is **deleted** instead (so the file holds
 only real overrides); then `setShortcutBindings(next)`. `Reset` deletes
 the id's entry. `Reset all to defaults` sends `{}`; it is disabled when
-the map is empty.
+the map is empty. (Since the GR-18b follow-ups, `setShortcuts` sends
+`{ bindings, keycaps }` and Reset all clears both maps.)
 
 ### Keyboard access
 
@@ -432,7 +436,7 @@ lint`, `npm run typecheck`.
 3. Physical-key capture via `e.code`; canonical `Mod+Alt+Shift+Key` order;
    the token set of §4; `Mod`/`Alt`/F-key rule for bindability.
 4. Conflict resolution: Replace unbinds the other shortcut; no explicit
-   Unbind (§6).
+   Unbind (§6). (Superseded by the GR-18b follow-ups spec: Unbind exists.)
 5. Deterministic two-pass resolution for hand-edited files (§5).
 6. Section placement after Git, one table per group, `Customize…` in the
    reference dialog (§5, §6).

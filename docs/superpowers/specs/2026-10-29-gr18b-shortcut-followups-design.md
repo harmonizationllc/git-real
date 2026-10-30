@@ -132,7 +132,11 @@ QWERTY for that key) and inequality to add or refresh one. It rules out the
 misrepresenting cases by construction: a shifted digit gives `!` (not in the
 set), Option+letter on macOS gives `å` (not in the set), a dead key gives
 `Dead` (length 4). Shift+letter gives the upper-case letter, which is in the
-set, so Shift chords on letters still teach the layout.
+set, so Shift chords on letters still teach the layout. A Shift press teaches
+a keycap only when that keycap is a letter: on digit and punctuation keys
+Shift types a different glyph that can still be in the set (QWERTZ
+`Shift+Comma` types `;`, `Shift+Digit7` types `/`), so those presses learn
+nothing.
 
 ## 4. Display
 
@@ -277,8 +281,9 @@ Semicolon`, `key ","`) → `,`.
    working, the Rust reader stays per-entry lenient, a stale keycap cannot
    attach to the wrong chord, and defaults benefit from what the user teaches.
 2. `keycapFromEvent` yields only a single token-set character (rules out
-   shifted, accented and dead glyphs); equality with the token removes the
-   entry so the learned layout self-corrects.
+   shifted, accented and dead glyphs), and with Shift held only a letter,
+   since Shift changes the glyph on digit and punctuation keys; equality
+   with the token removes the entry so the learned layout self-corrects.
 3. Bare Backspace/Delete as the keyboard route to Unbind; both are
    unbindable bare, so the gesture is unambiguous.
 4. Any `AltGraph` keydown is ignored everywhere, on every platform.
