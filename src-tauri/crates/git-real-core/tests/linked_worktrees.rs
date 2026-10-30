@@ -378,6 +378,22 @@ fn add_taken_name_is_branch_exists() {
 }
 
 #[test]
+fn add_case_variant_name_is_case_collision() {
+    let (_md, main, _wd, root, _head) = fixture();
+    common::set_ignorecase(&main, true);
+    session(&main).create_branch("Alpha", None).unwrap();
+    let err = session(&main)
+        .add_linked_worktree(&root.join("x"), &new_branch("alpha", None))
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+    assert!(!root.join("x").exists());
+}
+
+#[test]
 fn add_unknown_existing_branch_is_branch_not_found() {
     let (_md, main, _wd, root, _head) = fixture();
     let err = session(&main)

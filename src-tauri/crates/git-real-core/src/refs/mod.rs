@@ -133,9 +133,7 @@ impl RepoSession {
         validate_branch_name(new)?;
         let repo = self.repo();
         let mut branch = find_local(repo, old)?;
-        if repo.find_branch(new, BranchType::Local).is_ok() {
-            return Err(GitError::BranchExists(new.to_owned()));
-        }
+        refuse_duplicate_branch(repo, new, Some(old))?;
         if let Some(worktree) = self.checked_out_elsewhere()?.remove(old)
             && !worktree.exists()
         {
@@ -328,9 +326,7 @@ impl RepoSession {
     ) -> Result<Commit<'_>, GitError> {
         validate_branch_name(name)?;
         let repo = self.repo();
-        if repo.find_branch(name, BranchType::Local).is_ok() {
-            return Err(GitError::BranchExists(name.to_owned()));
-        }
+        refuse_duplicate_branch(repo, name, None)?;
         match start_point {
             None => match repo.head() {
                 Ok(head) => Ok(head.peel_to_commit()?),
@@ -421,6 +417,36 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Refuses `name` when a local branch already has it. Compared by name,
+/// never by `find_branch`: on a case-insensitive filesystem that lookup
+/// finds `Alpha` when asked for `alpha`. When `core.ignorecase` is true a
+/// case-only match (other than `keep`) is a `BranchCaseCollision`.
+fn refuse_duplicate_branch(
+    repo: &Repository,
+    name: &str,
+    keep: Option<&str>,
+) -> Result<(), GitError> {
+    let ignorecase = repo
+        .config()?
+        .get_bool("core.ignorecase")
+        .unwrap_or(false);
+    let folded = name.to_lowercase();
+    for branch in repo.branches(Some(BranchType::Local))? {
+        let (branch, _) = branch?;
+        let existing = lossy_name(&branch);
+        if existing == name {
+            return Err(GitError::BranchExists(name.to_owned()));
+        }
+        if ignorecase && Some(existing.as_str()) != keep && existing.to_lowercase() == folded {
+            return Err(GitError::BranchCaseCollision {
+                requested: name.to_owned(),
+                existing,
+            });
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn is_not_found(e: &git2::Error) -> bool {

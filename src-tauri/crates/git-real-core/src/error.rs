@@ -41,6 +41,11 @@ pub enum GitError {
     InvalidBranchName(String),
     #[error("a branch named {0} already exists")]
     BranchExists(String),
+    #[error(
+        "a branch named {existing} already exists, and this repository's filesystem \
+         does not distinguish {requested} from it by case"
+    )]
+    BranchCaseCollision { requested: String, existing: String },
     #[error("no branch named {0}")]
     BranchNotFound(String),
     #[error("{0} is not fully merged")]

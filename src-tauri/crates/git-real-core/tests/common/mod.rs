@@ -293,6 +293,18 @@ pub fn add_remote_and_fetch(path: &Path, bare: &Path, head_name: &str) {
         .expect("set upstream");
 }
 
+/// Writes `core.ignorecase` into the repository's own config file, as git
+/// does at init on a case-insensitive filesystem. Call before opening the
+/// `RepoSession` under test.
+pub fn set_ignorecase(path: &Path, value: bool) {
+    Repository::open(path)
+        .expect("open repo")
+        .config()
+        .expect("config")
+        .set_bool("core.ignorecase", value)
+        .expect("set core.ignorecase");
+}
+
 /// Fetches every branch of `remote` into `refs/remotes/<remote>/*`.
 pub fn fetch_remote(path: &Path, remote: &str) {
     let repo = Repository::open(path).expect("open repo");

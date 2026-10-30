@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use git2::{BranchType, Repository, StatusOptions, WorktreeLockStatus};
+use git2::{Repository, StatusOptions, WorktreeLockStatus};
 
 use crate::error::GitError;
 use crate::git_ops::{self, operation_failed};
@@ -71,9 +71,6 @@ impl RepoSession {
         let args: Vec<&str> = match branch {
             WorktreeBranch::New { name, start } => {
                 validate_branch_name(name)?;
-                if self.repo().find_branch(name, BranchType::Local).is_ok() {
-                    return Err(GitError::BranchExists(name.clone()));
-                }
                 let start = start.as_deref();
                 if let Some(flag) = start.filter(|s| s.starts_with('-')) {
                     return Err(GitError::RevisionNotFound(flag.to_owned()));
