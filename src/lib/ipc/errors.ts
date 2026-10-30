@@ -19,6 +19,7 @@ const KINDS: Record<AppErrorKind, true> = {
   commitFailed: true,
   invalidBranchName: true,
   branchExists: true,
+  branchCaseCollision: true,
   branchNotFound: true,
   branchNotMerged: true,
   cannotDeleteCurrent: true,

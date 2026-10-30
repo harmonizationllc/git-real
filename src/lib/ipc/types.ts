@@ -59,6 +59,7 @@ export type AppErrorKind =
   | "commitFailed"
   | "invalidBranchName"
   | "branchExists"
+  | "branchCaseCollision"
   | "branchNotFound"
   | "branchNotMerged"
   | "cannotDeleteCurrent"
