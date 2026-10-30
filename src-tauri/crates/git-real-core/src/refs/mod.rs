@@ -155,6 +155,7 @@ impl RepoSession {
     /// Deletes a local branch. Without `force` the branch must be merged into
     /// HEAD; the current branch can never be deleted.
     pub fn delete_branch(&self, name: &str, force: bool) -> Result<(), GitError> {
+        validate_branch_name(name)?;
         let repo = self.repo();
         let mut branch = find_local(repo, name)?;
         if branch.is_head() {

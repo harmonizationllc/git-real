@@ -1086,6 +1086,13 @@ fn delete_with_an_illegal_ref_name_fails_without_deleting_anything() {
 }
 
 #[test]
+fn delete_invalid_branch_name_is_invalid_branch_name() {
+    let (_d, _p, session, _head) = fixture();
+    let err = session.delete_branch("a..b", true).unwrap_err();
+    assert!(matches!(err, GitError::InvalidBranchName(n) if n == "a..b"));
+}
+
+#[test]
 fn rename_from_an_illegal_ref_name_fails_without_renaming_anything() {
     let (_d, path, session, head) = fixture();
     assert!(session.rename_branch("a..b", "fresh").is_err());
@@ -1317,7 +1324,7 @@ fn case_collision_message_names_both_spellings() {
 /// Two branches that differ only by case, created before `core.ignorecase`
 /// is switched on (the session refuses the second spelling once it is).
 #[cfg(unix)]
-fn fixture_both_spellings() -> (tempfile::TempDir, PathBuf, RepoSession) {
+fn fixture_both_spellings() -> (tempfile::TempDir, RepoSession) {
     let (dir, path) = common::temp_repo_with_commit();
     {
         let repo = Repository::open(&path).unwrap();
@@ -1327,13 +1334,13 @@ fn fixture_both_spellings() -> (tempfile::TempDir, PathBuf, RepoSession) {
     }
     common::set_ignorecase(&path, true);
     let session = RepoSession::open(&path).unwrap();
-    (dir, path, session)
+    (dir, session)
 }
 
 #[cfg(unix)]
 #[test]
 fn delete_removes_exact_spelling_when_both_spellings_exist() {
-    let (_d, _p, session) = fixture_both_spellings();
+    let (_d, session) = fixture_both_spellings();
     session.delete_branch("alpha", true).unwrap();
     let names = local_names(&session.list_branches().unwrap());
     assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
@@ -1343,7 +1350,7 @@ fn delete_removes_exact_spelling_when_both_spellings_exist() {
 #[cfg(unix)]
 #[test]
 fn rename_moves_exact_spelling_when_both_spellings_exist() {
-    let (_d, _p, session) = fixture_both_spellings();
+    let (_d, session) = fixture_both_spellings();
     session.rename_branch("alpha", "gamma").unwrap();
     let names = local_names(&session.list_branches().unwrap());
     assert!(

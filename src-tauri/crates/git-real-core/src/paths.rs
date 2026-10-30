@@ -1,4 +1,6 @@
-//! Validation and escaping of repository-relative paths received from callers.
+//! Path validation, escaping and canonicalisation.
+//!
+//! Validation and escaping cover repository-relative paths received from callers.
 
 use std::path::{Path, PathBuf};
 
