@@ -56,6 +56,16 @@ const KEY_BY_CODE = new Map<string, string>(KEY_TOKENS.map((key) => [codeForKey(
 const KEY_SET = new Set(KEY_TOKENS);
 const MODIFIERS = ["Mod", "Alt", "Shift"] as const;
 
+/** True when `s` is a key token a chord may end with. */
+export function isKeyToken(s: string): boolean {
+  return KEY_SET.has(s);
+}
+
+/** True when AltGr is held: the press types a character and must never act as a shortcut. */
+export function isAltGraph(e: KeyboardEvent | React.KeyboardEvent): boolean {
+  return typeof e.getModifierState === "function" && e.getModifierState("AltGraph") === true;
+}
+
 /** Parses a canonical chord string; `null` when malformed or outside the token set. */
 export function parseChord(keys: string): Chord | null {
   const parts = keys.split("+");
@@ -88,9 +98,23 @@ export function chordToString(chord: Chord): string {
 
 /** The chord a key event presses, read from the physical `e.code`; `null` for keys outside the set. */
 export function chordFromEvent(e: KeyboardEvent | React.KeyboardEvent): Chord | null {
+  if (isAltGraph(e)) return null;
   const key = KEY_BY_CODE.get(e.code);
   if (key === undefined) return null;
   return { mod: e.ctrlKey || e.metaKey, alt: e.altKey, shift: e.shiftKey, key };
+}
+
+/**
+ * The keycap the layout prints on `chord`'s physical key, read from `e.key`; `null` unless both the
+ * chord key and the typed character are single-character tokens (no shifted, accented or dead keys).
+ */
+export function keycapFromEvent(
+  e: KeyboardEvent | React.KeyboardEvent,
+  chord: Chord,
+): string | null {
+  const keycap = e.key.toUpperCase();
+  if (e.key.length !== 1 || chord.key.length !== 1 || !isKeyToken(keycap)) return null;
+  return keycap;
 }
 
 /** True when the chord carries `Mod` or `Alt`, or is a function key. */

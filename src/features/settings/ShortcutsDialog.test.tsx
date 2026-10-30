@@ -162,6 +162,24 @@ describe("ShortcutsDialog effective bindings", () => {
   });
 });
 
+// Contract (GR-18b §3): rows show the learned keycap for the chord's physical key.
+describe("ShortcutsDialog learned keycaps", () => {
+  it("rows show learned keycaps on default and custom chords", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await seedSettings({
+      shortcuts: { bindings: { fetch: "Mod+Alt+Q" }, keycaps: { Q: "A", K: "T" } },
+    });
+    setup();
+    const kbds = (group: string, label: string) => {
+      const table = screen.getByRole("table", { name: group });
+      const row = within(table).getByText(label).closest("tr") as HTMLElement;
+      return [...row.querySelectorAll("kbd")].map((k) => k.textContent);
+    };
+    expect(kbds("Repository", "Fetch")).toEqual(["Ctrl", "Alt", "A"]);
+    expect(kbds("Application", "Command palette")).toEqual(["Ctrl", "T"]);
+  });
+});
+
 // Contract (GR-18): Customize… jumps to the Keyboard shortcuts section of Settings.
 describe("ShortcutsDialog Customize…", () => {
   it("Customize… opens Settings at the shortcuts section", () => {

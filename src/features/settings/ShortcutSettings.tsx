@@ -17,7 +17,7 @@ import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
 import { useSettings } from "../../lib/store/settings";
 import { setShortcuts } from "../../lib/store/settingsActions";
 import { Section } from "./Section";
-import { KeyParts } from "./ShortcutsDialog";
+import { KeyParts } from "./KeyParts";
 import dialogStyles from "./ShortcutsDialog.module.css";
 import styles from "./SettingsDialog.module.css";
 

@@ -1,10 +1,12 @@
-import type { ShortcutBindings } from "../ipc/types";
+import type { ShortcutBindings, ShortcutKeycaps } from "../ipc/types";
 import {
   MAC_LABELS,
   PC_LABELS,
   chordToString,
   codeForKey,
+  isAltGraph,
   isBindable,
+  isKeyToken,
   isMac,
   parseChord,
 } from "./chord";
@@ -175,6 +177,7 @@ function isComposing(e: AnyKeyEvent): boolean {
 /** True when `e` is the exact effective chord for `id`, ignoring repeats, consumed and composing events. */
 export function matchesShortcut(e: AnyKeyEvent, id: ShortcutId): boolean {
   if (e.repeat || e.defaultPrevented || isComposing(e)) return false;
+  if (isAltGraph(e)) return false;
   const keys = activeKeys(id);
   if (keys === null) return false;
   const chord = parseChord(keys) as Chord;
@@ -184,13 +187,30 @@ export function matchesShortcut(e: AnyKeyEvent, id: ShortcutId): boolean {
   return e.code === codeForKey(chord.key) || e.key.toLowerCase() === chord.key.toLowerCase();
 }
 
-/** Human labels for each part of a `keys` string, e.g. `["Ctrl","Shift","F"]` or `["⌘","⇧","F"]`. */
-export function formatKeyParts(keys: string): string[] {
+/**
+ * The learned keycaps worth showing: entries whose key and keycap are both single-character key
+ * tokens and differ. The file is hand-editable, so anything else is dropped on read.
+ */
+export function validKeycaps(keycaps: ShortcutKeycaps): ShortcutKeycaps {
+  const single = (s: string) => s.length === 1 && isKeyToken(s);
+  return Object.fromEntries(
+    Object.entries(keycaps).filter(([key, cap]) => single(key) && single(cap) && key !== cap),
+  );
+}
+
+/**
+ * Human labels for each part of a `keys` string, e.g. `["Ctrl","Shift","F"]` or `["⌘","⇧","F"]`.
+ * With `keycaps`, the key part shows the keycap learned for that physical key.
+ */
+export function formatKeyParts(keys: string, keycaps?: ShortcutKeycaps): string[] {
   const labels = isMac() ? MAC_LABELS : PC_LABELS;
-  return keys.split("+").map((part) => labels[part] ?? part);
+  const parts = keys.split("+").map((part) => labels[part] ?? part);
+  const keycap = keycaps?.[parts[parts.length - 1]];
+  if (keycap !== undefined) parts[parts.length - 1] = keycap;
+  return parts;
 }
 
 /** The parts joined with `+` (or nothing on macOS). */
-export function formatKeys(keys: string): string {
-  return formatKeyParts(keys).join(isMac() ? "" : "+");
+export function formatKeys(keys: string, keycaps?: ShortcutKeycaps): string {
+  return formatKeyParts(keys, keycaps).join(isMac() ? "" : "+");
 }

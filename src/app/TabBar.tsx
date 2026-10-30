@@ -1,8 +1,8 @@
-import type { RepoId } from "../lib/ipc";
+import type { RepoId, ShortcutKeycaps } from "../lib/ipc";
 import { useShell } from "../lib/store/shell";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { formatKeys } from "../lib/shortcuts";
-import { useShortcutKeys } from "../lib/shortcuts/useShortcutKeys";
+import { useKeycaps, useShortcutKeys } from "../lib/shortcuts/useShortcutKeys";
 import styles from "./TabBar.module.css";
 
 export interface TabBarProps {
@@ -13,13 +13,14 @@ export interface TabBarProps {
 }
 
 /** A shell button's tooltip: the label, with its chord when bound. */
-function titleFor(label: string, keys: string | null): string {
-  return keys === null ? label : `${label} (${formatKeys(keys)})`;
+function titleFor(label: string, keys: string | null, keycaps: ShortcutKeycaps): string {
+  return keys === null ? label : `${label} (${formatKeys(keys, keycaps)})`;
 }
 
 export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): React.JSX.Element {
   const paletteKeys = useShortcutKeys("palette");
   const settingsKeys = useShortcutKeys("settings");
+  const keycaps = useKeycaps();
   return (
     <nav className={styles.root} aria-label="Repositories">
       <div role="tablist" aria-label="Open repositories" className={styles.list}>
@@ -60,7 +61,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
       <button
         type="button"
         aria-label="Command palette"
-        title={titleFor("Command palette", paletteKeys)}
+        title={titleFor("Command palette", paletteKeys, keycaps)}
         className={styles.shell}
         onClick={() => useShell.getState().open({ kind: "palette" })}
       >
@@ -69,7 +70,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
       <button
         type="button"
         aria-label="Settings"
-        title={titleFor("Settings", settingsKeys)}
+        title={titleFor("Settings", settingsKeys, keycaps)}
         className={styles.shell}
         onClick={() => useShell.getState().open({ kind: "settings" })}
       >
