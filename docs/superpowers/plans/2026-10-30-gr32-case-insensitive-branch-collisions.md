@@ -360,7 +360,195 @@ git commit -m "feat(GR-32): surface branchCaseCollision through the IPC error ki
 
 ---
 
+### Task 4: Case-exact local branch lookups
+
+Spec §6.1. Owner decision: fixed here, not ticketed.
+
+**Files:**
+
+- Modify: `src-tauri/crates/git-real-core/src/refs/mod.rs` (`find_local`, `checkout_remote_branch`, visibility of `refuse_duplicate_branch`)
+- Modify: `src-tauri/crates/git-real-core/src/merge/mod.rs` (`resolve_branch`)
+- Modify: `src-tauri/crates/git-real-core/src/remote/pr_checkout.rs` (`checkout_fetch_head`)
+- Test: `src-tauri/crates/git-real-core/tests/branches.rs`, `tests/pr_checkout.rs`, and the files that already test `checkout_remote_branch` and `merge_branch` (find them with `grep -ln`)
+
+**Interfaces:**
+
+- Consumes: `ignores_case`, `refuse_duplicate_branch`, `lossy_name` (Task 1, `refs/mod.rs`); `common::set_ignorecase`, `fixture_ignorecase` (Task 1 tests).
+- Produces: `pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError>` is case-exact on ignorecase repos; `pub(crate) fn refuse_duplicate_branch(repo, name, keep)` is visible crate-wide.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `tests/branches.rs`, section `// --- case-only collisions ---`. "Both spellings" means: open the repo with git2, create `Alpha` and `alpha` at HEAD, then `common::set_ignorecase(&path, true)`, then `RepoSession::open` (as `exact_match_wins_over_case_collision_when_both_spellings_exist` does).
+
+```rust
+#[cfg(unix)]
+#[test]
+fn delete_removes_exact_spelling_when_both_spellings_exist() {
+    // both spellings, ignorecase on
+    session.delete_branch("alpha", true).unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_moves_exact_spelling_when_both_spellings_exist() {
+    // both spellings, ignorecase on
+    session.rename_branch("alpha", "gamma").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()) && names.contains(&"gamma".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn fresh_repo_on_windows_does_not_resolve_case_variant_lookups() {
+    let (_d, _p, session, _h) = fixture(); // no ignorecase override: git wrote true at init
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.delete_branch("alpha", true).unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"), "{err:?}");
+    let err = session.checkout_branch("alpha").unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"), "{err:?}");
+    assert!(local_names(&session.list_branches().unwrap()).contains(&"Alpha".to_owned()));
+}
+```
+
+In the file that tests `checkout_remote_branch` (guard with `if !common::git_available() { return; }` like its neighbours; set up the remote the way they do, with the remote branch named `alpha`; create local `Alpha` with `create_branch`; `common::set_ignorecase(&path, true)` before opening the session used for the call):
+
+```rust
+#[test]
+fn checkout_remote_case_variant_of_local_branch_is_case_collision() {
+    let err = session.checkout_remote_branch("origin", "alpha").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing } if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+    // HEAD did not move and no `alpha` branch was created.
+}
+```
+
+In `tests/pr_checkout.rs` (reuse its fetch fixture; create local `PR/7` at HEAD; `set_ignorecase(true)`; open the session):
+
+```rust
+#[test]
+fn checkout_pr_case_variant_of_existing_branch_is_case_collision() {
+    let err = session.checkout_fetch_head(&fetch, 7, false).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing } if requested == "pr/7" && existing == "PR/7"),
+        "{err:?}"
+    );
+    // `PR/7` still points where it did.
+}
+```
+
+In the merge test file, `#[cfg(unix)]`: `Alpha` at commit X, `alpha` at a different commit Y, HEAD on the default branch, ignorecase on; the public call that goes through `resolve_branch` (`merge_branch` or the fast-forward check) must act on Y. Name it `merge_resolves_exact_spelling_when_both_spellings_exist`.
+
+- [ ] **Step 2: Run them and confirm the observable reds**
+
+Run: `cargo test --manifest-path src-tauri/crates/git-real-core/Cargo.toml --test branches --test pr_checkout --test <remote-checkout file> --test <merge file>`
+Expected: `checkout_remote_case_variant_of_local_branch_is_case_collision` and `checkout_pr_case_variant_of_existing_branch_is_case_collision` FAIL (today the switch succeeds). The two "both spellings" tests and the merge test pass already on Linux (`find_branch` is exact there); they guard the new iteration path. The Windows test is red only in CI.
+
+- [ ] **Step 3: Implement**
+
+`refs/mod.rs`:
+
+- `find_local`: when `ignores_case(repo)`, iterate `repo.branches(Some(BranchType::Local))` and return the branch whose `lossy_name(&branch) == name`; none → `GitError::BranchNotFound(name.to_owned())`. Otherwise keep the `find_branch` path. Doc comment: one sentence on why.
+- `refuse_duplicate_branch`: `pub(crate)`.
+- `checkout_remote_branch`: `match find_local(repo, name) { Ok(_) => { self.refuse_checked_out_elsewhere(name)?; SwitchTarget::Local(name) } Err(GitError::BranchNotFound(_)) => { refuse_duplicate_branch(repo, name, None)?; SwitchTarget::NewTracking { .. } } Err(e) => return Err(e) }`.
+
+`merge/mod.rs` `resolve_branch`: local tip via `crate::refs::find_local(self.repo(), name).ok().and_then(|b| b.get().target())`, then the remote `find_branch(name, BranchType::Remote)` fallback as today.
+
+`remote/pr_checkout.rs` `checkout_fetch_head`: `let current = match find_local(repo, &name) { Ok(b) => b.get().target(), Err(GitError::BranchNotFound(_)) => { refuse_duplicate_branch(repo, &name, None)?; None } Err(e) => return Err(e) };` (import both from `crate::refs`; drop the now-unused `BranchType`/`is_not_found` imports if nothing else uses them).
+
+- [ ] **Step 4: Run the checks**
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/crates/git-real-core/src/refs/mod.rs src-tauri/crates/git-real-core/src/merge/mod.rs src-tauri/crates/git-real-core/src/remote/pr_checkout.rs src-tauri/crates/git-real-core/tests/
+git commit -m "fix(GR-32): make every local branch lookup case-exact on case-insensitive repositories"
+```
+
+---
+
+### Task 5: Canonical paths without the Windows verbatim prefix
+
+Spec §6.2. Owner decision: fixed here, not ticketed.
+
+**Files:**
+
+- Modify: `src-tauri/crates/git-real-core/Cargo.toml` (add `dunce = "1"` under `[dependencies]`; it is already in `Cargo.lock`)
+- Create: `src-tauri/crates/git-real-core/src/paths.rs`; register `mod paths;` in `lib.rs`
+- Modify: `src/repo/session.rs:89,105`, `src/linked_worktrees/mod.rs:33,159,206,230,260`, `src/remote/clone.rs:76` — every `canonicalize` call becomes `paths::canonical(..)`
+- Modify: `tests/common/mod.rs` (add `pub fn canonical(path: &Path) -> PathBuf`), and every `canonicalize` call in `tests/linked_worktrees.rs`, `tests/cli_argv.rs`, `tests/push_delete.rs`, `tests/session.rs`, `tests/clone.rs` becomes `common::canonical(&..)` (`grep -rn canonicalize src-tauri/crates/git-real-core/tests` must then list only the test _name_ in `tests/recent.rs`)
+
+**Interfaces:**
+
+- Produces: `pub(crate) fn canonical(path: &Path) -> std::io::Result<PathBuf>` in `src/paths.rs` = `dunce::canonicalize(path)`, doc comment: the git CLI rejects `\\?\` verbatim paths, so every canonical path in this crate comes from here. `tests/common::canonical(path) -> PathBuf` = `dunce::canonicalize(path).unwrap()`.
+
+- [ ] **Step 1: Write the failing tests (red on Windows only)**
+
+`tests/session.rs`:
+
+```rust
+#[cfg(windows)]
+#[test]
+fn session_path_has_no_verbatim_prefix_on_windows() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let session = RepoSession::open(&path).unwrap();
+    assert!(!session.path().to_string_lossy().starts_with(r"\\?\"), "{:?}", session.path());
+}
+```
+
+`tests/linked_worktrees.rs`:
+
+```rust
+#[cfg(windows)]
+#[test]
+fn listed_worktree_paths_have_no_verbatim_prefix_on_windows() {
+    if !common::git_available() { return; }
+    let (_md, main, _wd, root, _head) = fixture();
+    add_worktree(&main, &root, "a", "feat/a");
+    for w in session(&main).list_linked_worktrees().unwrap() {
+        assert!(!w.path.to_string_lossy().starts_with(r"\\?\"), "{:?}", w.path);
+    }
+}
+```
+
+The 39 Windows failures of `tests/linked_worktrees.rs` on CI run 41110930528 are the red for the production change.
+
+- [ ] **Step 2: Implement**
+
+Add the dependency, the module, and the helper; replace the eight production calls and every test call as listed. `same_dir` becomes `matches!((canonical(a), canonical(b)), (Ok(a), Ok(b)) if a == b)`.
+
+- [ ] **Step 3: Run the checks**
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+grep -rn canonicalize src-tauri/crates/git-real-core/src src-tauri/crates/git-real-core/tests
+```
+
+Expected: all green; the grep prints only `src/paths.rs` and the `touch_does_not_canonicalize_dot_dot_paths` test name.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src-tauri/Cargo.lock src-tauri/crates/git-real-core/Cargo.toml src-tauri/crates/git-real-core/src/lib.rs src-tauri/crates/git-real-core/src/paths.rs src-tauri/crates/git-real-core/src/repo/session.rs src-tauri/crates/git-real-core/src/linked_worktrees/mod.rs src-tauri/crates/git-real-core/src/remote/clone.rs src-tauri/crates/git-real-core/tests/
+git commit -m "fix(GR-32): canonicalise paths without the Windows verbatim prefix so git accepts them"
+```
+
+---
+
 ### After the tasks (orchestrator, not a task)
 
-- Push the branch and watch the `core-windows` CI job: the two formerly gated sort tests and `fresh_repo_on_windows_refuses_case_variant` must pass. If `rename_changes_only_the_case_of_own_name` fails on Windows, apply spec §2.5 (try `force = true` for a fold-equal self-rename; else gate that one test `#[cfg(unix)]` with a follow-up ticket comment) and record it in the final summary.
-- Whole-branch review, then `superpowers:finishing-a-development-branch`.
+- Push the branch and watch the Windows core job: it must pass the whole crate with no failures (Tasks 4 and 5 remove the only ones). Benchmarks' status-budget failure predates the branch.
+- Whole-branch review of the new range, then `superpowers:finishing-a-development-branch`.

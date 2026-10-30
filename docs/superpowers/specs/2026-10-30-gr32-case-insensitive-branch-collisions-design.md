@@ -234,3 +234,46 @@ With `core.ignorecase = true`, `add_linked_worktree` with
   fixture variants, and whether the helper lives next to
   `validate_branch_name` or beside `new_branch_target`.
 - Wording of code comments.
+
+## 6. Follow-ups folded in (owner decision, 2026-10-30)
+
+The owner ruled that nothing found while implementing a ticket is filed as a
+follow-up ticket; it is fixed on the same branch. Two items from the final
+review and the Windows CI comparison are therefore part of GR-32.
+
+### 6.1 Every local branch lookup is case-exact
+
+`find_local` is the only way product code looks up a local branch by name.
+On a repository whose `core.ignorecase` is true it compares names by
+iterating `repo.branches(Some(Local))`, exactly as the duplicate check does,
+and reports `BranchNotFound` when no branch has that exact spelling. On a
+case-sensitive repository it keeps using `find_branch`. The three remaining
+direct `find_branch(.., Local)` calls move to `find_local`:
+
+- `checkout_remote_branch`: a local branch with the exact name is switched
+  to; without one, the new tracking branch is first checked with the
+  duplicate helper, so a case variant is `BranchCaseCollision` instead of a
+  `git switch -c` that git would refuse or that would land on the wrong
+  branch.
+- `merge::resolve_branch` (merge, rebase, fast-forward check): the local
+  lookup is case-exact; the remote-tracking fallback is unchanged.
+- `checkout_fetch_head` (`pr/<n>`): the existing-branch lookup is case-exact;
+  when no exact branch exists the duplicate helper runs before any
+  `git switch -C`, which on NTFS would otherwise reset a case variant.
+
+Remote-tracking lookups (`remote_branch_ref`, the remote arm of
+`resolve_branch`) are out of scope: they feed git full refnames and git
+resolves them.
+
+### 6.2 Canonical paths never carry the Windows verbatim prefix
+
+`std::fs::canonicalize` on Windows returns `\\?\C:\...`. The git CLI rejects
+such a path as a worktree target ("could not create leading directories of
+'//?/C:/...': Invalid argument"), which is why 39 linked-worktree tests fail
+on the Windows CI job today, and the app would hand the same paths back to
+`git worktree remove`. Rule: `git-real-core` canonicalises every path through
+`dunce::canonicalize` (already in `Cargo.lock` as a transitive dependency; a
+no-op on non-Windows), wrapped in one crate-private `paths::canonical`. The
+session root, every linked-worktree path, and the clone destination use it.
+Tests compare against the same function through `common::canonical`. The
+Windows job must then pass the whole core crate with no failures.
