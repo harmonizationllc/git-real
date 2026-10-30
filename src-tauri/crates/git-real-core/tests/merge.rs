@@ -4073,3 +4073,53 @@ fn stopped_outcome_and_the_edit_flag_round_trip_through_json() {
         serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
     assert_eq!(back, state);
 }
+
+#[cfg(unix)]
+#[test]
+fn resolve_keeps_a_symlink_side_as_a_symlink() {
+    if !git_available() {
+        return;
+    }
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    let link = path.join("ln");
+    let point = |target: &str| {
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(target, &link).expect("symlink");
+    };
+    let cli = |args: &[&str]| common::run_git_ok(&path, args);
+    point("base");
+    cli(&["add", "ln"]);
+    cli(&["commit", "-q", "-m", "add link"]);
+    let head = common::head_branch_name(&path);
+    cli(&["checkout", "-q", "-b", "other"]);
+    point("theirs");
+    cli(&["commit", "-q", "-am", "link on other"]);
+    cli(&["checkout", "-q", &head]);
+    point("ours");
+    cli(&["commit", "-q", "-am", "link on base"]);
+    let merged = common::run_git(&path, &["merge", "--no-edit", "other"]);
+    assert!(!merged.status.success(), "the link must conflict");
+
+    RepoSession::open(&path)
+        .expect("open")
+        .resolve_conflicts(&["ln".to_owned()], ConflictSide::Theirs)
+        .expect("keep theirs");
+
+    assert!(
+        link.symlink_metadata()
+            .expect("lstat")
+            .file_type()
+            .is_symlink(),
+        "the kept side is a symlink, not a regular file"
+    );
+    assert_eq!(
+        std::fs::read_link(&link).expect("readlink"),
+        Path::new("theirs")
+    );
+    let repo = Repository::open(&path).expect("open");
+    let index = repo.index().expect("index");
+    let entry = index.get_path(Path::new("ln"), 0).expect("staged");
+    assert_eq!(entry.mode, 0o120000);
+    assert_eq!(repo.find_blob(entry.id).expect("blob").content(), b"theirs");
+}

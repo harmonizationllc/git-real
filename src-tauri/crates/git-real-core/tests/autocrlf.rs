@@ -549,10 +549,86 @@ fn input_discard_paths() {
         .discard_paths(&[F.to_owned()])
         .expect("discard file");
     assert_eq!(work(&path), lf(&base()));
+    assert_eq!(index_blob(&path), lf(&base()));
     assert_status(&path, vec![], "");
     if let Some((_t, twin)) = twin("input") {
         write_work(&twin, &crlf(&edited()));
         common::run_git_ok(&twin, &["checkout", "--", F]);
         assert_twin(&path, &twin);
     }
+}
+
+#[test]
+fn input_discard_hunk_of_a_crlf_file() {
+    let (_d, path) = crlf_repo("input");
+    // A CRLF working file under autocrlf=input: the hunk is discarded and the
+    // file comes back LF, as git's own apply-through-the-filters leaves it.
+    write_work(&path, &crlf(&edited()));
+    session(&path)
+        .apply_hunk(F, HunkAction::Discard, &hunk(0))
+        .expect("discard hunk");
+    assert_eq!(work(&path), lf(&text(&[(10, "L10")])));
+    assert_eq!(index_blob(&path), lf(&base()));
+}
+
+#[test]
+fn resolve_nested_and_deleted_paths_in_one_call() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path) = crlf_repo("true");
+    let cli = |args: &[&str]| common::run_git_ok(&path, args);
+    let write = |rel: &str, content: &str| {
+        let full = path.join(rel);
+        std::fs::create_dir_all(full.parent().expect("parent")).expect("mkdir");
+        std::fs::write(full, crlf(content)).expect("write");
+    };
+    write("dir/g.txt", &base());
+    write("h.txt", &base());
+    cli(&["add", "dir/g.txt", "h.txt"]);
+    cli(&["commit", "-q", "-m", "add g and h"]);
+    let head = common::head_branch_name(&path);
+    cli(&["checkout", "-q", "-b", "other"]);
+    write("dir/g.txt", &text(&[(2, "theirs")]));
+    cli(&["add", "dir/g.txt"]);
+    cli(&["rm", "-q", "h.txt"]);
+    cli(&["commit", "-q", "-m", "on other"]);
+    cli(&["checkout", "-q", &head]);
+    write("dir/g.txt", &text(&[(2, "ours")]));
+    write("h.txt", &text(&[(2, "ours")]));
+    cli(&["add", "dir/g.txt", "h.txt"]);
+    cli(&["commit", "-q", "-m", "on base"]);
+
+    let s = session(&path);
+    assert_eq!(
+        s.merge_branch("other", MergeMode::Merge).expect("merge"),
+        OperationOutcome::Conflicts
+    );
+    s.resolve_conflicts(
+        &["dir/g.txt".to_owned(), "h.txt".to_owned()],
+        ConflictSide::Theirs,
+    )
+    .expect("keep theirs");
+
+    assert_eq!(
+        std::fs::read(path.join("dir/g.txt")).expect("read g"),
+        crlf(&text(&[(2, "theirs")]))
+    );
+    assert!(
+        !path.join("h.txt").exists(),
+        "deleted side removes the file"
+    );
+    let repo = Repository::open(&path).expect("open");
+    let index = repo.index().expect("index");
+    assert!(!index.has_conflicts());
+    assert!(index.get_path(Path::new("h.txt"), 0).is_none());
+    let staged = index.get_path(Path::new("dir/g.txt"), 0).expect("staged");
+    let blob = repo.find_blob(staged.id).expect("blob");
+    assert_eq!(blob.content(), lf(&text(&[(2, "theirs")])));
+    let leftovers: Vec<_> = std::fs::read_dir(path.join(".git"))
+        .expect("read .git")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("git-real-"))
+        .collect();
+    assert!(leftovers.is_empty(), "scratch left in .git: {leftovers:?}");
 }

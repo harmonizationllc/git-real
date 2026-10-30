@@ -335,10 +335,19 @@ fn list_reports_ahead_count_after_a_local_commit() {
 fn advance_remote(path: &Path, bare: &Path, head: &str) {
     let other = tempfile::tempdir().unwrap();
     let clone_path = other.path().join("clone");
-    git2::build::RepoBuilder::new()
-        .clone(bare.to_str().unwrap(), &clone_path)
-        .expect("clone bare");
-    common::set_autocrlf(&clone_path, "false");
+    // Pinned before the checkout (a git2 clone would check out under the
+    // host's autocrlf first), so the clone is the same on every OS.
+    common::run_git_ok(
+        other.path(),
+        &[
+            "clone",
+            "-q",
+            "-c",
+            "core.autocrlf=false",
+            bare.to_str().unwrap(),
+            clone_path.to_str().unwrap(),
+        ],
+    );
     common::commit_file(&clone_path, "remote.txt", "r\n", "remote commit");
     common::push_branch(&clone_path, head);
     common::fetch_remote(path, "origin");
