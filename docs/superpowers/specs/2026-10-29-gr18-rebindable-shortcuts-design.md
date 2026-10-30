@@ -311,9 +311,13 @@ Component state: `null`, or
 `save(next: ShortcutBindings)`: when the chord being set equals the id's
 registry default, the id's entry is **deleted** instead (so the file holds
 only real overrides); then `setShortcutBindings(next)`. `Reset` deletes
-the id's entry. `Reset all to defaults` sends `{}`; it is disabled when
-the map is empty. (Since the GR-18b follow-ups, `setShortcuts` sends
-`{ bindings, keycaps }` and Reset all clears both maps.)
+the id's entry and any other id's entry that holds this id's default
+chord, and so on through every row whose default that frees, so a row
+reset after a `Replace` gets its chord back and the row that took it
+returns to its own default. `Reset all to defaults` sends
+`{}`; it is disabled when the map is empty. (Since the GR-18b follow-ups,
+`setShortcuts` sends `{ bindings, keycaps }` and Reset all clears both
+maps.)
 
 ### Keyboard access
 
@@ -344,10 +348,13 @@ and cancels through `blur`.
   key itself; left Ctrl + left Alt works. Chromium reports `AltGraph` only for
   the right Alt key on layouts that have one; this is untested on hardware.
 - On macOS, Option+letter chords compete with accented-character input.
-- A row that is unbound only because another id's hand-edited override claimed
-  its default shows `Unbound` with no `Reset`. The dialog never produces this
-  state. Recovery is pressing the chord on that row and choosing `Replace`, or
-  `Reset all`.
+- A row that is unbound only because another id's **hand-edited**
+  override claimed its default shows `Unbound` with no `Reset` (no entry
+  of its own). The dialog never produces this state: `Reset` on a row
+  after a `Replace` drops the claiming override too (found by the
+  2026-10-30 acceptance walk, item 3). Recovery for the hand-edited case
+  is pressing the chord on that row and choosing `Replace`, `Reset` on
+  the claiming row, or `Reset all`.
 
 ## 8. Testing
 
