@@ -86,7 +86,7 @@ describe("ShortcutSettings reset", () => {
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run src/features/settings/ShortcutSettings.test.tsx -t "Reset"`
-Expected: the three new tests FAIL on the `bindings` assertion (`pull: "Mod+K"` still present); the existing Reset tests PASS.
+Expected: the four new tests FAIL on the `bindings` assertion (the first three with `pull: "Mod+K"` still present, the cascade test with `push: "Mod+Shift+L"` still present); the existing Reset tests PASS.
 
 - [ ] **Step 3: Implement in `reset`**
 

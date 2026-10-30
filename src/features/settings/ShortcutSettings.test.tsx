@@ -422,6 +422,7 @@ describe("ShortcutSettings reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
     expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
   });
+
   it("Reset cascades through every row whose default it frees", async () => {
     await seed({ push: "Mod+Shift+L", pull: "Mod+K", palette: null });
     setup();
