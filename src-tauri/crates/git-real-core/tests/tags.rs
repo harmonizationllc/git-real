@@ -612,3 +612,89 @@ fn delete_remote_tag_never_removes_a_branch_with_the_same_name() {
             .is_ok()
     );
 }
+
+/// A repo with the given lightweight tags and `core.ignorecase` switched on.
+fn ignorecase_repo_with_tags(tags: &[&str]) -> (TempDir, PathBuf, RepoSession) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let target = repo.head().unwrap().peel(git2::ObjectType::Commit).unwrap();
+        for name in tags {
+            repo.tag_lightweight(name, &target, false).unwrap();
+        }
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    (dir, path, session)
+}
+
+fn tag_names(session: &RepoSession) -> Vec<String> {
+    session
+        .list_tags()
+        .unwrap()
+        .tags
+        .into_iter()
+        .map(|t| t.name)
+        .collect()
+}
+
+#[test]
+fn create_tag_case_variant_of_existing_tag_is_tag_exists_with_the_existing_spelling() {
+    let (_d, path, session) = ignorecase_repo_with_tags(&["V1"]);
+    let err = session.create_tag("v1", &head(&path), None).unwrap_err();
+    assert!(
+        matches!(err, GitError::TagExists(ref n) if n == "V1"),
+        "{err:?}"
+    );
+    assert!(tag_commit(&path, "v1").is_none() || cfg!(windows));
+}
+
+#[test]
+fn create_tag_exact_duplicate_is_tag_exists_when_ignorecase() {
+    let (_d, path, session) = ignorecase_repo_with_tags(&["v1"]);
+    let err = session.create_tag("v1", &head(&path), None).unwrap_err();
+    assert!(
+        matches!(err, GitError::TagExists(ref n) if n == "v1"),
+        "{err:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_tag_removes_exact_spelling_when_both_spellings_exist() {
+    let (_d, _p, session) = ignorecase_repo_with_tags(&["V1", "v1"]);
+    session.delete_tag("v1").unwrap();
+    let names = tag_names(&session);
+    assert!(
+        names.contains(&"V1".to_owned()) && !names.contains(&"v1".to_owned()),
+        "{names:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_tag_case_variant_is_tag_not_found_when_ignorecase() {
+    let (_d, _p, session) = ignorecase_repo_with_tags(&["V1"]);
+    let err = session.delete_tag("v1").unwrap_err();
+    assert!(
+        matches!(err, GitError::TagNotFound(ref n) if n == "v1"),
+        "{err:?}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn fresh_repo_on_windows_does_not_resolve_tag_case_variants() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = repo(); // git wrote core.ignorecase=true at init
+    session.create_tag("V1", &head(&path), None).unwrap();
+    let err = session.delete_tag("v1").unwrap_err();
+    assert!(
+        matches!(err, GitError::TagNotFound(ref n) if n == "v1"),
+        "{err:?}"
+    );
+    assert!(tag_names(&session).contains(&"V1".to_owned()));
+}

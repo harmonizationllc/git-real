@@ -443,7 +443,7 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
 }
 
 /// Reads `core.ignorecase`; an unopenable config or unreadable value is false.
-fn ignores_case(repo: &Repository) -> bool {
+pub(super) fn ignores_case(repo: &Repository) -> bool {
     repo.config()
         .ok()
         .and_then(|c| c.get_bool("core.ignorecase").ok())
