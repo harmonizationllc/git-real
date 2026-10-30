@@ -59,7 +59,7 @@ key means `false`.
 The existing exact-duplicate pre-checks call `repo.find_branch(name, Local)`.
 On NTFS that lookup opens the loose ref file, so `find_branch("alpha")`
 succeeds when only `Alpha` exists; that is exactly the `BranchExists("alpha")`
-the Windows probe reported. The check must therefore compare *names*, not
+the Windows probe reported. The check must therefore compare _names_, not
 look a name up through the filesystem. (My call, prompted by the builder
 check.)
 

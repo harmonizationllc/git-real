@@ -33,12 +33,14 @@
 ### Task 1: Core helper, error variant and tests
 
 **Files:**
+
 - Modify: `src-tauri/crates/git-real-core/src/error.rs:42-43` (add variant after `BranchExists`)
 - Modify: `src-tauri/crates/git-real-core/src/refs/mod.rs:132-137` (`rename_branch`), `:324-334` (`new_branch_target`), new free fn near `find_local` (`:418`)
 - Modify: `src-tauri/crates/git-real-core/src/linked_worktrees/mod.rs:73-76` (remove the `find_branch` pre-check)
 - Test: `src-tauri/crates/git-real-core/tests/common/mod.rs` (new helper), `src-tauri/crates/git-real-core/tests/branches.rs`, `src-tauri/crates/git-real-core/tests/linked_worktrees.rs`
 
 **Interfaces:**
+
 - Produces: `GitError::BranchCaseCollision { requested: String, existing: String }` (Task 3 maps it); `fn refuse_duplicate_branch(repo: &Repository, name: &str, keep: Option<&str>) -> Result<(), GitError>` (private to `refs/mod.rs`); test helper `pub fn set_ignorecase(path: &Path, value: bool)` in `tests/common/mod.rs`.
 
 - [ ] **Step 1: Write the test helper and fixture variant**
@@ -249,6 +251,7 @@ git commit -m "feat(GR-32): refuse case-only branch collisions on case-insensiti
 ### Task 2: Split the two gated sort tests
 
 **Files:**
+
 - Test: `src-tauri/crates/git-real-core/tests/branches.rs:81-97`
 - Test: `src-tauri/crates/git-real-core/tests/status.rs:386-402`
 
@@ -312,11 +315,13 @@ git commit -m "test(GR-32): run byte-order sort tests on every platform, case pa
 ### Task 3: Tauri and front-end error kind
 
 **Files:**
+
 - Modify: `src-tauri/src/error.rs:28` (enum) and `:171` (match arm)
 - Modify: `src/lib/ipc/types.ts:61` (union)
 - Modify: `src/lib/ipc/errors.ts:21` (`KINDS` record)
 
 **Interfaces:**
+
 - Consumes: `GitError::BranchCaseCollision { .. }` from Task 1.
 - Produces: `AppErrorKind::BranchCaseCollision`, serialised `"branchCaseCollision"` (the enum's existing serde rename rule handles the casing; check the `#[serde(rename_all = ...)]` attribute on `AppErrorKind` and add nothing new).
 
