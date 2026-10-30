@@ -293,15 +293,15 @@ pub fn add_remote_and_fetch(path: &Path, bare: &Path, head_name: &str) {
         .expect("set upstream");
 }
 
-/// Writes `core.ignorecase` into the repository's own config file, as git
-/// does at init on a case-insensitive filesystem. Call before opening the
-/// `RepoSession` under test.
 /// Canonical form of `path` without the Windows `\\?\` verbatim prefix, the
-/// same form the crate itself reports.
+/// same function production uses.
 pub fn canonical(path: &Path) -> PathBuf {
     dunce::canonicalize(path).unwrap()
 }
 
+/// Writes `core.ignorecase` into the repository's own config file, as git
+/// does at init on a case-insensitive filesystem. Call before opening the
+/// `RepoSession` under test.
 pub fn set_ignorecase(path: &Path, value: bool) {
     Repository::open(path)
         .expect("open repo")
