@@ -548,7 +548,55 @@ git commit -m "fix(GR-32): canonicalise paths without the Windows verbatim prefi
 
 ---
 
+### Task 6: Status budget 1500 ms
+
+Spec §6.3. Owner decision: fixed here, not ticketed.
+
+**Files:**
+
+- Modify: `src-tauri/crates/git-real-bench/src/budgets.rs` (constant, its comment, the constants test)
+- Modify: `src-tauri/crates/git-real-bench/src/report.rs` (the expected budgets line in its test)
+- Modify: `README.md` (the `statusMs` row of the budget table)
+- Modify: `docs/adr/0004-performance-budgets-and-benchmarks.md` (amendment note)
+
+**Interfaces:**
+
+- Produces: `pub const STATUS_MS: u128 = 1_500;` — the only source of the number; `report.rs` prints it, so the budgets line becomes `budgets: open→first page 3000 ms, status 1500 ms, paging RSS growth 64 MB`.
+
+- [ ] **Step 1: Make the tests expect the new number**
+
+`budgets.rs`, test `budget_constants_match_the_acceptance_criteria`: expected tuple `(3_000, 1_500, 64)`. `report.rs` test near line 460: expected string `budgets: open→first page 3000 ms, status 1500 ms, paging RSS growth 64 MB`.
+
+- [ ] **Step 2: Run them red**
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml -p git-real-bench`
+Expected: both tests FAIL (constant still 500).
+
+- [ ] **Step 3: Implement**
+
+`budgets.rs`: `pub const STATUS_MS: u128 = 1_500; // AC 3, raised from 500 on 2026-10-30 (GR-32 spec §6.3): CI runner timing` — keep the other two constants. `README.md` budget table: the `statusMs` row reads `1500 ms`. `docs/adr/0004-performance-budgets-and-benchmarks.md`: add a short "Amendment 2026-10-30" paragraph at the end: status budget raised from 500 ms to 1500 ms because the shared CI runner measures 570-1130 ms for an unchanged status path (84 ms and 43 ms on 2026-10-26); the number is `STATUS_MS` in the bench crate.
+
+- [ ] **Step 4: Run the checks**
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --workspace
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+npm run lint
+```
+
+Expected: all green (`npm run lint` runs prettier over the README and ADR).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/crates/git-real-bench/src/budgets.rs src-tauri/crates/git-real-bench/src/report.rs README.md docs/adr/0004-performance-budgets-and-benchmarks.md
+git commit -m "fix(GR-32): raise the status benchmark budget to 1500 ms for the CI runner"
+```
+
+---
+
 ### After the tasks (orchestrator, not a task)
 
-- Push the branch and watch the Windows core job: it must pass the whole crate with no failures (Tasks 4 and 5 remove the only ones). Benchmarks' status-budget failure predates the branch.
+- Push the branch and watch CI: every job must pass, Benchmarks included (Task 6) and the Windows core crate (Tasks 4 and 5).
 - Whole-branch review of the new range, then `superpowers:finishing-a-development-branch`.

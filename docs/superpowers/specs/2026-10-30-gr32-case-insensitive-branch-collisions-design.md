@@ -277,3 +277,17 @@ no-op on non-Windows), wrapped in one crate-private `paths::canonical`. The
 session root, every linked-worktree path, and the clone destination use it.
 Tests compare against the same function through `common::canonical`. The
 Windows job must then pass the whole core crate with no failures.
+
+### 6.3 Status budget raised to 1500 ms (owner decision, 2026-10-30)
+
+The Benchmarks CI job has failed on every main run since 535677a (2026-10-27):
+`statusMs` is 567-653 ms on the 10,000-file synthetic worktree and 961-1125 ms on the
+11,488-file qemu worktree against GR-16's 500 ms budget. The last green run (9430bce,
+2026-10-26) measured 84 ms and 43 ms. No Rust status code, bench code or CI
+configuration changed in between (the only Rust change was the layout-settings file),
+so the jump is the shared `ubuntu-latest` runner, not the product. The owner raised the
+status budget to **1500 ms**: about 30 % headroom over the slowest run observed, and
+still a hard ceiling that a real regression of the same size as the runner change would
+trip. `STATUS_MS` in `git-real-bench/src/budgets.rs` is the single source of the number;
+the README budget table and ADR 0004 record the change. The GR-16 spec and plan stay as
+written (historical).
