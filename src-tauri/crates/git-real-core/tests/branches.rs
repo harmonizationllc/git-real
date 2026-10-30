@@ -87,20 +87,31 @@ fn list_reports_full_hex_oid_of_the_branch_tip() {
     assert_eq!(list.local[0].oid, head_oid(&path).to_string());
 }
 
-// GR-32: NTFS loose refs are case-insensitive, so Alpha/alpha cannot coexist on Windows.
-#[cfg(unix)]
 #[test]
 fn list_sorts_local_branches_by_name_in_byte_order() {
     let (_d, _p, session, head) = fixture();
     session.create_branch("zeta", None).unwrap();
-    session.create_branch("Alpha", None).unwrap();
+    session.create_branch("Beta", None).unwrap();
     session.create_branch("alpha", None).unwrap();
     let mut expected = vec![
         head,
         "zeta".to_string(),
-        "Alpha".to_string(),
+        "Beta".to_string(),
         "alpha".to_string(),
     ];
+    expected.sort();
+    assert_eq!(local_names(&session.list_branches().unwrap()), expected);
+}
+
+// Unix-only: a case-insensitive filesystem cannot hold both spellings, and
+// the case-collision refusal rejects the second one there.
+#[cfg(unix)]
+#[test]
+fn list_sorts_case_only_variants_in_byte_order() {
+    let (_d, _p, session, head) = fixture();
+    session.create_branch("alpha", None).unwrap();
+    session.create_branch("Alpha", None).unwrap();
+    let mut expected = vec![head, "alpha".to_string(), "Alpha".to_string()];
     expected.sort();
     assert_eq!(local_names(&session.list_branches().unwrap()), expected);
 }
@@ -1100,7 +1111,7 @@ fn prepare_remote_delete_with_an_illegal_remote_name_fails_with_a_git2_error() {
     ));
 }
 
-// --- case-only collisions (GR-32) ---
+// --- case-only collisions ---
 
 #[test]
 fn create_case_variant_is_case_collision_when_ignorecase() {
