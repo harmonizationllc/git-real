@@ -64,21 +64,6 @@ pub(crate) fn escape_glob(p: &str) -> String {
     out
 }
 
-/// Escapes `p` for use as a literal libgit2 pathspec: as [`escape_glob`],
-/// plus a leading `!` (negation) or `#` (comment), either of which would
-/// otherwise change or empty the pattern.
-///
-/// Control whitespace (`\n \r \t \x0b \x0c`) cannot be escaped: libgit2
-/// ends the pattern there, so callers must reject such paths first.
-pub(crate) fn escape_pathspec(p: &str) -> String {
-    let escaped = escape_glob(p);
-    if escaped.starts_with(['!', '#']) {
-        format!("\\{escaped}")
-    } else {
-        escaped
-    }
-}
-
 /// Validates `raw` with [`repo_relative`] and additionally rejects it when
 /// any ancestor below `workdir` is a symlink, since following one could
 /// read or delete files outside the working tree.

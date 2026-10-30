@@ -7,10 +7,10 @@
 use std::path::{Path, PathBuf};
 
 use git2::build::CheckoutBuilder;
-use git2::{Commit, ErrorCode, Index, IndexAddOption, ObjectType};
+use git2::{Commit, ErrorCode, Index, IndexAddOption, IndexEntry, IndexTime, ObjectType};
 
 use crate::error::GitError;
-use crate::paths::{checked_relative, escape_pathspec};
+use crate::paths::checked_relative;
 use crate::repo::RepoSession;
 
 /// Characters that end a libgit2 pathspec early, so a path containing one
@@ -83,22 +83,43 @@ impl RepoSession {
                 return Err(GitError::PathNotFound(PathBuf::from(p)));
             }
         }
-        let unstaged = match head {
-            Some(commit) => self
-                .repo()
-                .reset_default(
-                    Some(commit.as_object()),
-                    paths.iter().map(|p| escape_pathspec(p)),
-                )
-                .map_err(GitError::from),
-            None => (|| {
-                for p in &paths {
-                    index.remove_path(Path::new(p))?;
+        // Edit the index entries directly: a pathspec cannot name every
+        // path portably (libgit2 on Windows treats `\` as a separator).
+        let unstaged = (|| {
+            for p in &paths {
+                let rel = Path::new(p);
+                for stage in 0..=3 {
+                    match index.remove(rel, stage) {
+                        Ok(()) => {}
+                        Err(e) if e.code() == ErrorCode::NotFound => {}
+                        Err(e) => return Err(e.into()),
+                    }
                 }
-                index.write()?;
-                Ok(())
-            })(),
-        };
+                let head_entry = tree.as_ref().and_then(|t| {
+                    t.get_path(rel)
+                        .ok()
+                        .filter(|e| e.kind() != Some(ObjectType::Tree))
+                });
+                if let Some(e) = head_entry {
+                    index.add(&IndexEntry {
+                        ctime: IndexTime::new(0, 0),
+                        mtime: IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: e.filemode() as u32,
+                        uid: 0,
+                        gid: 0,
+                        file_size: 0,
+                        id: e.id(),
+                        flags: 0,
+                        flags_extended: 0,
+                        path: p.clone().into_bytes(),
+                    })?;
+                }
+            }
+            index.write()?;
+            Ok(())
+        })();
         reload_on_error(&mut index, unstaged)
     }
 

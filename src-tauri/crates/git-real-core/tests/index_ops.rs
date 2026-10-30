@@ -916,6 +916,100 @@ fn unstage_paths_on_conflicted_path_resets_it_to_head() {
     );
 }
 
+#[test]
+fn unstage_paths_unstages_bracket_name_only() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::commit_file(&path, "a.txt", "a\n", "add a");
+    common::write_file(&path, "[a].txt", "b\n");
+    common::write_file(&path, "a.txt", "changed\n");
+    common::stage(&path, "[a].txt");
+    common::stage(&path, "a.txt");
+    session(&path)
+        .unstage_paths(&paths(&["[a].txt"]))
+        .expect("unstage");
+    assert_eq!(
+        (sides(&path, "[a].txt"), sides(&path, "a.txt")),
+        (
+            (None, Some(ChangeKind::Untracked)),
+            (Some(ChangeKind::Modified), None)
+        )
+    );
+}
+
+#[test]
+fn unstage_paths_conflicted_path_matches_git_reset() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    session(&path)
+        .unstage_paths(&paths(&["README.md"]))
+        .expect("unstage conflicted");
+    let repo = git2::Repository::open(&path).unwrap();
+    let head = repo.head().unwrap().peel_to_tree().unwrap();
+    let head_entry = head.get_path(std::path::Path::new("README.md")).unwrap();
+    let mut index = repo.index().unwrap();
+    index.read(true).unwrap();
+    let entries: Vec<_> = index
+        .iter()
+        .filter(|e| e.path == b"README.md")
+        .map(|e| ((e.flags >> 12) & 3, e.id, e.mode))
+        .collect();
+    assert_eq!(
+        entries,
+        vec![(0, head_entry.id(), head_entry.filemode() as u32)]
+    );
+}
+
+fn gitlink_entry(id: git2::Oid) -> git2::IndexEntry {
+    git2::IndexEntry {
+        ctime: git2::IndexTime::new(0, 0),
+        mtime: git2::IndexTime::new(0, 0),
+        dev: 0,
+        ino: 0,
+        mode: 0o160000,
+        uid: 0,
+        gid: 0,
+        file_size: 0,
+        id,
+        flags: 0,
+        flags_extended: 0,
+        path: b"sub".to_vec(),
+    }
+}
+
+#[test]
+fn unstage_paths_gitlink_restores_head_entry() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    let first = git2::Oid::from_str("1111111111111111111111111111111111111111").unwrap();
+    let second = git2::Oid::from_str("2222222222222222222222222222222222222222").unwrap();
+    {
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add(&gitlink_entry(first)).unwrap();
+        index.write().unwrap();
+        // commit_all would drop the entry: update_all prunes paths missing from the workdir.
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("Test User", "test@example.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "add gitlink", &tree, &[&parent])
+            .unwrap();
+    }
+    {
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add(&gitlink_entry(second)).unwrap();
+        index.write().unwrap();
+    }
+    session(&path)
+        .unstage_paths(&paths(&["sub"]))
+        .expect("unstage gitlink");
+    let repo = git2::Repository::open(&path).unwrap();
+    let mut index = repo.index().unwrap();
+    index.read(true).unwrap();
+    let e = index
+        .get_path(std::path::Path::new("sub"), 0)
+        .expect("entry");
+    assert_eq!((e.id, e.mode), (first, 0o160000));
+}
+
 // --- coverage audit: renames ---
 
 fn repo_with_staged_rename() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -1204,8 +1298,6 @@ fn unstage_paths_unstages_file_named_with_backslash_on_unix() {
     );
 }
 
-// GR-34: libgit2 on Windows does not honour the backslash pathspec escape, so unstaging a !/# name is a silent no-op.
-#[cfg(unix)]
 #[test]
 fn unstage_paths_unstages_file_with_leading_bang() {
     let (_dir, path) = common::temp_repo_with_commit();
@@ -1378,8 +1470,6 @@ fn discard_paths_hash_prefixed_name_leaves_other_files_modified() {
     );
 }
 
-// GR-34: libgit2 on Windows does not honour the backslash pathspec escape, so unstaging a !/# name is a silent no-op.
-#[cfg(unix)]
 #[test]
 fn unstage_paths_hash_prefixed_name_unstages_only_that_file() {
     let (_dir, path) = repo_with_hash_files();
