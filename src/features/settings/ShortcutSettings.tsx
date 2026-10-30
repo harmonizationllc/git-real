@@ -151,9 +151,17 @@ export function ShortcutSettings() {
     setCapture(null);
   };
 
+  /**
+   * Restores the row's default; an override elsewhere that holds that chord
+   * goes too, so the row is never left unbound by its own reset.
+   */
   const reset = (id: ShortcutId) => {
     const bindings = { ...overrides };
     delete bindings[id];
+    const defaultKeys = shortcut(id).keys;
+    for (const other of Object.keys(bindings) as ShortcutId[]) {
+      if (bindings[other] === defaultKeys) delete bindings[other];
+    }
     commit({ bindings, keycaps });
     focusChord(id);
   };

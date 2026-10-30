@@ -33,39 +33,41 @@
 ### Task 1: Reset drops the override that claims the row's default
 
 **Files:**
+
 - Modify: `src/features/settings/ShortcutSettings.tsx` (the `reset` handler, currently near line 156)
 - Test: `src/features/settings/ShortcutSettings.test.tsx` (the `describe("ShortcutSettings reset")` block, near line 350)
 - Modify: `docs/superpowers/specs/2026-10-29-gr18-rebindable-shortcuts-design.md` §6 Saving paragraph (near line 313) and §7 last known-limit bullet (near line 346)
 
 **Interfaces:**
+
 - Consumes: `shortcut(id).keys` from `src/lib/shortcuts` (already imported in the component as `shortcut`), `overrides` (`Record<ShortcutId, string | null>`), `commit({ bindings, keycaps })`, `focusChord(id)`.
 - Produces: nothing new; `reset(id: ShortcutId): void` keeps its signature.
 
 - [ ] **Step 1: Write the failing tests** (append inside `describe("ShortcutSettings reset")`)
 
 ```ts
-  it("Reset on a row whose default another override took drops that override too", async () => {
-    await seed({ pull: "Mod+K", palette: null });
-    setup();
-    fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
-    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
-    expect(kbdParts(chordButton("Command palette"))).toEqual(["Ctrl", "K"]);
-    expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
-  });
+it("Reset on a row whose default another override took drops that override too", async () => {
+  await seed({ pull: "Mod+K", palette: null });
+  setup();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
+  expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+  expect(kbdParts(chordButton("Command palette"))).toEqual(["Ctrl", "K"]);
+  expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
+});
 
-  it("Reset leaves overrides on other chords alone", async () => {
-    await seed({ fetch: "Mod+Alt+F", pull: "Mod+K", palette: null });
-    setup();
-    fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
-    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+F" }, keycaps: {} });
-  });
+it("Reset leaves overrides on other chords alone", async () => {
+  await seed({ fetch: "Mod+Alt+F", pull: "Mod+K", palette: null });
+  setup();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
+  expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+F" }, keycaps: {} });
+});
 
-  it("Reset drops every override that claims the default (hand-edited file)", async () => {
-    await seed({ pull: "Mod+K", push: "Mod+K", palette: null });
-    setup();
-    fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
-    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
-  });
+it("Reset drops every override that claims the default (hand-edited file)", async () => {
+  await seed({ pull: "Mod+K", push: "Mod+K", palette: null });
+  setup();
+  fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
+  expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+});
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
