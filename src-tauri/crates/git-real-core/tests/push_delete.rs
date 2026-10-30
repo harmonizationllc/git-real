@@ -98,10 +98,7 @@ fn prepare_returns_the_repository_workdir() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
     let push = session.prepare_remote_delete("origin", "feature").unwrap();
-    assert_eq!(
-        push.workdir().canonicalize().unwrap(),
-        path.canonicalize().unwrap()
-    );
+    assert_eq!(common::canonical(push.workdir()), common::canonical(&path));
 }
 
 #[test]

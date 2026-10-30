@@ -159,7 +159,7 @@ fn clone_into_existing_empty_dest_succeeds_and_returns_canonical_path() {
 
     let path = clone::clone(&url, &dest, None, &mut sink).expect("clone should succeed");
 
-    assert_eq!(path, dest.canonicalize().unwrap());
+    assert_eq!(path, common::canonical(&dest));
     assert!(path.join("README.md").exists());
 }
 

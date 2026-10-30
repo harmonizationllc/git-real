@@ -1519,6 +1519,7 @@ dependencies = [
 name = "git-real-core"
 version = "0.1.0"
 dependencies = [
+ "dunce",
  "git2",
  "serde",
  "serde_json",
