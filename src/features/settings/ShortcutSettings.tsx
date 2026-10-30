@@ -15,7 +15,7 @@ import {
 import type { ShortcutId } from "../../lib/shortcuts";
 import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
 import { useSettings } from "../../lib/store/settings";
-import { setShortcutBindings } from "../../lib/store/settingsActions";
+import { setShortcuts } from "../../lib/store/settingsActions";
 import { Section } from "./Section";
 import { KeyParts } from "./ShortcutsDialog";
 import dialogStyles from "./ShortcutsDialog.module.css";
@@ -34,7 +34,7 @@ function commit(next: ShortcutBindings): void {
   for (const s of SHORTCUTS) {
     if (clean[s.id] === s.keys) delete clean[s.id];
   }
-  setShortcutBindings(clean);
+  setShortcuts({ bindings: clean, keycaps: useSettings.getState().settings.shortcuts.keycaps });
 }
 
 /** The Keyboard shortcuts section: press a chord to rebind a row, resolve conflicts, reset. */

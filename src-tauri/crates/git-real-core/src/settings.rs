@@ -156,6 +156,8 @@ impl Default for UpdateSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct ShortcutSettings {
     pub bindings: BTreeMap<String, Option<String>>,
+    /// Per-key letters the user taught the app, keyed by physical key token. Opaque to Rust.
+    pub keycaps: BTreeMap<String, String>,
 }
 
 /// The main window's size in logical px, and whether it is maximised.
@@ -378,6 +380,8 @@ pub struct UpdatesPatch {
 pub struct ShortcutsPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bindings: Option<BTreeMap<String, Option<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keycaps: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -516,6 +520,20 @@ impl Settings {
             }
             if trimmed.len() != raw.len() {
                 *raw = trimmed.to_owned();
+            }
+            true
+        });
+        self.shortcuts.keycaps.retain(|id, cap| {
+            let trimmed = cap.trim();
+            if trimmed.is_empty() {
+                warnings.push(SettingsWarning::new(
+                    &format!("shortcuts.keycaps.{id}"),
+                    "blank; dropped".to_owned(),
+                ));
+                return false;
+            }
+            if trimmed.len() != cap.len() {
+                *cap = trimmed.to_owned();
             }
             true
         });
@@ -738,6 +756,7 @@ impl Settings {
             },
             shortcuts: ShortcutSettings {
                 bindings: read_bindings(v, &mut w),
+                keycaps: read_keycaps(v, &mut w),
             },
             window: WindowGeometry {
                 width: leaf(v, "window", "width", d.window.width, &mut w),
@@ -782,6 +801,35 @@ fn read_bindings(
         }
     }
     bindings
+}
+
+/// Reads `shortcuts.keycaps`: missing is the empty map silently, a non-object is
+/// the empty map with one warning, and a non-string entry is dropped with a
+/// warning on `shortcuts.keycaps.<id>`.
+fn read_keycaps(obj: &Value, warnings: &mut Vec<SettingsWarning>) -> BTreeMap<String, String> {
+    let Some(raw) = obj.get("shortcuts").and_then(|s| s.get("keycaps")) else {
+        return BTreeMap::new();
+    };
+    let Some(entries) = raw.as_object() else {
+        warnings.push(SettingsWarning::new(
+            "shortcuts.keycaps",
+            "not an object; using the defaults".to_owned(),
+        ));
+        return BTreeMap::new();
+    };
+    let mut keycaps = BTreeMap::new();
+    for (id, value) in entries {
+        match String::deserialize(value) {
+            Ok(cap) => {
+                keycaps.insert(id.clone(), cap);
+            }
+            Err(err) => warnings.push(SettingsWarning::new(
+                &format!("shortcuts.keycaps.{id}"),
+                format!("{err}; dropped"),
+            )),
+        }
+    }
+    keycaps
 }
 
 /// Reads `obj.section.key` as `T`. Missing (or a non-object section) is the
@@ -870,6 +918,7 @@ impl Settings {
         }
         if let Some(p) = &patch.shortcuts {
             set(&mut next.shortcuts.bindings, &p.bindings);
+            set(&mut next.shortcuts.keycaps, &p.keycaps);
         }
         if let Some(p) = &patch.window {
             set(&mut next.window.width, &p.width);

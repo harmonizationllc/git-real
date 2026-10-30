@@ -55,7 +55,7 @@ describe("defaults", () => {
 
   it("DEFAULT_SETTINGS.shortcuts is an empty bindings map", async () => {
     const { DEFAULT_SETTINGS } = await load();
-    expect(DEFAULT_SETTINGS.shortcuts).toEqual({ bindings: {} });
+    expect(DEFAULT_SETTINGS.shortcuts).toEqual({ bindings: {}, keycaps: {} });
   });
 
   it("exports the clamp constants", async () => {

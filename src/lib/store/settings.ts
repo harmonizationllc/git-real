@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
     pullRequestsHeight: null,
   },
   updates: { checkOnStartup: true },
-  shortcuts: { bindings: {} },
+  shortcuts: { bindings: {}, keycaps: {} },
   window: { width: 1280, height: 800, maximized: false },
 };
 

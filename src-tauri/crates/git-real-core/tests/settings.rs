@@ -632,7 +632,7 @@ fn bindings(pairs: &[(&str, Option<&str>)]) -> std::collections::BTreeMap<String
 fn shortcuts_default_to_an_empty_map() {
     assert!(Settings::default().shortcuts.bindings.is_empty());
     let value = serde_json::to_value(Settings::default()).unwrap();
-    assert_eq!(value["shortcuts"], json!({"bindings": {}}));
+    assert_eq!(value["shortcuts"], json!({"bindings": {}, "keycaps": {}}));
 }
 
 #[test]
@@ -737,4 +737,88 @@ fn patch_bindings_trims_and_drops_blank() {
         next.shortcuts.bindings,
         bindings(&[("fetch", Some("Mod+G"))])
     );
+}
+
+fn keycaps(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
+}
+
+#[test]
+fn keycaps_default_to_an_empty_map() {
+    assert!(Settings::default().shortcuts.keycaps.is_empty());
+    let value = serde_json::to_value(Settings::default()).unwrap();
+    assert_eq!(value["shortcuts"], json!({"bindings": {}, "keycaps": {}}));
+}
+
+#[test]
+fn keycaps_round_trip_through_the_file_codec() {
+    let mut s = Settings::default();
+    s.shortcuts.keycaps = keycaps(&[("Q", "A")]);
+    let text = serde_json::to_string_pretty(&SettingsFile::current(s.clone())).unwrap();
+    let (back, warnings) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, s);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn lenient_keycaps_not_an_object_warns_and_uses_empty() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"keycaps": 7},
+        "appearance": {"diffFontSize": 16}
+    }));
+    assert!(s.shortcuts.keycaps.is_empty());
+    assert_eq!(s.appearance.diff_font_size, 16);
+    assert_eq!(fields(&warnings), vec!["shortcuts.keycaps"]);
+    assert_eq!(warnings[0].message, "not an object; using the defaults");
+}
+
+#[test]
+fn lenient_keycap_entry_of_wrong_type_is_dropped_with_a_warning() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"keycaps": {"Q": 5, "K": "T"}}
+    }));
+    assert_eq!(s.shortcuts.keycaps, keycaps(&[("K", "T")]));
+    assert_eq!(fields(&warnings), vec!["shortcuts.keycaps.Q"]);
+    assert!(warnings[0].message.ends_with("; dropped"), "{warnings:?}");
+}
+
+#[test]
+fn lenient_keycap_blank_is_dropped_and_whitespace_trimmed() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "shortcuts": {"keycaps": {"Q": " A ", "K": " "}}
+    }));
+    assert_eq!(s.shortcuts.keycaps, keycaps(&[("Q", "A")]));
+    assert_eq!(fields(&warnings), vec!["shortcuts.keycaps.K"]);
+    assert_eq!(warnings[0].message, "blank; dropped");
+}
+
+#[test]
+fn patch_keycaps_absent_keeps_present_replaces_wholesale() {
+    let mut base = Settings::default();
+    base.shortcuts.keycaps = keycaps(&[("Q", "A"), ("K", "T")]);
+
+    let kept = base
+        .apply(&patch(json!({"appearance": {"theme": "dark"}})))
+        .unwrap();
+    assert_eq!(kept.shortcuts.keycaps, base.shortcuts.keycaps);
+
+    let bindings_only = base
+        .apply(&patch(
+            json!({"shortcuts": {"bindings": {"fetch": "Mod+G"}}}),
+        ))
+        .unwrap();
+    assert_eq!(bindings_only.shortcuts.keycaps, base.shortcuts.keycaps);
+
+    let replaced = base
+        .apply(&patch(json!({"shortcuts": {"keycaps": {"F": "U"}}})))
+        .unwrap();
+    assert_eq!(replaced.shortcuts.keycaps, keycaps(&[("F", "U")]));
+
+    let emptied = base
+        .apply(&patch(json!({"shortcuts": {"keycaps": {}}})))
+        .unwrap();
+    assert!(emptied.shortcuts.keycaps.is_empty());
 }

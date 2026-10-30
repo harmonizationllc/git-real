@@ -1,6 +1,6 @@
 import type { LayoutColumn } from "../../app/layout";
 import type { ResizableSection } from "../../app/refsLayout";
-import type { CloneUrlForm, DiffMode, SettingsPatch, ShortcutBindings, ThemePref } from "../ipc";
+import type { CloneUrlForm, DiffMode, SettingsPatch, Settings, ThemePref } from "../ipc";
 import {
   DIFF_FONT_MAX,
   DIFF_FONT_MIN,
@@ -80,7 +80,7 @@ export function setCheckOnStartup(checkOnStartup: boolean): void {
   setPref({ updates: { checkOnStartup } });
 }
 
-/** Replaces the whole override map: a string rebinds, `null` unbinds, an absent id keeps its default. */
-export function setShortcutBindings(bindings: ShortcutBindings): void {
-  setPref({ shortcuts: { bindings } });
+/** Replaces both maps: bindings (string rebinds, `null` unbinds, absent keeps the default) and learned keycaps. */
+export function setShortcuts(shortcuts: Settings["shortcuts"]): void {
+  setPref({ shortcuts });
 }

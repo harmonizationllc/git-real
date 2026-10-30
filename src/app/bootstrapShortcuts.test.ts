@@ -25,7 +25,7 @@ afterEach(() => {
 /** A fresh module graph hydrated from injected settings carrying `bindings`, with an echoing backend. */
 async function load(bindings: Settings["shortcuts"]["bindings"]) {
   const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
-  let server: Settings = { ...DEFAULT_SETTINGS, shortcuts: { bindings } };
+  let server: Settings = { ...DEFAULT_SETTINGS, shortcuts: { bindings, keycaps: {} } };
   window.__GIT_REAL_SETTINGS__ = server;
   vi.resetModules();
   const ipc = await import("../lib/ipc");
@@ -49,16 +49,16 @@ describe("bootstrapShortcuts", () => {
   });
 
   it("follows later changes until uninstalled", async () => {
-    const { bootstrapShortcuts, activeKeys, setShortcutBindings } = await load({
+    const { bootstrapShortcuts, activeKeys, setShortcuts } = await load({
       fetch: "Mod+Alt+F",
     });
     const uninstall = bootstrapShortcuts();
-    setShortcutBindings({ fetch: null });
+    setShortcuts({ bindings: { fetch: null }, keycaps: {} });
     await vi.advanceTimersByTimeAsync(300);
     expect(activeKeys("fetch")).toBeNull();
 
     uninstall();
-    setShortcutBindings({ fetch: "Mod+Alt+G" });
+    setShortcuts({ bindings: { fetch: "Mod+Alt+G" }, keycaps: {} });
     await vi.advanceTimersByTimeAsync(300);
     expect(activeKeys("fetch")).toBeNull();
   });
