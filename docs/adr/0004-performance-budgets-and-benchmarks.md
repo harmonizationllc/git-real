@@ -58,3 +58,10 @@ work shape any later budget change and the 1M+ follow-up, so they are recorded h
   paging; cpython at 134,000 commits reaches 1,238 lanes and 432 MB.
 - `git-real-core` stays the single app domain crate; further crates need the same kind
   of justification as R6.
+
+## Amendment 2026-10-30
+
+The status budget (`statusMs`) is raised from 500 ms to 1500 ms. The shared CI runner
+now measures 570 to 1130 ms for the status path, which has not changed, against 84 ms
+and 43 ms on 2026-10-26. The number lives in `STATUS_MS` in the bench crate. The other
+two budgets are unchanged.

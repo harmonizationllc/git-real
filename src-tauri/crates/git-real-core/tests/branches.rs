@@ -17,6 +17,15 @@ fn fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
     (dir, path, session, head)
 }
 
+/// `fixture()` with `core.ignorecase` written before the session opens.
+fn fixture_ignorecase(value: bool) -> (tempfile::TempDir, PathBuf, RepoSession, String) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::set_ignorecase(&path, value);
+    let head = common::head_branch_name(&path);
+    let session = RepoSession::open(&path).expect("open");
+    (dir, path, session, head)
+}
+
 /// Fixture plus a local bare remote `origin` that has been fetched and tracked.
 fn remote_fixture() -> (
     tempfile::TempDir,
@@ -78,20 +87,31 @@ fn list_reports_full_hex_oid_of_the_branch_tip() {
     assert_eq!(list.local[0].oid, head_oid(&path).to_string());
 }
 
-// GR-32: NTFS loose refs are case-insensitive, so Alpha/alpha cannot coexist on Windows.
-#[cfg(unix)]
 #[test]
 fn list_sorts_local_branches_by_name_in_byte_order() {
     let (_d, _p, session, head) = fixture();
     session.create_branch("zeta", None).unwrap();
-    session.create_branch("Alpha", None).unwrap();
+    session.create_branch("Beta", None).unwrap();
     session.create_branch("alpha", None).unwrap();
     let mut expected = vec![
         head,
         "zeta".to_string(),
-        "Alpha".to_string(),
+        "Beta".to_string(),
         "alpha".to_string(),
     ];
+    expected.sort();
+    assert_eq!(local_names(&session.list_branches().unwrap()), expected);
+}
+
+// Unix-only: a case-insensitive filesystem cannot hold both spellings, and
+// the case-collision refusal rejects the second one there.
+#[cfg(unix)]
+#[test]
+fn list_sorts_case_only_variants_in_byte_order() {
+    let (_d, _p, session, head) = fixture();
+    session.create_branch("alpha", None).unwrap();
+    session.create_branch("Alpha", None).unwrap();
+    let mut expected = vec![head, "alpha".to_string(), "Alpha".to_string()];
     expected.sort();
     assert_eq!(local_names(&session.list_branches().unwrap()), expected);
 }
@@ -1066,6 +1086,13 @@ fn delete_with_an_illegal_ref_name_fails_without_deleting_anything() {
 }
 
 #[test]
+fn delete_invalid_branch_name_is_invalid_branch_name() {
+    let (_d, _p, session, _head) = fixture();
+    let err = session.delete_branch("a..b", true).unwrap_err();
+    assert!(matches!(err, GitError::InvalidBranchName(n) if n == "a..b"));
+}
+
+#[test]
 fn rename_from_an_illegal_ref_name_fails_without_renaming_anything() {
     let (_d, path, session, head) = fixture();
     assert!(session.rename_branch("a..b", "fresh").is_err());
@@ -1089,4 +1116,264 @@ fn prepare_remote_delete_with_an_illegal_remote_name_fails_with_a_git2_error() {
         session.prepare_remote_delete("bad name", "x").unwrap_err(),
         GitError::Git2(_)
     ));
+}
+
+// --- case-only collisions ---
+
+#[test]
+fn create_case_variant_is_case_collision_when_ignorecase() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.create_branch("alpha", None).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn create_exact_duplicate_stays_branch_exists_when_ignorecase() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.create_branch("Alpha", None).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchExists(ref n) if n == "Alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn create_case_variant_folds_non_ascii() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("Ärger", None).unwrap();
+    let err = session.create_branch("ärger", None).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "ärger" && existing == "Ärger"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn create_case_variant_sees_nested_names() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("feature/X", None).unwrap();
+    let err = session.create_branch("feature/x", None).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "feature/x" && existing == "feature/X"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rename_to_case_variant_of_other_branch_is_case_collision() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("zeta", None).unwrap();
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.rename_branch("zeta", "ALPHA").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "ALPHA" && existing == "Alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rename_to_exact_other_branch_stays_branch_exists_when_ignorecase() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("zeta", None).unwrap();
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.rename_branch("zeta", "Alpha").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchExists(ref n) if n == "Alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rename_to_own_exact_name_is_branch_exists() {
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("alpha", None).unwrap();
+    let err = session.rename_branch("alpha", "alpha").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchExists(ref n) if n == "alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn rename_changes_only_the_case_of_own_name() {
+    // Runs on every platform. On a case-insensitive filesystem libgit2 needs
+    // `force` for this rename (it stats the target and finds the branch's own
+    // file), so this test guards the forced path; the core-windows CI job is
+    // where it bites.
+    let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("alpha", None).unwrap();
+    session.rename_branch("alpha", "Alpha").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+// Needs a filesystem that really distinguishes case, so it runs only on Unix
+// like the other case-pair tests.
+#[cfg(unix)]
+#[test]
+fn rename_changes_only_the_case_of_own_name_without_force_when_case_sensitive() {
+    let (_d, _p, session, _h) = fixture_ignorecase(false);
+    session.create_branch("alpha", None).unwrap();
+    session.rename_branch("alpha", "Alpha").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[test]
+fn case_variant_of_remote_branch_does_not_collide() {
+    let (_d, _bd, path, _bare, _head) = remote_fixture();
+    common::branch_with_commit(&path, "Topic", "t.txt", "t\n");
+    common::push_branch(&path, "Topic");
+    common::fetch_remote(&path, "origin");
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).expect("open");
+    session.delete_branch("Topic", true).unwrap(); // only origin/Topic remains
+    assert!(session.create_branch("topic", None).is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn create_case_variant_allowed_when_not_ignorecase() {
+    let (_d, _p, session, _h) = fixture_ignorecase(false);
+    session.create_branch("Alpha", None).unwrap();
+    session.create_branch("alpha", None).unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn garbage_ignorecase_value_counts_as_false() {
+    let (_d, path, _s, _h) = fixture();
+    Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .set_str("core.ignorecase", "maybe")
+        .unwrap();
+    let session = RepoSession::open(&path).expect("open");
+    session.create_branch("Alpha", None).unwrap();
+    session.create_branch("alpha", None).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_match_wins_over_case_collision_when_both_spellings_exist() {
+    let (_d, path) = common::temp_repo_with_commit();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Alpha", &head, false).unwrap();
+        repo.branch("alpha", &head, false).unwrap();
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    // Both spellings: whichever one libgit2 lists first, the exact match wins.
+    for requested in ["alpha", "Alpha"] {
+        let err = session.create_branch(requested, None).unwrap_err();
+        assert!(
+            matches!(err, GitError::BranchExists(ref n) if n == requested),
+            "{err:?}"
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn fresh_repo_on_windows_refuses_case_variant() {
+    let (_d, path, session, _h) = fixture();
+    let ignorecase = Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .get_bool("core.ignorecase");
+    assert!(matches!(ignorecase, Ok(true)), "{ignorecase:?}");
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.create_branch("alpha", None).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn case_collision_message_names_both_spellings() {
+    assert_eq!(
+        GitError::BranchCaseCollision {
+            requested: "alpha".into(),
+            existing: "Alpha".into()
+        }
+        .to_string(),
+        "a branch named Alpha already exists, and this repository's filesystem does not distinguish alpha from it by case"
+    );
+}
+
+/// Two branches that differ only by case, created before `core.ignorecase`
+/// is switched on (the session refuses the second spelling once it is).
+#[cfg(unix)]
+fn fixture_both_spellings() -> (tempfile::TempDir, RepoSession) {
+    let (dir, path) = common::temp_repo_with_commit();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("Alpha", &head, false).unwrap();
+        repo.branch("alpha", &head, false).unwrap();
+    }
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    (dir, session)
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_removes_exact_spelling_when_both_spellings_exist() {
+    let (_d, session) = fixture_both_spellings();
+    session.delete_branch("alpha", true).unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn rename_moves_exact_spelling_when_both_spellings_exist() {
+    let (_d, session) = fixture_both_spellings();
+    session.rename_branch("alpha", "gamma").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(
+        names.contains(&"Alpha".to_owned()) && names.contains(&"gamma".to_owned()),
+        "{names:?}"
+    );
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn fresh_repo_on_windows_does_not_resolve_case_variant_lookups() {
+    let (_d, _p, session, _h) = fixture(); // no ignorecase override: git wrote true at init
+    session.create_branch("Alpha", None).unwrap();
+    let err = session.delete_branch("alpha", true).unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"),
+        "{err:?}"
+    );
+    let err = session.checkout_branch("alpha").unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchNotFound(ref n) if n == "alpha"),
+        "{err:?}"
+    );
+    assert!(local_names(&session.list_branches().unwrap()).contains(&"Alpha".to_owned()));
 }

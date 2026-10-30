@@ -4,7 +4,7 @@
 
 use git2::{Reference, Repository, Tag};
 
-use super::is_not_found;
+use super::{ignores_case, is_not_found};
 use crate::error::GitError;
 use crate::git_cli;
 use crate::git_ops::{self, operation_failed};
@@ -48,11 +48,7 @@ impl RepoSession {
     /// stdin, or `git tag --no-sign <name> <oid>` without one.
     pub fn create_tag(&self, name: &str, oid: &str, message: Option<&str>) -> Result<(), GitError> {
         validate_tag_name(name)?;
-        match self.repo().find_reference(&tag_ref(name)) {
-            Ok(_) => return Err(GitError::TagExists(name.to_owned())),
-            Err(e) if is_not_found(&e) => {}
-            Err(e) => return Err(e.into()),
-        }
+        refuse_duplicate_tag(self.repo(), name)?;
         let target = resolve_commit(self.repo(), oid)?.id().to_string();
         // git 2.43 stores a blank annotated message without complaint, so it is refused here.
         if message.is_some_and(|m| m.trim().is_empty()) {
@@ -120,9 +116,20 @@ impl RepoSession {
     }
 
     /// The local `refs/tags/<name>`; a name that cannot be a tag is `TagNotFound` too.
+    /// On a case-insensitive repository the name must match exactly, as on a case-sensitive one.
     fn find_tag(&self, name: &str) -> Result<Reference<'_>, GitError> {
         let not_found = || GitError::TagNotFound(name.to_owned());
         validate_tag_name(name).map_err(|_| not_found())?;
+        if ignores_case(self.repo()) {
+            let wanted = tag_ref(name);
+            for reference in self.repo().references_glob("refs/tags/*")? {
+                let reference = reference?;
+                if reference.name() == Some(wanted.as_str()) {
+                    return Ok(reference);
+                }
+            }
+            return Err(not_found());
+        }
         match self.repo().find_reference(&tag_ref(name)) {
             Ok(r) => Ok(r),
             Err(e) if is_not_found(&e) => Err(not_found()),
@@ -133,6 +140,27 @@ impl RepoSession {
 
 fn tag_ref(name: &str) -> String {
     format!("refs/tags/{name}")
+}
+
+/// Refuses a name that is already a tag; names are compared by iteration because
+/// `find_reference` follows the filesystem's case folding on a case-insensitive repository.
+fn refuse_duplicate_tag(repo: &Repository, name: &str) -> Result<(), GitError> {
+    let ignorecase = ignores_case(repo);
+    let folded = name.to_lowercase();
+    let mut case_variant: Option<String> = None;
+    for reference in repo.references_glob("refs/tags/*")? {
+        let reference = reference?;
+        let Some(existing) = reference.name().and_then(|n| n.strip_prefix("refs/tags/")) else {
+            continue;
+        };
+        if existing == name {
+            return Err(GitError::TagExists(name.to_owned()));
+        }
+        if ignorecase && case_variant.is_none() && existing.to_lowercase() == folded {
+            case_variant = Some(existing.to_owned());
+        }
+    }
+    case_variant.map_or(Ok(()), |existing| Err(GitError::TagExists(existing)))
 }
 
 /// `None` for a tag that does not peel to a commit (a tree or blob), as the graph skips it,

@@ -191,6 +191,34 @@ fn a_conflicting_dirty_tree_blocks_checkout_with_checkout_failed() {
     assert_eq!(ref_oid(&path, "refs/heads/pr/7"), None);
 }
 
+// A branch that differs from pr/<n> only by case blocks the checkout on a case-insensitive repo.
+#[test]
+fn checkout_pr_case_variant_of_existing_branch_is_case_collision() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, head) = fx();
+    pr_head(&bare, 7, "pr.txt", "pr\n", false);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("PR/7", &commit, false).unwrap();
+    }
+    let before = ref_oid(&path, "refs/heads/PR/7");
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    let fetch = fetch_pr(&session, 7);
+
+    let err = session.checkout_fetch_head(&fetch, 7, false).unwrap_err();
+
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing } if requested == "pr/7" && existing == "PR/7"),
+        "{err:?}"
+    );
+    assert_eq!(ref_oid(&path, "refs/heads/PR/7"), before);
+    assert_eq!(common::head_branch_name(&path), head);
+}
+
 // Checking out without having fetched anything is a plain error, not a panic.
 #[test]
 fn checkout_fetch_head_without_a_fetch_head_is_revision_not_found() {

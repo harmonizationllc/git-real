@@ -1,8 +1,17 @@
-//! Validation and escaping of repository-relative paths received from callers.
+//! Path validation, escaping and canonicalisation.
+//!
+//! Validation and escaping cover repository-relative paths received from callers.
 
 use std::path::{Path, PathBuf};
 
 use crate::error::GitError;
+
+/// Canonicalises `path`. The git CLI rejects `\\?\` verbatim paths, so every
+/// canonical path in this crate comes from here; `dunce` drops the prefix on
+/// Windows and is `std::fs::canonicalize` everywhere else.
+pub(crate) fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    dunce::canonicalize(path)
+}
 
 /// Normalises `raw` to a repository-relative path, rejecting anything that
 /// could reach outside the working tree or into `.git`.

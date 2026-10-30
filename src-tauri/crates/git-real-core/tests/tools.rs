@@ -83,8 +83,11 @@ fn open_in_editor_appends_the_path_and_returns_before_the_tool_exits() {
     let argv_file_str = argv_file.to_str().unwrap();
 
     // Editor script: records its args and sleeps briefly so we can verify the
-    // function returns before the process exits.
-    let script = format!("printf '%s\\n' \"$@\" > '{argv_file_str}'\nsleep 2\n");
+    // function returns before the process exits. It writes to a temp name and
+    // renames, so the polling test never sees the file created but still empty.
+    let script = format!(
+        "printf '%s\\n' \"$@\" > '{argv_file_str}.tmp' && mv '{argv_file_str}.tmp' '{argv_file_str}'\nsleep 2\n"
+    );
     let editor_path = {
         use std::os::unix::fs::PermissionsExt;
         let p = dir.path().join("fake_editor");
@@ -143,7 +146,9 @@ fn open_in_editor_runs_in_the_given_cwd() {
     let pwd_file_str = pwd_file.to_str().unwrap();
 
     // Editor script: records $PWD so we can confirm the working directory.
-    let script = format!("echo \"$PWD\" > '{pwd_file_str}'\n");
+    let script = format!(
+        "echo \"$PWD\" > '{pwd_file_str}.tmp' && mv '{pwd_file_str}.tmp' '{pwd_file_str}'\n"
+    );
     let editor_path = {
         use std::os::unix::fs::PermissionsExt;
         let p = dir.path().join("fake_editor");
@@ -181,7 +186,9 @@ fn open_in_editor_without_cwd_inherits_the_parent() {
     let argv_file_str = argv_file.to_str().unwrap();
 
     // Editor script: records argv to confirm it ran; $PWD is the test process's cwd.
-    let script = format!("printf '%s\\n' \"$@\" > '{argv_file_str}'\n");
+    let script = format!(
+        "printf '%s\\n' \"$@\" > '{argv_file_str}.tmp' && mv '{argv_file_str}.tmp' '{argv_file_str}'\n"
+    );
     let editor_path = {
         use std::os::unix::fs::PermissionsExt;
         let p = dir.path().join("fake_editor");

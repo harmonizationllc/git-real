@@ -5,7 +5,7 @@ use std::fmt;
 use crate::measure::Measurement;
 
 pub const OPEN_TO_FIRST_PAGE_MS: u128 = 3_000; // AC 2
-pub const STATUS_MS: u128 = 500; // AC 3
+pub const STATUS_MS: u128 = 1_500; // AC 3, raised from 500 on 2026-10-30 (GR-32 spec §6.3): CI runner timing
 pub const PAGING_RSS_GROWTH_MB: u64 = 64; // AC 5
 
 /// One exceeded budget. `metric` is the JSON key: `openToFirstPageMs`, `statusMs`
@@ -73,7 +73,7 @@ mod tests {
     fn budget_constants_match_the_acceptance_criteria() {
         assert_eq!(
             (OPEN_TO_FIRST_PAGE_MS, STATUS_MS, PAGING_RSS_GROWTH_MB),
-            (3_000, 500, 64)
+            (3_000, 1_500, 64)
         );
     }
 
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn status_over_budget() {
         let mut m = sample_measurement("synthetic");
-        m.status_ms = Some(501);
+        m.status_ms = Some(1_501);
         assert_eq!(metrics(&m), vec!["statusMs"]);
     }
 
@@ -117,7 +117,7 @@ mod tests {
     fn all_three_violations_in_order() {
         let mut m = sample_measurement("synthetic");
         m.open_to_first_page_ms = 4_000;
-        m.status_ms = Some(900);
+        m.status_ms = Some(1_900);
         m.rss_growth_mb = Some(80);
         assert_eq!(
             metrics(&m),

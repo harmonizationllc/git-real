@@ -16,10 +16,10 @@ use tempfile::TempDir;
 fn fixture() -> (TempDir, PathBuf, TempDir, PathBuf, String) {
     let (main_dir, main) = common::temp_repo_with_commit();
     common::configure_identity(&main);
-    let main = main.canonicalize().unwrap();
+    let main = common::canonical(&main);
     let head = common::head_branch_name(&main);
     let wt_dir = tempfile::tempdir().unwrap();
-    let wt_root = wt_dir.path().canonicalize().unwrap();
+    let wt_root = common::canonical(wt_dir.path());
     (main_dir, main, wt_dir, wt_root, head)
 }
 
@@ -30,7 +30,7 @@ fn add_worktree(main: &Path, wt_root: &Path, name: &str, branch: &str) -> PathBu
         main,
         &["worktree", "add", "-b", branch, path.to_str().unwrap()],
     );
-    path.canonicalize().unwrap()
+    common::canonical(&path)
 }
 
 fn session(path: &Path) -> RepoSession {
@@ -268,7 +268,7 @@ fn list_linked_worktree_of_bare_repo_has_no_main_row() {
     let (_bd, bare) = common::temp_bare_clone(&main);
     let w = root.join("w");
     common::run_git_ok(&bare, &["worktree", "add", w.to_str().unwrap(), &head]);
-    let w = w.canonicalize().unwrap();
+    let w = common::canonical(&w);
     let list = session(&w).list_linked_worktrees().unwrap();
     assert_eq!(list.len(), 1, "{list:?}");
     assert_eq!(list[0].path, w);
@@ -294,7 +294,7 @@ fn list_separate_git_dir_main_row_is_the_workdir() {
     );
     common::configure_identity(&work);
     common::commit_file(&work, "a.txt", "a\n", "first");
-    let work = work.canonicalize().unwrap();
+    let work = common::canonical(&work);
     let wt = add_worktree(&work, &root, "linked", "feat/linked");
     // From the main worktree itself, the main row is its own workdir.
     let list = session(&work).list_linked_worktrees().unwrap();
@@ -375,6 +375,22 @@ fn add_taken_name_is_branch_exists() {
         matches!(err, GitError::BranchExists(ref n) if *n == head),
         "{err:?}"
     );
+}
+
+#[test]
+fn add_case_variant_name_is_case_collision() {
+    let (_md, main, _wd, root, _head) = fixture();
+    common::set_ignorecase(&main, true);
+    session(&main).create_branch("Alpha", None).unwrap();
+    let err = session(&main)
+        .add_linked_worktree(&root.join("x"), &new_branch("alpha", None))
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::BranchCaseCollision { ref requested, ref existing }
+            if requested == "alpha" && existing == "Alpha"),
+        "{err:?}"
+    );
+    assert!(!root.join("x").exists());
 }
 
 #[test]
@@ -1019,7 +1035,7 @@ fn common_dir_outside_workdir_is_none_for_main_and_some_for_linked() {
     assert_eq!(session(&main).common_dir_outside_workdir(), None);
     assert_eq!(
         session(&a).common_dir_outside_workdir(),
-        Some(main.join(".git").canonicalize().unwrap())
+        Some(common::canonical(&main.join(".git")))
     );
 }
 
@@ -1073,4 +1089,21 @@ fn error_messages() {
         GitError::PathNotAbsolute("~/w".into()).to_string(),
         "~/w is not an absolute path"
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn listed_worktree_paths_have_no_verbatim_prefix_on_windows() {
+    if !common::git_available() {
+        return;
+    }
+    let (_md, main, _wd, root, _head) = fixture();
+    add_worktree(&main, &root, "a", "feat/a");
+    for w in session(&main).list_linked_worktrees().unwrap() {
+        assert!(
+            !w.path.to_string_lossy().starts_with(r"\\?\"),
+            "{:?}",
+            w.path
+        );
+    }
 }

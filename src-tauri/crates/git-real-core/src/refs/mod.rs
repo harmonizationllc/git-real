@@ -128,14 +128,15 @@ impl RepoSession {
     /// Renames a local branch; libgit2 moves HEAD, the HEAD of every other
     /// worktree it can open, and the branch's config section with it. A
     /// branch held by a worktree whose folder is missing is refused: libgit2
-    /// cannot update that worktree's HEAD.
+    /// cannot update that worktree's HEAD. On a repository whose filesystem
+    /// does not distinguish case (`core.ignorecase`), a new name that differs
+    /// only by case from another branch is refused with `BranchCaseCollision`;
+    /// changing only the case of the branch's own name is allowed.
     pub fn rename_branch(&self, old: &str, new: &str) -> Result<(), GitError> {
         validate_branch_name(new)?;
         let repo = self.repo();
         let mut branch = find_local(repo, old)?;
-        if repo.find_branch(new, BranchType::Local).is_ok() {
-            return Err(GitError::BranchExists(new.to_owned()));
-        }
+        refuse_duplicate_branch(repo, new, Some(old))?;
         if let Some(worktree) = self.checked_out_elsewhere()?.remove(old)
             && !worktree.exists()
         {
@@ -144,13 +145,17 @@ impl RepoSession {
                 worktree,
             });
         }
-        branch.rename(new, false)?;
+        // NTFS stats the target and finds the branch's own file under the old
+        // spelling, so libgit2 refuses a case-only rename unless forced.
+        let force = ignores_case(repo) && old != new && old.to_lowercase() == new.to_lowercase();
+        branch.rename(new, force)?;
         Ok(())
     }
 
     /// Deletes a local branch. Without `force` the branch must be merged into
     /// HEAD; the current branch can never be deleted.
     pub fn delete_branch(&self, name: &str, force: bool) -> Result<(), GitError> {
+        validate_branch_name(name)?;
         let repo = self.repo();
         let mut branch = find_local(repo, name)?;
         if branch.is_head() {
@@ -207,14 +212,19 @@ impl RepoSession {
         let upstream = self.remote_branch_ref(remote, name)?;
         let git = git_cli::locate()?;
         let workdir = self.workdir()?;
-        let target = if self.repo().find_branch(name, BranchType::Local).is_ok() {
-            self.refuse_checked_out_elsewhere(name)?;
-            switch::SwitchTarget::Local(name)
-        } else {
-            switch::SwitchTarget::NewTracking {
-                name,
-                upstream: &upstream,
+        let target = match find_local(self.repo(), name) {
+            Ok(_) => {
+                self.refuse_checked_out_elsewhere(name)?;
+                switch::SwitchTarget::Local(name)
             }
+            Err(GitError::BranchNotFound(_)) => {
+                refuse_duplicate_branch(self.repo(), name, None)?;
+                switch::SwitchTarget::NewTracking {
+                    name,
+                    upstream: &upstream,
+                }
+            }
+            Err(e) => return Err(e),
         };
         switch::run(&git, workdir, target)
     }
@@ -328,9 +338,7 @@ impl RepoSession {
     ) -> Result<Commit<'_>, GitError> {
         validate_branch_name(name)?;
         let repo = self.repo();
-        if repo.find_branch(name, BranchType::Local).is_ok() {
-            return Err(GitError::BranchExists(name.to_owned()));
-        }
+        refuse_duplicate_branch(repo, name, None)?;
         match start_point {
             None => match repo.head() {
                 Ok(head) => Ok(head.peel_to_commit()?),
@@ -415,11 +423,66 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
     Ok(head == tip || repo.graph_descendant_of(head, tip)?)
 }
 
+/// Finds the local branch called exactly `name`. With `core.ignorecase` set
+/// libgit2's `find_branch` matches case-insensitively, so the branches are
+/// compared by name instead and `alpha` never resolves to `Alpha`.
 pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
+    if ignores_case(repo) {
+        for branch in repo.branches(Some(BranchType::Local))? {
+            let (branch, _) = branch?;
+            if lossy_name(&branch) == name {
+                return Ok(branch);
+            }
+        }
+        return Err(GitError::BranchNotFound(name.to_owned()));
+    }
     match repo.find_branch(name, BranchType::Local) {
         Ok(branch) => Ok(branch),
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Reads `core.ignorecase`; an unopenable config or unreadable value is false.
+pub(super) fn ignores_case(repo: &Repository) -> bool {
+    repo.config()
+        .ok()
+        .and_then(|c| c.get_bool("core.ignorecase").ok())
+        .unwrap_or(false)
+}
+
+/// Refuses `name` when a local branch already has it. Compared by name,
+/// never by `find_branch`: on a case-insensitive filesystem that lookup
+/// finds `Alpha` when asked for `alpha`. When `core.ignorecase` is true a
+/// case-only match (other than `keep`) is a `BranchCaseCollision`.
+pub(crate) fn refuse_duplicate_branch(
+    repo: &Repository,
+    name: &str,
+    keep: Option<&str>,
+) -> Result<(), GitError> {
+    let ignorecase = ignores_case(repo);
+    let folded = name.to_lowercase();
+    let mut collision = None;
+    for branch in repo.branches(Some(BranchType::Local))? {
+        let (branch, _) = branch?;
+        let existing = lossy_name(&branch);
+        if existing == name {
+            return Err(GitError::BranchExists(name.to_owned()));
+        }
+        if collision.is_none()
+            && ignorecase
+            && Some(existing.as_str()) != keep
+            && existing.to_lowercase() == folded
+        {
+            collision = Some(existing);
+        }
+    }
+    match collision {
+        Some(existing) => Err(GitError::BranchCaseCollision {
+            requested: name.to_owned(),
+            existing,
+        }),
+        None => Ok(()),
     }
 }
 

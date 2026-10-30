@@ -151,8 +151,8 @@ fn checkout_local_runs_a_plain_switch_in_the_workdir() {
     let args = argv(&path);
     assert_eq!(args[0], "-C");
     assert_eq!(
-        std::fs::canonicalize(&args[1]).unwrap(),
-        std::fs::canonicalize(&path).unwrap()
+        common::canonical(std::path::Path::new(&args[1])),
+        common::canonical(&path)
     );
     assert_eq!(&args[2..], ["switch", "topic"]);
 }
@@ -295,10 +295,7 @@ fn push_delete_exposes_the_validated_remote_name_and_workdir() {
         .unwrap();
     assert_eq!(push.remote(), "origin");
     assert_eq!(push.name(), "feat/slash");
-    assert_eq!(
-        std::fs::canonicalize(push.workdir()).unwrap(),
-        std::fs::canonicalize(&path).unwrap()
-    );
+    assert_eq!(common::canonical(push.workdir()), common::canonical(&path));
 }
 
 // --- checkout of a commit (GR-8) ---
@@ -1283,9 +1280,9 @@ fn tag_pushes_expose_the_validated_remote_name_and_workdir() {
         (push.remote(), push.name(), delete.remote(), delete.name()),
         ("origin", "v1", "origin", "v1")
     );
-    let canon = std::fs::canonicalize(&path).unwrap();
-    assert_eq!(std::fs::canonicalize(push.workdir()).unwrap(), canon);
-    assert_eq!(std::fs::canonicalize(delete.workdir()).unwrap(), canon);
+    let canon = common::canonical(&path);
+    assert_eq!(common::canonical(push.workdir()), canon);
+    assert_eq!(common::canonical(delete.workdir()), canon);
 }
 
 // ---------- GR-39: linked worktree argv ----------
@@ -1301,7 +1298,7 @@ fn worktree_repo() -> (
     use_fake_git();
     let (dir, path) = common::temp_repo_with_commit();
     let root_dir = tempfile::tempdir().unwrap();
-    let root = root_dir.path().canonicalize().unwrap();
+    let root = common::canonical(root_dir.path());
     let session = RepoSession::open(&path).unwrap();
     (dir, path, root_dir, root, session)
 }
@@ -1313,7 +1310,7 @@ fn git2_worktree(main: &Path, root: &Path, name: &str) -> PathBuf {
         .unwrap()
         .worktree(name, &path, None)
         .unwrap();
-    path.canonicalize().unwrap()
+    common::canonical(&path)
 }
 
 fn new_wt_branch(name: &str, start: Option<&str>) -> git_real_core::WorktreeBranch {

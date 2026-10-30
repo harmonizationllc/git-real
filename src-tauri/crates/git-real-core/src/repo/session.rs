@@ -5,6 +5,7 @@ use git2::{ErrorCode, Repository};
 use crate::error::GitError;
 use crate::log::cache::LogCache;
 use crate::model::RepoSummary;
+use crate::paths::canonical;
 
 /// An open repository together with its canonical root path.
 pub struct RepoSession {
@@ -86,7 +87,7 @@ impl RepoSession {
     }
 
     fn from_repo(repo: Repository) -> Result<Self, GitError> {
-        let root = std::fs::canonicalize(repo.workdir().unwrap_or_else(|| repo.path()))?;
+        let root = canonical(repo.workdir().unwrap_or_else(|| repo.path()))?;
         Ok(Self {
             repo,
             root,
@@ -102,7 +103,7 @@ fn enclosing_repo_root(path: &Path) -> Result<Option<PathBuf>, GitError> {
         return Ok(None);
     };
     match Repository::discover(start) {
-        Ok(repo) => Ok(Some(std::fs::canonicalize(
+        Ok(repo) => Ok(Some(canonical(
             repo.workdir().unwrap_or_else(|| repo.path()),
         )?)),
         Err(e) if e.code() == ErrorCode::NotFound => Ok(None),

@@ -131,7 +131,7 @@ fn summary_head_branch_present_for_bare_repo() {
 #[test]
 fn summary_path_is_canonical_for_trailing_dot_segment() {
     let (_dir, path) = common::temp_repo_with_commit();
-    let canonical = std::fs::canonicalize(&path).unwrap();
+    let canonical = common::canonical(&path);
     let session = RepoSession::open(path.join(".")).unwrap();
     assert_eq!(session.summary().path, canonical);
 }
@@ -140,7 +140,7 @@ fn summary_path_is_canonical_for_trailing_dot_segment() {
 fn summary_path_is_canonical_for_parent_segment() {
     let (_dir, path) = common::temp_repo_with_commit();
     std::fs::create_dir(path.join("sub")).unwrap();
-    let canonical = std::fs::canonicalize(&path).unwrap();
+    let canonical = common::canonical(&path);
     let session = RepoSession::open(path.join("sub").join("..")).unwrap();
     assert_eq!(session.summary().path, canonical);
 }
@@ -247,7 +247,7 @@ fn summary_path_for_bare_repo_is_canonical_gitdir_without_trailing_separator() {
     let (_src, src_path) = common::temp_repo_with_commit();
     let (_dir, bare_path) = common::temp_bare_clone(&src_path);
     let summary = RepoSession::open(&bare_path).unwrap().summary();
-    assert_eq!(summary.path, std::fs::canonicalize(&bare_path).unwrap());
+    assert_eq!(summary.path, common::canonical(&bare_path));
     assert!(!summary.path.to_string_lossy().ends_with('/'));
 }
 
@@ -257,7 +257,7 @@ fn summary_path_has_no_trailing_separator_for_trailing_slash_input() {
     let with_slash = format!("{}/", path.display());
     let session = RepoSession::open(&with_slash).unwrap();
     let summary = session.summary();
-    assert_eq!(summary.path, std::fs::canonicalize(&path).unwrap());
+    assert_eq!(summary.path, common::canonical(&path));
     assert!(!summary.path.to_string_lossy().ends_with('/'));
 }
 
@@ -269,10 +269,7 @@ fn summary_path_resolves_symlink_to_real_directory() {
     let link = links.path().join("link");
     std::os::unix::fs::symlink(&path, &link).unwrap();
     let session = RepoSession::open(&link).unwrap();
-    assert_eq!(
-        session.summary().path,
-        std::fs::canonicalize(&path).unwrap()
-    );
+    assert_eq!(session.summary().path, common::canonical(&path));
     assert_eq!(
         session.summary().name,
         path.file_name().unwrap().to_string_lossy()
@@ -284,7 +281,7 @@ fn path_accessor_matches_summary_path() {
     let (_dir, path) = common::temp_repo_with_commit();
     let session = RepoSession::open(&path).unwrap();
     assert_eq!(session.path(), session.summary().path.as_path());
-    assert_eq!(session.path(), std::fs::canonicalize(&path).unwrap());
+    assert_eq!(session.path(), common::canonical(&path));
 }
 
 #[test]
@@ -293,7 +290,7 @@ fn init_session_reports_canonical_path_and_name() {
     let target = dir.path().join("nested").join("fresh");
     let session = RepoSession::init(&target).unwrap();
     let summary = session.summary();
-    assert_eq!(summary.path, std::fs::canonicalize(&target).unwrap());
+    assert_eq!(summary.path, common::canonical(&target));
     assert_eq!(summary.name, "fresh");
     assert!(!summary.is_bare);
 }
@@ -348,7 +345,7 @@ fn init_in_existing_subfolder_of_repo_is_already_a_repository() {
     let (_dir, path) = common::temp_repo_with_commit();
     let sub = path.join("sub");
     std::fs::create_dir(&sub).unwrap();
-    let root = std::fs::canonicalize(&path).unwrap();
+    let root = common::canonical(&path);
     let err = RepoSession::init(&sub).err().expect("should fail");
     match err {
         GitError::AlreadyARepository(p) => assert_eq!(p, root),
@@ -368,7 +365,7 @@ fn init_in_existing_subfolder_of_repo_does_not_create_nested_git_dir() {
 #[test]
 fn init_in_missing_subfolder_of_repo_is_already_a_repository() {
     let (_dir, path) = common::temp_repo_with_commit();
-    let root = std::fs::canonicalize(&path).unwrap();
+    let root = common::canonical(&path);
     let err = RepoSession::init(path.join("does").join("not").join("exist"))
         .err()
         .expect("should fail");
@@ -394,4 +391,16 @@ fn init_beside_repo_in_same_parent_succeeds() {
     }
     git2::Repository::init(tmp.path().join("a")).unwrap();
     assert!(RepoSession::init(tmp.path().join("b")).is_ok());
+}
+
+#[cfg(windows)]
+#[test]
+fn session_path_has_no_verbatim_prefix_on_windows() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let session = RepoSession::open(&path).unwrap();
+    assert!(
+        !session.path().to_string_lossy().starts_with(r"\\?\"),
+        "{:?}",
+        session.path()
+    );
 }

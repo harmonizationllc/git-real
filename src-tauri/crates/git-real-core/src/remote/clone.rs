@@ -6,6 +6,7 @@ use std::process::Stdio;
 
 use crate::error::GitError;
 use crate::git_cli;
+use crate::paths::canonical;
 use crate::progress::ProgressSink;
 use crate::remote::auth::{self, Credentials};
 use crate::remote::progress_parser::{LineBuffer, parse_line};
@@ -73,7 +74,7 @@ pub fn clone_with(
             stderr: String::from_utf8_lossy(&raw).into_owned(),
         });
     }
-    Ok(dest.canonicalize()?)
+    Ok(canonical(dest)?)
 }
 
 fn report_lines(lines: Vec<String>, sink: &mut dyn ProgressSink) {

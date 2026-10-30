@@ -6,11 +6,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use git2::{BranchType, Repository, StatusOptions, WorktreeLockStatus};
+use git2::{Repository, StatusOptions, WorktreeLockStatus};
 
 use crate::error::GitError;
 use crate::git_ops::{self, operation_failed};
 use crate::model::{HeadState, LinkedWorktree, PrunedWorktrees, WorktreeBranch};
+use crate::paths::canonical;
 use crate::refs::{find_local, head_state, validate_branch_name};
 use crate::repo::RepoSession;
 
@@ -30,7 +31,7 @@ impl RepoSession {
             };
             let registered = worktree.path().to_path_buf();
             let missing = !registered.exists();
-            let path = registered.canonicalize().unwrap_or(registered);
+            let path = canonical(&registered).unwrap_or(registered);
             let locked = match worktree.is_locked() {
                 // git writes the reason with a trailing newline.
                 Ok(WorktreeLockStatus::Locked(reason)) => {
@@ -71,9 +72,6 @@ impl RepoSession {
         let args: Vec<&str> = match branch {
             WorktreeBranch::New { name, start } => {
                 validate_branch_name(name)?;
-                if self.repo().find_branch(name, BranchType::Local).is_ok() {
-                    return Err(GitError::BranchExists(name.clone()));
-                }
                 let start = start.as_deref();
                 if let Some(flag) = start.filter(|s| s.starts_with('-')) {
                     return Err(GitError::RevisionNotFound(flag.to_owned()));
@@ -159,7 +157,7 @@ impl RepoSession {
     /// The canonical common dir when it lies outside this session's root, as
     /// it does for a linked worktree; the watcher adds it as a second root.
     pub fn common_dir_outside_workdir(&self) -> Option<PathBuf> {
-        let common = self.repo().commondir().canonicalize().ok()?;
+        let common = canonical(self.repo().commondir()).ok()?;
         (!common.starts_with(self.path())).then_some(common)
     }
 
@@ -206,7 +204,7 @@ impl RepoSession {
 
     /// The listed worktree at `path`, matched as registered or canonically.
     fn find_linked_worktree(&self, path: &Path) -> Result<LinkedWorktree, GitError> {
-        let canonical = path.canonicalize().ok();
+        let canonical = canonical(path).ok();
         self.list_linked_worktrees()?
             .into_iter()
             .find(|w| w.path == path || canonical.as_deref() == Some(w.path.as_path()))
@@ -230,7 +228,7 @@ impl RepoSession {
         if repo.is_bare() {
             return None;
         }
-        let path = repo.workdir()?.canonicalize().ok()?;
+        let path = canonical(repo.workdir()?).ok()?;
         let back = Repository::open(&path).ok()?;
         same_dir(back.commondir(), common).then(|| main_entry(path, &repo, self.path()))
     }
@@ -260,7 +258,7 @@ fn main_entry(path: PathBuf, repo: &Repository, root: &Path) -> LinkedWorktree {
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {
-    matches!((a.canonicalize(), b.canonicalize()), (Ok(a), Ok(b)) if a == b)
+    matches!((canonical(a), canonical(b)), (Ok(a), Ok(b)) if a == b)
 }
 
 /// HEAD as `<common>/worktrees/<name>/HEAD` records it: a branch ref or a
