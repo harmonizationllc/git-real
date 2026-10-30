@@ -312,8 +312,9 @@ Component state: `null`, or
 registry default, the id's entry is **deleted** instead (so the file holds
 only real overrides); then `setShortcutBindings(next)`. `Reset` deletes
 the id's entry and any other id's entry that holds this id's default
-chord, so a row reset after a `Replace` gets its chord back and the row
-that took it returns to its own default. `Reset all to defaults` sends
+chord, and so on through every row whose default that frees, so a row
+reset after a `Replace` gets its chord back and the row that took it
+returns to its own default. `Reset all to defaults` sends
 `{}`; it is disabled when the map is empty. (Since the GR-18b follow-ups,
 `setShortcuts` sends `{ bindings, keycaps }` and Reset all clears both
 maps.)

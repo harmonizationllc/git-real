@@ -50,10 +50,10 @@ describe("ShortcutSettings reset", () => {
   // existing tests above
 
   it("Reset on a row whose default another override took drops that override too", async () => {
-    await seed({ pull: "Mod+K", palette: null });
+    await seed({ pull: "Mod+K", palette: null }, { Q: "A" });
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
-    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: { Q: "A" } });
     expect(kbdParts(chordButton("Command palette"))).toEqual(["Ctrl", "K"]);
     expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
   });
@@ -71,6 +71,15 @@ describe("ShortcutSettings reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
     expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
   });
+
+  it("Reset cascades through every row whose default it frees", async () => {
+    await seed({ push: "Mod+Shift+L", pull: "Mod+K", palette: null });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+    expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
+    expect(kbdParts(chordButton("Push"))).toEqual(["Ctrl", "Shift", "P"]);
+  });
 });
 ```
 
@@ -81,7 +90,9 @@ Expected: the three new tests FAIL on the `bindings` assertion (`pull: "Mod+K"` 
 
 - [ ] **Step 3: Implement in `reset`**
 
-Replace the body of `const reset = (id: ShortcutId) => { ... }` so that, after `delete bindings[id]`, it also deletes every `other` id in `bindings` whose value `=== shortcut(id).keys`. Then `commit({ bindings, keycaps })` and `focusChord(id)` as today. Update the handler's doc comment: "Restores the row's default; an override elsewhere that holds that chord goes too, so the row is never left unbound by its own reset."
+Replace the body of `const reset = (id: ShortcutId) => { ... }` so that, after `delete bindings[id]`, it also deletes every `other` id in `bindings` whose value `=== shortcut(id).keys`. Then `commit({ bindings, keycaps })` and `focusChord(id)` as today. Update the handler's doc comment: "Restores the row's default; an override elsewhere that holds that chord goes too, so the row is never left unbound by its own reset. The reset cascades through every row whose override held a freed default."
+
+The deletion runs as a worklist: each dropped claimant is itself reset (its own default may be claimed by a further override). It terminates because every pass only deletes entries.
 
 - [ ] **Step 4: Run the file, then the full gate**
 

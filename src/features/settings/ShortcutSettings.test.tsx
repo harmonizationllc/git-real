@@ -401,10 +401,10 @@ describe("ShortcutSettings reset", () => {
   });
 
   it("Reset on a row whose default another override took drops that override too", async () => {
-    await seed({ pull: "Mod+K", palette: null });
+    await seed({ pull: "Mod+K", palette: null }, { Q: "A" });
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
-    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: { Q: "A" } });
     expect(kbdParts(chordButton("Command palette"))).toEqual(["Ctrl", "K"]);
     expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
   });
@@ -421,6 +421,14 @@ describe("ShortcutSettings reset", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
     expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+  });
+  it("Reset cascades through every row whose default it frees", async () => {
+    await seed({ push: "Mod+Shift+L", pull: "Mod+K", palette: null });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Command palette to default" }));
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+    expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "Shift", "L"]);
+    expect(kbdParts(chordButton("Push"))).toEqual(["Ctrl", "Shift", "P"]);
   });
 });
 
