@@ -89,12 +89,19 @@ describe("ShortcutSettings layout", () => {
     expect(screen.queryByRole("button", { name: "Reset Pull to default" })).toBeNull();
   });
 
-  it("each table has Action, Shortcut and a visually hidden Reset column header", () => {
+  it("each table has Action, Shortcut and a visually hidden Actions column header", () => {
     setup();
     const table = screen.getByRole("table", { name: "Repository" });
     const headers = within(table).getAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual(["Action", "Shortcut", "Reset"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["Action", "Shortcut", "Actions"]);
     expect(headers[2]).toHaveAttribute("scope", "col");
+  });
+
+  it("the Reset title shows the default with learned keycaps", async () => {
+    await seed({ fetch: "Mod+Alt+F" }, { F: "U" });
+    setup();
+    const reset = screen.getByRole("button", { name: "Reset Fetch to default" });
+    expect(reset).toHaveAttribute("title", "Reset to Ctrl+Shift+U");
   });
 
   it("the chord button describes the current chord or Unbound", async () => {
@@ -285,6 +292,14 @@ describe("ShortcutSettings conflict", () => {
     });
   });
 
+  it("the conflict preview shows the just-pressed keycap on a fresh layout", () => {
+    setup();
+    const button = listen("Pull");
+    fireEvent.keyDown(button, { code: "KeyK", key: "t", ctrlKey: true });
+    expect(screen.getByText("Already used by Command palette")).toBeInTheDocument();
+    expect(kbdParts(button)).toEqual(["Ctrl", "T"]);
+  });
+
   it("Cancel in the conflict saves nothing", () => {
     const button = conflictOnPull();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -374,6 +389,15 @@ describe("ShortcutSettings reset", () => {
     expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
     const application = screen.getByRole("table", { name: "Application" });
     expect(within(application).queryByText("Unbound")).toBeNull();
+  });
+
+  it("Reset all is enabled when only keycaps are stored and clears them", async () => {
+    await seed({}, { Q: "A" });
+    setup();
+    const all = screen.getByRole("button", { name: "Reset all to defaults" });
+    expect(all).toBeEnabled();
+    fireEvent.click(all);
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
   });
 });
 

@@ -36,6 +36,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The Shortcut cell of the row labelled `label` inside the `group` table. */
+function shortcutCell(group: string, label: string): HTMLElement {
+  const table = screen.getByRole("table", { name: group });
+  const row = within(table).getByText(label).closest("tr") as HTMLElement;
+  return row.querySelectorAll("td")[1] as HTMLElement;
+}
+
 // Contract: renders one table per group with the group as caption.
 describe("ShortcutsDialog rendering", () => {
   it("renders one table per group with the group as caption", () => {
@@ -143,13 +150,6 @@ describe("ShortcutsDialog focus restoration", () => {
 
 // Contract (GR-18): rows show the effective chords, and an unbound row shows Unbound.
 describe("ShortcutsDialog effective bindings", () => {
-  /** The Shortcut cell of the row labelled `label` inside the `group` table. */
-  function shortcutCell(group: string, label: string): HTMLElement {
-    const table = screen.getByRole("table", { name: group });
-    const row = within(table).getByText(label).closest("tr") as HTMLElement;
-    return row.querySelectorAll("td")[1] as HTMLElement;
-  }
-
   it("rows show effective chords and Unbound", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     await seedSettings({ shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } });
@@ -170,11 +170,8 @@ describe("ShortcutsDialog learned keycaps", () => {
       shortcuts: { bindings: { fetch: "Mod+Alt+Q" }, keycaps: { Q: "A", K: "T" } },
     });
     setup();
-    const kbds = (group: string, label: string) => {
-      const table = screen.getByRole("table", { name: group });
-      const row = within(table).getByText(label).closest("tr") as HTMLElement;
-      return [...row.querySelectorAll("kbd")].map((k) => k.textContent);
-    };
+    const kbds = (group: string, label: string) =>
+      [...shortcutCell(group, label).querySelectorAll("kbd")].map((k) => k.textContent);
     expect(kbds("Repository", "Fetch")).toEqual(["Ctrl", "Alt", "A"]);
     expect(kbds("Application", "Command palette")).toEqual(["Ctrl", "T"]);
   });

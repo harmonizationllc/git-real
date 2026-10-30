@@ -106,14 +106,17 @@ export function chordFromEvent(e: KeyboardEvent | React.KeyboardEvent): Chord | 
 
 /**
  * The keycap the layout prints on `chord`'s physical key, read from `e.key`; `null` unless both the
- * chord key and the typed character are single-character tokens (no shifted, accented or dead keys).
+ * chord key and the typed character are single-character tokens (no accented or dead keys). A Shift
+ * press teaches only letters: on digit and punctuation keys Shift types a different glyph.
  */
 export function keycapFromEvent(
   e: KeyboardEvent | React.KeyboardEvent,
   chord: Chord,
 ): string | null {
+  if (e.key.length !== 1 || chord.key.length !== 1) return null;
   const keycap = e.key.toUpperCase();
-  if (e.key.length !== 1 || chord.key.length !== 1 || !isKeyToken(keycap)) return null;
+  if (!isKeyToken(keycap)) return null;
+  if (e.shiftKey && !/^[A-Z]$/.test(keycap)) return null;
   return keycap;
 }
 

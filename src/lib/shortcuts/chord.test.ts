@@ -208,6 +208,18 @@ describe("keycapFromEvent", () => {
     ).toBeNull();
   });
 
+  it("ignores a Shift press on a punctuation key, which types the shifted glyph", () => {
+    expect(
+      keycapFromEvent(keyEvent({ code: "Comma", key: ";", shiftKey: true }), chord(",")),
+    ).toBeNull();
+  });
+
+  it("ignores a Shift press on a digit key, which types the shifted glyph", () => {
+    expect(
+      keycapFromEvent(keyEvent({ code: "Digit7", key: "/", shiftKey: true }), chord("7")),
+    ).toBeNull();
+  });
+
   it("ignores an accented glyph", () => {
     expect(keycapFromEvent(keyEvent({ code: "KeyA", key: "å" }), chord("A"))).toBeNull();
   });

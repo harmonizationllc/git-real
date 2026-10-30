@@ -374,7 +374,7 @@ pub struct UpdatesPatch {
     pub check_on_startup: Option<bool>,
 }
 
-/// A present `bindings` replaces the whole map; an absent one keeps it.
+/// A present `bindings` or `keycaps` replaces that whole map; an absent one keeps it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ShortcutsPatch {

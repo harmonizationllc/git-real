@@ -13,10 +13,9 @@ import {
   isMac,
   keycapFromEvent,
   modifierLabels,
-  parseChord,
   shortcut,
 } from "../../lib/shortcuts";
-import type { Chord, ShortcutId } from "../../lib/shortcuts";
+import type { ShortcutId } from "../../lib/shortcuts";
 import { useEffectiveBindings, useKeycaps } from "../../lib/shortcuts/useShortcutKeys";
 import { useSettings } from "../../lib/store/settings";
 import { setShortcuts } from "../../lib/store/settingsActions";
@@ -34,6 +33,8 @@ type Capture =
       id: ShortcutId;
       phase: "conflict";
       chord: string;
+      /** The chord's key token, whose keycap Replace learns. */
+      key: string;
       otherId: ShortcutId;
       /** What the layout prints on the chord's key, learned when Replace saves. */
       keycap: string | null;
@@ -49,14 +50,14 @@ function commit(next: Settings["shortcuts"]): void {
 }
 
 /**
- * `keycaps` with what the layout prints on `chord`'s key: an entry when it differs from the token,
+ * `keycaps` with what the layout prints on the `key` token: an entry when it differs from the token,
  * none when it matches; unchanged when the press typed no usable character.
  */
-function learn(keycaps: ShortcutKeycaps, chord: Chord, keycap: string | null): ShortcutKeycaps {
+function learn(keycaps: ShortcutKeycaps, key: string, keycap: string | null): ShortcutKeycaps {
   if (keycap === null) return keycaps;
   const next = { ...keycaps };
-  if (keycap === chord.key) delete next[chord.key];
-  else next[chord.key] = keycap;
+  if (keycap === key) delete next[key];
+  else next[key] = keycap;
   return next;
 }
 
@@ -128,17 +129,24 @@ export function ShortcutSettings() {
     const keycap = keycapFromEvent(e, chord);
     if (keys === effective[id]) {
       // Re-pressing the chord on another layout corrects how it is shown, without rebinding.
-      const learned = learn(keycaps, chord, keycap);
+      const learned = learn(keycaps, chord.key, keycap);
       if (learned[chord.key] !== keycaps[chord.key])
         commit({ bindings: overrides, keycaps: learned });
       return setCapture(null);
     }
     const other = SHORTCUTS.find((s) => effective[s.id] === keys);
     if (other !== undefined)
-      return setCapture({ id, phase: "conflict", chord: keys, otherId: other.id, keycap });
+      return setCapture({
+        id,
+        phase: "conflict",
+        chord: keys,
+        key: chord.key,
+        otherId: other.id,
+        keycap,
+      });
     commit({
       bindings: { ...overrides, [id]: keys },
-      keycaps: learn(keycaps, chord, keycap),
+      keycaps: learn(keycaps, chord.key, keycap),
     });
     setCapture(null);
   };
@@ -165,7 +173,7 @@ export function ShortcutSettings() {
               <th scope="col">Action</th>
               <th scope="col">Shortcut</th>
               <th scope="col">
-                <span className={styles.srOnly}>Reset</span>
+                <span className={styles.srOnly}>Actions</span>
               </th>
             </tr>
           </thead>
@@ -201,7 +209,7 @@ export function ShortcutSettings() {
                           <KeyParts
                             parts={
                               mine !== null
-                                ? formatKeyParts(mine.chord, keycaps)
+                                ? formatKeyParts(mine.chord, learn(keycaps, mine.key, mine.keycap))
                                 : keys === null
                                   ? null
                                   : formatKeyParts(keys, keycaps)
@@ -234,11 +242,7 @@ export function ShortcutSettings() {
                                   [s.id]: mine.chord,
                                   [mine.otherId]: null,
                                 },
-                                keycaps: learn(
-                                  keycaps,
-                                  parseChord(mine.chord) as Chord,
-                                  mine.keycap,
-                                ),
+                                keycaps: learn(keycaps, mine.key, mine.keycap),
                               });
                               endConflict(s.id);
                             }}
@@ -267,7 +271,7 @@ export function ShortcutSettings() {
                             <button
                               type="button"
                               aria-label={`Reset ${s.label} to default`}
-                              title={`Reset to ${formatKeys(s.keys)}`}
+                              title={`Reset to ${formatKeys(s.keys, keycaps)}`}
                               onClick={() => reset(s.id)}
                             >
                               Reset
@@ -301,7 +305,11 @@ export function ShortcutSettings() {
         {isMac() ? "Ctrl on Linux and Windows" : "⌘ on a Mac"}.
       </p>
       <div className={styles.row}>
-        <button type="button" disabled={Object.keys(overrides).length === 0} onClick={resetAll}>
+        <button
+          type="button"
+          disabled={Object.keys(overrides).length === 0 && Object.keys(keycaps).length === 0}
+          onClick={resetAll}
+        >
           Reset all to defaults
         </button>
       </div>
