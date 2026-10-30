@@ -145,7 +145,10 @@ impl RepoSession {
                 worktree,
             });
         }
-        branch.rename(new, false)?;
+        // NTFS stats the target and finds the branch's own file under the old
+        // spelling, so libgit2 refuses a case-only rename unless forced.
+        let force = ignores_case(repo) && old != new && old.to_lowercase() == new.to_lowercase();
+        branch.rename(new, force)?;
         Ok(())
     }
 
@@ -422,6 +425,14 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
     }
 }
 
+/// Reads `core.ignorecase`; an unopenable config or unreadable value is false.
+fn ignores_case(repo: &Repository) -> bool {
+    repo.config()
+        .ok()
+        .and_then(|c| c.get_bool("core.ignorecase").ok())
+        .unwrap_or(false)
+}
+
 /// Refuses `name` when a local branch already has it. Compared by name,
 /// never by `find_branch`: on a case-insensitive filesystem that lookup
 /// finds `Alpha` when asked for `alpha`. When `core.ignorecase` is true a
@@ -431,7 +442,7 @@ fn refuse_duplicate_branch(
     name: &str,
     keep: Option<&str>,
 ) -> Result<(), GitError> {
-    let ignorecase = repo.config()?.get_bool("core.ignorecase").unwrap_or(false);
+    let ignorecase = ignores_case(repo);
     let folded = name.to_lowercase();
     let mut collision = None;
     for branch in repo.branches(Some(BranchType::Local))? {

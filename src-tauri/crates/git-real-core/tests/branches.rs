@@ -1198,8 +1198,21 @@ fn rename_to_own_exact_name_is_branch_exists() {
 
 #[test]
 fn rename_changes_only_the_case_of_own_name() {
-    // Runs on every platform; the core-windows CI job is the real check.
+    // Runs on every platform. On a case-insensitive filesystem libgit2 needs
+    // `force` for this rename (it stats the target and finds the branch's own
+    // file), so this test guards the forced path; the core-windows CI job is
+    // where it bites.
     let (_d, _p, session, _h) = fixture_ignorecase(true);
+    session.create_branch("alpha", None).unwrap();
+    session.rename_branch("alpha", "Alpha").unwrap();
+    let names = local_names(&session.list_branches().unwrap());
+    assert!(names.contains(&"Alpha".to_owned()), "{names:?}");
+    assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
+}
+
+#[test]
+fn rename_changes_only_the_case_of_own_name_without_force_when_case_sensitive() {
+    let (_d, _p, session, _h) = fixture_ignorecase(false);
     session.create_branch("alpha", None).unwrap();
     session.rename_branch("alpha", "Alpha").unwrap();
     let names = local_names(&session.list_branches().unwrap());
