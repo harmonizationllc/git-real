@@ -1210,6 +1210,9 @@ fn rename_changes_only_the_case_of_own_name() {
     assert!(!names.contains(&"alpha".to_owned()), "{names:?}");
 }
 
+// Needs a filesystem that really distinguishes case, so it runs only on Unix
+// like the other case-pair tests.
+#[cfg(unix)]
 #[test]
 fn rename_changes_only_the_case_of_own_name_without_force_when_case_sensitive() {
     let (_d, _p, session, _h) = fixture_ignorecase(false);
