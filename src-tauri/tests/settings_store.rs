@@ -664,7 +664,9 @@ fn init_script_carries_the_shortcuts_section() {
 
     let script = store.to_init_script();
     assert!(
-        script.contains(r#""shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null}}"#),
+        script.contains(
+            r#""shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null},"keycaps":{}}"#
+        ),
         "{script}"
     );
 }

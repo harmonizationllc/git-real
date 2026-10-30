@@ -175,14 +175,14 @@ describe("clone and updates setters", () => {
 
 describe("shortcut setters", () => {
   it("setShortcuts sends both maps under shortcuts", async () => {
-    const next = { bindings: { fetch: "Mod+Alt+Q" }, keycaps: { fetch: "A" } };
+    const next = { bindings: { fetch: "Mod+Alt+Q" }, keycaps: { Q: "A" } };
     actions.setShortcuts(next);
     expect(settings().shortcuts).toEqual(next);
     expect(await patches()).toEqual([{ shortcuts: next }]);
   });
 
   it("setShortcuts replaces both maps wholesale", async () => {
-    actions.setShortcuts({ bindings: { fetch: "Mod+G" }, keycaps: { fetch: "B" } });
+    actions.setShortcuts({ bindings: { fetch: "Mod+G" }, keycaps: { K: "B" } });
     await vi.advanceTimersByTimeAsync(300);
     actions.setShortcuts({ bindings: { pull: "Mod+U" }, keycaps: {} });
     await vi.advanceTimersByTimeAsync(300);
