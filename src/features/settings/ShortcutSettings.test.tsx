@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../../lib/ipc";
-import type { ShortcutBindings } from "../../lib/ipc";
+import type { Settings, ShortcutBindings, ShortcutKeycaps } from "../../lib/ipc";
 import { SHORTCUT_GROUPS } from "../../lib/shortcuts";
 import { useSettings } from "../../lib/store/settings";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -26,8 +26,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function seed(bindings: ShortcutBindings) {
-  await seedSettings({ shortcuts: { bindings } });
+async function seed(bindings: ShortcutBindings, keycaps: ShortcutKeycaps = {}) {
+  await seedSettings({ shortcuts: { bindings, keycaps } });
 }
 
 /** Renders the section; fake timers hold the 300 ms save so a test can check nothing was sent. */
@@ -36,11 +36,20 @@ function setup() {
   return renderWithProviders(<ShortcutSettings />);
 }
 
-/** Runs the 300 ms save timer and returns the stored overrides. */
-async function bindings(): Promise<ShortcutBindings> {
+/** Runs the 300 ms save timer and returns the stored shortcuts section (bindings and keycaps). */
+async function shortcuts(): Promise<Settings["shortcuts"]> {
   act(() => vi.advanceTimersByTime(300));
   await act(() => useSettings.getState().flush());
-  return useSettings.getState().settings.shortcuts.bindings;
+  return useSettings.getState().settings.shortcuts;
+}
+
+/** Dispatches an AltGr keydown: happy-dom's AltGraph is shimmed off, so the instance overrides it. */
+function altGraphKeyDown(target: HTMLElement, init: KeyboardEventInit) {
+  const e = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+  Object.defineProperty(e, "getModifierState", { value: (k: string) => k === "AltGraph" });
+  act(() => {
+    target.dispatchEvent(e);
+  });
 }
 
 const chordButton = (label: string) =>
@@ -80,12 +89,19 @@ describe("ShortcutSettings layout", () => {
     expect(screen.queryByRole("button", { name: "Reset Pull to default" })).toBeNull();
   });
 
-  it("each table has Action, Shortcut and a visually hidden Reset column header", () => {
+  it("each table has Action, Shortcut and a visually hidden Actions column header", () => {
     setup();
     const table = screen.getByRole("table", { name: "Repository" });
     const headers = within(table).getAllByRole("columnheader");
-    expect(headers.map((h) => h.textContent)).toEqual(["Action", "Shortcut", "Reset"]);
+    expect(headers.map((h) => h.textContent)).toEqual(["Action", "Shortcut", "Actions"]);
     expect(headers[2]).toHaveAttribute("scope", "col");
+  });
+
+  it("the Reset title shows the default with learned keycaps", async () => {
+    await seed({ fetch: "Mod+Alt+F" }, { F: "U" });
+    setup();
+    const reset = screen.getByRole("button", { name: "Reset Fetch to default" });
+    expect(reset).toHaveAttribute("title", "Reset to Ctrl+Shift+U");
   });
 
   it("the chord button describes the current chord or Unbound", async () => {
@@ -95,11 +111,19 @@ describe("ShortcutSettings layout", () => {
     expect(chordButton("Command palette")).toHaveAccessibleDescription("Unbound");
   });
 
-  it("the hint uses platform words", () => {
+  it("the hint names the cross-platform rule", () => {
+    const view = setup();
+    expect(
+      screen.getByText(
+        "Press a key combination with Ctrl or Alt, or a function key. Changes apply at once. The same settings file works on every platform: Ctrl here is ⌘ on a Mac.",
+      ),
+    ).toBeInTheDocument();
+    view.unmount();
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     setup();
     expect(
       screen.getByText(
-        "Press a key combination with Ctrl or Alt, or a function key. Changes apply at once.",
+        "Press a key combination with ⌘ or ⌥, or a function key. Changes apply at once. The same settings file works on every platform: ⌘ here is Ctrl on Linux and Windows.",
       ),
     ).toBeInTheDocument();
   });
@@ -160,7 +184,7 @@ describe("ShortcutSettings capture", () => {
     setup();
     const button = listen("Fetch");
     fireEvent.keyDown(button, { key: "f", code: "KeyF", ctrlKey: true, altKey: true });
-    expect(await bindings()).toEqual({ fetch: "Mod+Alt+F" });
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+F" }, keycaps: {} });
     expect(kbdParts(chordButton("Fetch"))).toEqual(["Ctrl", "Alt", "F"]);
     expect(screen.getByRole("button", { name: "Reset Fetch to default" })).toBeInTheDocument();
   });
@@ -170,7 +194,7 @@ describe("ShortcutSettings capture", () => {
     setup();
     const button = listen("Fetch");
     fireEvent.keyDown(button, { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true });
-    expect(await bindings()).toEqual({});
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
   });
 
   it("blur while listening cancels", () => {
@@ -252,9 +276,28 @@ describe("ShortcutSettings conflict", () => {
   it("Replace rebinds and unbinds the other", async () => {
     conflictOnPull();
     fireEvent.click(screen.getByRole("button", { name: "Replace" }));
-    expect(await bindings()).toEqual({ pull: "Mod+K", palette: null });
+    expect(await shortcuts()).toEqual({ bindings: { pull: "Mod+K", palette: null }, keycaps: {} });
     expect(chordButton("Command palette")).toHaveTextContent(/^Unbound$/);
     expect(screen.queryByText("Already used by Command palette")).toBeNull();
+  });
+
+  it("Replace learns the winner's keycap", async () => {
+    setup();
+    const button = listen("Pull");
+    fireEvent.keyDown(button, { key: "t", code: "KeyK", ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    expect(await shortcuts()).toEqual({
+      bindings: { pull: "Mod+K", palette: null },
+      keycaps: { K: "T" },
+    });
+  });
+
+  it("the conflict preview shows the just-pressed keycap on a fresh layout", () => {
+    setup();
+    const button = listen("Pull");
+    fireEvent.keyDown(button, { code: "KeyK", key: "t", ctrlKey: true });
+    expect(screen.getByText("Already used by Command palette")).toBeInTheDocument();
+    expect(kbdParts(button)).toEqual(["Ctrl", "T"]);
   });
 
   it("Cancel in the conflict saves nothing", () => {
@@ -309,7 +352,14 @@ describe("ShortcutSettings reset", () => {
     await seed({ fetch: "Mod+Alt+F", palette: null });
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset Fetch to default" }));
-    expect(await bindings()).toEqual({ palette: null });
+    expect(await shortcuts()).toEqual({ bindings: { palette: null }, keycaps: {} });
+  });
+
+  it("Reset leaves keycaps alone", async () => {
+    await seed({ fetch: "Mod+Alt+Q" }, { Q: "A" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Fetch to default" }));
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: { Q: "A" } });
   });
 
   it("Reset moves focus to the row's chord button", async () => {
@@ -326,18 +376,187 @@ describe("ShortcutSettings reset", () => {
     expect(chordButton("Command palette")).toHaveFocus();
   });
 
-  it("Reset all to defaults sends an empty map and is disabled when nothing is overridden", async () => {
+  it("Reset all sends both empty maps and is disabled when nothing is overridden", async () => {
     const view = setup();
     expect(screen.getByRole("button", { name: "Reset all to defaults" })).toBeDisabled();
     view.unmount();
     vi.useRealTimers();
-    await seed({ fetch: "Mod+Alt+F", palette: null });
+    await seed({ fetch: "Mod+Alt+Q", palette: null }, { Q: "A" });
     setup();
     const all = screen.getByRole("button", { name: "Reset all to defaults" });
     expect(all).toBeEnabled();
     fireEvent.click(all);
-    expect(await bindings()).toEqual({});
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
     const application = screen.getByRole("table", { name: "Application" });
     expect(within(application).queryByText("Unbound")).toBeNull();
+  });
+
+  it("Reset all is enabled when only keycaps are stored and clears them", async () => {
+    await seed({}, { Q: "A" });
+    setup();
+    const all = screen.getByRole("button", { name: "Reset all to defaults" });
+    expect(all).toBeEnabled();
+    fireEvent.click(all);
+    expect(await shortcuts()).toEqual({ bindings: {}, keycaps: {} });
+  });
+});
+
+// Contract (GR-18b spec §5 Unbind): a button and bare Backspace/Delete set a row to null.
+describe("ShortcutSettings unbind", () => {
+  it("Unbind is shown on bound rows including defaults and hidden on unbound rows", async () => {
+    await seed({ fetch: "Mod+Alt+F", palette: null });
+    setup();
+    expect(screen.getByRole("button", { name: "Unbind Fetch" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unbind Pull" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Unbind Command palette" })).toBeNull();
+  });
+
+  it("Unbind sits before Reset in the third column", async () => {
+    await seed({ fetch: "Mod+Alt+F" });
+    setup();
+    const cell = screen.getByRole("button", { name: "Unbind Fetch" }).closest("td") as HTMLElement;
+    expect(
+      within(cell)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Unbind", "Reset"]);
+  });
+
+  it("Unbind sets null, leaves keycaps alone, focuses the chord button and shows Reset", async () => {
+    await seed({ fetch: "Mod+Alt+Q" }, { Q: "A" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Unbind Fetch" }));
+    expect(chordButton("Fetch")).toHaveFocus();
+    expect(chordButton("Fetch")).toHaveTextContent(/^Unbound$/);
+    expect(screen.queryByRole("button", { name: "Unbind Fetch" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset Fetch to default" })).toBeInTheDocument();
+    expect(await shortcuts()).toEqual({ bindings: { fetch: null }, keycaps: { Q: "A" } });
+  });
+
+  it("bare Backspace while listening unbinds", async () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { key: "Backspace", code: "Backspace" });
+    expect(button).toHaveTextContent(/^Unbound$/);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(await shortcuts()).toEqual({ bindings: { fetch: null }, keycaps: {} });
+  });
+
+  it("bare Delete while listening unbinds", async () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { key: "Delete", code: "Delete" });
+    expect(button).toHaveTextContent(/^Unbound$/);
+    expect(await shortcuts()).toEqual({ bindings: { fetch: null }, keycaps: {} });
+  });
+
+  it("Shift+Backspace while listening is an unbindable chord, not an unbind", () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { key: "Backspace", code: "Backspace", shiftKey: true });
+    expect(screen.getByRole("alert")).toHaveTextContent("Add Ctrl or Alt, or use a function key.");
+    expectNoSave();
+  });
+
+  it("Mod+Backspace while listening binds the chord", async () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { key: "Backspace", code: "Backspace", ctrlKey: true });
+    expect((await shortcuts()).bindings.fetch).toBe("Mod+Backspace");
+  });
+
+  it("Meta+Delete and Alt+Delete while listening bind the chord", async () => {
+    setup();
+    fireEvent.keyDown(listen("Fetch"), { key: "Delete", code: "Delete", metaKey: true });
+    fireEvent.keyDown(listen("Pull"), { key: "Delete", code: "Delete", altKey: true });
+    expect((await shortcuts()).bindings).toEqual({ fetch: "Mod+Delete", pull: "Alt+Delete" });
+  });
+
+  it("an AltGraph keydown keeps listening without an error", () => {
+    setup();
+    const button = listen("Fetch");
+    altGraphKeyDown(button, { key: "€", code: "KeyE", ctrlKey: true, altKey: true });
+    altGraphKeyDown(button, { key: "Backspace", code: "Backspace" });
+    expect(button).toHaveTextContent("Press keys…");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expectNoSave();
+  });
+});
+
+// Contract (GR-18b spec §5 keycap learning): captures record what the layout prints on the key.
+describe("ShortcutSettings keycaps", () => {
+  it("a Dvorak capture learns the keycap and shows it on every chord using that key", async () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "a", ctrlKey: true, altKey: true });
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+Q" }, keycaps: { Q: "A" } });
+    expect(kbdParts(chordButton("Fetch"))).toEqual(["Ctrl", "Alt", "A"]);
+    expect(chordButton("Fetch")).toHaveAccessibleDescription("Ctrl+Alt+A");
+    await act(() => seed({ fetch: "Mod+Alt+Q", pull: "Mod+Q" }, { Q: "A" }));
+    expect(kbdParts(chordButton("Pull"))).toEqual(["Ctrl", "A"]);
+  });
+
+  it("the conflict preview shows the learned keycap", async () => {
+    await seed({ fetch: "Mod+Alt+Q" }, { Q: "A" });
+    setup();
+    const button = listen("Pull");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "a", ctrlKey: true, altKey: true });
+    expect(screen.getByText("Already used by Fetch")).toBeInTheDocument();
+    expect(kbdParts(button)).toEqual(["Ctrl", "Alt", "A"]);
+  });
+
+  it("a QWERTY capture stores no keycap", async () => {
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "q", ctrlKey: true, altKey: true });
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+Q" }, keycaps: {} });
+  });
+
+  it("a capture without a usable character leaves the keycaps alone", async () => {
+    await seed({}, { Q: "A" });
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "F5", key: "F5" });
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "F5" }, keycaps: { Q: "A" } });
+  });
+
+  it("a QWERTY capture on a learned key removes its entry", async () => {
+    await seed({}, { Q: "A" });
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "q", ctrlKey: true, altKey: true });
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+Q" }, keycaps: {} });
+  });
+
+  it("re-pressing the current chord on a new layout updates the keycap without changing the binding", async () => {
+    await seed({ fetch: "Mod+Alt+Q" });
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "a", ctrlKey: true, altKey: true });
+    expect(kbdParts(button)).toEqual(["Ctrl", "Alt", "A"]);
+    expect(await shortcuts()).toEqual({ bindings: { fetch: "Mod+Alt+Q" }, keycaps: { Q: "A" } });
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-pressing the current chord on the same layout saves nothing", async () => {
+    await seed({ fetch: "Mod+Alt+Q" }, { Q: "A" });
+    setup();
+    const button = listen("Fetch");
+    fireEvent.keyDown(button, { code: "KeyQ", key: "a", ctrlKey: true, altKey: true });
+    expect(kbdParts(button)).toEqual(["Ctrl", "Alt", "A"]);
+    expectNoSave();
+  });
+
+  it("a save drops invalid keycap entries", async () => {
+    await seed({}, { Q: "ab", K: "T" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Unbind Fetch" }));
+    expect(await shortcuts()).toEqual({ bindings: { fetch: null }, keycaps: { K: "T" } });
+  });
+
+  it("an invalid keycap entry is shown as its token", async () => {
+    await seed({ fetch: "Mod+Alt+Q" }, { Q: "ab" });
+    setup();
+    expect(kbdParts(chordButton("Fetch"))).toEqual(["Ctrl", "Alt", "Q"]);
   });
 });

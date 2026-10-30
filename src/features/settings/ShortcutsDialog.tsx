@@ -3,8 +3,10 @@ import type { KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
 import type { EffectiveBindings, ShortcutGroup } from "../../lib/shortcuts";
-import { useEffectiveBindings } from "../../lib/shortcuts/useShortcutKeys";
+import type { ShortcutKeycaps } from "../../lib/ipc";
+import { useEffectiveBindings, useKeycaps } from "../../lib/shortcuts/useShortcutKeys";
 import { useShell } from "../../lib/store/shell";
+import { KeyParts } from "./KeyParts";
 import styles from "./ShortcutsDialog.module.css";
 
 export interface ShortcutsDialogProps {
@@ -27,22 +29,16 @@ const STATIC_NAVIGATION: Row[] = [
   { label: "Move within lists and menus", parts: ["Arrow keys"] },
 ];
 
-function rowsFor(group: ShortcutGroup, bindings: EffectiveBindings): Row[] {
+function rowsFor(
+  group: ShortcutGroup,
+  bindings: EffectiveBindings,
+  keycaps: ShortcutKeycaps,
+): Row[] {
   const rows: Row[] = SHORTCUTS.filter((s) => s.group === group).map((s) => {
     const keys = bindings[s.id];
-    return { label: s.label, parts: keys === null ? null : formatKeyParts(keys) };
+    return { label: s.label, parts: keys === null ? null : formatKeyParts(keys, keycaps) };
   });
   return group === "Navigation" ? [...rows, ...STATIC_NAVIGATION] : rows;
-}
-
-/** A chord's `<kbd>` parts, or `Unbound` when `parts` is `null`. */
-export function KeyParts({ parts }: { parts: string[] | null }) {
-  if (parts === null) return <span className={styles.unbound}>Unbound</span>;
-  return parts.map((part, i) => (
-    <kbd key={i} className={styles.kbd}>
-      {part}
-    </kbd>
-  ));
 }
 
 /** The reference of every keyboard shortcut, grouped into one table per group. */
@@ -50,6 +46,7 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const bindings = useEffectiveBindings();
+  const keycaps = useKeycaps();
 
   useRestoreFocus(fallbackFocus);
   useLayoutEffect(() => {
@@ -85,7 +82,7 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
               </tr>
             </thead>
             <tbody>
-              {rowsFor(group, bindings).map((row) => (
+              {rowsFor(group, bindings, keycaps).map((row) => (
                 <tr key={row.label}>
                   <td>{row.label}</td>
                   <td className={styles.keys}>

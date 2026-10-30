@@ -149,6 +149,9 @@ export type CloneUrlForm = "https" | "ssh";
  */
 export type ShortcutBindings = Record<string, string | null>;
 
+/** Learned keycaps: physical key token to the single upper-case character it prints, e.g. `Q` to `A`. */
+export type ShortcutKeycaps = Record<string, string>;
+
 /** Every user preference, as Rust stores it in settings.json (version 2, nested). */
 export interface Settings {
   git: { executable: string | null };
@@ -170,7 +173,7 @@ export interface Settings {
     pullRequestsHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
-  shortcuts: { bindings: ShortcutBindings };
+  shortcuts: { bindings: ShortcutBindings; keycaps: ShortcutKeycaps };
   window: { width: number; height: number; maximized: boolean };
 }
 

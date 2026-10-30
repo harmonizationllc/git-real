@@ -37,7 +37,8 @@
     "checkOnStartup": true
   },
   "shortcuts": {
-    "bindings": {}
+    "bindings": {},
+    "keycaps": {}
   },
   "window": {
     "width": 1280,

@@ -9,6 +9,7 @@ import {
   resolveBindings,
   setActiveBindings,
   shortcut,
+  validKeycaps,
 } from "./index";
 import type { ShortcutId } from "./index";
 import type { ShortcutBindings } from "../ipc/types";
@@ -367,5 +368,66 @@ describe("active bindings", () => {
     expect(
       matchesShortcut(press({ ctrlKey: true, altKey: true, key: "f", code: "KeyF" }), "fetch"),
     ).toBe(false);
+  });
+});
+
+// Contract (GR-18b §4): an AltGr press types a character and never fires a shortcut.
+describe("matchesShortcut AltGraph", () => {
+  it("matchesShortcut ignores an AltGraph event", () => {
+    setActiveBindings(resolveBindings({ fetch: "Mod+Alt+E" }));
+    const event = (altGraph: boolean) =>
+      ({
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        altKey: true,
+        key: "€",
+        code: "KeyE",
+        repeat: false,
+        defaultPrevented: false,
+        isComposing: false,
+        keyCode: 0,
+        getModifierState: () => altGraph,
+      }) as unknown as KeyboardEvent;
+    expect(matchesShortcut(event(true), "fetch")).toBe(false);
+    expect(matchesShortcut(event(false), "fetch")).toBe(true);
+  });
+});
+
+// Contract (GR-18b §3): learned keycaps are token-keyed and validated on read.
+describe("validKeycaps", () => {
+  it("validKeycaps keeps a learned entry", () => {
+    expect(validKeycaps({ Q: "A" })).toEqual({ Q: "A" });
+  });
+
+  it("validKeycaps drops malformed and identity entries", () => {
+    expect(validKeycaps({ Q: "Q", Enter: "A", q: "A", R: "ab", S: "é", T: "B" })).toEqual({
+      T: "B",
+    });
+  });
+});
+
+// Contract (GR-18b §3): display swaps the chord key for the learned keycap.
+describe("formatKeyParts / formatKeys with keycaps", () => {
+  it("formatKeyParts replaces the last part with the learned keycap", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    expect(formatKeyParts("Mod+Alt+Q", { Q: "A" })).toEqual(["Ctrl", "Alt", "A"]);
+    expect(formatKeyParts("Mod+Shift+F", { F: "U" })).toEqual(["Ctrl", "Shift", "U"]);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    expect(formatKeyParts("Mod+Alt+Q", { Q: "A" })).toEqual(["⌘", "⌥", "A"]);
+  });
+
+  it("formatKeys with keycaps", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    expect(formatKeys("Mod+Alt+Q", { Q: "A" })).toBe("Ctrl+Alt+A");
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    expect(formatKeys("Mod+Alt+Q", { Q: "A" })).toBe("⌘⌥A");
+  });
+
+  it("without a matching entry unchanged", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    expect(formatKeyParts("Mod+K", { Q: "A" })).toEqual(["Ctrl", "K"]);
+    expect(formatKeyParts("Mod+K")).toEqual(["Ctrl", "K"]);
+    expect(formatKeys("Mod+K", { Q: "A" })).toBe("Ctrl+K");
   });
 });

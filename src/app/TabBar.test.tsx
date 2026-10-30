@@ -129,3 +129,15 @@ describe("TabBar shortcut titles", () => {
     expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("title", "Settings");
   });
 });
+
+// Contract (GR-18b §3): the shell button titles show learned keycaps.
+describe("TabBar learned keycaps", () => {
+  it("titles use learned keycaps", async () => {
+    await seedSettings({ shortcuts: { bindings: {}, keycaps: { K: "T" } } });
+    setup();
+    expect(screen.getByRole("button", { name: "Command palette" })).toHaveAttribute(
+      "title",
+      "Command palette (Ctrl+T)",
+    );
+  });
+});

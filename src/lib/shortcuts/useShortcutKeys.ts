@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useSettings } from "../store/settings";
-import { resolveBindings } from "./index";
+import { resolveBindings, validKeycaps } from "./index";
+import type { ShortcutKeycaps } from "../ipc/types";
 import type { EffectiveBindings, ShortcutId } from "./index";
 
 /**
@@ -11,6 +12,12 @@ import type { EffectiveBindings, ShortcutId } from "./index";
 export function useEffectiveBindings(): EffectiveBindings {
   const bindings = useSettings(useShallow((s) => s.settings.shortcuts.bindings));
   return useMemo(() => resolveBindings(bindings), [bindings]);
+}
+
+/** The learned keycaps worth showing, validated once per change of the stored map. */
+export function useKeycaps(): ShortcutKeycaps {
+  const keycaps = useSettings(useShallow((s) => s.settings.shortcuts.keycaps));
+  return useMemo(() => validKeycaps(keycaps), [keycaps]);
 }
 
 /** The effective chord for `id`, or `null` when unbound. */

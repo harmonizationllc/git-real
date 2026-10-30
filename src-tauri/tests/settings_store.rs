@@ -664,7 +664,39 @@ fn init_script_carries_the_shortcuts_section() {
 
     let script = store.to_init_script();
     assert!(
-        script.contains(r#""shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null}}"#),
+        script.contains(
+            r#""shortcuts":{"bindings":{"fetch":"Mod+Alt+F","palette":null},"keycaps":{}}"#
+        ),
         "{script}"
     );
+}
+
+const KEYCAP_PATCH: &str = r#"{"shortcuts":{"keycaps":{"Q":"A"}}}"#;
+
+#[test]
+fn update_persists_keycaps_and_round_trips() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path.clone());
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(KEYCAP_PATCH).unwrap();
+    let expected: std::collections::BTreeMap<String, String> =
+        [("Q".to_owned(), "A".to_owned())].into_iter().collect();
+
+    let result = store.update(&patch).unwrap();
+    assert_eq!(result.shortcuts.keycaps, expected);
+
+    let reloaded = SettingsStore::load(path.clone());
+    assert_eq!(reloaded.get().shortcuts.keycaps, expected);
+    let content = fs::read_to_string(&path).unwrap();
+    assert!(content.contains("\"keycaps\""), "{content}");
+}
+
+#[test]
+fn init_script_carries_keycaps() {
+    let (_dir, path) = common::temp_file_path("settings.json");
+    let store = SettingsStore::load(path);
+    let patch: git_real_core::SettingsPatch = serde_json::from_str(KEYCAP_PATCH).unwrap();
+    store.update(&patch).unwrap();
+
+    let script = store.to_init_script();
+    assert!(script.contains(r#""keycaps":{"Q":"A"}"#), "{script}");
 }

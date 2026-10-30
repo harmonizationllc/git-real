@@ -3,7 +3,10 @@ import {
   chordFromEvent,
   chordToString,
   codeForKey,
+  isAltGraph,
   isBindable,
+  isKeyToken,
+  keycapFromEvent,
   modifierLabels,
   parseChord,
 } from "./chord";
@@ -155,5 +158,103 @@ describe("modifierLabels", () => {
   it("returns the Mac symbols on macOS", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     expect(modifierLabels()).toEqual({ mod: "⌘", alt: "⌥" });
+  });
+});
+
+// Contract (GR-18b §4): AltGr produces characters, never shortcuts.
+describe("isAltGraph", () => {
+  it("is true when getModifierState reports AltGraph", () => {
+    expect(isAltGraph(keyEvent({ getModifierState: () => true }))).toBe(true);
+  });
+
+  it("is false when getModifierState reports no AltGraph", () => {
+    expect(isAltGraph(keyEvent({ getModifierState: () => false }))).toBe(false);
+  });
+
+  it("is false when the event has no getModifierState", () => {
+    expect(isAltGraph(keyEvent({}))).toBe(false);
+  });
+
+  it("chordFromEvent returns null under AltGraph", () => {
+    expect(
+      chordFromEvent(
+        keyEvent({
+          code: "KeyE",
+          key: "€",
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: () => true,
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
+// Contract (GR-18b §3): the keycap a physical key prints, learned from a press.
+describe("keycapFromEvent", () => {
+  const chord = (key: string) => ({ mod: true, alt: true, shift: false, key });
+
+  it("keycapFromEvent records the keycap for a Dvorak letter", () => {
+    expect(keycapFromEvent(keyEvent({ code: "KeyQ", key: "a" }), chord("Q"))).toBe("A");
+  });
+
+  it("returns the same letter when the layout matches", () => {
+    expect(keycapFromEvent(keyEvent({ code: "KeyQ", key: "q" }), chord("Q"))).toBe("Q");
+  });
+
+  it("ignores a shifted glyph", () => {
+    expect(
+      keycapFromEvent(keyEvent({ code: "Digit1", key: "!", shiftKey: true }), chord("1")),
+    ).toBeNull();
+  });
+
+  it("ignores a Shift press on a punctuation key, which types the shifted glyph", () => {
+    expect(
+      keycapFromEvent(keyEvent({ code: "Comma", key: ";", shiftKey: true }), chord(",")),
+    ).toBeNull();
+  });
+
+  it("ignores a Shift press on a digit key, which types the shifted glyph", () => {
+    expect(
+      keycapFromEvent(keyEvent({ code: "Digit7", key: "/", shiftKey: true }), chord("7")),
+    ).toBeNull();
+  });
+
+  it("ignores an accented glyph", () => {
+    expect(keycapFromEvent(keyEvent({ code: "KeyA", key: "å" }), chord("A"))).toBeNull();
+  });
+
+  it("ignores a dead key", () => {
+    expect(keycapFromEvent(keyEvent({ code: "KeyA", key: "Dead" }), chord("A"))).toBeNull();
+  });
+
+  it("ignores F-keys and named keys", () => {
+    expect(keycapFromEvent(keyEvent({ code: "F5", key: "F5" }), chord("F5"))).toBeNull();
+    expect(keycapFromEvent(keyEvent({ code: "Enter", key: "Enter" }), chord("Enter"))).toBeNull();
+  });
+
+  it("ignores a single-character key on a named-key chord", () => {
+    expect(keycapFromEvent(keyEvent({ code: "Space", key: " " }), chord("Space"))).toBeNull();
+    expect(keycapFromEvent(keyEvent({ code: "Enter", key: "A" }), chord("Enter"))).toBeNull();
+  });
+
+  it("records a swapped punctuation keycap", () => {
+    expect(keycapFromEvent(keyEvent({ code: "Semicolon", key: "," }), chord(";"))).toBe(",");
+  });
+
+  it("records an upper-case keycap for Shift+letter", () => {
+    expect(keycapFromEvent(keyEvent({ code: "KeyQ", key: "A", shiftKey: true }), chord("Q"))).toBe(
+      "A",
+    );
+  });
+});
+
+describe("isKeyToken", () => {
+  it("is true for chord key tokens", () => {
+    for (const s of ["A", "7", ",", "F5", "Enter"]) expect(isKeyToken(s)).toBe(true);
+  });
+
+  it("is false for anything else", () => {
+    for (const s of ["a", "é", "ab", "Escape"]) expect(isKeyToken(s)).toBe(false);
   });
 });
