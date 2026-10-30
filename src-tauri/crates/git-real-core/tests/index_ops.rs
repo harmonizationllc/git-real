@@ -958,6 +958,45 @@ fn unstage_paths_conflicted_path_matches_git_reset() {
     );
 }
 
+#[test]
+fn unstage_paths_add_add_conflict_leaves_no_entry() {
+    // A conflicted path absent from HEAD (an add/add): `git reset -- <path>`
+    // leaves no entry at any stage.
+    let (_dir, path) = common::temp_repo_with_commit();
+    {
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        for (stage, content) in [(2_u16, "ours\n"), (3, "theirs\n")] {
+            let id = repo.blob(content.as_bytes()).unwrap();
+            index
+                .add(&git2::IndexEntry {
+                    ctime: git2::IndexTime::new(0, 0),
+                    mtime: git2::IndexTime::new(0, 0),
+                    dev: 0,
+                    ino: 0,
+                    mode: 0o100644,
+                    uid: 0,
+                    gid: 0,
+                    file_size: 0,
+                    id,
+                    flags: stage << 12,
+                    flags_extended: 0,
+                    path: b"ghost.txt".to_vec(),
+                })
+                .unwrap();
+        }
+        index.write().unwrap();
+    }
+    session(&path)
+        .unstage_paths(&paths(&["ghost.txt"]))
+        .expect("unstage add/add");
+    let repo = git2::Repository::open(&path).unwrap();
+    let mut index = repo.index().unwrap();
+    index.read(true).unwrap();
+    assert!(index.iter().all(|e| e.path != b"ghost.txt"));
+    assert!(!index.has_conflicts());
+}
+
 fn gitlink_entry(id: git2::Oid) -> git2::IndexEntry {
     git2::IndexEntry {
         ctime: git2::IndexTime::new(0, 0),

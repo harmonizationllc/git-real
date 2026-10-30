@@ -51,6 +51,7 @@ fn config_escape(value: &str) -> String {
             '"' => out.push_str("\\\""),
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
             _ => out.push(c),
         }
     }
@@ -84,7 +85,9 @@ fn remote_entries(config: &git2::Config, name: &str) -> Result<Vec<(String, Stri
 /// the tracking refs, repoints `branch.*.remote`, `branch.*.pushRemote` and
 /// `remote.pushDefault`, then drops the old section. Leftover
 /// `remote.<new>.*` keys without a URL are refused as `RemoteExists`, so they
-/// are never merged into the renamed remote.
+/// are never merged into the renamed remote. Stale `refs/remotes/<new>/*` refs
+/// are overwritten, as `git remote rename` does. Known limit: an empty
+/// `[remote "<old>"]` header stays in `.git/config` (git2 cannot drop a section).
 fn rename_remote(repo: &git2::Repository, old: &str, new: &str) -> Result<(), GitError> {
     let mut config = repo.config()?.open_level(git2::ConfigLevel::Local)?;
     if !remote_entries(&config, new)?.is_empty() {
@@ -105,8 +108,9 @@ fn rename_remote(repo: &git2::Repository, old: &str, new: &str) -> Result<(), Gi
         if seen.insert(key.as_str()) {
             config.set_str(&target, &value)?;
         } else {
-            // "$^" can never match an existing value, so this always appends.
-            config.set_multivar(&target, "$^", &config_escape(&value))?;
+            // An anchor after a literal never matches, even an empty value, so
+            // this always appends.
+            config.set_multivar(&target, "a^", &config_escape(&value))?;
         }
     }
 
@@ -133,10 +137,10 @@ fn rename_remote(repo: &git2::Repository, old: &str, new: &str) -> Result<(), Gi
     }
     for (old_name, new_name) in direct {
         repo.find_reference(&old_name)?
-            .rename(&new_name, false, "remote rename")?;
+            .rename(&new_name, true, "remote rename")?;
     }
     for (old_name, new_name, target) in symbolic {
-        repo.reference_symbolic(&new_name, &target, false, "remote rename")?;
+        repo.reference_symbolic(&new_name, &target, true, "remote rename")?;
         repo.find_reference(&old_name)?.delete()?;
     }
 

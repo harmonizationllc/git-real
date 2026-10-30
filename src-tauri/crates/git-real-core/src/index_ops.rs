@@ -13,8 +13,8 @@ use crate::error::GitError;
 use crate::paths::checked_relative;
 use crate::repo::RepoSession;
 
-/// Characters that end a libgit2 pathspec early, so a path containing one
-/// cannot be expressed as a literal pathspec.
+/// Control whitespace that `unstage_paths` rejects. No pathspec is built any
+/// more (it edits index entries); the rejection stays for behaviour stability.
 const PATHSPEC_BREAKS: [char; 5] = ['\n', '\r', '\t', '\x0b', '\x0c'];
 
 impl RepoSession {
@@ -59,7 +59,7 @@ impl RepoSession {
     /// Resets each path's index entry to HEAD (or removes it when unborn).
     ///
     /// A path containing control whitespace is rejected with
-    /// [`GitError::BadSelection`], since it cannot be a literal pathspec.
+    /// [`GitError::BadSelection`], as it always has been.
     pub fn unstage_paths(&self, paths: &[String]) -> Result<(), GitError> {
         if paths.is_empty() {
             return Ok(());
@@ -69,8 +69,7 @@ impl RepoSession {
         let head = self.head_commit()?;
         let tree = head.as_ref().map(Commit::tree).transpose()?;
         for p in &paths {
-            // libgit2 stops a pathspec at these characters (and drops one that
-            // starts with a newline), which would widen the reset.
+            // Kept from when this built a pathspec; see `PATHSPEC_BREAKS`.
             if p.contains(PATHSPEC_BREAKS) {
                 return Err(GitError::BadSelection);
             }
