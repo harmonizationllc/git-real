@@ -30,6 +30,7 @@ fn push_commit(bare: &Path, target_ref: &str, file: &str, content: &str, extend:
     let side = side_dir.path().join("side");
     let out = std::process::Command::new("git")
         .arg("clone")
+        .args(["-c", "core.autocrlf=false"])
         .arg(bare)
         .arg(&side)
         .output()

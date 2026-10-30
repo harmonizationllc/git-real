@@ -30,3 +30,32 @@ fn git_available_with_missing_git_and_no_opt_out_panics() {
 fn git_available_with_an_opt_out_other_than_1_panics() {
     git_available_with(false, Some("true"));
 }
+
+// A fixture repo pins autocrlf off in its own local config, so a host with
+// system-wide autocrlf=true (Git for Windows) cannot change fixture bytes.
+#[test]
+fn init_repo_pins_autocrlf_off() {
+    let dir = tempfile::tempdir().unwrap();
+    common::init_repo(dir.path());
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local = repo
+        .config()
+        .unwrap()
+        .open_level(git2::ConfigLevel::Local)
+        .unwrap();
+    assert_eq!(local.get_bool("core.autocrlf"), Ok(false));
+}
+
+#[test]
+fn set_autocrlf_writes_the_local_value() {
+    let dir = tempfile::tempdir().unwrap();
+    common::init_repo(dir.path());
+    common::set_autocrlf(dir.path(), "input");
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let local = repo
+        .config()
+        .unwrap()
+        .open_level(git2::ConfigLevel::Local)
+        .unwrap();
+    assert_eq!(local.get_string("core.autocrlf").unwrap(), "input");
+}

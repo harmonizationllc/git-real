@@ -31,7 +31,17 @@ fn fx() -> Fx {
     let (d2, bare) = common::temp_bare_clone(&path);
     common::add_remote_and_fetch(&path, &bare, &head);
     let d3 = tempfile::tempdir().unwrap();
-    common::run_git_ok(d3.path(), &["clone", "-q", bare.to_str().unwrap(), "other"]);
+    common::run_git_ok(
+        d3.path(),
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "other",
+        ],
+    );
     let other = d3.path().join("other");
     common::configure_identity(&other);
     let session = RepoSession::open(&path).unwrap();

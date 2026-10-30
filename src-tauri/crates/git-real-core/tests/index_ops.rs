@@ -1513,7 +1513,7 @@ fn discard_paths_deletes_only_untracked_file_with_leading_newline() {
 fn nested_repo_with_commit(root: &std::path::Path, rel: &str) -> git2::Oid {
     let nested = root.join(rel);
     std::fs::create_dir_all(&nested).expect("create nested dir");
-    let repo = git2::Repository::init(&nested).expect("init nested repo");
+    let repo = common::init_repo(&nested);
     std::fs::write(nested.join("inner.txt"), "inner\n").expect("write inner");
     let mut index = repo.index().expect("nested index");
     index

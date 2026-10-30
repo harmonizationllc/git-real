@@ -31,6 +31,7 @@ fn pr_head(bare: &Path, n: u64, file: &str, content: &str, extend: bool) -> Stri
     let side = side_dir.path().join("side");
     let out = std::process::Command::new("git")
         .arg("clone")
+        .args(["-c", "core.autocrlf=false"])
         .arg(bare)
         .arg(&side)
         .output()
@@ -329,6 +330,7 @@ fn bitbucket_style_fork_fetch_of_refs_heads_lands_on_pr_n() {
     let side = side_dir.path().join("side");
     let out = std::process::Command::new("git")
         .arg("clone")
+        .args(["-c", "core.autocrlf=false"])
         .arg(&bare)
         .arg(&side)
         .output()

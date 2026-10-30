@@ -84,7 +84,7 @@ fn history(path: &Path, file: &str) -> Result<Vec<FileHistoryEntry>, GitError> {
 fn merge_changing_file() -> (tempfile::TempDir, PathBuf, Oid, Oid, Oid, Oid) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let r = common::commit_tree_at(
         &path,
         Some("HEAD"),
@@ -178,7 +178,7 @@ fn commit_files_on_root_lists_every_path_as_added() {
 fn commit_files_lists_modified_deleted_and_renamed() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let long = "a distinctive line of text\n".repeat(20);
     let c1 = commit_as(
         &path,
@@ -298,7 +298,7 @@ fn file_history_lists_add_then_modify_newest_first() {
 fn file_history_copies_commit_metadata_from_the_log_row() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let c1 = commit_as(
         &path,
         &[("f.txt", "one\n")],
@@ -366,7 +366,7 @@ fn file_history_of_the_old_name_stops_at_the_rename() {
 fn file_history_lists_a_file_deleted_then_re_added() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let c1 = commit_as(
         &path,
         &[("f.txt", "1\n"), ("other.txt", "x\n")],
@@ -478,7 +478,7 @@ fn file_history_order_matches_graph() {
 fn blame_fixture() -> (tempfile::TempDir, PathBuf, Oid, Oid) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let c1 = commit_as(&path, &[("f.txt", "one\n")], "first", &[], "Alice", 0);
     let c2 = commit_as(
         &path,
@@ -833,7 +833,7 @@ fn file_history_malformed_path_is_path_not_found() {
 fn file_history_treats_a_file_replaced_by_a_directory_as_deleted() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     common::commit_file(&path, "x", "file\n", "x is a file");
     std::fs::remove_file(path.join("x")).unwrap();
     common::write_file(&path, "x/inner.txt", "inner\n");
@@ -925,7 +925,7 @@ fn commit_files_lists_an_added_gitlink() {
 fn file_history_lists_a_merge_that_brought_the_file_in_from_its_second_parent() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let r = commit_as(&path, &[("base.txt", "base\n")], "root", &[], "Ann", 0);
     let a = commit_as(&path, &[("base.txt", "base\n")], "main", &[r], "Ann", 10);
     let b = common::commit_tree_at(
@@ -966,7 +966,7 @@ fn file_history_lists_a_merge_that_brought_the_file_in_from_its_second_parent() 
 fn file_history_only_reports_a_rename_of_the_followed_path() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let body = "one\ntwo\nthree\nfour\n";
     let c1 = commit_as(&path, &[("x.txt", body)], "add x", &[], "Ann", 0);
     // The same commit renames x to y and adds an unrelated z.
@@ -1000,7 +1000,7 @@ fn file_history_only_reports_a_rename_of_the_followed_path() {
 fn file_history_follows_a_rename_that_also_edits_the_file() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let c1 = commit_as(
         &path,
         &[("old.txt", "1\n2\n3\n4\n5\n6\n7\n8\n")],
@@ -1037,7 +1037,7 @@ fn file_history_follows_a_rename_that_also_edits_the_file() {
 fn file_history_follows_a_chain_of_two_renames() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let body = "alpha\nbeta\ngamma\ndelta\n";
     let c1 = commit_as(&path, &[("a.txt", body)], "add a", &[], "Ann", 0);
     let c2 = commit_as(&path, &[("b.txt", body)], "a to b", &[c1], "Ann", 10);
@@ -1090,7 +1090,7 @@ fn file_history_ignores_a_gitlink_at_the_path() {
 fn blame_attributes_interleaved_edits_to_three_hunks_that_cover_every_line() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let c1 = commit_as(&path, &[("f.txt", "a\nb\nc\n")], "one", &[], "Ann", 0);
     let c2 = commit_as(&path, &[("f.txt", "a\nB\nc\n")], "two", &[c1], "Bob", 10);
     let c3 = commit_as(

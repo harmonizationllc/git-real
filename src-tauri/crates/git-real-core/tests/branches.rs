@@ -338,6 +338,7 @@ fn advance_remote(path: &Path, bare: &Path, head: &str) {
     git2::build::RepoBuilder::new()
         .clone(bare.to_str().unwrap(), &clone_path)
         .expect("clone bare");
+    common::set_autocrlf(&clone_path, "false");
     common::commit_file(&clone_path, "remote.txt", "r\n", "remote commit");
     common::push_branch(&clone_path, head);
     common::fetch_remote(path, "origin");
