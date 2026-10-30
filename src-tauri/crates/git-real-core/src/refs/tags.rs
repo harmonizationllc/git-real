@@ -150,10 +150,7 @@ fn refuse_duplicate_tag(repo: &Repository, name: &str) -> Result<(), GitError> {
     let mut case_variant: Option<String> = None;
     for reference in repo.references_glob("refs/tags/*")? {
         let reference = reference?;
-        let Some(existing) = reference
-            .name()
-            .and_then(|n| n.strip_prefix("refs/tags/"))
-        else {
+        let Some(existing) = reference.name().and_then(|n| n.strip_prefix("refs/tags/")) else {
             continue;
         };
         if existing == name {
