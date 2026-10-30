@@ -334,9 +334,11 @@ and cancels through `blur`.
 
 ### Known limits
 
-- Display follows the physical key (`e.code`), so on AZERTY, Dvorak or QWERTZ
-  layouts the shown letter can differ from the keycap pressed. This is the
-  builder's call in §9.3: bindings stay stable across layouts.
+- A key the user has never captured displays its QWERTY token; the layout is
+  learned one key at a time.
+- On Windows, chords bound with `Mod+Alt` cannot be triggered with the AltGr
+  key itself; left Ctrl + left Alt works. Chromium reports `AltGraph` only for
+  the right Alt key on layouts that have one; this is untested on hardware.
 - On macOS, Option+letter chords compete with accented-character input.
 - A row that is unbound only because another id's hand-edited override claimed
   its default shows `Unbound` with no `Reset`. The dialog never produces this
@@ -412,6 +414,15 @@ lint`, `npm run typecheck`.
    activation).
 7. With the dialog at its default size, the four three-column tables fit
    without horizontal overflow on COSMIC.
+8. Unbind Fetch with the button: row reads `Unbound`, `Ctrl+Shift+F` does
+   nothing, Reset brings it back. Then rebind Pull, press bare Backspace while
+   listening: Pull reads `Unbound`.
+9. If a second layout is available (e.g. add Dvorak in COSMIC's input
+   settings): capture Ctrl+Alt on the key labelled A for Fetch; the row shows
+   `Ctrl+Alt+A`, `settings.json` holds `"fetch": "Mod+Alt+Q"` and
+   `"keycaps": { "Q": "A" }`; switch back to QWERTY and press Ctrl+Alt+Q:
+   fetch runs; capture Ctrl+Alt+Q again on QWERTY and the `Q` entry
+   disappears.
 
 ## 9. Builder's calls (the owner skipped the questions)
 
