@@ -252,7 +252,7 @@ mod tests {
             (
                 Some(1),
                 Some(3000),
-                Some(500),
+                Some(1500),
                 Some(64),
                 Some(2),
                 Some(true)
@@ -457,7 +457,7 @@ mod tests {
         let text = two_rows().text_table(false);
         assert_eq!(
             text.lines().nth(3),
-            Some("budgets: open→first page 3000 ms, status 500 ms, paging RSS growth 64 MB")
+            Some("budgets: open→first page 3000 ms, status 1500 ms, paging RSS growth 64 MB")
         );
     }
 

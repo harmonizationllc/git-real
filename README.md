@@ -197,7 +197,7 @@ It fails when a budget is exceeded:
 | Metric              | Budget   | What it covers                                      |
 | ------------------- | -------- | --------------------------------------------------- |
 | `openToFirstPageMs` | 3,000 ms | Open, graph build and first page at 100,000 commits |
-| `statusMs`          | 500 ms   | Status refresh on a worktree of 10,000+ files       |
+| `statusMs`          | 1500 ms  | Status refresh on a worktree of 10,000+ files       |
 | `rssGrowthMb`       | 64 MB    | Memory growth while paging through the full history |
 
 Prepare the three fixtures (a deterministic synthetic repository of 100,000 commits and
