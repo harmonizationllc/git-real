@@ -87,8 +87,9 @@ impl RepoSession {
     /// checkout filters (`core.autocrlf`, `.gitattributes`), as
     /// `git checkout --ours` does, by checking them out into a scratch
     /// directory inside the git dir, which leaves the working tree and the
-    /// index alone. Symlinks are checked out into the working tree by libgit2
-    /// itself (so `core.symlinks` applies), and an absent side is a deletion.
+    /// index alone. Symlinks are only classified here (as `Kept::Link`) for the
+    /// caller to check out through libgit2 (so `core.symlinks` applies), and an
+    /// absent side is a deletion.
     fn worktree_contents<'a>(
         &self,
         chosen: &[(&Path, Option<&'a IndexEntry>)],
