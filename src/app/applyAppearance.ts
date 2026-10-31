@@ -34,6 +34,7 @@ export function applyAppearance(
   }
   root.setAttribute("data-platform", detectPlatform());
   if (prefs.diffFontFamily === null) {
+    // Guard: happy-dom's removeProperty calls removeAttribute("style"), which trips the no-removeAttribute test.
     if (root.style.getPropertyValue("--font-mono") !== "") root.style.removeProperty("--font-mono");
   } else {
     root.style.setProperty("--font-mono", prefs.diffFontFamily);

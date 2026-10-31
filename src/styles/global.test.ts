@@ -28,20 +28,23 @@ describe("global focus-target ring", () => {
 });
 
 describe("global font styles", () => {
-  const bodyBlock = block("\n\nbody");
+  // The standalone body rule, not the `html,\nbody` group rule.
+  const bodyBlock = /(?<!,\n)^body \{([^}]*)\}/m.exec(css)?.[1] ?? "";
   it("body uses the UI font token and the base size token", () => {
     expect(bodyBlock).toMatch(/font-family:\s*var\(--font-ui\);/);
     expect(bodyBlock).toMatch(/font-size:\s*var\(--text-base\);/);
   });
-  it("form controls inherit the font", () => {
-    expect(css).toMatch(/button,\s*input,\s*select,\s*textarea\s*\{[^}]*font:\s*inherit;/);
+  it("form controls inherit the font family but keep the medium size", () => {
+    expect(css).toMatch(
+      /button,\s*input,\s*select,\s*textarea\s*\{[^}]*font:\s*inherit;[^}]*font-size:\s*var\(--text-md\);/,
+    );
   });
   it("resets browser default font styles", () => {
     expect(css).toMatch(
       /h1,\s*h2,\s*h3,\s*h4,\s*h5,\s*h6\s*\{[^}]*font-size:\s*inherit;[^}]*font-weight:\s*inherit;/,
     );
     expect(css).toMatch(
-      /code,\s*kbd,\s*pre,\s*samp\s*\{[^}]*font-family:\s*var\(--font-mono-ui\);[^}]*font-size:\s*inherit;/,
+      /code,\s*kbd,\s*pre,\s*samp\s*\{[^}]*font-family:\s*var\(--font-mono-ui\);[^}]*font-size:\s*var\(--text-sm\);/,
     );
     expect(css).toMatch(/strong,\s*b\s*\{[^}]*font-weight:\s*700;/);
   });

@@ -43,6 +43,7 @@ input,
 select,
 textarea {
   font: inherit;
+  font-size: var(--text-md);
 }
 
 /* Browser default font styles are reset so every size and weight comes from a token. */
@@ -61,7 +62,7 @@ kbd,
 pre,
 samp {
   font-family: var(--font-mono-ui);
-  font-size: inherit;
+  font-size: var(--text-sm);
 }
 
 strong,
