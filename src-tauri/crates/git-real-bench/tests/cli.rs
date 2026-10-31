@@ -113,7 +113,7 @@ fn prepare_then_run_writes_json_and_summary_and_exits_zero() {
             report["results"][0]["commits"].as_u64(),
             report["passed"].as_bool(),
         ),
-        (Some(1), Some(30), Some(true))
+        (Some(2), Some(30), Some(true))
     );
     assert!(
         std::fs::read_to_string(&summary)

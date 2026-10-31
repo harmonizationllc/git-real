@@ -1,50 +1,10 @@
-//! The session's cached commit graph and the ref fingerprint that decides
-//! when it must be rebuilt.
+//! The ref fingerprint that decides when the commit graph must be rebuilt.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use git2::{Oid, Repository};
+use git2::Repository;
 
 use crate::error::GitError;
-use crate::model::{GraphEdge, GraphRow, RefLabel};
-
-/// One laid-out commit, kept with binary oids until a page is requested.
-pub(crate) struct CachedRow {
-    pub(crate) oid: Oid,
-    pub(crate) parents: Vec<Oid>,
-    pub(crate) subject: String,
-    pub(crate) author_name: String,
-    pub(crate) author_email: String,
-    pub(crate) author_time: i64,
-    pub(crate) lane: u32,
-    pub(crate) edges: Vec<GraphEdge>,
-    pub(crate) refs: Vec<RefLabel>,
-}
-
-impl CachedRow {
-    pub(crate) fn to_row(&self) -> GraphRow {
-        GraphRow {
-            oid: self.oid.to_string(),
-            parents: self.parents.iter().map(Oid::to_string).collect(),
-            subject: self.subject.clone(),
-            author_name: self.author_name.clone(),
-            author_email: self.author_email.clone(),
-            author_time: self.author_time,
-            lane: self.lane,
-            edges: self.edges.clone(),
-            refs: self.refs.clone(),
-        }
-    }
-}
-
-/// The whole graph, in walk order, for one state of the refs.
-pub(crate) struct LogCache {
-    /// Starts at 1 and increments with every rebuild.
-    pub(crate) generation: u64,
-    pub(crate) fingerprint: u64,
-    pub(crate) rows: Vec<CachedRow>,
-    pub(crate) max_lanes: u32,
-}
 
 /// A hash of every ref under `refs/` plus HEAD, by name and target. Any ref
 /// that is created, moved or deleted changes it; working tree edits do not.

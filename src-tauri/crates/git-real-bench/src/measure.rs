@@ -1,9 +1,9 @@
 //! One cold measurement of a repository, in the spec's order (§3.4).
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use git_real_core::RepoSession;
+use git_real_core::{GitError, RepoSession};
 use serde::Serialize;
 
 use crate::git::BenchError;
@@ -22,9 +22,11 @@ pub struct Measurement {
     pub files: Option<usize>,
     pub max_lanes: u32,
     pub open_ms: u128,
-    pub graph_build_ms: u128,
+    pub first_summary_ms: u128,
     pub first_page_ms: u128,
     pub open_to_first_page_ms: u128,
+    pub graph_complete_ms: u128,
+    pub rss_after_build_mb: Option<u64>,
     pub page_all_ms: u128,
     pub rss_before_paging_mb: Option<u64>,
     pub rss_after_paging_mb: Option<u64>,
@@ -44,14 +46,33 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
         .map_err(|e| BenchError::new(format!("cannot open {}: {e}", path.display())))?;
     let open_ms = elapsed_ms(started);
 
+    // The first summary with rows (or a complete empty graph), as the
+    // front end's poll would see it.
     let started = Instant::now();
-    let summary = session.log_summary().map_err(bench_error)?;
-    let graph_build_ms = elapsed_ms(started);
+    let first = loop {
+        let summary = session.log_summary().map_err(bench_error)?;
+        if summary.total > 0 || summary.complete {
+            break summary;
+        }
+        std::thread::sleep(Duration::from_millis(SUMMARY_POLL_MS));
+    };
+    let first_summary_ms = elapsed_ms(started);
 
     let started = Instant::now();
-    serialized_page(&session, summary.generation, 0)?;
+    let page = retry_stale_once(
+        &mut session,
+        first.generation,
+        |s, g| s.log_page(g, 0, PAGE_SIZE),
+        |s| s.log_summary().map(|summary| summary.generation),
+    )
+    .map_err(bench_error)?;
+    serde_json::to_vec(&page).map_err(bench_error)?;
     let first_page_ms = elapsed_ms(started);
     let open_to_first_page_ms = elapsed_ms(span);
+
+    let summary = session.log_summary_complete().map_err(bench_error)?;
+    let graph_complete_ms = elapsed_ms(span);
+    let rss_after_build_mb = rss::current_rss_mb();
 
     let rss_before_paging_mb = rss::current_rss_mb();
     let started = Instant::now();
@@ -90,9 +111,11 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
         files,
         max_lanes: summary.max_lanes,
         open_ms,
-        graph_build_ms,
+        first_summary_ms,
         first_page_ms,
         open_to_first_page_ms,
+        graph_complete_ms,
+        rss_after_build_mb,
         page_all_ms,
         rss_before_paging_mb,
         rss_after_paging_mb,
@@ -104,6 +127,9 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
     })
 }
 
+/// Milliseconds between `log_summary` polls while waiting for the first rows.
+const SUMMARY_POLL_MS: u64 = 5;
+
 /// Rows per `log_page` call, the graph panel's page size.
 const PAGE_SIZE: u32 = 500;
 
@@ -114,6 +140,24 @@ fn serialized_page(session: &RepoSession, generation: u64, start: u32) -> Result
         .map_err(bench_error)?;
     serde_json::to_vec(&page).map_err(bench_error)?;
     Ok(())
+}
+
+/// `read` of `generation`, retried once on the generation `resummary` names
+/// when it answers `LogStale`: the final generation can land between a
+/// provisional summary and the first page.
+fn retry_stale_once<S, T>(
+    state: &mut S,
+    generation: u64,
+    mut read: impl FnMut(&mut S, u64) -> Result<T, GitError>,
+    resummary: impl FnOnce(&mut S) -> Result<u64, GitError>,
+) -> Result<T, GitError> {
+    match read(state, generation) {
+        Err(GitError::LogStale) => {
+            let fresh = resummary(state)?;
+            read(state, fresh)
+        }
+        other => other,
+    }
 }
 
 fn elapsed_ms(since: Instant) -> u128 {
@@ -128,6 +172,58 @@ fn bench_error(e: impl std::fmt::Display) -> BenchError {
 mod tests {
     use super::*;
     use crate::test_support::{build_bare_graph, build_synthetic, git_available};
+
+    /// Reads that answer from `answers` in order, recording each generation asked.
+    struct Script {
+        answers: Vec<Result<&'static str, GitError>>,
+        asked: Vec<u64>,
+        resummaries: u32,
+    }
+
+    fn script(answers: Vec<Result<&'static str, GitError>>) -> Script {
+        Script {
+            answers,
+            asked: Vec::new(),
+            resummaries: 0,
+        }
+    }
+
+    fn scripted_read(s: &mut Script, g: u64) -> Result<&'static str, GitError> {
+        s.asked.push(g);
+        s.answers.remove(0)
+    }
+
+    fn scripted_resummary(s: &mut Script) -> Result<u64, GitError> {
+        s.resummaries += 1;
+        Ok(8)
+    }
+
+    // The final generation landed between the provisional summary and the first page.
+    #[test]
+    fn a_stale_first_page_is_read_again_from_a_fresh_summary() {
+        let mut s = script(vec![Err(GitError::LogStale), Ok("page")]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert_eq!(
+            (got.unwrap(), s.asked, s.resummaries),
+            ("page", vec![7, 8], 1)
+        );
+    }
+
+    #[test]
+    fn a_second_stale_answer_is_returned_not_retried() {
+        let mut s = script(vec![Err(GitError::LogStale), Err(GitError::LogStale)]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert!(matches!(got, Err(GitError::LogStale)), "{got:?}");
+        assert_eq!(s.asked, vec![7, 8]);
+    }
+
+    #[test]
+    fn another_error_is_returned_without_a_fresh_summary() {
+        let mut s = script(vec![Err(GitError::CommitNotFound("x".into()))]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert!(matches!(got, Err(GitError::CommitNotFound(_))), "{got:?}");
+        assert_eq!(s.resummaries, 0);
+    }
 
     // A worktree fixture: every field is measured and consistent with the fixture.
     #[test]
@@ -167,14 +263,35 @@ mod tests {
     }
 
     #[test]
-    fn open_to_first_page_is_one_span_covering_the_graph_build() {
+    fn graph_complete_is_at_least_open_to_first_page() {
         if !git_available() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
         let dir = build_synthetic(tmp.path(), "s", 40, 8);
         let m = measure(&dir, "s").unwrap();
-        assert!(m.open_to_first_page_ms >= m.graph_build_ms);
+        assert!(m.graph_complete_ms >= m.open_to_first_page_ms);
+    }
+
+    #[test]
+    fn rss_after_build_is_present_on_linux() {
+        if !git_available() || rss::current_rss_mb().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = build_synthetic(tmp.path(), "s", 40, 8);
+        assert!(measure(&dir, "s").unwrap().rss_after_build_mb.is_some());
+    }
+
+    #[test]
+    fn first_summary_is_before_first_page() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = build_synthetic(tmp.path(), "s", 40, 8);
+        let m = measure(&dir, "s").unwrap();
+        assert!(m.first_summary_ms <= m.open_to_first_page_ms);
     }
 
     #[test]
@@ -228,7 +345,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = build_synthetic(tmp.path(), "s", 40, 8);
         let m = measure(&dir, "s").unwrap();
-        assert!(m.graph_refresh_ms <= m.graph_build_ms.max(1_000));
+        assert!(m.graph_refresh_ms <= m.graph_complete_ms.max(1_000));
     }
 
     // RSS bookkeeping.

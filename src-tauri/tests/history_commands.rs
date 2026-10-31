@@ -2,14 +2,15 @@
 
 mod common;
 
+use common::complete_summary;
+
 use std::path::PathBuf;
 
-use git_real_core::{ChangeKind, RepoSession};
+use git_real_core::{ChangeKind, FileHistoryEntry, RepoSession};
 use git_real_lib::commands::history::{
     get_blame_inner, get_commit_files_inner, get_file_history_inner, list_tracked_files_inner,
 };
-use git_real_lib::commands::log::get_log_summary_inner;
-use git_real_lib::error::AppErrorKind;
+use git_real_lib::error::{AppError, AppErrorKind};
 use git_real_lib::state::{RepoId, RepoRegistry};
 use git2::{Oid, Repository};
 use tempfile::TempDir;
@@ -24,6 +25,30 @@ fn open_fixture() -> (TempDir, PathBuf, RepoRegistry, RepoId) {
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(&path).expect("open"));
     (dir, path, reg, id)
+}
+
+/// Every page of `path`'s history through the command, until `next_row` is `None`.
+fn all_history(
+    reg: &RepoRegistry,
+    id: RepoId,
+    generation: u64,
+    path: &str,
+) -> Result<Vec<FileHistoryEntry>, AppError> {
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut follow: Option<String> = None;
+    loop {
+        let page =
+            get_file_history_inner(reg, id, generation, path, start, 1000, follow.as_deref())?;
+        entries.extend(page.entries);
+        match page.next_row {
+            Some(next) => {
+                start = next;
+                follow = Some(page.follow_path);
+            }
+            None => return Ok(entries),
+        }
+    }
 }
 
 fn head_oid(path: &std::path::Path) -> Oid {
@@ -87,9 +112,9 @@ fn get_commit_files_inner_maps_a_bad_oid_to_commit_not_found() {
 #[test]
 fn get_file_history_inner_returns_one_entry_for_a_file_with_one_commit() {
     let (_d, path, reg, id) = open_fixture();
-    let summary = get_log_summary_inner(&reg, id).unwrap();
+    let summary = complete_summary(&reg, id);
 
-    let entries = get_file_history_inner(&reg, id, summary.generation, "README.md").unwrap();
+    let entries = all_history(&reg, id, summary.generation, "README.md").unwrap();
 
     assert_eq!(
         entries
@@ -103,9 +128,9 @@ fn get_file_history_inner_returns_one_entry_for_a_file_with_one_commit() {
 #[test]
 fn get_file_history_inner_returns_nothing_for_an_unknown_path() {
     let (_d, _p, reg, id) = open_fixture();
-    let summary = get_log_summary_inner(&reg, id).unwrap();
+    let summary = complete_summary(&reg, id);
 
-    let entries = get_file_history_inner(&reg, id, summary.generation, "nope.txt").unwrap();
+    let entries = all_history(&reg, id, summary.generation, "nope.txt").unwrap();
 
     assert!(entries.is_empty());
 }
@@ -113,9 +138,9 @@ fn get_file_history_inner_returns_nothing_for_an_unknown_path() {
 #[test]
 fn get_file_history_inner_maps_a_wrong_generation_to_log_stale() {
     let (_d, _p, reg, id) = open_fixture();
-    get_log_summary_inner(&reg, id).unwrap();
+    complete_summary(&reg, id);
 
-    let err = get_file_history_inner(&reg, id, 99, "README.md").unwrap_err();
+    let err = all_history(&reg, id, 99, "README.md").unwrap_err();
 
     assert_eq!(err.kind, AppErrorKind::LogStale);
 }
@@ -124,7 +149,7 @@ fn get_file_history_inner_maps_a_wrong_generation_to_log_stale() {
 fn get_file_history_inner_maps_a_call_before_any_summary_to_log_stale() {
     let (_d, _p, reg, id) = open_fixture();
 
-    let err = get_file_history_inner(&reg, id, 1, "README.md").unwrap_err();
+    let err = all_history(&reg, id, 1, "README.md").unwrap_err();
 
     assert_eq!(err.kind, AppErrorKind::LogStale);
 }
@@ -201,7 +226,7 @@ fn get_commit_files_inner_maps_unknown_repo() {
 #[test]
 fn get_file_history_inner_maps_unknown_repo() {
     let reg = RepoRegistry::default();
-    let err = get_file_history_inner(&reg, MISSING_ID, 1, "a.txt").unwrap_err();
+    let err = all_history(&reg, MISSING_ID, 1, "a.txt").unwrap_err();
     assert_eq!(err.kind, AppErrorKind::UnknownRepo);
 }
 
@@ -253,9 +278,9 @@ fn get_blame_inner_maps_a_malformed_path_to_path_not_found() {
 #[test]
 fn get_file_history_inner_maps_a_malformed_path_to_path_not_found() {
     let (_d, _p, reg, id) = open_fixture();
-    let summary = get_log_summary_inner(&reg, id).unwrap();
+    let summary = complete_summary(&reg, id);
 
-    let err = get_file_history_inner(&reg, id, summary.generation, "").unwrap_err();
+    let err = all_history(&reg, id, summary.generation, "").unwrap_err();
 
     assert_eq!(err.kind, AppErrorKind::PathNotFound);
 }
@@ -287,4 +312,20 @@ fn get_blame_inner_maps_a_directory_path_to_path_not_found() {
     let err = get_blame_inner(&reg, id, "dir", None).unwrap_err();
 
     assert_eq!(err.kind, AppErrorKind::PathNotFound);
+}
+
+#[test]
+fn get_file_history_inner_pages_with_next_row_and_follow_path() {
+    let (_d, path, reg, id) = open_fixture();
+    common::commit_file(&path, "README.md", "# fixture\ntwo\n", "modify");
+    let g = complete_summary(&reg, id).generation;
+    let first = get_file_history_inner(&reg, id, g, "README.md", 0, 1, None).unwrap();
+    let next = first.next_row.expect("more to scan");
+    let second =
+        get_file_history_inner(&reg, id, g, "README.md", next, 1, Some(&first.follow_path))
+            .unwrap();
+    let mut joined = first.entries;
+    joined.extend(second.entries);
+    assert_eq!(joined, all_history(&reg, id, g, "README.md").unwrap());
+    assert_eq!(joined.len(), 2);
 }

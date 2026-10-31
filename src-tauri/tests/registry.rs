@@ -15,6 +15,30 @@ fn session() -> (TempDir, RepoSession) {
     (dir, session)
 }
 
+/// A repository with one commit and `tags` lightweight tags on it, written straight into
+// take: the session handle is returned after the registry guard is released, so `remove`, which
+// drops what `take` returns, never runs a session's Drop (it joins the graph builder) under the
+// registry lock. While the handle is alive the registry is demonstrably free.
+#[test]
+fn registry_take_releases_the_registry_before_the_session_drops() {
+    let (_d1, busy) = session();
+    let (_d2, other) = session();
+    let registry = RepoRegistry::default();
+    let busy_id = registry.register(busy);
+    let other_id = registry.register(other);
+    let held = registry.take(busy_id).expect("busy session is registered");
+    assert!(registry.get(other_id).is_some());
+    assert!(registry.get(busy_id).is_none());
+    drop(held);
+    assert!(registry.get(other_id).is_some());
+}
+
+#[test]
+fn registry_take_unknown_is_none() {
+    let registry = RepoRegistry::default();
+    assert!(registry.take(7).is_none());
+}
+
 // register / get: ids start at 1 and increase; ids are never reused.
 #[test]
 fn registry_register_then_get() {

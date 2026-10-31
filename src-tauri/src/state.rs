@@ -82,9 +82,17 @@ impl RepoRegistry {
         self.entries().get(&id).map(|e| Arc::clone(&e.session))
     }
 
-    /// Returns whether a session with this id was registered.
+    /// Removes the entry and returns its session handle. The registry lock is released before
+    /// this returns, so the caller decides when the session drops.
+    pub fn take(&self, id: RepoId) -> Option<Arc<Mutex<RepoSession>>> {
+        let removed = self.entries().remove(&id);
+        removed.map(|e| e.session)
+    }
+
+    /// Returns whether a session with this id was registered. The removed session drops after
+    /// `take` has returned, so never under the registry lock: dropping it joins its graph builder.
     pub fn remove(&self, id: RepoId) -> bool {
-        self.entries().remove(&id).is_some()
+        self.take(id).is_some()
     }
 
     /// Finds a session by exact path equality with its (canonical) session path.

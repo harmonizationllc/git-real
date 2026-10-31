@@ -25,28 +25,66 @@ impl LaneLayout {
         }
     }
 
+    /// A layout resuming from a checkpoint: `columns` as [`Self::columns`]
+    /// returned them. The seed's width counts toward [`Self::max_columns`].
+    pub(crate) fn from_columns(columns: Vec<Option<Oid>>) -> Self {
+        let max_columns = to_u32(columns.len());
+        Self {
+            columns,
+            max_columns,
+        }
+    }
+
+    /// The column state between rows, the checkpoint a replay starts from.
+    pub(crate) fn columns(&self) -> &[Option<Oid>] {
+        &self.columns
+    }
+
     /// Places `oid` and returns its column and the row's edges, sorted.
     pub(crate) fn next(&mut self, oid: Oid, parents: &[Oid]) -> (u32, Vec<GraphEdge>) {
-        let before = self.columns.clone();
         let mut edges = Vec::new();
+        let lane = self.place(oid, parents, Some(&mut edges));
+        edges.sort();
+        (lane, edges)
+    }
 
-        // 1. The dot's column: the first one expecting this commit, else a free one.
-        let expecting: Vec<usize> = before
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| **c == Some(oid))
-            .map(|(k, _)| k)
-            .collect();
-        let lane = match expecting.first() {
-            Some(&k) => k,
-            None => self.take_free(),
+    /// Places `oid` like [`Self::next`] and returns only its column, without
+    /// building edges.
+    pub(crate) fn advance(&mut self, oid: Oid, parents: &[Oid]) -> u32 {
+        self.place(oid, parents, None)
+    }
+
+    /// The one state transition behind `next` and `advance`; edges go to
+    /// `edges` when given, unsorted.
+    fn place(&mut self, oid: Oid, parents: &[Oid], mut edges: Option<&mut Vec<GraphEdge>>) -> u32 {
+        let mut push = |e: GraphEdge| {
+            if let Some(edges) = edges.as_deref_mut() {
+                edges.push(e);
+            }
         };
 
-        // 2. Every column expecting this commit joins the dot and is freed.
-        for &k in &expecting {
-            edges.push(edge(Some(k), None));
-            self.columns[k] = None;
+        // 1. One scan before anything moves: every column expecting this
+        //    commit joins the dot and is freed, the first of them holding the
+        //    dot; every column waiting for another commit passes straight
+        //    through, since the steps below never free or move it.
+        let mut expecting = None;
+        for (k, column) in self.columns.iter_mut().enumerate() {
+            match *column {
+                Some(expected) if expected == oid => {
+                    expecting.get_or_insert(k);
+                    *column = None;
+                    push(edge(Some(k), None));
+                }
+                Some(_) => push(edge(Some(k), Some(k))),
+                None => {}
+            }
         }
+
+        // 2. The dot's column: the first one expecting this commit, else a free one.
+        let lane = match expecting {
+            Some(k) => k,
+            None => self.take_free(),
+        };
 
         // 3. Parents leave the dot: the first in the dot's column, the others
         //    in the column already expecting them or a free one.
@@ -60,23 +98,14 @@ impl LaneLayout {
                 }
             };
             self.columns[k] = Some(*parent);
-            edges.push(edge(None, Some(k)));
-        }
-
-        // 4. Columns that were waiting for another commit pass straight
-        //    through: steps 2 and 3 never free or move them.
-        for (k, expected) in before.iter().enumerate() {
-            if expected.is_some_and(|e| e != oid) {
-                edges.push(edge(Some(k), Some(k)));
-            }
+            push(edge(None, Some(k)));
         }
 
         self.max_columns = self.max_columns.max(to_u32(self.columns.len()));
         while self.columns.last().is_some_and(Option::is_none) {
             self.columns.pop();
         }
-        edges.sort();
-        (to_u32(lane), edges)
+        to_u32(lane)
     }
 
     /// The widest row laid out so far.
@@ -439,5 +468,59 @@ mod tests {
             ]
         };
         assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn advance_returns_the_same_lane_as_next_for_the_same_sequence() {
+        let seq = [
+            (o(9), vec![o(3), o(2)]),
+            (o(3), vec![o(1)]),
+            (o(2), vec![o(1)]),
+            (o(1), vec![]),
+        ];
+        let (mut a, mut b) = (LaneLayout::new(), LaneLayout::new());
+        for (oid, parents) in &seq {
+            assert_eq!(a.advance(*oid, parents), b.next(*oid, parents).0);
+            assert_eq!(a.columns(), b.columns());
+        }
+        assert_eq!(a.max_columns(), b.max_columns());
+    }
+
+    #[test]
+    fn replay_from_a_checkpoint_equals_a_straight_run() {
+        let seq = [
+            (o(9), vec![o(3), o(2)]),
+            (o(3), vec![o(1)]),
+            (o(2), vec![o(1)]),
+            (o(1), vec![]),
+        ];
+        let mut straight = LaneLayout::new();
+        let mut expected = Vec::new();
+        for (oid, parents) in &seq {
+            expected.push(straight.next(*oid, parents));
+        }
+        let mut head = LaneLayout::new();
+        head.advance(seq[0].0, &seq[0].1);
+        let mut replay = LaneLayout::from_columns(head.columns().to_vec());
+        let got: Vec<_> = seq[1..]
+            .iter()
+            .map(|(oid, p)| replay.next(*oid, p))
+            .collect();
+        assert_eq!(got, expected[1..]);
+    }
+
+    #[test]
+    fn from_columns_counts_the_seed_width_in_max_columns() {
+        assert_eq!(
+            LaneLayout::from_columns(vec![Some(o(1)), None, Some(o(2))]).max_columns(),
+            3
+        );
+    }
+
+    #[test]
+    fn next_with_a_filtered_parent_list_draws_no_edge_for_the_omitted_parent() {
+        let mut l = LaneLayout::new();
+        // commit 5 has parents [1, 2] but 2 is omitted by the caller: only one bottom edge.
+        assert_eq!(l.next(o(5), &[o(1)]), (0, vec![e(None, Some(0))]));
     }
 }

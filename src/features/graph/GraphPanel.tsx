@@ -30,6 +30,7 @@ import { useCommitActions } from "./useCommitActions";
 import { logPageOptions, useLogPages } from "./useLogPages";
 import { logSearchOptions, useLogSearch } from "./useLogSearch";
 import { useLogSummary } from "./useLogSummary";
+import { useTopAnchor } from "./useTopAnchor";
 import { useNow } from "./useNow";
 import styles from "./GraphPanel.module.css";
 
@@ -198,7 +199,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
   let body: React.ReactNode;
   if (summaryError !== null) {
     body = <RepoError error={summaryError} path={null} onRetry={refetch} onDismiss={refetch} />;
-  } else if (summary === undefined) {
+  } else if (summary === undefined || (summary.total === 0 && !summary.complete)) {
     body = <p role="status">Loading history…</p>;
   } else if (summary.total === 0) {
     body = <p className={styles.empty}>No commits yet</p>;
@@ -322,7 +323,7 @@ interface CommitListProps {
 
 /** The search toolbar and the virtualized commit listbox of a non-empty history. */
 function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
-  const { generation, total, maxLanes } = summary;
+  const { generation, total, maxLanes, complete, refreshing } = summary;
   const queryClient = useQueryClient();
   const selectCommit = useWorkspace((s) => s.selectCommit);
   const selected = useWorkspace((s) => s.selectedCommit[repoId] ?? null);
@@ -394,6 +395,25 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
       .catch(ignore);
   };
 
+  /**
+   * The row of `oid` in this generation, found through searchLog and verified against its page
+   * row (a revert or cherry-pick message contains the full oid too). Undefined when the commit
+   * is absent, or once `wanted` turns false after a page fetch.
+   */
+  const locate = useCallback(
+    async (oid: string, wanted = () => mounted.current): Promise<number | undefined> => {
+      const candidates = await queryClient.fetchQuery(logSearchOptions(repoId, generation, oid));
+      for (const index of candidates) {
+        const page = pageOf(index);
+        const { rows } = await queryClient.fetchQuery(logPageOptions(repoId, generation, page));
+        if (!wanted()) return undefined;
+        if (rows[index - pageStart(page)]?.oid === oid) return index;
+      }
+      return undefined;
+    },
+    [queryClient, repoId, generation],
+  );
+
   // Reveal: a selection made elsewhere (the summary's parent links, a search) whose row is
   // not rendered is located through searchLog, verified against its page row, and centred.
   useEffect(() => {
@@ -403,35 +423,55 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     const oid = selected;
     const stillSelected = () =>
       mounted.current && useWorkspace.getState().selectedCommit[repoId] === oid;
-    const reveal = async () => {
-      // A revert or cherry-pick message contains the full oid too, so verify each candidate.
-      const candidates = await queryClient.fetchQuery(logSearchOptions(repoId, generation, oid));
-      for (const index of candidates) {
-        const page = pageOf(index);
-        const { rows } = await queryClient.fetchQuery(logPageOptions(repoId, generation, page));
-        if (!stillSelected()) return;
-        if (rows[index - pageStart(page)]?.oid === oid) {
-          lastIndex.current = index;
-          virtualizer.scrollToIndex(index, { align: "center" });
-          return;
-        }
-      }
-    };
-    reveal().catch(ignore);
-  }, [settled, selected, selectedIndex, repoId, generation, queryClient, virtualizer]);
+    locate(oid, stillSelected)
+      .then((index) => {
+        if (index === undefined) return;
+        lastIndex.current = index;
+        virtualizer.scrollToIndex(index, { align: "center" });
+      })
+      .catch(ignore);
+  }, [settled, selected, selectedIndex, repoId, locate, virtualizer]);
+
+  // Anchor: across a generation change the commit at the top of the viewport stays on top.
+  // The range excludes overscan, so this is the first row the user sees.
+  const topIndex = virtualizer.range?.startIndex;
+  const topRow = topIndex === undefined ? undefined : pages.rowAt(topIndex);
+  useTopAnchor({
+    generation,
+    top: topRow && topIndex !== undefined ? { oid: topRow.oid, index: topIndex } : undefined,
+    locate: (oid, wanted) => locate(oid, () => mounted.current && wanted()),
+    scrollToStart: (index) => virtualizer.scrollToIndex(index, { align: "start" }),
+    scrollRef,
+  });
 
   // Search: the input is debounced into the query that is searched. The debounce also starts
   // the fetch and reveals the first match when it answers, so the reveal happens once per
-  // query and never again when a new generation re-runs the same search.
+  // query and never again when a new generation re-runs the same search. Search waits for a
+  // complete graph: a query submitted while it is incomplete is held, and runs (with its one
+  // reveal) when the graph completes.
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const searched = useRef("");
+  // A query submitted on an incomplete graph, run once the graph completes.
+  const held = useRef<string | null>(null);
   // The cursor belongs to a query, so a new query starts at its first match while a new
   // generation of the same query keeps the position when the match count allows.
   const [cursor, setCursor] = useState({ query: "", index: 0 });
   const clearSearch = () => {
     searched.current = "";
+    held.current = null;
     setQuery("");
+  };
+  /** Searches the current generation for `q` and reveals its first match. */
+  const runSearch = (q: string) => {
+    queryClient
+      .fetchQuery(logSearchOptions(repoId, generation, q))
+      .then((found) => {
+        if (mounted.current && searched.current === q && found.length > 0) {
+          selectIndex(found[0], "center");
+        }
+      })
+      .catch(ignore);
   };
   const search = useEffectEvent((q: string) => {
     if (q === "") {
@@ -442,20 +482,26 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     setQuery(q);
     // Every submission starts at the first match, even a retyped query.
     setCursor({ query: q, index: 0 });
-    queryClient
-      .fetchQuery(logSearchOptions(repoId, generation, q))
-      .then((found) => {
-        if (mounted.current && searched.current === q && found.length > 0) {
-          selectIndex(found[0], "center");
-        }
-      })
-      .catch(ignore);
+    if (complete) {
+      held.current = null;
+      runSearch(q);
+    } else {
+      held.current = q;
+    }
   });
+  const runHeld = useEffectEvent(() => {
+    const q = held.current;
+    held.current = null;
+    if (q !== null && q === searched.current) runSearch(q);
+  });
+  useEffect(() => {
+    if (complete) runHeld();
+  }, [complete]);
   useEffect(() => {
     const timer = setTimeout(() => search(input.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [input]);
-  const { matches, isFetching } = useLogSearch(repoId, generation, query);
+  const { matches, isFetching } = useLogSearch(repoId, generation, query, complete);
   const matchSet = useMemo(() => new Set(matches), [matches]);
   const current =
     cursor.query === query ? Math.min(cursor.index, Math.max(matches.length - 1, 0)) : 0;
@@ -517,10 +563,13 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
           // Clearing is immediate; typing waits for the debounce.
           if (value === "") clearSearch();
         }}
-        matchCount={query === "" || isFetching ? null : matches.length}
+        matchCount={query === "" || isFetching || !complete ? null : matches.length}
         current={current}
         onPrevious={() => step(-1)}
         onNext={() => step(1)}
+        total={total}
+        complete={complete}
+        refreshing={refreshing}
       />
       {pages.error !== null && (
         <RepoError
@@ -536,6 +585,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
         aria-label="Commits"
         tabIndex={0}
         aria-activedescendant={selectedIndex === undefined ? undefined : rowId(selectedIndex)}
+        aria-busy={!complete || undefined}
         className={styles.list}
         onKeyDown={onKeyDown}
         onContextMenu={(e) => e.preventDefault()}

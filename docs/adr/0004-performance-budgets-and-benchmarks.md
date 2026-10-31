@@ -65,3 +65,16 @@ The status budget (`statusMs`) is raised from 500 ms to 1500 ms. The shared CI r
 now measures 570 to 1130 ms for the status path, which has not changed, against 84 ms
 and 43 ms on 2026-10-26. The number lives in `STATUS_MS` in the bench crate. The other
 two budgets are unchanged.
+
+## Amendment 2026-10-31
+
+A fourth budget, `graphCompleteMs`, is added at 10,000 ms: the time from opening a
+repository of 100,000 commits to a complete, topologically ordered commit graph. GR-27
+builds the graph on a background thread and streams its first rows to the panel before
+the build finishes, so the first-page budget no longer covers the build; without a
+budget of its own, a regression in the full build would pass CI unnoticed. The number
+lives in `GRAPH_COMPLETE_MS` in the bench crate, and the JSON report moves to version 2.
+
+`openToFirstPageMs` keeps its 3,000 ms number with a new meaning: open to the first
+streamed page, rather than open, full graph build and first page. The status and RSS
+growth budgets are unchanged.

@@ -5,7 +5,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use git_real_core::history::BLAME_MAX_BYTES;
+use git_real_core::history::{BLAME_MAX_BYTES, FILE_HISTORY_SCAN_ROWS};
 use git_real_core::{
     Blame, BlameHunk, ChangeKind, CommitFile, FileHistoryEntry, GitError, RepoSession,
     Signature as CoreSignature,
@@ -74,8 +74,30 @@ fn shape(entries: &[FileHistoryEntry]) -> Vec<(ChangeKind, String, Option<String
 
 fn history(path: &Path, file: &str) -> Result<Vec<FileHistoryEntry>, GitError> {
     let mut s = open(path);
-    let generation = s.log_summary().expect("summary").generation;
-    s.file_history(generation, file)
+    let generation = s.log_summary_complete().expect("summary").generation;
+    all_history(&s, generation, file)
+}
+
+/// Every page of `path`'s history, fetched until `next_row` is `None`.
+fn all_history(
+    s: &RepoSession,
+    generation: u64,
+    path: &str,
+) -> Result<Vec<FileHistoryEntry>, GitError> {
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut follow: Option<String> = None;
+    loop {
+        let page = s.file_history(generation, path, start, 1000, follow.as_deref())?;
+        entries.extend(page.entries);
+        match page.next_row {
+            Some(next) => {
+                start = next;
+                follow = Some(page.follow_path);
+            }
+            None => return Ok(entries),
+        }
+    }
 }
 
 /// R <- A (HEAD branch) ; R <- B (`feature`) ; M = merge(A, B) on the HEAD branch.
@@ -440,9 +462,9 @@ fn file_history_unknown_path_is_empty() {
 fn file_history_stale_generation_is_log_stale() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let generation = s.log_summary().unwrap().generation;
+    let generation = s.log_summary_complete().unwrap().generation;
 
-    let err = s.file_history(generation + 1, "README.md").unwrap_err();
+    let err = all_history(&s, generation + 1, "README.md").unwrap_err();
 
     assert!(matches!(err, GitError::LogStale), "{err:?}");
 }
@@ -451,7 +473,7 @@ fn file_history_stale_generation_is_log_stale() {
 fn file_history_before_any_summary_is_log_stale() {
     let (_d, path) = common::temp_repo_with_commit();
 
-    let err = open(&path).file_history(1, "README.md").unwrap_err();
+    let err = all_history(&open(&path), 1, "README.md").unwrap_err();
 
     assert!(matches!(err, GitError::LogStale), "{err:?}");
 }
@@ -460,9 +482,9 @@ fn file_history_before_any_summary_is_log_stale() {
 fn file_history_order_matches_graph() {
     let (_d, path, _r, _a, _b, _m) = merge_changing_file();
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 100).unwrap().rows;
-    let entries = s.file_history(summary.generation, "f.txt").unwrap();
+    let entries = all_history(&s, summary.generation, "f.txt").unwrap();
 
     let indices: Vec<usize> = entries
         .iter()
@@ -814,11 +836,11 @@ fn blame_malformed_path_is_path_not_found() {
 fn file_history_malformed_path_is_path_not_found() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let generation = s.log_summary().unwrap().generation;
+    let generation = s.log_summary_complete().unwrap().generation;
 
     let results = [
-        s.file_history(generation, "../x"),
-        s.file_history(generation, ""),
+        all_history(&s, generation, "../x"),
+        all_history(&s, generation, ""),
     ];
 
     assert!(
@@ -1252,4 +1274,116 @@ fn tracked_files_skips_an_empty_subtree_and_descends_into_deep_ones() {
     let files = open(&path).tracked_files().unwrap();
 
     assert_eq!(files, ["a-b.txt", "a.txt", "a/c/deep.txt"]);
+}
+
+// --- file history in bounded pages (GR-27) ---
+
+/// Five linear commits; `f.txt` is added in the first, changed in the third
+/// and the fifth. Returns the session and the complete generation.
+fn paged_fixture() -> (tempfile::TempDir, RepoSession, u64) {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().to_path_buf();
+    common::init_repo(&path);
+    let contents = ["1\n", "1\n", "3\n", "3\n", "5\n"];
+    let mut parent: Vec<Oid> = Vec::new();
+    for (i, f) in contents.into_iter().enumerate() {
+        let other = format!("{i}\n");
+        let oid = commit_as(
+            &path,
+            &[("f.txt", f), ("other.txt", other.as_str())],
+            &format!("c{i}"),
+            &parent,
+            "Ada",
+            i as i64,
+        );
+        parent = vec![oid];
+    }
+    let mut s = open(&path);
+    let g = s.log_summary_complete().unwrap().generation;
+    (dir, s, g)
+}
+
+#[test]
+fn should_return_next_row_none_when_the_scan_reaches_the_end() {
+    let (_d, s, g) = paged_fixture();
+    let page = s.file_history(g, "f.txt", 0, 1000, None).unwrap();
+    assert_eq!(
+        (page.entries.len(), page.next_row, page.follow_path.as_str()),
+        (3, None, "f.txt")
+    );
+}
+
+#[test]
+fn should_stop_after_max_entries_and_resume_from_next_row() {
+    let (_d, s, g) = paged_fixture();
+    let first = s.file_history(g, "f.txt", 0, 2, None).unwrap();
+    assert_eq!(first.entries.len(), 2);
+    let next = first.next_row.expect("more to scan");
+    let second = s
+        .file_history(g, "f.txt", next, 2, Some(&first.follow_path))
+        .unwrap();
+    assert_eq!((second.entries.len(), second.next_row), (1, None));
+    let mut joined = first.entries;
+    joined.extend(second.entries);
+    assert_eq!(joined, all_history(&s, g, "f.txt").unwrap());
+}
+
+#[test]
+fn should_follow_a_rename_across_a_page_boundary() {
+    let (_d, path, oids) = common::rename_fixture();
+    let mut s = open(&path);
+    let g = s.log_summary_complete().unwrap().generation;
+    // Newest first: modify b, rename a to b; the page stops on the rename.
+    let first = s.file_history(g, "b.txt", 0, 2, None).unwrap();
+    assert_eq!(
+        (
+            first.entries[1].change,
+            first.entries[1].old_path.as_deref(),
+            first.follow_path.as_str()
+        ),
+        (ChangeKind::Renamed, Some("a.txt"), "a.txt")
+    );
+    let next = first.next_row.expect("more to scan");
+    let second = s
+        .file_history(g, "b.txt", next, 10, Some(&first.follow_path))
+        .unwrap();
+    assert_eq!(
+        second
+            .entries
+            .iter()
+            .map(|e| (e.oid.clone(), e.path.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            (oids[1].to_string(), "a.txt"),
+            (oids[0].to_string(), "a.txt")
+        ]
+    );
+}
+
+#[test]
+fn should_clamp_max_entries_to_one_and_one_thousand() {
+    let (_d, s, g) = paged_fixture();
+    let none = s.file_history(g, "f.txt", 0, 0, None).unwrap();
+    let many = s.file_history(g, "f.txt", 0, 5000, None).unwrap();
+    assert_eq!((none.entries.len(), many.entries.len()), (1, 3));
+}
+
+#[test]
+fn should_bound_a_page_by_the_scan_budget() {
+    assert_eq!(FILE_HISTORY_SCAN_ROWS, 20_000);
+    let (_d, s, g) = paged_fixture();
+    let past = s.file_history(g, "f.txt", 99, 10, None).unwrap();
+    assert_eq!((past.entries.len(), past.next_row), (0, None));
+}
+
+#[test]
+fn should_reject_an_invalid_follow_path() {
+    let (_d, s, g) = paged_fixture();
+    let follow = s.file_history(g, "f.txt", 0, 10, Some("../x"));
+    let plain = s.file_history(g, "../x", 0, 10, None);
+    assert!(
+        matches!(follow, Err(GitError::PathNotFound(_)))
+            && matches!(plain, Err(GitError::PathNotFound(_))),
+        "follow={follow:?} plain={plain:?}"
+    );
 }

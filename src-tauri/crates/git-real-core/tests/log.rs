@@ -80,7 +80,9 @@ fn should_report_generation_one_and_one_lane_when_the_repo_has_one_commit() {
         LogSummary {
             generation: 1,
             total: 1,
-            max_lanes: 1
+            max_lanes: 1,
+            complete: true,
+            refreshing: false
         }
     );
 }
@@ -90,7 +92,7 @@ fn should_label_the_head_branch_on_the_only_commit_when_the_repo_is_fresh() {
     let (_d, path) = common::temp_repo_with_commit();
     let head = common::head_branch_name(&path);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let page = s.log_page(g, 0, 10).unwrap();
     assert_eq!(page.rows[0].refs, vec![label(RefKind::Branch, &head, true)]);
 }
@@ -99,7 +101,7 @@ fn should_label_the_head_branch_on_the_only_commit_when_the_repo_is_fresh() {
 fn should_place_the_only_commit_in_lane_zero_with_no_edges_and_no_parents() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let row = &s.log_page(g, 0, 10).unwrap().rows[0];
     assert_eq!((row.lane, &row.edges, &row.parents), (0, &vec![], &vec![]));
 }
@@ -108,7 +110,7 @@ fn should_place_the_only_commit_in_lane_zero_with_no_edges_and_no_parents() {
 fn should_expose_subject_author_and_time_when_a_row_is_read() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let row = &s.log_page(g, 0, 10).unwrap().rows[0];
     assert_eq!(
         (
@@ -124,7 +126,7 @@ fn should_expose_subject_author_and_time_when_a_row_is_read() {
 fn should_report_a_positive_author_time_when_a_row_is_read() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(s.log_page(g, 0, 10).unwrap().rows[0].author_time > 0);
 }
 
@@ -132,7 +134,7 @@ fn should_report_a_positive_author_time_when_a_row_is_read() {
 fn should_expose_the_oid_as_forty_hex_characters_when_a_row_is_read() {
     let (_d, path, oids) = linear(0);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(
         s.log_page(g, 0, 10).unwrap().rows[0].oid,
         oids[0].to_string()
@@ -143,7 +145,7 @@ fn should_expose_the_oid_as_forty_hex_characters_when_a_row_is_read() {
 fn should_list_newest_first_and_link_parents_when_history_is_linear() {
     let (_d, path, oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     let got: Vec<(String, Vec<String>)> = rows
         .iter()
@@ -161,7 +163,7 @@ fn should_list_newest_first_and_link_parents_when_history_is_linear() {
 fn should_keep_one_lane_when_history_is_linear() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    assert_eq!(s.log_summary().unwrap().max_lanes, 1);
+    assert_eq!(s.log_summary_complete().unwrap().max_lanes, 1);
 }
 
 // --- branch and merge fixture: lanes, edges, parents, labels ---
@@ -178,7 +180,7 @@ type MergeRows = (
 fn merge_rows() -> MergeRows {
     let (d, path, r, a, b, m) = common::merge_fixture();
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     (d, path, (r, a, b, m), rows, summary)
 }
@@ -277,7 +279,7 @@ fn should_label_lightweight_and_annotated_tags_in_name_order() {
     common::tag_annotated(&path, "v2", r);
     common::tag_lightweight(&path, "v1", r);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(
         rows[3].refs,
@@ -293,7 +295,7 @@ fn should_peel_an_annotated_tag_to_the_commit_it_points_at() {
     let (_d, path, r, _a, _b, _m) = common::merge_fixture();
     common::tag_annotated(&path, "v2", r);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(rows[3].refs, vec![label(RefKind::Tag, "v2", false)]);
 }
@@ -304,7 +306,7 @@ fn should_order_tags_after_branch_labels_on_the_same_commit() {
     common::tag_lightweight(&path, "v1", m);
     let head = common::head_branch_name(&path);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(
         rows[0].refs,
@@ -321,7 +323,7 @@ fn should_skip_a_tag_that_points_at_a_blob() {
     let blob = Repository::open(&path).unwrap().blob(b"x").unwrap();
     common::tag_lightweight(&path, "blobtag", blob);
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     assert!(summary.total == 1 && rows[0].refs.iter().all(|l| l.kind != RefKind::Tag));
 }
@@ -336,7 +338,7 @@ fn should_skip_a_tag_that_points_at_a_tree() {
     };
     common::tag_lightweight(&path, "treetag", tree);
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     assert!(summary.total == 1 && rows[0].refs.iter().all(|l| l.kind != RefKind::Tag));
 }
@@ -359,7 +361,7 @@ fn should_label_the_remote_branch_and_skip_the_remote_head_symbolic_ref() {
         )
         .unwrap();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(
         rows[0].refs,
@@ -386,7 +388,7 @@ fn should_list_remote_only_commits_when_no_local_branch_reaches_them() {
         .delete()
         .unwrap();
     let mut s = open(&path);
-    assert_eq!(s.log_summary().unwrap().total, 2);
+    assert_eq!(s.log_summary_complete().unwrap().total, 2);
 }
 
 // --- detached HEAD ---
@@ -400,7 +402,7 @@ fn should_add_a_head_label_first_when_head_is_detached() {
         .set_head_detached(oids[1])
         .unwrap();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(
         rows[0].refs,
@@ -419,7 +421,7 @@ fn should_label_head_on_the_commit_it_is_detached_at_when_behind_the_branch() {
         .set_head_detached(oids[0])
         .unwrap();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(rows[1].refs, vec![label(RefKind::Head, "HEAD", true)]);
 }
@@ -431,11 +433,13 @@ fn should_report_no_rows_when_head_is_unborn() {
     let (_d, path) = common::temp_repo_unborn();
     let mut s = open(&path);
     assert_eq!(
-        s.log_summary().unwrap(),
+        s.log_summary_complete().unwrap(),
         LogSummary {
             generation: 1,
             total: 0,
-            max_lanes: 0
+            max_lanes: 0,
+            complete: true,
+            refreshing: false
         }
     );
 }
@@ -444,7 +448,7 @@ fn should_report_no_rows_when_head_is_unborn() {
 fn should_return_an_empty_page_when_head_is_unborn() {
     let (_d, path) = common::temp_repo_unborn();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(s.log_page(g, 0, 10).unwrap().rows.is_empty());
 }
 
@@ -461,7 +465,7 @@ fn should_list_remote_commits_when_head_is_unborn_but_a_remote_was_fetched() {
         .unwrap();
     common::fetch_remote(&path, "origin");
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     assert_eq!(
         (summary.total, rows[0].refs.clone()),
@@ -478,69 +482,69 @@ fn should_list_remote_commits_when_head_is_unborn_but_a_remote_was_fetched() {
 fn should_keep_the_generation_when_nothing_changed() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let first = s.log_summary().unwrap().generation;
-    assert_eq!(s.log_summary().unwrap().generation, first);
+    let first = s.log_summary_complete().unwrap().generation;
+    assert_eq!(s.log_summary_complete().unwrap().generation, first);
 }
 
 #[test]
 fn should_keep_the_generation_when_an_untracked_file_is_written() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let first = s.log_summary().unwrap().generation;
+    let first = s.log_summary_complete().unwrap().generation;
     common::write_file(&path, "untracked.txt", "x\n");
-    assert_eq!(s.log_summary().unwrap().generation, first);
+    assert_eq!(s.log_summary_complete().unwrap().generation, first);
 }
 
 #[test]
 fn should_bump_the_generation_when_a_commit_is_made() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     common::commit_file(&path, "b.txt", "b\n", "second");
-    assert_eq!(s.log_summary().unwrap().generation, 2);
+    assert!(s.log_summary_complete().unwrap().generation > first);
 }
 
 #[test]
 fn should_include_the_new_commit_when_the_generation_was_bumped_by_a_commit() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    s.log_summary_complete().unwrap();
     common::commit_file(&path, "b.txt", "b\n", "second");
-    assert_eq!(s.log_summary().unwrap().total, 2);
+    assert_eq!(s.log_summary_complete().unwrap().total, 2);
 }
 
 #[test]
 fn should_bump_the_generation_when_a_branch_is_created() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     {
         let repo = Repository::open(&path).unwrap();
         let commit = repo.head().unwrap().peel_to_commit().unwrap();
         repo.branch("x", &commit, false).unwrap();
     }
-    assert_eq!(s.log_summary().unwrap().generation, 2);
+    assert!(s.log_summary_complete().unwrap().generation > first);
 }
 
 #[test]
 fn should_bump_the_generation_when_head_is_detached() {
     let (_d, path, oids) = linear(0);
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     Repository::open(&path)
         .unwrap()
         .set_head_detached(oids[0])
         .unwrap();
-    assert_eq!(s.log_summary().unwrap().generation, 2);
+    assert!(s.log_summary_complete().unwrap().generation > first);
 }
 
 #[test]
 fn should_bump_the_generation_when_a_tag_is_created() {
     let (_d, path, oids) = linear(0);
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     common::tag_lightweight(&path, "v1", oids[0]);
-    assert_eq!(s.log_summary().unwrap().generation, 2);
+    assert!(s.log_summary_complete().unwrap().generation > first);
 }
 
 // --- page bounds ---
@@ -549,7 +553,7 @@ fn should_bump_the_generation_when_a_tag_is_created() {
 fn should_return_the_remaining_rows_when_start_is_inside_the_range() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let page = s.log_page(g, 1, 10).unwrap();
     assert_eq!((page.start, page.rows.len()), (1, 2));
 }
@@ -558,7 +562,7 @@ fn should_return_the_remaining_rows_when_start_is_inside_the_range() {
 fn should_return_an_empty_page_when_start_equals_the_total() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(s.log_page(g, 3, 10).unwrap().rows.is_empty());
 }
 
@@ -566,7 +570,7 @@ fn should_return_an_empty_page_when_start_equals_the_total() {
 fn should_return_an_empty_page_when_start_is_far_past_the_end() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(s.log_page(g, u32::MAX, 10).unwrap().rows.is_empty());
 }
 
@@ -574,7 +578,7 @@ fn should_return_an_empty_page_when_start_is_far_past_the_end() {
 fn should_clamp_a_zero_count_to_one_row() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(s.log_page(g, 0, 0).unwrap().rows.len(), 1);
 }
 
@@ -582,7 +586,7 @@ fn should_clamp_a_zero_count_to_one_row() {
 fn should_clamp_a_huge_count_to_the_rows_available() {
     let (_d, path, _oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(s.log_page(g, 0, 5000).unwrap().rows.len(), 3);
 }
 
@@ -590,7 +594,7 @@ fn should_clamp_a_huge_count_to_the_rows_available() {
 fn should_clamp_a_count_to_one_thousand_rows() {
     let (_d, path, _oids) = linear(1004);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(s.log_page(g, 0, 5000).unwrap().rows.len(), 1000);
 }
 
@@ -598,7 +602,7 @@ fn should_clamp_a_count_to_one_thousand_rows() {
 fn should_start_the_page_at_the_requested_row() {
     let (_d, path, oids) = linear(2);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(
         s.log_page(g, 2, 1).unwrap().rows[0].oid,
         oids[0].to_string()
@@ -611,7 +615,7 @@ fn should_start_the_page_at_the_requested_row() {
 fn should_reject_a_page_when_the_generation_is_newer_than_the_cache() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(matches!(
         s.log_page(g + 1, 0, 10).unwrap_err(),
         GitError::LogStale
@@ -622,7 +626,7 @@ fn should_reject_a_page_when_the_generation_is_newer_than_the_cache() {
 fn should_reject_a_page_when_the_generation_is_zero() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    s.log_summary_complete().unwrap();
     assert!(matches!(
         s.log_page(0, 0, 10).unwrap_err(),
         GitError::LogStale
@@ -643,9 +647,9 @@ fn should_reject_a_page_when_no_summary_was_ever_built() {
 fn should_reject_an_old_generation_when_refs_changed_and_the_summary_was_rebuilt() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let old = s.log_summary().unwrap().generation;
+    let old = s.log_summary_complete().unwrap().generation;
     common::commit_file(&path, "b.txt", "b\n", "second");
-    s.log_summary().unwrap();
+    s.log_summary_complete().unwrap();
     assert!(matches!(
         s.log_page(old, 0, 10).unwrap_err(),
         GitError::LogStale
@@ -656,7 +660,7 @@ fn should_reject_an_old_generation_when_refs_changed_and_the_summary_was_rebuilt
 fn should_reject_a_search_when_the_generation_is_stale() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert!(matches!(
         s.search_log(g + 1, "x").unwrap_err(),
         GitError::LogStale
@@ -700,7 +704,7 @@ fn search_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, u64, Vec<Oid>) 
         ("Bob", "bob@y.org"),
     );
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     (d, path, s, g, vec![first, feat, fix])
 }
 
@@ -797,7 +801,7 @@ fn text_free_of_hex() -> (tempfile::TempDir, RepoSession, u64, Oid) {
         ("Zzz", "zzz@zzz.zzz"),
     );
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     (d, s, g, oid)
 }
 
@@ -1045,12 +1049,12 @@ fn should_move_the_branch_and_keep_head_symbolic_when_resetting() {
 #[test]
 fn should_rebuild_the_graph_with_a_new_generation_after_a_reset() {
     let (_d, _path, mut s, first, _second) = reset_fixture();
-    s.log_summary().unwrap();
+    let before = s.log_summary_complete().unwrap().generation;
     s.reset_to_commit(&first.to_string(), ResetMode::Mixed)
         .unwrap();
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     // The reset commit's child is no longer reachable from any ref.
-    assert_eq!((summary.generation, summary.total), (2, 1));
+    assert_eq!((summary.generation > before, summary.total), (true, 1));
 }
 
 #[test]
@@ -1111,17 +1115,17 @@ fn should_bump_the_generation_when_head_switches_to_another_branch_at_the_same_c
         repo.branch("other", &commit, false).unwrap();
     }
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     Repository::open(&path)
         .unwrap()
         .set_head("refs/heads/other")
         .unwrap();
-    let again = s.log_summary().unwrap();
+    let again = s.log_summary_complete().unwrap();
     let rows = s.log_page(again.generation, 0, 10).unwrap().rows;
     let head: Vec<_> = rows[0].refs.iter().filter(|l| l.is_head).collect();
     assert_eq!(
-        (again.generation, head.len(), head[0].name.as_str()),
-        (g + 1, 1, "other")
+        (again.generation > g, head.len(), head[0].name.as_str()),
+        (true, 1, "other")
     );
 }
 
@@ -1134,14 +1138,14 @@ fn should_bump_the_generation_when_a_branch_is_deleted() {
         repo.branch("x", &commit, false).unwrap();
     }
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     Repository::open(&path)
         .unwrap()
         .find_branch("x", git2::BranchType::Local)
         .unwrap()
         .delete()
         .unwrap();
-    assert_eq!(s.log_summary().unwrap().generation, 2);
+    assert!(s.log_summary_complete().unwrap().generation > first);
 }
 
 #[test]
@@ -1149,11 +1153,11 @@ fn should_bump_the_generation_when_a_tag_is_deleted() {
     let (_d, path, oids) = linear(0);
     common::tag_lightweight(&path, "v1", oids[0]);
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     Repository::open(&path).unwrap().tag_delete("v1").unwrap();
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
-    assert!(g == 2 && rows[0].refs.iter().all(|l| l.kind != RefKind::Tag));
+    assert!(g > first && rows[0].refs.iter().all(|l| l.kind != RefKind::Tag));
 }
 
 #[test]
@@ -1165,16 +1169,16 @@ fn should_bump_the_generation_when_a_branch_moves_to_another_commit() {
             .unwrap();
     }
     let mut s = open(&path);
-    s.log_summary().unwrap();
+    let first = s.log_summary_complete().unwrap().generation;
     Repository::open(&path)
         .unwrap()
         .reference("refs/heads/x", oids[0], true, "move")
         .unwrap();
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     assert_eq!(
-        (g, rows[1].refs.iter().any(|l| l.name == "x")),
-        (2, true),
+        (g > first, rows[1].refs.iter().any(|l| l.name == "x")),
+        (true, true),
         "x must now label the older commit"
     );
 }
@@ -1183,27 +1187,27 @@ fn should_bump_the_generation_when_a_branch_moves_to_another_commit() {
 fn should_keep_the_generation_when_the_index_changes() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let first = s.log_summary().unwrap().generation;
+    let first = s.log_summary_complete().unwrap().generation;
     common::write_file(&path, "staged.txt", "x\n");
     common::stage(&path, "staged.txt");
-    assert_eq!(s.log_summary().unwrap().generation, first);
+    assert_eq!(s.log_summary_complete().unwrap().generation, first);
 }
 
 #[test]
 fn should_keep_the_previous_cache_and_retry_when_a_rebuild_fails() {
     let (_d, path, oids) = linear(1);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     // A branch pointing at an object that does not exist makes the walk fail.
     std::fs::write(
         path.join(".git/refs/heads/broken"),
         format!("{}\n", "ab".repeat(20)),
     )
     .unwrap();
-    let failed = s.log_summary();
+    let failed = s.log_summary_complete();
     // The old pages stay readable, and the rebuild is attempted again.
     let old_page = s.log_page(g, 0, 10);
-    let retried = s.log_summary();
+    let retried = s.log_summary_complete();
     assert!(
         failed.is_err() && retried.is_err() && old_page.unwrap().rows.len() == oids.len(),
         "failed={failed:?} retried={retried:?}"
@@ -1223,7 +1227,7 @@ fn should_list_a_commit_once_when_several_refs_reach_it() {
     }
     common::tag_lightweight(&path, "v1", oids[1]);
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     assert_eq!(
         (summary.total, summary.max_lanes, rows[0].refs.len()),
@@ -1250,7 +1254,7 @@ fn should_list_a_commit_reachable_only_from_a_tag() {
     };
     common::tag_lightweight(&path, "lonely", only_tagged);
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 10).unwrap().rows;
     assert_eq!(
         (
@@ -1278,7 +1282,7 @@ fn should_peel_a_tag_of_a_tag_to_the_commit() {
         repo.tag("outer", &inner_obj, &sig, "again", false).unwrap();
     }
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = s.log_page(g, 0, 10).unwrap().rows;
     let tags: Vec<_> = rows[0]
         .refs
@@ -1303,7 +1307,7 @@ fn should_put_the_head_branch_first_even_when_it_sorts_after_other_branches() {
         .set_head("refs/heads/zzz")
         .unwrap();
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let branches: Vec<(String, bool)> = s.log_page(g, 0, 1).unwrap().rows[0]
         .refs
         .iter()
@@ -1329,7 +1333,7 @@ fn should_put_the_head_branch_first_even_when_it_sorts_after_other_branches() {
 fn should_concatenate_consecutive_pages_into_the_whole_graph() {
     let (_d, path, _oids) = linear(4);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let whole = s.log_page(g, 0, 100).unwrap().rows;
     let mut stitched = Vec::new();
     for start in [0, 2, 4] {
@@ -1344,7 +1348,7 @@ fn should_concatenate_consecutive_pages_into_the_whole_graph() {
 fn should_return_an_empty_page_when_start_and_count_are_at_the_numeric_limit() {
     let (_d, path, _oids) = linear(1);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let page = s.log_page(g, u32::MAX, u32::MAX).unwrap();
     assert_eq!((page.start, page.rows.len()), (u32::MAX, 0));
 }
@@ -1369,7 +1373,7 @@ fn should_match_hex_looking_text_in_the_author_name_when_it_is_not_a_hash_prefix
         ("Dead Beef", "db@x.io"),
     );
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(s.search_log(g, "dead").unwrap(), vec![0]);
 }
 
@@ -1384,7 +1388,7 @@ fn should_match_hex_looking_text_that_appears_only_in_the_body() {
         ("A", "a@x.io"),
     );
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(s.search_log(g, "cafe0042").unwrap(), vec![0]);
 }
 
@@ -1421,7 +1425,7 @@ fn should_match_non_ascii_text_case_insensitively() {
         ("Zoë", "zoe@x.io"),
     );
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     assert_eq!(
         (
             s.search_log(g, "überarbeitung").unwrap(),
@@ -1548,7 +1552,7 @@ fn should_replace_invalid_utf8_in_the_message_and_signature_instead_of_failing()
     };
     let mut s = open(&path);
     let detail = s.commit_detail(&oid.to_string()).unwrap();
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let row = s.log_page(g, 0, 1).unwrap().rows.remove(0);
     assert_eq!(
         (
@@ -1661,7 +1665,7 @@ fn should_serialize_log_types_with_camel_case_keys_and_ref_kinds() {
     let (_d, path, oids) = linear(0);
     common::tag_lightweight(&path, "v1", oids[0]);
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let page = s.log_page(summary.generation, 0, 1).unwrap();
     let json = serde_json::to_value(&page).unwrap();
     let row = &json["rows"][0];
@@ -1683,7 +1687,13 @@ fn should_serialize_log_types_with_camel_case_keys_and_ref_kinds() {
             row["edges"].clone()
         ),
         (
-            serde_json::json!({"generation": 1, "total": 1, "maxLanes": 1}),
+            serde_json::json!({
+                "generation": 1,
+                "total": 1,
+                "maxLanes": 1,
+                "complete": true,
+                "refreshing": false
+            }),
             serde_json::json!(0),
             vec![
                 "authorEmail",
@@ -1708,7 +1718,7 @@ fn should_serialize_log_types_with_camel_case_keys_and_ref_kinds() {
 fn should_serialize_edges_with_null_ends_and_commit_detail_in_camel_case() {
     let (_d, path, oids) = linear(1);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let rows = serde_json::to_value(s.log_page(g, 0, 2).unwrap()).unwrap();
     let detail = serde_json::to_value(s.commit_detail(&oids[1].to_string()).unwrap()).unwrap();
     assert_eq!(
@@ -1729,7 +1739,7 @@ fn should_serialize_edges_with_null_ends_and_commit_detail_in_camel_case() {
 fn should_serialize_oids_and_parents_as_forty_character_hex_strings() {
     let (_d, path, oids) = linear(1);
     let mut s = open(&path);
-    let g = s.log_summary().unwrap().generation;
+    let g = s.log_summary_complete().unwrap().generation;
     let page = serde_json::to_value(s.log_page(g, 0, 2).unwrap()).unwrap();
     let detail = serde_json::to_value(s.commit_detail(&oids[1].to_string()).unwrap()).unwrap();
     assert_eq!(
@@ -1746,4 +1756,33 @@ fn should_serialize_oids_and_parents_as_forty_character_hex_strings() {
             serde_json::json!([oids[0].to_string()])
         )
     );
+}
+
+// --- search through a snapshot (GR-27) ---
+
+#[test]
+fn should_find_a_full_hash_through_the_snapshot_index() {
+    let (_d, path, _r, _a, _b, m) = common::merge_fixture();
+    let mut s = open(&path);
+    let g = s.log_summary_complete().unwrap().generation;
+    assert_eq!(s.search_log(g, &m.to_string()).unwrap(), vec![0]);
+    let snapshot = s.log_snapshot(g).unwrap();
+    assert_eq!(
+        snapshot.search(&m.to_string().to_uppercase()).unwrap(),
+        vec![0]
+    );
+}
+
+#[test]
+fn should_search_the_same_results_through_a_snapshot_as_through_the_session() {
+    let (_d, _p, s, g, oids) = search_fixture();
+    let snapshot = s.log_snapshot(g).unwrap();
+    let prefix = &oids[1].to_string()[..7];
+    for query in ["commit", "FEAT", "@", "tokenizer", "zzz", "  ", prefix] {
+        assert_eq!(
+            snapshot.search(query).unwrap(),
+            s.search_log(g, query).unwrap(),
+            "query {query:?}"
+        );
+    }
 }

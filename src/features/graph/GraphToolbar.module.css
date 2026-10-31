@@ -15,3 +15,11 @@
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+
+.count {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

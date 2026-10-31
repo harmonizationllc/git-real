@@ -18,6 +18,7 @@ pub struct Host {
 #[serde(rename_all = "camelCase")]
 pub struct Budgets {
     pub open_to_first_page_ms: u128,
+    pub graph_complete_ms: u128,
     pub status_ms: u128,
     pub paging_rss_growth_mb: u64,
 }
@@ -25,7 +26,7 @@ pub struct Budgets {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
-    /// Always `1`.
+    /// Always [`REPORT_VERSION`].
     pub version: u32,
     pub host: Host,
     pub budgets: Budgets,
@@ -34,19 +35,20 @@ pub struct Report {
     pub passed: bool,
 }
 
-pub const REPORT_VERSION: u32 = 1;
+pub const REPORT_VERSION: u32 = 2;
 
-const HEADER: [&str; 6] = [
+const HEADER: [&str; 7] = [
     "fixture",
     "commits",
     "files",
     "open→first page",
+    "graph complete",
     "status",
     "paging RSS growth",
 ];
 
 /// Minimum column widths of the stdout table (spec §3.6); a longer cell widens its column.
-const MIN_WIDTHS: [usize; 6] = [15, 7, 8, 16, 9, 17];
+const MIN_WIDTHS: [usize; 7] = [15, 7, 8, 16, 14, 9, 17];
 
 impl Host {
     fn current() -> Host {
@@ -60,14 +62,18 @@ impl Host {
 impl Budgets {
     const CURRENT: Budgets = Budgets {
         open_to_first_page_ms: budgets::OPEN_TO_FIRST_PAGE_MS,
+        graph_complete_ms: budgets::GRAPH_COMPLETE_MS,
         status_ms: budgets::STATUS_MS,
         paging_rss_growth_mb: budgets::PAGING_RSS_GROWTH_MB,
     };
 
     fn line(&self) -> String {
         format!(
-            "budgets: open→first page {} ms, status {} ms, paging RSS growth {} MB",
-            self.open_to_first_page_ms, self.status_ms, self.paging_rss_growth_mb
+            "budgets: open→first page {} ms, graph complete {} ms, status {} ms, paging RSS growth {} MB",
+            self.open_to_first_page_ms,
+            self.graph_complete_ms,
+            self.status_ms,
+            self.paging_rss_growth_mb
         )
     }
 }
@@ -98,7 +104,7 @@ impl Report {
     /// `INFO` under `no_assert`).
     pub fn text_table(&self, no_assert: bool) -> String {
         let header = HEADER.map(String::from);
-        let rows: Vec<[String; 6]> = self.results.iter().map(cells).collect();
+        let rows: Vec<[String; 7]> = self.results.iter().map(cells).collect();
         let mut widths = MIN_WIDTHS;
         for row in std::iter::once(&header).chain(&rows) {
             for (width, cell) in widths.iter_mut().zip(row) {
@@ -133,7 +139,7 @@ impl Report {
     pub fn markdown(&self, no_assert: bool) -> String {
         let mut md = String::from("### Git Real benchmarks\n\n");
         md.push_str(&format!("| {} | result |\n", HEADER.join(" | ")));
-        md.push_str("| --- | ---: | ---: | ---: | ---: | ---: | --- |\n");
+        md.push_str("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
         for m in &self.results {
             let result = match (m.violations.is_empty(), no_assert) {
                 (true, _) => "pass",
@@ -149,14 +155,15 @@ impl Report {
     }
 }
 
-/// One table row: label, commits, files, open→first page, status, RSS growth;
-/// `-` for an unavailable value.
-fn cells(m: &Measurement) -> [String; 6] {
+/// One table row: label, commits, files, open→first page, graph complete,
+/// status, RSS growth; `-` for an unavailable value.
+fn cells(m: &Measurement) -> [String; 7] {
     [
         m.label.clone(),
         m.commits.to_string(),
         or_dash(m.files, |n| n.to_string()),
         format!("{} ms", m.open_to_first_page_ms),
+        format!("{} ms", m.graph_complete_ms),
         or_dash(m.status_ms, |n| format!("{n} ms")),
         or_dash(m.rss_growth_mb, |n| format!("{n} MB")),
     ]
@@ -167,7 +174,7 @@ fn or_dash<T>(value: Option<T>, show: impl Fn(T) -> String) -> String {
 }
 
 /// The label left-aligned, every other cell right-aligned; header and rows share it.
-fn table_line(cells: &[String; 6], widths: &[usize; 6]) -> String {
+fn table_line(cells: &[String; 7], widths: &[usize; 7]) -> String {
     let [label, rest @ ..] = cells;
     let mut line = format!("{label:<width$}", width = widths[0]);
     for (cell, width) in rest.iter().zip(&widths[1..]) {
@@ -225,6 +232,34 @@ mod tests {
         line.chars().count()
     }
 
+    #[test]
+    fn header_has_seven_columns_with_graph_complete_fifth() {
+        assert_eq!((HEADER.len(), HEADER[4]), (7, "graph complete"));
+    }
+
+    #[test]
+    fn json_version_is_two_and_carries_graph_complete_budget() {
+        let v = json(&two_rows());
+        assert_eq!(
+            (
+                v["version"].as_u64(),
+                v["budgets"]["graphCompleteMs"].as_u64()
+            ),
+            (Some(2), Some(10_000))
+        );
+    }
+
+    #[test]
+    fn text_table_row_shows_graph_complete_ms() {
+        let mut m = sample_measurement("s");
+        m.graph_complete_ms = 7_321;
+        let text = Report::new(vec![m]).text_table(false);
+        assert!(
+            text.lines().nth(1).unwrap().contains("7321 ms"),
+            "got {text}"
+        );
+    }
+
     // Report::new
     #[test]
     fn new_is_passed_without_violations() {
@@ -250,7 +285,7 @@ mod tests {
                 v["passed"].as_bool(),
             ),
             (
-                Some(1),
+                Some(2),
                 Some(3000),
                 Some(1500),
                 Some(64),
@@ -289,9 +324,11 @@ mod tests {
             "files",
             "maxLanes",
             "openMs",
-            "graphBuildMs",
+            "firstSummaryMs",
             "firstPageMs",
             "openToFirstPageMs",
+            "graphCompleteMs",
+            "rssAfterBuildMb",
             "pageAllMs",
             "rssBeforePagingMb",
             "rssAfterPagingMb",
@@ -379,6 +416,8 @@ mod tests {
                 "files",
                 "open→first",
                 "page",
+                "graph",
+                "complete",
                 "status",
                 "paging",
                 "RSS",
@@ -399,6 +438,8 @@ mod tests {
                 "10000",
                 "461",
                 "ms",
+                "460",
+                "ms",
                 "47",
                 "ms",
                 "0",
@@ -413,7 +454,18 @@ mod tests {
         let row: Vec<&str> = text.lines().nth(2).unwrap().split_whitespace().collect();
         assert_eq!(
             row,
-            vec!["qemu-graph", "99912", "-", "1204", "ms", "-", "1", "MB"]
+            vec![
+                "qemu-graph",
+                "99912",
+                "-",
+                "1204",
+                "ms",
+                "460",
+                "ms",
+                "-",
+                "1",
+                "MB"
+            ]
         );
     }
 
@@ -457,7 +509,9 @@ mod tests {
         let text = two_rows().text_table(false);
         assert_eq!(
             text.lines().nth(3),
-            Some("budgets: open→first page 3000 ms, status 1500 ms, paging RSS growth 64 MB")
+            Some(
+                "budgets: open→first page 3000 ms, graph complete 10000 ms, status 1500 ms, paging RSS growth 64 MB"
+            )
         );
     }
 
@@ -547,7 +601,7 @@ mod tests {
             (
                 Some("### Git Real benchmarks"),
                 Some(
-                    "| fixture | commits | files | open→first page | status | paging RSS growth | result |"
+                    "| fixture | commits | files | open→first page | graph complete | status | paging RSS growth | result |"
                 )
             )
         );
@@ -564,7 +618,8 @@ mod tests {
         let md = two_rows().markdown(false);
         assert!(
             md.lines()
-                .any(|l| l == "| synthetic | 100000 | 10000 | 461 ms | 47 ms | 0 MB | pass |"),
+                .any(|l| l
+                    == "| synthetic | 100000 | 10000 | 461 ms | 460 ms | 47 ms | 0 MB | pass |"),
             "got {md}"
         );
     }
@@ -574,7 +629,7 @@ mod tests {
         let md = two_rows().markdown(false);
         assert!(
             md.lines()
-                .any(|l| l == "| qemu-graph | 99912 | - | 1204 ms | - | 1 MB | pass |"),
+                .any(|l| l == "| qemu-graph | 99912 | - | 1204 ms | 460 ms | - | 1 MB | pass |"),
             "got {md}"
         );
     }

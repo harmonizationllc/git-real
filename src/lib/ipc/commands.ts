@@ -15,7 +15,7 @@ import type {
   DiffSide,
   FastForwardCheck,
   FileDiff,
-  FileHistoryEntry,
+  FileHistoryPage,
   GitCliInfo,
   HostedRepoPage,
   HostedRepoInfo,
@@ -243,13 +243,26 @@ export function getCommitFiles(id: RepoId, oid: string): Promise<CommitFile[]> {
   return invoke<CommitFile[]>("get_commit_files", { id, oid });
 }
 
-/** Commits of log `generation` that changed `path`, in graph order, following renames. */
+/**
+ * Up to `maxEntries` commits of log `generation` that changed `path`, in graph order from row
+ * `startRow`, following renames; `followPath` resumes a scan under the name a page returned.
+ */
 export function getFileHistory(
   id: RepoId,
   generation: number,
   path: string,
-): Promise<FileHistoryEntry[]> {
-  return invoke<FileHistoryEntry[]>("get_file_history", { id, generation, path });
+  startRow: number,
+  maxEntries: number,
+  followPath: string | null,
+): Promise<FileHistoryPage> {
+  return invoke<FileHistoryPage>("get_file_history", {
+    id,
+    generation,
+    path,
+    startRow,
+    maxEntries,
+    followPath,
+  });
 }
 
 /** Blame of `path` at `oid`, or at HEAD when `oid` is null. */

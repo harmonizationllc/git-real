@@ -373,6 +373,10 @@ export interface LogSummary {
   generation: number;
   total: number;
   maxLanes: number;
+  /** False while the graph is still being built and `total` can grow. */
+  complete: boolean;
+  /** True while a rebuild for moved refs runs behind the served graph. */
+  refreshing: boolean;
 }
 
 export interface LogPage {
@@ -416,6 +420,15 @@ export interface FileHistoryEntry {
   /** The file's path in this commit. */
   path: string;
   oldPath: string | null;
+}
+
+/** One bounded scan of a file's history; pass `nextRow` and `followPath` back for the next. */
+export interface FileHistoryPage {
+  entries: FileHistoryEntry[];
+  /** The row after the last one scanned; null once the scan reached the end of the graph. */
+  nextRow: number | null;
+  /** The name the scan was following when it stopped (an older name after a rename). */
+  followPath: string;
 }
 
 export interface BlameHunk {

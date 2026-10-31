@@ -9,9 +9,29 @@ export interface GraphToolbarProps {
   current: number;
   onPrevious(): void;
   onNext(): void;
+  /** Commits in the graph so far. */
+  total: number;
+  /** False while the graph is still being built and `total` can grow. */
+  complete: boolean;
+  /** True while a rebuild runs behind the served graph. */
+  refreshing: boolean;
 }
 
-function counterText(query: string, matchCount: number | null, current: number): string | null {
+const fmt = (n: number) => n.toLocaleString();
+
+function countText(total: number, complete: boolean, refreshing: boolean): string {
+  if (!complete) return `Loading… ${fmt(total)} commits`;
+  if (refreshing) return `Updating… ${fmt(total)} commits`;
+  return total === 1 ? "1 commit" : `${fmt(total)} commits`;
+}
+
+function counterText(
+  query: string,
+  matchCount: number | null,
+  current: number,
+  complete: boolean,
+): string | null {
+  if (query !== "" && !complete) return "Loading…";
   if (query === "" || matchCount === null) return null;
   return matchCount === 0 ? "No matches" : `${current + 1} of ${matchCount}`;
 }
@@ -23,9 +43,12 @@ export function GraphToolbar({
   current,
   onPrevious,
   onNext,
+  total,
+  complete,
+  refreshing,
 }: GraphToolbarProps) {
-  const counter = counterText(query, matchCount, current);
-  const noMatches = !matchCount;
+  const counter = counterText(query, matchCount, current, complete);
+  const noMatches = !matchCount || !complete;
   return (
     <div className={styles.root}>
       <input
@@ -57,6 +80,10 @@ export function GraphToolbar({
       <button type="button" disabled={noMatches} onClick={onNext}>
         Next
       </button>
+      {/* Not live: a screen reader would otherwise read the growing count twice a second. */}
+      <span role="status" aria-live="off" className={styles.count}>
+        {countText(total, complete, refreshing)}
+      </span>
     </div>
   );
 }

@@ -408,7 +408,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
         assert_eq!(
             (o.code, v["version"].as_u64(), v["passed"].as_bool()),
-            (0, Some(1), Some(true))
+            (0, Some(2), Some(true))
         );
     }
 

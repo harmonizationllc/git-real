@@ -26,8 +26,10 @@ export function useLogSearch(
   repoId: RepoId,
   generation: number | undefined,
   query: string,
+  /** Search waits for a complete graph; an incomplete one would answer with a partial list. */
+  complete: boolean,
 ): UseLogSearch {
-  const enabled = generation !== undefined && query.trim() !== "";
+  const enabled = complete && generation !== undefined && query.trim() !== "";
   const result = useQuery({
     ...logSearchOptions(repoId, generation ?? 0, query),
     enabled,

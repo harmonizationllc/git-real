@@ -25,6 +25,8 @@ import type { UseIntegrationActions } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { GraphPanel } from "./GraphPanel";
 import { gutterWidth } from "./model/edges";
+import { SEARCH_DEBOUNCE_MS } from "./model/layout";
+import { SUMMARY_POLL_MS } from "./useLogSummary";
 
 vi.mock("@tanstack/react-virtual", () => import("../../test/mockVirtualizer"));
 vi.mock("../merge/useOperationState", () => ({ useOperationState: vi.fn() }));
@@ -84,6 +86,8 @@ const summary = (over: Partial<LogSummary> = {}): LogSummary => ({
   generation: 1,
   total,
   maxLanes: 2,
+  complete: true,
+  refreshing: false,
   ...over,
 });
 
@@ -105,6 +109,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   scrolls.mockReset();
   mockWindow.size = Infinity;
+  mockWindow.start = 0;
+  mockWindow.visibleStart = null;
   total = 3;
   refsByIndex = { 0: [ref("branch", "main", true)] };
   parentsByIndex = {};
@@ -166,6 +172,132 @@ const press = (key: string, init: KeyboardEventInit = {}) =>
 
 // Contract: loading, empty and error states of the summary.
 describe("GraphPanel summary states", () => {
+  it("should show Loading history… for an incomplete empty summary", async () => {
+    total = 0;
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    await waitFor(() => expect(getLogSummary).toHaveBeenCalled());
+    await act(() => Promise.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent("Loading history…");
+  });
+
+  it("should show No commits yet only for a complete empty summary", async () => {
+    total = 0;
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ complete: false }))
+      .mockResolvedValue(summary());
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderWithProviders(<GraphPanel repoId={REPO} />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(getLogSummary).toHaveBeenCalledOnce();
+      expect(screen.getByRole("status")).toHaveTextContent("Loading history…");
+      await act(() => vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS));
+      expect(getLogSummary).toHaveBeenCalledTimes(2);
+      // The query client batches its notifications on a zero-delay timer.
+      await act(() => vi.advanceTimersByTimeAsync(20));
+      expect(screen.getByText("No commits yet")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should mark the listbox busy while the summary is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    expect(listbox()).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("should not mark the listbox busy once the summary is complete", async () => {
+    await renderPanel();
+    expect(listbox()).not.toHaveAttribute("aria-busy");
+  });
+
+  it("should grow the list when a poll reports more rows", async () => {
+    total = 1000;
+    mockWindow.size = 10;
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ total: 500, complete: false }))
+      .mockResolvedValue(summary({ total: 1000 }));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderPanel();
+      const inner = () => listbox().firstElementChild as HTMLElement;
+      expect(inner().style.height).toBe(`${500 * 22}px`);
+      await act(() => vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS));
+      expect(getLogSummary).toHaveBeenCalledTimes(2);
+      expect(inner().style.height).toBe(`${1000 * 22}px`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should pass the count and the loading marker to the toolbar", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading… 3 commits");
+  });
+
+  it("should not search while the summary is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fireEvent.change(searchBox(), { target: { value: "fix" } });
+      await act(() => vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS + 50));
+      expect(screen.getByText("Loading…")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+      expect(searchLog).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should run a query typed on an incomplete graph once, and reveal its first match, when the graph completes", async () => {
+    total = 30;
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ complete: false }))
+      .mockResolvedValue(summary({ generation: 2 }));
+    vi.mocked(searchLog).mockResolvedValue([12, 20]);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderPanel();
+      fireEvent.change(searchBox(), { target: { value: "fix" } });
+      await act(() => vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS + 50));
+      expect(searchLog).not.toHaveBeenCalled();
+      expect(scrolls).not.toHaveBeenCalled();
+      // The next poll reports the complete graph.
+      await act(() => vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS));
+      await act(() => vi.advanceTimersByTimeAsync(50));
+      expect(searchLog).toHaveBeenCalledExactlyOnceWith(REPO, 2, "fix");
+      expect(scrolls.mock.calls.filter((call) => call[0] === 12)).toEqual([
+        [12, { align: "center" }],
+      ]);
+      expect(selectedOid()).toBe(oidOf(12));
+      expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("should not run a query cleared before the graph completes", async () => {
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ complete: false }))
+      .mockResolvedValue(summary({ generation: 2 }));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderPanel();
+      fireEvent.change(searchBox(), { target: { value: "fix" } });
+      await act(() => vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS + 50));
+      fireEvent.change(searchBox(), { target: { value: "" } });
+      await act(() => vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS + 50));
+      expect(getLogSummary).toHaveBeenCalledTimes(2);
+      expect(searchLog).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("should show Loading history… with role status while the summary is pending", () => {
     vi.mocked(getLogSummary).mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<GraphPanel repoId={REPO} />);
@@ -1478,6 +1610,116 @@ describe("GraphPanel generation change", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Contract: across a generation change the commit that was at the top of the viewport stays at
+// the top: it is located in the new generation, verified against its page row, and scrolled to
+// with align start. A list at its top, or a commit gone from the new graph, is left alone.
+describe("GraphPanel top commit anchor", () => {
+  const isStart = (call: unknown[]) =>
+    JSON.stringify(call[1]) === JSON.stringify({ align: "start" });
+  const scrolledToStart = (index: number) =>
+    scrolls.mock.calls.some((call) => call[0] === index && isStart(call));
+  const anyStartScroll = () => scrolls.mock.calls.some(isStart);
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+
+  // Generation 2 puts three new commits on top, so every older commit moves down three rows.
+  const shiftedRows = () =>
+    vi.mocked(getLogPage).mockImplementation((_id, generation, start, count) =>
+      Promise.resolve({
+        start,
+        rows: Array.from({ length: Math.max(0, Math.min(count, total - start)) }, (_, i) => {
+          const index = start + i;
+          if (generation === 1) return makeRow(index);
+          return makeRow(index, { oid: index < 3 ? oidOf(1000 + index) : oidOf(index - 3) });
+        }),
+      }),
+    );
+
+  async function renderThenRebuild(start: number, visibleStart: number | null = null) {
+    total = 600;
+    mockWindow.size = 10;
+    mockWindow.start = start;
+    mockWindow.visibleStart = visibleStart;
+    shiftedRows();
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ generation: 1 }))
+      .mockResolvedValue(summary({ generation: 2 }));
+    const { queryClient } = await renderPanel();
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledWith(REPO, 2, 0, 500));
+  }
+
+  it("should scroll so the previous top commit stays on top when the generation changes", async () => {
+    vi.mocked(searchLog).mockImplementation((_id, generation, query) =>
+      Promise.resolve(generation === 2 && query === oidOf(2) ? [5] : []),
+    );
+    await renderThenRebuild(2);
+    await waitFor(() => expect(scrolledToStart(5)).toBe(true));
+    expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2));
+  });
+
+  it("should anchor the first visible row, not the first overscanned one", async () => {
+    // Rows 0..9 are rendered but overscan puts 0..4 above the viewport; row 5 is on top.
+    vi.mocked(searchLog).mockImplementation((_id, generation, query) =>
+      Promise.resolve(generation === 2 && query === oidOf(5) ? [8] : []),
+    );
+    await renderThenRebuild(0, 5);
+    await waitFor(() => expect(scrolledToStart(8)).toBe(true));
+    expect(searchLog).toHaveBeenCalledExactlyOnceWith(REPO, 2, oidOf(5));
+  });
+
+  it("should not anchor when the first visible row is row 0 even with rows rendered below", async () => {
+    vi.mocked(searchLog).mockResolvedValue([3]);
+    await renderThenRebuild(0, 0);
+    await settle();
+    expect(searchLog).not.toHaveBeenCalled();
+  });
+
+  it("should cancel the anchor when the user scrolls during the lookup", async () => {
+    let answer!: (found: number[]) => void;
+    vi.mocked(searchLog).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    await renderThenRebuild(2);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
+    fireEvent.wheel(listbox());
+    await act(async () => answer([5]));
+    await settle();
+    expect(anyStartScroll()).toBe(false);
+  });
+
+  it("should not anchor when the top of the list was visible", async () => {
+    vi.mocked(searchLog).mockResolvedValue([3]);
+    await renderThenRebuild(0);
+    await settle();
+    expect(searchLog).not.toHaveBeenCalled();
+    expect(anyStartScroll()).toBe(false);
+  });
+
+  it("should leave the scroll alone when the top commit is gone from the new generation", async () => {
+    vi.mocked(searchLog).mockResolvedValue([]);
+    await renderThenRebuild(2);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
+    await settle();
+    expect(scrolls).not.toHaveBeenCalled();
+  });
+
+  it("should not scroll to a candidate whose row is another commit", async () => {
+    // Row 4 of generation 2 is oidOf(1); a message quoting oidOf(2) must not move the list.
+    vi.mocked(searchLog).mockResolvedValue([4]);
+    await renderThenRebuild(2);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
+    await settle();
+    expect(anyStartScroll()).toBe(false);
+  });
+
+  it("should not anchor on the first render", async () => {
+    total = 600;
+    mockWindow.size = 10;
+    mockWindow.start = 2;
+    await renderPanel();
+    await settle();
+    expect(searchLog).not.toHaveBeenCalled();
   });
 });
 

@@ -28,7 +28,8 @@ pub fn git_available_with(found: bool, opt_out: Option<&str>) -> bool {
 }
 
 /// A within-budget measurement with every field present:
-/// 100000 commits, 10000 files, 461 ms open to first page, 47 ms status, 0 MB growth.
+/// 100000 commits, 10000 files, 461 ms open to first page, 460 ms graph complete,
+/// 47 ms status, 0 MB growth.
 pub fn sample_measurement(label: &str) -> Measurement {
     Measurement {
         label: label.to_string(),
@@ -37,9 +38,11 @@ pub fn sample_measurement(label: &str) -> Measurement {
         files: Some(10_000),
         max_lanes: 2,
         open_ms: 0,
-        graph_build_ms: 460,
+        first_summary_ms: 12,
         first_page_ms: 0,
         open_to_first_page_ms: 461,
+        graph_complete_ms: 460,
+        rss_after_build_mb: Some(160),
         page_all_ms: 20,
         rss_before_paging_mb: Some(168),
         rss_after_paging_mb: Some(168),
