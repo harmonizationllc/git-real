@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use git_real_core::RepoSession;
+use git_real_core::{GitError, RepoSession};
 use serde::Serialize;
 
 use crate::git::BenchError;
@@ -59,7 +59,14 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
     let first_summary_ms = elapsed_ms(started);
 
     let started = Instant::now();
-    serialized_page(&session, first.generation, 0)?;
+    let page = retry_stale_once(
+        &mut session,
+        first.generation,
+        |s, g| s.log_page(g, 0, PAGE_SIZE),
+        |s| s.log_summary().map(|summary| summary.generation),
+    )
+    .map_err(bench_error)?;
+    serde_json::to_vec(&page).map_err(bench_error)?;
     let first_page_ms = elapsed_ms(started);
     let open_to_first_page_ms = elapsed_ms(span);
 
@@ -135,6 +142,24 @@ fn serialized_page(session: &RepoSession, generation: u64, start: u32) -> Result
     Ok(())
 }
 
+/// `read` of `generation`, retried once on the generation `resummary` names
+/// when it answers `LogStale`: the final generation can land between a
+/// provisional summary and the first page.
+fn retry_stale_once<S, T>(
+    state: &mut S,
+    generation: u64,
+    mut read: impl FnMut(&mut S, u64) -> Result<T, GitError>,
+    resummary: impl FnOnce(&mut S) -> Result<u64, GitError>,
+) -> Result<T, GitError> {
+    match read(state, generation) {
+        Err(GitError::LogStale) => {
+            let fresh = resummary(state)?;
+            read(state, fresh)
+        }
+        other => other,
+    }
+}
+
 fn elapsed_ms(since: Instant) -> u128 {
     since.elapsed().as_millis()
 }
@@ -147,6 +172,58 @@ fn bench_error(e: impl std::fmt::Display) -> BenchError {
 mod tests {
     use super::*;
     use crate::test_support::{build_bare_graph, build_synthetic, git_available};
+
+    /// Reads that answer from `answers` in order, recording each generation asked.
+    struct Script {
+        answers: Vec<Result<&'static str, GitError>>,
+        asked: Vec<u64>,
+        resummaries: u32,
+    }
+
+    fn script(answers: Vec<Result<&'static str, GitError>>) -> Script {
+        Script {
+            answers,
+            asked: Vec::new(),
+            resummaries: 0,
+        }
+    }
+
+    fn scripted_read(s: &mut Script, g: u64) -> Result<&'static str, GitError> {
+        s.asked.push(g);
+        s.answers.remove(0)
+    }
+
+    fn scripted_resummary(s: &mut Script) -> Result<u64, GitError> {
+        s.resummaries += 1;
+        Ok(8)
+    }
+
+    // The final generation landed between the provisional summary and the first page.
+    #[test]
+    fn a_stale_first_page_is_read_again_from_a_fresh_summary() {
+        let mut s = script(vec![Err(GitError::LogStale), Ok("page")]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert_eq!(
+            (got.unwrap(), s.asked, s.resummaries),
+            ("page", vec![7, 8], 1)
+        );
+    }
+
+    #[test]
+    fn a_second_stale_answer_is_returned_not_retried() {
+        let mut s = script(vec![Err(GitError::LogStale), Err(GitError::LogStale)]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert!(matches!(got, Err(GitError::LogStale)), "{got:?}");
+        assert_eq!(s.asked, vec![7, 8]);
+    }
+
+    #[test]
+    fn another_error_is_returned_without_a_fresh_summary() {
+        let mut s = script(vec![Err(GitError::CommitNotFound("x".into()))]);
+        let got = retry_stale_once(&mut s, 7, scripted_read, scripted_resummary);
+        assert!(matches!(got, Err(GitError::CommitNotFound(_))), "{got:?}");
+        assert_eq!(s.resummaries, 0);
+    }
 
     // A worktree fixture: every field is measured and consistent with the fixture.
     #[test]
