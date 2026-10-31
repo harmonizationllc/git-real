@@ -7,7 +7,7 @@ import { useLogSummary } from "../graph/useLogSummary";
 import { useNow } from "../graph/useNow";
 import { RepoError } from "../repo/RepoError";
 import { HistoryRow, historyRowHeight } from "./HistoryRow";
-import { useFileHistory } from "./useFileHistory";
+import { FILE_HISTORY_MIN_LOADED, useFileHistory } from "./useFileHistory";
 import styles from "./FileHistoryPanel.module.css";
 
 export interface FileHistoryPanelProps {
@@ -25,8 +25,8 @@ function selectEntry(repoId: RepoId, entry: FileHistoryEntry) {
 /** The commits that touched one file, in the refs column; Close or Escape leaves history mode. */
 export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
   const { summary, error: summaryError, refetch: refetchSummary } = useLogSummary(repoId);
-  const history = useFileHistory(repoId, summary?.generation, path);
-  const { entries } = history;
+  const history = useFileHistory(repoId, summary?.generation, path, summary?.complete ?? false);
+  const { entries, hasMore, isFetchingMore, fetchMore } = history;
   const showHistory = useWorkspace((s) => s.showHistory);
   const close = () => showHistory(repoId, null);
 
@@ -42,6 +42,19 @@ export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
     selectEntry(repoId, entries[0]);
   }, [entries, path, repoId]);
 
+  // A short history fills in without scrolling: each page scans a bounded number of rows, so a
+  // rarely touched file can come back with few entries and a nextRow.
+  useEffect(() => {
+    if (
+      entries !== undefined &&
+      entries.length < FILE_HISTORY_MIN_LOADED &&
+      hasMore &&
+      !isFetchingMore
+    ) {
+      fetchMore();
+    }
+  }, [entries, hasMore, isFetchingMore, fetchMore]);
+
   let body: React.ReactNode;
   if (summaryError !== null) {
     body = (
@@ -56,7 +69,15 @@ export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
   } else if (entries.length === 0) {
     body = <p className={styles.empty}>No commits touch this file</p>;
   } else {
-    body = <HistoryList repoId={repoId} entries={entries} />;
+    body = (
+      <HistoryList
+        repoId={repoId}
+        entries={entries}
+        hasMore={hasMore}
+        isFetchingMore={isFetchingMore}
+        onEndReached={fetchMore}
+      />
+    );
   }
 
   return (
@@ -87,10 +108,17 @@ const getItemKey = (index: number) => index;
 interface HistoryListProps {
   repoId: RepoId;
   entries: FileHistoryEntry[];
+  hasMore: boolean;
+  isFetchingMore: boolean;
+  /** Called when the rendered window reaches the last entries while more remain. */
+  onEndReached(): void;
 }
 
-/** The virtualized listbox of a non-empty history. */
-function HistoryList({ repoId, entries }: HistoryListProps) {
+/** How close to the last loaded entry the rendered window gets before the next page is fetched. */
+const END_THRESHOLD = 10;
+
+/** The virtualized listbox of a non-empty history, with a Loading more… line under it. */
+function HistoryList({ repoId, entries, hasMore, isFetchingMore, onEndReached }: HistoryListProps) {
   const selected = useWorkspace((s) => s.selectedCommit[repoId] ?? null);
   const now = useNow();
   const idPrefix = useId();
@@ -107,7 +135,15 @@ function HistoryList({ repoId, entries }: HistoryListProps) {
     overscan: 20,
     getItemKey,
   });
+  const items = virtualizer.getVirtualItems();
   const selectedIndex = entries.findIndex((e) => e.oid === selected);
+
+  const lastRendered = items.at(-1)?.index ?? -1;
+  useEffect(() => {
+    if (hasMore && !isFetchingMore && lastRendered >= entries.length - END_THRESHOLD) {
+      onEndReached();
+    }
+  }, [hasMore, isFetchingMore, lastRendered, entries.length, onEndReached]);
 
   const selectIndex = (index: number) => {
     virtualizer.scrollToIndex(index);
@@ -144,41 +180,48 @@ function HistoryList({ repoId, entries }: HistoryListProps) {
   };
 
   return (
-    <div
-      ref={scrollRef}
-      role="listbox"
-      aria-label="File history"
-      tabIndex={0}
-      aria-activedescendant={selectedIndex === -1 ? undefined : rowId(selectedIndex)}
-      className={styles.list}
-      onKeyDown={onKeyDown}
-      onContextMenu={(e) => e.preventDefault()}
-    >
+    <>
       <div
-        role="presentation"
-        className={styles.inner}
-        style={{ height: virtualizer.getTotalSize() }}
+        ref={scrollRef}
+        role="listbox"
+        aria-label="File history"
+        tabIndex={0}
+        aria-activedescendant={selectedIndex === -1 ? undefined : rowId(selectedIndex)}
+        className={styles.list}
+        onKeyDown={onKeyDown}
+        onContextMenu={(e) => e.preventDefault()}
       >
-        {virtualizer.getVirtualItems().map((item) => {
-          const entry = entries[item.index];
-          return (
-            <div
-              key={item.key}
-              role="presentation"
-              className={styles.item}
-              style={{ transform: `translateY(${item.start}px)`, height: item.size }}
-            >
-              <HistoryRow
-                entry={entry}
-                now={now}
-                selected={entry.oid === selected}
-                id={rowId(item.index)}
-                onSelect={() => selectEntry(repoId, entry)}
-              />
-            </div>
-          );
-        })}
+        <div
+          role="presentation"
+          className={styles.inner}
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {items.map((item) => {
+            const entry = entries[item.index];
+            return (
+              <div
+                key={item.key}
+                role="presentation"
+                className={styles.item}
+                style={{ transform: `translateY(${item.start}px)`, height: item.size }}
+              >
+                <HistoryRow
+                  entry={entry}
+                  now={now}
+                  selected={entry.oid === selected}
+                  id={rowId(item.index)}
+                  onSelect={() => selectEntry(repoId, entry)}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+      {isFetchingMore && (
+        <p role="status" className={styles.more}>
+          Loading more…
+        </p>
+      )}
+    </>
   );
 }

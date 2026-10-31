@@ -196,7 +196,7 @@ beforeEach(async () => {
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
   vi.mocked(getCommitFiles).mockResolvedValue([]);
-  vi.mocked(getFileHistory).mockResolvedValue([]);
+  vi.mocked(getFileHistory).mockResolvedValue({ entries: [], nextRow: null, followPath: "" });
   vi.mocked(listTrackedFiles).mockResolvedValue(["src/a.ts", "b.txt"]);
 });
 
@@ -922,7 +922,7 @@ describe("RepoPane history mode", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     const panel = await screen.findByRole("region", { name: "File history" });
     expect(within(panel).getByText(PATH)).toBeInTheDocument();
-    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(1, 1, PATH));
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(1, 1, PATH, 0, 100, null));
   });
 
   it("should keep the commit graph in the History region in history mode", async () => {

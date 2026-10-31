@@ -54,3 +54,10 @@
   left: 0;
   width: 100%;
 }
+
+.more {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--color-text-muted);
+}

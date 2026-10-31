@@ -692,12 +692,35 @@ describe("history command wrappers", () => {
     expect(calls).toEqual([{ cmd: "get_commit_files", args: { id: 5, oid: "abc" } }]);
   });
 
-  it("getFileHistory sends get_file_history with id, generation and path", async () => {
-    const calls = mockWith([]);
-    await getFileHistory(5, 7, "src/a.ts");
+  it("getFileHistory sends get_file_history with id, generation, path, startRow, maxEntries and followPath", async () => {
+    const calls = mockWith({ entries: [], nextRow: null, followPath: "a.txt" });
+    await getFileHistory(3, 4, "a.txt", 0, 100, null);
     expect(calls).toEqual([
-      { cmd: "get_file_history", args: { id: 5, generation: 7, path: "src/a.ts" } },
+      {
+        cmd: "get_file_history",
+        args: {
+          id: 3,
+          generation: 4,
+          path: "a.txt",
+          startRow: 0,
+          maxEntries: 100,
+          followPath: null,
+        },
+      },
     ]);
+  });
+
+  it("getFileHistory passes a resumed cursor through", async () => {
+    const calls = mockWith({ entries: [], nextRow: null, followPath: "old.txt" });
+    await getFileHistory(3, 4, "a.txt", 700, 100, "old.txt");
+    expect(calls[0]?.args).toEqual({
+      id: 3,
+      generation: 4,
+      path: "a.txt",
+      startRow: 700,
+      maxEntries: 100,
+      followPath: "old.txt",
+    });
   });
 
   it("getBlame sends get_blame with id, path and oid", async () => {

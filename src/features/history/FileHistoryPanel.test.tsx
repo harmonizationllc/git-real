@@ -37,6 +37,15 @@ const OTHER_ENTRIES: FileHistoryEntry[] = [
   historyEntry(6, { path: "other.ts", subject: "Other 6" }),
 ];
 
+/** One page of history; null nextRow means the scan reached the end. */
+const page = (entries: FileHistoryEntry[], nextRow: number | null = null) => ({
+  entries,
+  nextRow,
+  followPath: PATH,
+});
+const many = (n: number, from = 0) =>
+  Array.from({ length: n }, (_, i) => historyEntry(from + i, { path: PATH }));
+
 const summary = (generation = 1) => ({
   generation,
   total: 10,
@@ -49,10 +58,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   scrolls.mockReset();
   mockWindow.size = Infinity;
+  mockWindow.start = 0;
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   vi.mocked(getLogSummary).mockResolvedValue(summary());
   vi.mocked(getFileHistory).mockImplementation((_id, _generation, path) =>
-    Promise.resolve(path === "other.ts" ? OTHER_ENTRIES : ENTRIES),
+    Promise.resolve(page(path === "other.ts" ? OTHER_ENTRIES : ENTRIES)),
   );
 });
 
@@ -116,7 +126,7 @@ describe("FileHistoryPanel header", () => {
   });
 
   it("should show the header for an empty history", async () => {
-    vi.mocked(getFileHistory).mockResolvedValue([]);
+    vi.mocked(getFileHistory).mockResolvedValue(page([]));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     await screen.findByText("No commits touch this file");
     expect(screen.getByText(PATH)).toBeInTheDocument();
@@ -142,7 +152,7 @@ describe("FileHistoryPanel data", () => {
   it("should request the history under the summary's generation and the path", async () => {
     vi.mocked(getLogSummary).mockResolvedValue(summary(9));
     await renderPanel();
-    expect(getFileHistory).toHaveBeenCalledExactlyOnceWith(REPO, 9, PATH);
+    expect(getFileHistory).toHaveBeenCalledExactlyOnceWith(REPO, 9, PATH, 0, 100, null);
   });
 
   it("should not request the history before the summary arrives", async () => {
@@ -173,13 +183,13 @@ describe("FileHistoryPanel states", () => {
   });
 
   it("should show No commits touch this file for an empty history", async () => {
-    vi.mocked(getFileHistory).mockResolvedValue([]);
+    vi.mocked(getFileHistory).mockResolvedValue(page([]));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     expect(await screen.findByText("No commits touch this file")).toBeInTheDocument();
   });
 
   it("should render no listbox options for an empty history", async () => {
-    vi.mocked(getFileHistory).mockResolvedValue([]);
+    vi.mocked(getFileHistory).mockResolvedValue(page([]));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     await screen.findByText("No commits touch this file");
     expect(screen.queryAllByRole("option")).toEqual([]);
@@ -280,7 +290,7 @@ describe("FileHistoryPanel auto-select", () => {
   });
 
   it("should select nothing for an empty list", async () => {
-    vi.mocked(getFileHistory).mockResolvedValue([]);
+    vi.mocked(getFileHistory).mockResolvedValue(page([]));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     await screen.findByText("No commits touch this file");
     await settle();
@@ -294,7 +304,7 @@ describe("FileHistoryPanel auto-select", () => {
     act(() => useWorkspace.getState().selectCommit(REPO, null));
     vi.mocked(getLogSummary).mockResolvedValue(summary(2));
     await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
-    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(REPO, 2, PATH));
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(REPO, 2, PATH, 0, 100, null));
     await settle();
     expect(selectedCommit()).toBeNull();
   });
@@ -513,7 +523,7 @@ describe("FileHistoryPanel errors", () => {
 describe("FileHistoryPanel with one entry", () => {
   const ONE = [ENTRIES[0]];
   const renderOne = async () => {
-    vi.mocked(getFileHistory).mockResolvedValue(ONE);
+    vi.mocked(getFileHistory).mockResolvedValue(page(ONE));
     const view = await renderPanel();
     await waitFor(() => expect(selectedCommit()).toBe(oidOf(0)));
     return view;
@@ -536,7 +546,7 @@ describe("FileHistoryPanel with one entry", () => {
   });
 
   it("should offer no listbox to navigate for an empty history", async () => {
-    vi.mocked(getFileHistory).mockResolvedValue([]);
+    vi.mocked(getFileHistory).mockResolvedValue(page([]));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     await screen.findByText("No commits touch this file");
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -554,7 +564,7 @@ describe("FileHistoryPanel auto-select after the user chooses", () => {
     expect(selectedCommit()).toBe(oidOf(2));
     vi.mocked(getLogSummary).mockResolvedValue(summary(2));
     await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
-    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(REPO, 2, PATH));
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledWith(REPO, 2, PATH, 0, 100, null));
     await settle();
     expect(selectedCommit()).toBe(oidOf(2));
     expect(selectedFile()).toEqual({ path: "src/old.ts", scope: { commit: oidOf(2) } });
@@ -568,5 +578,81 @@ describe("FileHistoryPanel auto-select after the user chooses", () => {
     fireEvent.click(screen.getAllByRole("option")[1]);
     await settle();
     expect(selectedCommit()).toBe(oidOf(6));
+  });
+});
+
+// Contract: the history loads in pages. Short histories keep fetching until at least
+// FILE_HISTORY_MIN_LOADED entries are loaded or none remain, reaching the end of the list
+// fetches the next page, a page in flight shows Loading more…, and an incomplete graph
+// reads Loading history….
+describe("FileHistoryPanel pages", () => {
+  it("should keep fetching until at least 100 entries are loaded or none remain", async () => {
+    // A viewport of ten rows, so reaching the end of the list does not fetch on its own.
+    mockWindow.size = 10;
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page(many(60), 700))
+      .mockResolvedValueOnce(page(many(30, 60), 1400))
+      .mockResolvedValueOnce(page(many(20, 90), 2100))
+      .mockResolvedValue(page(many(5, 110)));
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledTimes(3));
+    expect(getFileHistory).toHaveBeenNthCalledWith(2, REPO, 1, PATH, 700, 100, PATH);
+    expect(getFileHistory).toHaveBeenNthCalledWith(3, REPO, 1, PATH, 1400, 100, PATH);
+    await settle();
+    // 110 entries are loaded, so the fourth page waits for the end of the list.
+    expect(getFileHistory).toHaveBeenCalledTimes(3);
+  });
+
+  it("should stop fetching once no page remains", async () => {
+    mockWindow.size = 10;
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page(many(10), 700))
+      .mockResolvedValueOnce(page(many(5, 10)));
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(getFileHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("should show Loading more… while a further page is in flight", async () => {
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page(many(60), 700))
+      .mockReturnValueOnce(new Promise(() => undefined));
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    expect(await screen.findByText("Loading more…")).toHaveRole("status");
+    expect(screen.getAllByRole("option")).toHaveLength(60);
+  });
+
+  it("should not show Loading more… once the pages have arrived", async () => {
+    await renderPanel();
+    await settle();
+    expect(screen.queryByText("Loading more…")).toBeNull();
+  });
+
+  it("should fetch more when the end of the list is reached", async () => {
+    mockWindow.size = 10;
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page(many(150), 900))
+      .mockResolvedValue(page(many(5, 150)));
+    await renderPanel();
+    await settle();
+    expect(getFileHistory).toHaveBeenCalledOnce();
+    // The window scrolls to the last entries; any re-render reports it.
+    act(() => {
+      mockWindow.start = 140;
+      useWorkspace.getState().selectCommit(REPO, oidOf(145));
+    });
+    await waitFor(() =>
+      expect(getFileHistory).toHaveBeenLastCalledWith(REPO, 1, PATH, 900, 100, PATH),
+    );
+  });
+
+  it("should show Loading history… while the graph is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue({ ...summary(), complete: false });
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    await waitFor(() => expect(getLogSummary).toHaveBeenCalled());
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading history…");
+    expect(getFileHistory).not.toHaveBeenCalled();
   });
 });
