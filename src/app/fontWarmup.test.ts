@@ -180,8 +180,13 @@ describe("startFontWarmup", () => {
     drain();
     expect(root.dataset.fontsWarm).toBe("true");
     warmed = [];
+    costPerLayout = 25;
     start(reader({ ...shared, "--diff-font-size": "15px" }));
+    frame();
+    expect(warmed).toHaveLength(2);
+    expect(root.dataset.fontsWarm).toBeUndefined();
     drain();
+    expect(root.dataset.fontsWarm).toBe("true");
     expect(warmed).toEqual([
       { family: "UISans", size: "15px", weight: "normal" },
       { family: "UISans", size: "15px", weight: "600" },
@@ -201,5 +206,40 @@ describe("startFontWarmup", () => {
     expect(warmed).toEqual(warmupOrder(reader()));
     expect(host()).toBeNull();
     expect(root.dataset.fontsWarm).toBe("true");
+  });
+
+  it("a superseded run's late cancel does not stop the run that replaced it", () => {
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { attributes: true, attributeFilter: ["data-fonts-warm"] });
+    const cancelA = start();
+    start();
+    cancelA();
+    start();
+    drain();
+    vi.runAllTimers();
+    const flagWrites = observer.takeRecords().length;
+    observer.disconnect();
+    expect(warmed).toEqual(warmupOrder(reader()));
+    expect(root.dataset.fontsWarm).toBe("true");
+    expect(flagWrites).toBe(1);
+  });
+
+  it("token reads count against the first frame's budget", () => {
+    let reads = 0;
+    const base = reader();
+    start((name) => {
+      if (reads++ === 0) clock += 30; // the first read forces the style recalc
+      return base(name);
+    });
+    frame();
+    expect(warmed).toHaveLength(1);
+  });
+
+  it("the default token reader takes one computed style per resolution", () => {
+    const spy = vi.spyOn(window, "getComputedStyle");
+    startFontWarmup({ root, requestFrame: (cb) => void frames.push(cb), now: () => clock });
+    frame();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(root);
   });
 });

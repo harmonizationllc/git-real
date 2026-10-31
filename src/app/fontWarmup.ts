@@ -84,8 +84,12 @@ export function startFontWarmup(options: FontWarmupOptions = {}): () => void {
   const budget = options.frameBudgetMs ?? 40;
   const requestFrame = options.requestFrame ?? ((cb) => void window.requestAnimationFrame(cb));
   const now = options.now ?? (() => performance.now());
-  const readToken =
-    options.readToken ?? ((name) => getComputedStyle(root).getPropertyValue(name).trim());
+  // One computed style per resolution: the first read forces the recalc, the rest reuse it.
+  const tokenReader = (): ((name: string) => string) => {
+    if (options.readToken !== undefined) return options.readToken;
+    const style = getComputedStyle(root);
+    return (name) => style.getPropertyValue(name).trim();
+  };
 
   cancelActive?.();
   let cancelled = false;
@@ -119,9 +123,14 @@ export function startFontWarmup(options: FontWarmupOptions = {}): () => void {
 
   const runBatch = () => {
     if (cancelled) return;
-    // Resolved here, not at start, so a caller mid-style-change never forces a style recalc.
-    pending ??= warmupOrder(readToken).filter((c) => !warmed.has(keyOf(c)));
     const batchStart = now();
+    // Resolved here, not at start, so a caller mid-style-change never forces a style recalc, and
+    // after `batchStart`, so the recalc counts against this frame's budget.
+    if (pending === null) {
+      pending = warmupOrder(tokenReader()).filter((c) => !warmed.has(keyOf(c)));
+      // New cold combos make an earlier completion flag untrue until this run finishes.
+      if (pending.length > 0) delete root.dataset.fontsWarm;
+    }
     do {
       const next = pending.shift();
       if (next === undefined) break;
