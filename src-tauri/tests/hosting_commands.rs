@@ -60,7 +60,14 @@ fn push_pr_head(bare: &Path, n: u64, file: &str) -> String {
     let side = side_dir.path().join("side");
     git(
         side_dir.path(),
-        &["clone", "-q", bare.to_str().unwrap(), "side"],
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "side",
+        ],
     );
     common::configure_identity(&side);
     let oid = common::commit_file(&side, file, "pr\n", &format!("pr {n} {file}"));
@@ -77,7 +84,14 @@ fn push_branch_to_bare(bare: &Path, name: &str) {
     let side = side_dir.path().join("side");
     git(
         side_dir.path(),
-        &["clone", "-q", bare.to_str().unwrap(), "side"],
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "side",
+        ],
     );
     common::configure_identity(&side);
     git(&side, &["checkout", "-q", "-b", name]);

@@ -55,12 +55,34 @@ pub fn fake_git_script(dir: &Path, script: &str) -> PathBuf {
     path
 }
 
+/// `Repository::init` with `core.autocrlf` pinned to false in the repo's own
+/// config, so a host with system-wide autocrlf=true (Git for Windows) never
+/// changes fixture bytes. Use it for every non-bare fixture repo.
+pub fn init_repo(path: &Path) -> Repository {
+    let repo = Repository::init(path).expect("init repo");
+    repo.config()
+        .expect("config")
+        .set_bool("core.autocrlf", false)
+        .expect("pin core.autocrlf");
+    repo
+}
+
+/// Sets the repo-local `core.autocrlf` to `"true"`, `"input"` or `"false"`.
+pub fn set_autocrlf(path: &Path, value: &str) {
+    Repository::open(path)
+        .expect("open repo")
+        .config()
+        .expect("config")
+        .set_str("core.autocrlf", value)
+        .expect("set core.autocrlf");
+}
+
 /// Creates a temp repo with a single commit containing `README.md`.
 /// The returned `TempDir` must be kept alive for the repo to exist.
 pub fn temp_repo_with_commit() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    let repo = Repository::init(&path).expect("init repo");
+    let repo = init_repo(&path);
 
     std::fs::write(path.join("README.md"), "# fixture\n").expect("write README");
     let mut index = repo.index().expect("open index");

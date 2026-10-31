@@ -48,7 +48,17 @@ fn fx() -> Fx {
         .set_upstream(Some(&format!("origin/{head}")))
         .unwrap();
     let d3 = tempfile::tempdir().unwrap();
-    git(d3.path(), &["clone", "-q", bare.to_str().unwrap(), "other"]);
+    git(
+        d3.path(),
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "other",
+        ],
+    );
     let other = d3.path().join("other");
     common::configure_identity(&other);
     Fx {

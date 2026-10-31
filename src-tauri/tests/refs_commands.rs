@@ -155,7 +155,7 @@ fn create_branch_inner_maps_unknown_revision() {
 #[test]
 fn create_branch_inner_maps_unborn_head() {
     let dir = tempfile::tempdir().unwrap();
-    Repository::init(dir.path()).unwrap();
+    common::init_repo(dir.path());
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(dir.path()).unwrap());
     let err = create_branch_inner(&reg, id, "topic", None, false).unwrap_err();
@@ -531,7 +531,7 @@ fn create_branch_inner_without_checkout_does_not_need_the_git_cli() {
 #[test]
 fn create_branch_inner_with_checkout_maps_unborn_head() {
     let dir = tempfile::tempdir().unwrap();
-    Repository::init(dir.path()).unwrap();
+    common::init_repo(dir.path());
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(dir.path()).expect("open"));
     let err = create_branch_inner(&reg, id, "topic", None, true).unwrap_err();

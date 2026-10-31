@@ -59,7 +59,7 @@ fn get_head_message_inner_returns_split_message() {
 #[test]
 fn get_head_message_inner_is_none_for_unborn() {
     let dir = tempfile::tempdir().unwrap();
-    git2::Repository::init(dir.path()).unwrap();
+    common::init_repo(dir.path());
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(dir.path()).unwrap());
     assert_eq!(get_head_message_inner(&reg, id).unwrap(), None);
