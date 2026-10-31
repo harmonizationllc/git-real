@@ -78,3 +78,19 @@ lives in `GRAPH_COMPLETE_MS` in the bench crate, and the JSON report moves to ve
 `openToFirstPageMs` keeps its 3,000 ms number with a new meaning: open to the first
 streamed page, rather than open, full graph build and first page. The status and RSS
 growth budgets are unchanged.
+
+## Amendment 2026-10-31 (GR-28)
+
+The long frames at the first repository paint were cold fontconfig matching. WebKitGTK
+resolves each new combination of font family, size and weight through fontconfig the
+first time it is styled. Each family in a stack that is not installed costs 3 to 5 ms
+per combination, and the old stacks had three and four missing families. The first open
+met about a dozen new combinations, which produced two long frames across six cold
+launches: frame A at 129 to 151 ms and frame B at 66 to 123 ms.
+
+Two guards keep it fixed. The font token contract (`src/styles/fontContract.test.ts`)
+fails on any font declaration that is not a token, so the set of combinations stays
+finite. The start-screen warm-up (`src/app/fontWarmup.ts`) lays every combination out
+once during idle frames, 40 ms per frame, so the first open finds them all warm.
+`font-style: italic` (syntax highlighting) and `font-variant-numeric` are font-cache axes
+outside the token contract and the warm-up, which the walk measured as cheap.

@@ -17,8 +17,8 @@ body,
 }
 
 body {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
   line-height: 1.5;
   color: var(--color-text);
   background-color: var(--color-bg);
@@ -35,4 +35,43 @@ body {
 [data-focus-target]:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+}
+
+/* Form controls take the page font instead of the browser's own control font. Longhands, not the
+   `font` shorthand, which would also inherit the body's line-height and make every control taller. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  font-size: var(--text-md);
+}
+
+/* Browser default font styles are reset so every size and weight comes from a token. Headings keep
+   the browser's bold (700); module classes that set 600 still override it. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: 700;
+}
+
+/* WebKit skips its 13px monospace quirk under a px-sized body, so these elements already inherited
+   their size; only the family is pinned to a token. */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono-ui);
+  font-size: inherit;
+}
+
+strong,
+b {
+  font-weight: 700;
 }

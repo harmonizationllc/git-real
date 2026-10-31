@@ -127,7 +127,7 @@ const theme = EditorView.baseTheme({
     borderBlock: "1px solid var(--color-border)",
     color: "var(--color-text-muted)",
     // The global body font (styles/global.css), not the editor's monospace.
-    fontFamily: "Inter, Avenir, Helvetica, Arial, sans-serif",
+    fontFamily: "var(--font-ui)",
   },
   ".cm-conflict-bar button": {
     color: "var(--color-accent)",

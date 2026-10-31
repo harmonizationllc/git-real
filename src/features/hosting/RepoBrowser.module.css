@@ -70,7 +70,7 @@
 .description,
 .updated {
   color: var(--color-text-muted);
-  font-size: 0.8em;
+  font-size: var(--text-xs);
 }
 
 .description {
@@ -84,7 +84,7 @@
   padding: 0 4px;
   border: 1px solid var(--color-border);
   border-radius: 3px;
-  font-size: 0.8em;
+  font-size: var(--text-xs);
 }
 
 .empty {

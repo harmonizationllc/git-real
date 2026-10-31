@@ -9,7 +9,7 @@
 }
 
 .text {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .actions {
@@ -19,7 +19,7 @@
 
 .action,
 .danger {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   padding: 1px 8px;
 }
 
