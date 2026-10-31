@@ -27,10 +27,7 @@ impl LaneLayout {
 
     /// A layout resuming from a checkpoint: `columns` as [`Self::columns`]
     /// returned them. The seed's width counts toward [`Self::max_columns`].
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by snapshot pages (Task 3)")
-    )]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the builder (Task 4)"))]
     pub(crate) fn from_columns(columns: Vec<Option<Oid>>) -> Self {
         let max_columns = to_u32(columns.len());
         Self {
@@ -55,10 +52,7 @@ impl LaneLayout {
 
     /// Places `oid` like [`Self::next`] and returns only its column, without
     /// building edges.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by snapshot pages (Task 3)")
-    )]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by the builder (Task 4)"))]
     pub(crate) fn advance(&mut self, oid: Oid, parents: &[Oid]) -> u32 {
         self.place(oid, parents, None)
     }

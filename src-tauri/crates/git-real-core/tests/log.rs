@@ -80,7 +80,9 @@ fn should_report_generation_one_and_one_lane_when_the_repo_has_one_commit() {
         LogSummary {
             generation: 1,
             total: 1,
-            max_lanes: 1
+            max_lanes: 1,
+            complete: true,
+            refreshing: false
         }
     );
 }
@@ -435,7 +437,9 @@ fn should_report_no_rows_when_head_is_unborn() {
         LogSummary {
             generation: 1,
             total: 0,
-            max_lanes: 0
+            max_lanes: 0,
+            complete: true,
+            refreshing: false
         }
     );
 }
@@ -1683,7 +1687,13 @@ fn should_serialize_log_types_with_camel_case_keys_and_ref_kinds() {
             row["edges"].clone()
         ),
         (
-            serde_json::json!({"generation": 1, "total": 1, "maxLanes": 1}),
+            serde_json::json!({
+                "generation": 1,
+                "total": 1,
+                "maxLanes": 1,
+                "complete": true,
+                "refreshing": false
+            }),
             serde_json::json!(0),
             vec![
                 "authorEmail",

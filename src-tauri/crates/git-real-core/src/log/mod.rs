@@ -4,6 +4,7 @@
 pub(crate) mod cache;
 mod lanes;
 mod search;
+pub(crate) mod shared;
 mod topo;
 mod walk;
 
@@ -43,6 +44,8 @@ impl RepoSession {
             generation: current.generation,
             total: u32::try_from(current.rows.len()).unwrap_or(u32::MAX),
             max_lanes: current.max_lanes,
+            complete: true,
+            refreshing: false,
         };
         self.log_cache = Some(current);
         Ok(summary)

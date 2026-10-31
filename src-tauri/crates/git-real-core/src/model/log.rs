@@ -65,6 +65,10 @@ pub struct LogSummary {
     pub generation: u64,
     pub total: u32,
     pub max_lanes: u32,
+    /// False while the graph is still being built and `total` can grow.
+    pub complete: bool,
+    /// True while a rebuild for moved refs runs behind the served graph.
+    pub refreshing: bool,
 }
 
 /// A slice of graph rows starting at row index `start`.
