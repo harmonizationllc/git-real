@@ -30,6 +30,7 @@ import { useCommitActions } from "./useCommitActions";
 import { logPageOptions, useLogPages } from "./useLogPages";
 import { logSearchOptions, useLogSearch } from "./useLogSearch";
 import { useLogSummary } from "./useLogSummary";
+import { useTopAnchor } from "./useTopAnchor";
 import { useNow } from "./useNow";
 import styles from "./GraphPanel.module.css";
 
@@ -431,42 +432,46 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
       .catch(ignore);
   }, [settled, selected, selectedIndex, repoId, locate, virtualizer]);
 
-  // Anchor: when the generation changes, the commit that was at the top of a scrolled list is
-  // located in the new generation and kept at the top; one no longer in the graph leaves the
-  // scroll where it is. Declared before the effect that records the top, so it reads the top
-  // the previous generation rendered.
-  const topOid = useRef<{ oid: string; index: number } | null>(null);
-  const anchoredGeneration = useRef(generation);
-  const anchorSeq = useRef(0);
-  useEffect(() => {
-    if (anchoredGeneration.current === generation) return;
-    anchoredGeneration.current = generation;
-    const previous = topOid.current;
-    if (previous === null || previous.index === 0) return;
-    const n = ++anchorSeq.current;
-    locate(previous.oid, () => mounted.current && n === anchorSeq.current)
-      .then((index) => {
-        if (index !== undefined) virtualizer.scrollToIndex(index, { align: "start" });
-      })
-      .catch(ignore);
-  }, [generation, locate, virtualizer]);
-  const top = rendered[0];
-  useEffect(() => {
-    if (top?.row) topOid.current = { oid: top.row.oid, index: top.item.index };
+  // Anchor: across a generation change the commit at the top of the viewport stays on top.
+  // The range excludes overscan, so this is the first row the user sees.
+  const topIndex = virtualizer.range?.startIndex;
+  const topRow = topIndex === undefined ? undefined : pages.rowAt(topIndex);
+  useTopAnchor({
+    generation,
+    top: topRow && topIndex !== undefined ? { oid: topRow.oid, index: topIndex } : undefined,
+    locate: (oid, wanted) => locate(oid, () => mounted.current && wanted()),
+    scrollToStart: (index) => virtualizer.scrollToIndex(index, { align: "start" }),
+    scrollRef,
   });
 
   // Search: the input is debounced into the query that is searched. The debounce also starts
   // the fetch and reveals the first match when it answers, so the reveal happens once per
-  // query and never again when a new generation re-runs the same search.
+  // query and never again when a new generation re-runs the same search. Search waits for a
+  // complete graph: a query submitted while it is incomplete is held, and runs (with its one
+  // reveal) when the graph completes.
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const searched = useRef("");
+  // A query submitted on an incomplete graph, run once the graph completes.
+  const held = useRef<string | null>(null);
   // The cursor belongs to a query, so a new query starts at its first match while a new
   // generation of the same query keeps the position when the match count allows.
   const [cursor, setCursor] = useState({ query: "", index: 0 });
   const clearSearch = () => {
     searched.current = "";
+    held.current = null;
     setQuery("");
+  };
+  /** Searches the current generation for `q` and reveals its first match. */
+  const runSearch = (q: string) => {
+    queryClient
+      .fetchQuery(logSearchOptions(repoId, generation, q))
+      .then((found) => {
+        if (mounted.current && searched.current === q && found.length > 0) {
+          selectIndex(found[0], "center");
+        }
+      })
+      .catch(ignore);
   };
   const search = useEffectEvent((q: string) => {
     if (q === "") {
@@ -477,15 +482,21 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     setQuery(q);
     // Every submission starts at the first match, even a retyped query.
     setCursor({ query: q, index: 0 });
-    queryClient
-      .fetchQuery(logSearchOptions(repoId, generation, q))
-      .then((found) => {
-        if (mounted.current && searched.current === q && found.length > 0) {
-          selectIndex(found[0], "center");
-        }
-      })
-      .catch(ignore);
+    if (complete) {
+      held.current = null;
+      runSearch(q);
+    } else {
+      held.current = q;
+    }
   });
+  const runHeld = useEffectEvent(() => {
+    const q = held.current;
+    held.current = null;
+    if (q !== null && q === searched.current) runSearch(q);
+  });
+  useEffect(() => {
+    if (complete) runHeld();
+  }, [complete]);
   useEffect(() => {
     const timer = setTimeout(() => search(input.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);

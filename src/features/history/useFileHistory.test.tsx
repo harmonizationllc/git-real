@@ -303,6 +303,19 @@ describe("useFileHistory pages", () => {
     await waitFor(() => expect(getFileHistory).toHaveBeenCalledOnce());
   });
 
+  it("should report hasMore false after a further page fails", async () => {
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page([historyEntry(0)], 700))
+      .mockRejectedValue({ kind: "logStale", message: "generation is gone" });
+    const { result } = renderHookWithProviders(() => useFileHistory(1, 7, "a.txt", true));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.fetchMore());
+    await waitFor(() => expect(result.current.hasMore).toBe(false));
+    act(() => result.current.fetchMore());
+    await settle();
+    expect(getFileHistory).toHaveBeenCalledTimes(2);
+  });
+
   it("should report hasMore false when nextRow is null", async () => {
     const { result } = renderHookWithProviders(() => useFileHistory(1, 7, "a.txt", true));
     await waitFor(() => expect(result.current.entries).toBeDefined());

@@ -59,6 +59,7 @@ beforeEach(() => {
   scrolls.mockReset();
   mockWindow.size = Infinity;
   mockWindow.start = 0;
+  mockWindow.visibleStart = null;
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   vi.mocked(getLogSummary).mockResolvedValue(summary());
   vi.mocked(getFileHistory).mockImplementation((_id, _generation, path) =>
@@ -610,6 +611,17 @@ describe("FileHistoryPanel pages", () => {
       .mockResolvedValueOnce(page(many(5, 10)));
     renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
     await waitFor(() => expect(getFileHistory).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(getFileHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not fetch again after a further page fails", async () => {
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page(many(60), 700))
+      .mockRejectedValue({ kind: "git", message: "page boom" });
+    renderWithProviders(<FileHistoryPanel repoId={REPO} path={PATH} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("page boom");
+    await settle();
     await settle();
     expect(getFileHistory).toHaveBeenCalledTimes(2);
   });

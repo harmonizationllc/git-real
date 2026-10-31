@@ -43,9 +43,12 @@ export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
   }, [entries, path, repoId]);
 
   // A short history fills in without scrolling: each page scans a bounded number of rows, so a
-  // rarely touched file can come back with few entries and a nextRow.
+  // rarely touched file can come back with few entries and a nextRow. A failed page stops the
+  // fill: the client does not retry, so re-firing here would call the backend in a hot loop.
+  const failed = history.error !== null;
   useEffect(() => {
     if (
+      !failed &&
       entries !== undefined &&
       entries.length < FILE_HISTORY_MIN_LOADED &&
       hasMore &&
@@ -53,7 +56,7 @@ export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
     ) {
       fetchMore();
     }
-  }, [entries, hasMore, isFetchingMore, fetchMore]);
+  }, [failed, entries, hasMore, isFetchingMore, fetchMore]);
 
   let body: React.ReactNode;
   if (summaryError !== null) {

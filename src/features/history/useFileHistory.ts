@@ -16,7 +16,7 @@ export interface UseFileHistory {
   isLoading: boolean;
   error: AppError | null;
   refetch(): void;
-  /** True while the last page returned a nextRow. */
+  /** True while the last page returned a nextRow and no page has failed. */
   hasMore: boolean;
   isFetchingMore: boolean;
   /** Fetches the next page; a no-op while one is in flight or none remains. */
@@ -77,11 +77,14 @@ export function useFileHistory(
   }, [stale, generation, repoId, queryClient]);
 
   const entries = useMemo(() => query.data?.pages.flatMap((p) => p.entries), [query.data]);
-  const { fetchNextPage, hasNextPage } = query;
+  // A failed page (logStale included) stops further pages until a refetch succeeds: the client
+  // does not retry, and asking again at once would repeat the failure in a loop.
+  const hasMore = query.hasNextPage && !query.isError;
+  const { fetchNextPage } = query;
   // cancelRefetch false joins a page already in flight instead of restarting it.
   const fetchMore = useCallback(() => {
-    if (hasNextPage) void fetchNextPage({ cancelRefetch: false });
-  }, [fetchNextPage, hasNextPage]);
+    if (hasMore) void fetchNextPage({ cancelRefetch: false });
+  }, [fetchNextPage, hasMore]);
 
   return {
     entries,
@@ -89,7 +92,7 @@ export function useFileHistory(
     isLoading: query.isPending || stale,
     error: stale ? null : (query.error ?? null),
     refetch: () => void query.refetch(),
-    hasMore: hasNextPage,
+    hasMore,
     isFetchingMore: query.isFetchingNextPage,
     fetchMore,
   };
