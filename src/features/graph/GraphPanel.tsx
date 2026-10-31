@@ -441,10 +441,10 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
   useEffect(() => {
     if (anchoredGeneration.current === generation) return;
     anchoredGeneration.current = generation;
-    const top = topOid.current;
-    if (top === null || top.index === 0) return;
+    const previous = topOid.current;
+    if (previous === null || previous.index === 0) return;
     const n = ++anchorSeq.current;
-    locate(top.oid, () => mounted.current && n === anchorSeq.current)
+    locate(previous.oid, () => mounted.current && n === anchorSeq.current)
       .then((index) => {
         if (index !== undefined) virtualizer.scrollToIndex(index, { align: "start" });
       })
