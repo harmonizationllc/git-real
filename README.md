@@ -229,8 +229,9 @@ cargo run --release -p git-real-bench -- prepare public-graph ~/.cache/git-real-
 cargo run --release -p git-real-bench -- run ~/.cache/git-real-bench/linux-graph --no-assert
 ```
 
-Its 1,501,435 commits were measured before GR-27: 41 s / 8.8 GB / +2 GB; GR-27 numbers
-are recorded in ADR 0007. The budgets themselves are recorded in
+Before GR-27 its 1,501,435 commits took 41 s to build, 8.8 GB resident, and +2 GB while
+paging. After GR-27 the first page arrives in 151 ms, the graph completes in 27 s with
+1.0 GB resident, and paging grows memory by 15 MB; see ADR 0007. The budgets themselves are recorded in
 [ADR 0004](docs/adr/0004-performance-budgets-and-benchmarks.md).
 
 ## Releasing
