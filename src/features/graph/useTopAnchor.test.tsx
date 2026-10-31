@@ -5,6 +5,9 @@ import { useTopAnchor } from "./useTopAnchor";
 
 const flush = () => act(() => Promise.resolve());
 
+/** The inputs by which a user scrolls the list; each cancels a pending anchor. */
+const USER_SCROLL_EVENTS = ["wheel", "touchmove", "keydown", "pointerdown"];
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -116,7 +119,23 @@ describe("useTopAnchor leaves the scroll alone", () => {
     expect(scrollToStart).not.toHaveBeenCalled();
   });
 
-  it("should cancel a pending anchor when the user scrolls during the lookup", async () => {
+  it.each(USER_SCROLL_EVENTS)(
+    "should cancel a pending anchor on a %s during the lookup",
+    async (type) => {
+      const lookup = deferred<number | undefined>();
+      const locate = vi.fn<TopAnchorOptions["locate"]>().mockReturnValue(lookup.promise);
+      const { el, scrollToStart, rerender } = setup({ locate });
+      rerender({ generation: 2 });
+      el.dispatchEvent(new Event(type));
+      lookup.resolve(5);
+      await flush();
+      expect(scrollToStart).not.toHaveBeenCalled();
+      expect(locate.mock.calls[0]?.[1]()).toBe(false);
+    },
+  );
+
+  // The browser fires scroll when it clamps scrollTop to a shorter list; no user input caused it.
+  it("should keep a pending anchor through a scroll event", async () => {
     const lookup = deferred<number | undefined>();
     const locate = vi.fn<TopAnchorOptions["locate"]>().mockReturnValue(lookup.promise);
     const { el, scrollToStart, rerender } = setup({ locate });
@@ -124,8 +143,14 @@ describe("useTopAnchor leaves the scroll alone", () => {
     el.dispatchEvent(new Event("scroll"));
     lookup.resolve(5);
     await flush();
-    expect(scrollToStart).not.toHaveBeenCalled();
-    expect(locate.mock.calls[0]?.[1]()).toBe(false);
+    expect(scrollToStart).toHaveBeenCalledExactlyOnceWith(5);
+  });
+
+  it.each(USER_SCROLL_EVENTS)("should listen for %s on the scroll element", (type) => {
+    const el = document.createElement("div");
+    const add = vi.spyOn(el, "addEventListener");
+    setup({ scrollRef: { current: el } });
+    expect(add).toHaveBeenCalledWith(type, expect.any(Function), { passive: true });
   });
 
   it("should drop an older lookup when a newer generation arrives", async () => {
@@ -154,10 +179,10 @@ describe("useTopAnchor leaves the scroll alone", () => {
     expect(scrollToStart).not.toHaveBeenCalled();
   });
 
-  it("should stop listening for scrolls after an unmount", () => {
+  it.each(USER_SCROLL_EVENTS)("should stop listening for %s after an unmount", (type) => {
     const { el, unmount } = setup();
     const remove = vi.spyOn(el, "removeEventListener");
     unmount();
-    expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function));
+    expect(remove).toHaveBeenCalledWith(type, expect.any(Function));
   });
 });

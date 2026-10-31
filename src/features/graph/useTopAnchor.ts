@@ -18,9 +18,15 @@ export interface TopAnchorOptions {
   locate(oid: string, wanted: () => boolean): Promise<number | undefined>;
   /** Scrolls row `index` to the top of the viewport. */
   scrollToStart(index: number): void;
-  /** The list's scroll element; a scroll there cancels a pending anchor. */
+  /** The list's scroll element; user scroll input there cancels a pending anchor. */
   scrollRef: RefObject<HTMLElement | null>;
 }
+
+/**
+ * The inputs by which a user scrolls the list. A `scroll` event is not one: the browser also
+ * fires it when it clamps `scrollTop` to a list that got shorter.
+ */
+const USER_SCROLL_EVENTS = ["wheel", "touchmove", "keydown", "pointerdown"] as const;
 
 /** Swallows a rejection whose only consequence would be a missing scroll. */
 const ignore = () => undefined;
@@ -48,9 +54,9 @@ export function useTopAnchor({
     const cancel = () => {
       seq.current += 1;
     };
-    el?.addEventListener("scroll", cancel, { passive: true });
+    for (const type of USER_SCROLL_EVENTS) el?.addEventListener(type, cancel, { passive: true });
     return () => {
-      el?.removeEventListener("scroll", cancel);
+      for (const type of USER_SCROLL_EVENTS) el?.removeEventListener(type, cancel);
       cancel();
     };
   }, [scrollRef]);

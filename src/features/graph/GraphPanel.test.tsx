@@ -1682,7 +1682,7 @@ describe("GraphPanel top commit anchor", () => {
     vi.mocked(searchLog).mockReturnValue(new Promise((resolve) => (answer = resolve)));
     await renderThenRebuild(2);
     await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
-    fireEvent.scroll(listbox());
+    fireEvent.wheel(listbox());
     await act(async () => answer([5]));
     await settle();
     expect(anyStartScroll()).toBe(false);
