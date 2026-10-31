@@ -9,7 +9,6 @@ use std::collections::BinaryHeap;
 /// committer time; `i` is the discovery sequence. Among rows whose children
 /// are all emitted, the newest committer time goes first, and ties go to the
 /// earlier discovered row. Returns a permutation of `0..n` (Kahn's algorithm).
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the builder (Task 4)"))]
 pub(crate) fn topo_order(parents: &[Vec<u32>], times: &[i64]) -> Vec<u32> {
     let n = parents.len();
     let mut children_left = vec![0u32; n];

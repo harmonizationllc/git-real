@@ -62,11 +62,11 @@ impl RepoSession {
         path: &str,
     ) -> Result<Vec<FileHistoryEntry>, GitError> {
         let rel = repo_relative(path)?;
-        let cache = self.log_cache(generation)?;
+        let snapshot = self.log_snapshot(generation)?;
         let repo = self.repo();
         let mut memo = EntryMemo::new(rel);
         let mut out = Vec::new();
-        for row in &cache.rows {
+        for row in (0..snapshot.total()).filter_map(|i| snapshot.row(i)) {
             let commit = repo.find_commit(row.oid)?;
             let tree_id = commit.tree_id();
             let parent_tree_id = match row.parents.first() {
@@ -94,9 +94,9 @@ impl RepoSession {
             };
             out.push(FileHistoryEntry {
                 oid: row.oid.to_string(),
-                subject: row.subject.clone(),
-                author_name: row.author_name.clone(),
-                author_email: row.author_email.clone(),
+                subject: row.subject.to_string(),
+                author_name: row.author.name.clone(),
+                author_email: row.author.email.clone(),
                 author_time: row.author_time,
                 change,
                 path: memo.path().to_owned(),

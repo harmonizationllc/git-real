@@ -74,7 +74,7 @@ fn shape(entries: &[FileHistoryEntry]) -> Vec<(ChangeKind, String, Option<String
 
 fn history(path: &Path, file: &str) -> Result<Vec<FileHistoryEntry>, GitError> {
     let mut s = open(path);
-    let generation = s.log_summary().expect("summary").generation;
+    let generation = s.log_summary_complete().expect("summary").generation;
     s.file_history(generation, file)
 }
 
@@ -440,7 +440,7 @@ fn file_history_unknown_path_is_empty() {
 fn file_history_stale_generation_is_log_stale() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let generation = s.log_summary().unwrap().generation;
+    let generation = s.log_summary_complete().unwrap().generation;
 
     let err = s.file_history(generation + 1, "README.md").unwrap_err();
 
@@ -460,7 +460,7 @@ fn file_history_before_any_summary_is_log_stale() {
 fn file_history_order_matches_graph() {
     let (_d, path, _r, _a, _b, _m) = merge_changing_file();
     let mut s = open(&path);
-    let summary = s.log_summary().unwrap();
+    let summary = s.log_summary_complete().unwrap();
     let rows = s.log_page(summary.generation, 0, 100).unwrap().rows;
     let entries = s.file_history(summary.generation, "f.txt").unwrap();
 
@@ -814,7 +814,7 @@ fn blame_malformed_path_is_path_not_found() {
 fn file_history_malformed_path_is_path_not_found() {
     let (_d, path) = common::temp_repo_with_commit();
     let mut s = open(&path);
-    let generation = s.log_summary().unwrap().generation;
+    let generation = s.log_summary_complete().unwrap().generation;
 
     let results = [
         s.file_history(generation, "../x"),

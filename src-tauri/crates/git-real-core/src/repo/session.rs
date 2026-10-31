@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use git2::{ErrorCode, Repository};
 
 use crate::error::GitError;
-use crate::log::cache::LogCache;
+use crate::log::builder::Builder;
+use crate::log::shared::{SharedLog, new_shared};
 use crate::model::RepoSummary;
 use crate::paths::canonical;
 
@@ -11,8 +12,28 @@ use crate::paths::canonical;
 pub struct RepoSession {
     repo: Repository,
     root: PathBuf,
-    /// The commit graph from the last `log_summary`, if any.
-    pub(crate) log_cache: Option<LogCache>,
+    /// The commit graph: the state its builder publishes into.
+    pub(crate) log: LogState,
+}
+
+/// The session's side of the commit graph.
+pub(crate) struct LogState {
+    pub shared: SharedLog,
+    /// The build started by the last fingerprint change, running or done.
+    pub builder: Option<Builder>,
+    /// The ref fingerprint the last build was started for; `None` before
+    /// the first build and after a build error was reported.
+    pub fingerprint: Option<u64>,
+}
+
+impl Drop for RepoSession {
+    /// Stops a running build, so nothing walks the repository after the
+    /// session is gone.
+    fn drop(&mut self) {
+        if let Some(builder) = self.log.builder.take() {
+            builder.cancel_and_join();
+        }
+    }
 }
 
 impl RepoSession {
@@ -91,7 +112,11 @@ impl RepoSession {
         Ok(Self {
             repo,
             root,
-            log_cache: None,
+            log: LogState {
+                shared: new_shared(),
+                builder: None,
+                fingerprint: None,
+            },
         })
     }
 }

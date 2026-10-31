@@ -41,6 +41,7 @@ pub mod update;
 
 pub use error::GitError;
 pub use ignore::gitignore_pattern;
+pub use log::{FIRST_ANSWER_MS, LogSnapshot};
 pub use model::*;
 pub use progress::ProgressSink;
 pub use recent::RecentRepos;

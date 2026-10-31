@@ -3,11 +3,9 @@
 //! from. Lanes and edges are not stored: a page replays the layout from the
 //! column state recorded at the start of the chunk it begins in.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "used by the builder (Task 4)"))]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use git2::Oid;
 
@@ -29,6 +27,7 @@ pub(crate) struct Author {
 }
 
 /// One commit as stored: no lane, no edges, no ref labels.
+#[derive(Clone)]
 pub(crate) struct Row {
     pub oid: Oid,
     pub parents: Box<[Oid]>,
@@ -62,13 +61,16 @@ pub(crate) struct Chunk {
     pub columns_at_start: Vec<Option<Oid>>,
 }
 
+/// Ref labels by the commit they point at.
+pub(crate) type RefLabels = HashMap<Oid, Vec<RefLabel>>;
+
 /// One build of the graph, complete or still growing.
 pub(crate) struct Generation {
     pub generation: u64,
     pub complete: bool,
     pub max_lanes: u32,
     pub chunks: Vec<Arc<Chunk>>,
-    pub labels: Arc<HashMap<Oid, Vec<RefLabel>>>,
+    pub labels: Arc<RefLabels>,
     /// Present only when complete.
     pub index: Option<Arc<HashMap<Oid, u32>>>,
 }
@@ -92,7 +94,6 @@ impl Generation {
 }
 
 /// What the background builder and its readers share.
-#[allow(dead_code)] // used by the builder (Task 4)
 pub(crate) struct LogShared {
     pub current: Option<Generation>,
     /// Generation number of the build in progress, if any.
@@ -103,10 +104,8 @@ pub(crate) struct LogShared {
     pub next_generation: u64,
 }
 
-#[allow(dead_code)] // used by the builder (Task 4)
 pub(crate) type SharedLog = Arc<(Mutex<LogShared>, Condvar)>;
 
-#[allow(dead_code)] // used by the builder (Task 4)
 pub(crate) fn new_shared() -> SharedLog {
     Arc::new((
         Mutex::new(LogShared {
@@ -121,6 +120,12 @@ pub(crate) fn new_shared() -> SharedLog {
     ))
 }
 
+/// Locks the shared state. Poisoning is ignored: a panicked builder only
+/// stops publishing, and every value it left is still a valid state.
+pub(crate) fn lock(shared: &SharedLog) -> MutexGuard<'_, LogShared> {
+    shared.0.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// A reader's view of one generation, cheap to take: chunks and maps are
 /// shared, not copied.
 pub struct LogSnapshot {
@@ -130,7 +135,9 @@ pub struct LogSnapshot {
     total: u32,
     chunks: Vec<Arc<Chunk>>,
     labels: Arc<HashMap<Oid, Vec<RefLabel>>>,
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     index: Option<Arc<HashMap<Oid, u32>>>,
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     repo_path: PathBuf,
 }
 
@@ -206,6 +213,7 @@ impl LogSnapshot {
 
     /// The index of `oid`: from the index when present, else a linear scan
     /// over the served rows.
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     pub(crate) fn find(&self, oid: Oid) -> Option<u32> {
         match &self.index {
             Some(index) => index.get(&oid).copied().filter(|&i| i < self.total),
@@ -219,6 +227,7 @@ impl LogSnapshot {
         }
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     pub(crate) fn repo_path(&self) -> &Path {
         &self.repo_path
     }
