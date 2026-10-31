@@ -67,7 +67,7 @@
 
 .url {
   color: var(--color-text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
   overflow-wrap: anywhere;
 }
 

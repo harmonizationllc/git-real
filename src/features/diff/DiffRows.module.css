@@ -35,7 +35,7 @@
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   user-select: none;
 }

@@ -16,7 +16,7 @@
 
 .name {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
 }
 
 .path {
@@ -36,7 +36,7 @@
 .branch {
   margin: 0;
   color: var(--color-accent);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
 }
 
 /* grid-template-columns is set inline from the clamped column widths. */

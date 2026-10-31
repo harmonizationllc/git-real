@@ -9,7 +9,7 @@
   display: inline-flex;
   gap: 6px;
   color: var(--color-text-muted);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
 }
 
 /* The main button and its ▾ menu opener read as one control. */

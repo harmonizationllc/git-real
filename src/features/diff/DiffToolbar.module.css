@@ -15,7 +15,7 @@
 }
 
 .summary {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
   font-variant-numeric: tabular-nums;
 }
 
@@ -43,5 +43,5 @@
   align-items: center;
   gap: 8px;
   color: var(--color-text-muted);
-  font-size: 0.875rem;
+  font-size: var(--text-md);
 }

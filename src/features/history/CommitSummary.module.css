@@ -23,8 +23,8 @@
 }
 
 .hash {
-  font-family: ui-monospace, monospace;
-  font-size: 0.85em;
+  font-family: var(--font-mono-ui);
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
@@ -46,7 +46,7 @@
 }
 
 .parent {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
 }
 
 .subject {

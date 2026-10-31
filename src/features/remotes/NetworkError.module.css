@@ -36,7 +36,7 @@
   max-height: 8lh;
   overflow: auto;
   white-space: pre;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
 }
 
 .actions {

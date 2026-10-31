@@ -25,7 +25,7 @@
 
 .title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
 }
 
 .field {
@@ -80,7 +80,7 @@
   /* Sits 4px under the URL field, as inside a .field, despite the form's 12px gap. */
   margin: -8px 0 0;
   color: var(--color-text-muted);
-  font-size: 0.9em;
+  font-size: var(--text-md);
 }
 
 /* Always mounted as a live region; empty, it takes no space (display: none would hide it from

@@ -30,9 +30,9 @@
   display: flex;
   gap: 8px;
   color: var(--color-text-muted);
-  font-size: 0.8em;
+  font-size: var(--text-xs);
 }
 
 .marker {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono-ui);
 }
