@@ -130,16 +130,34 @@ fn is_relevant_event(roots: &Roots, event: &Event) -> bool {
 /// Whether a change at `path` should refresh the UI. Under `workdir`: false under
 /// `.git/objects` and for `*.lock` files under `.git`. Under `extra` (a common dir):
 /// false under `objects/` and for any `*.lock` file. Paths outside both roots are
-/// conservatively relevant.
+/// conservatively relevant. The `.git` directory itself and the `extra` root itself are
+/// not relevant: Windows (ReadDirectoryChangesW) also reports a Modify for a parent
+/// directory whose last-write time changed, e.g. `.git` when `index.lock` is created,
+/// and the change to the child is always reported and classified on its own. The same
+/// goes for a per-worktree gitdir directory itself (`.git/worktrees/<name>`, or
+/// `worktrees/<name>` under `extra`).
 pub fn is_relevant(workdir: &Path, extra: Option<&Path>, path: &Path) -> bool {
+    if extra == Some(path) {
+        return false;
+    }
     if let Ok(rel) = path.strip_prefix(workdir) {
+        if rel == Path::new(".git") {
+            return false;
+        }
         if rel.starts_with(".git/objects") {
+            return false;
+        }
+        if rel.starts_with(".git/worktrees") && rel.components().count() == 3 {
             return false;
         }
         return !(rel.starts_with(".git") && is_lock(rel));
     }
     match extra.and_then(|e| path.strip_prefix(e).ok()) {
-        Some(rel) => !(rel.starts_with("objects") || is_lock(rel)),
+        Some(rel) => {
+            !(rel.starts_with("objects")
+                || is_lock(rel)
+                || (rel.starts_with("worktrees") && rel.components().count() == 2))
+        }
         None => true,
     }
 }

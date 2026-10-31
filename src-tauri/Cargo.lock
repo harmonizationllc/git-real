@@ -1489,6 +1489,7 @@ dependencies = [
 name = "git-real"
 version = "0.1.0"
 dependencies = [
+ "dunce",
  "git-real-core",
  "git2",
  "keyring",

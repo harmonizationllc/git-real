@@ -217,7 +217,7 @@ fn get_blame_inner_maps_unknown_repo() {
 fn open_unborn() -> (TempDir, RepoRegistry, RepoId) {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().to_path_buf();
-    Repository::init(&path).expect("init repo");
+    common::init_repo(&path);
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(&path).expect("open"));
     (dir, reg, id)

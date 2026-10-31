@@ -26,7 +26,7 @@ fn open_registers_and_touches_recent() {
 
     assert!(reg.get(opened.id).is_some());
     assert_eq!(recent.entries()[0].path, opened.summary.path);
-    assert_eq!(opened.summary.path, path.canonicalize().unwrap());
+    assert_eq!(opened.summary.path, dunce::canonicalize(&path).unwrap());
     assert_eq!(
         opened.summary.name,
         path.file_name().unwrap().to_string_lossy()
@@ -414,7 +414,7 @@ fn clone_inner_opens_result() {
     )
     .unwrap();
 
-    assert_eq!(opened.summary.path, dest.canonicalize().unwrap());
+    assert_eq!(opened.summary.path, dunce::canonicalize(&dest).unwrap());
 }
 
 #[test]

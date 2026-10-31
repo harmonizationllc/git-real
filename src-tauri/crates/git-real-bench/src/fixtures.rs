@@ -245,6 +245,9 @@ fn build(dir: &Path, spec: &FixtureSpec) -> Result<String, BenchError> {
     match spec {
         FixtureSpec::Synthetic { commits, files } => {
             run_git(&["init", "-q", dir_arg], here)?;
+            // Pinned before checkout so a host with autocrlf=true cannot
+            // smudge the benchmark worktree.
+            run_git(&["config", "core.autocrlf", "false"], dir)?;
             let mut stream = Vec::new();
             fast_import_stream(*commits, *files, &mut stream).map_err(io_error)?;
             run_git_with_input(&["fast-import", "--quiet"], dir, &stream)?;
@@ -257,6 +260,8 @@ fn build(dir: &Path, spec: &FixtureSpec) -> Result<String, BenchError> {
             run_git(
                 &[
                     "clone",
+                    "-c",
+                    "core.autocrlf=false",
                     "--quiet",
                     "--bare",
                     "--single-branch",
@@ -272,6 +277,8 @@ fn build(dir: &Path, spec: &FixtureSpec) -> Result<String, BenchError> {
             run_git(
                 &[
                     "clone",
+                    "-c",
+                    "core.autocrlf=false",
                     "--quiet",
                     "--depth",
                     "1",
@@ -1059,6 +1066,43 @@ mod tests {
         );
     }
 
+    /// The repo-local `core.autocrlf` of the fixture at `dir`, read without
+    /// the host's global or system config.
+    fn local_autocrlf(dir: &Path) -> Option<bool> {
+        let repo = git2::Repository::open(dir).unwrap();
+        let local = repo
+            .config()
+            .unwrap()
+            .open_level(git2::ConfigLevel::Local)
+            .unwrap();
+        local.get_bool("core.autocrlf").ok()
+    }
+
+    // A host with autocrlf=true (Git for Windows) must not change the bytes of
+    // the benchmark worktrees: the clone pins it off in its own config.
+    #[test]
+    fn public_worktree_pins_autocrlf_off_locally() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let (url, _) = make_source_repo(&tmp.path().join("src.git"), 3);
+        let dir = tmp.path().join("w");
+        ready(&dir, &FixtureSpec::PublicWorktree { url });
+        assert_eq!(local_autocrlf(&dir), Some(false));
+    }
+
+    #[test]
+    fn synthetic_pins_autocrlf_off_locally() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("s");
+        ready(&dir, &synthetic(3, 4));
+        assert_eq!(local_autocrlf(&dir), Some(false));
+    }
+
     #[test]
     fn public_worktree_marker_records_the_tip() {
         if !git_available() {
@@ -1299,9 +1343,19 @@ mod tests {
     // Error paths of prepare.
     #[test]
     fn prepare_rejects_a_directory_that_is_not_utf8() {
-        use std::os::unix::ffi::OsStrExt;
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join(std::ffi::OsStr::from_bytes(b"fx-\xff\xfe"));
+        #[cfg(unix)]
+        let name = {
+            use std::os::unix::ffi::OsStrExt;
+            std::ffi::OsStr::from_bytes(b"fx-\xff\xfe").to_os_string()
+        };
+        // Windows names are UTF-16; a lone surrogate is not valid UTF-8.
+        #[cfg(windows)]
+        let name = {
+            use std::os::windows::ffi::OsStringExt;
+            std::ffi::OsString::from_wide(&[0x66, 0x78, 0x2d, 0xd800])
+        };
+        let dir = tmp.path().join(name);
         let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new())
             .unwrap_err()
             .to_string();

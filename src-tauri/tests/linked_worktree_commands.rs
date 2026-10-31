@@ -27,7 +27,7 @@ fn setup() -> (
     let (dir, path) = common::temp_repo_with_commit();
     common::configure_identity(&path);
     let root_dir = tempfile::tempdir().unwrap();
-    let root = root_dir.path().canonicalize().unwrap();
+    let root = dunce::canonicalize(root_dir.path()).unwrap();
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(&path).unwrap());
     (dir, path, root_dir, root, reg, id)
@@ -46,7 +46,7 @@ fn list_linked_worktrees_inner_lists_the_main_worktree() {
     let list = list_linked_worktrees_inner(&reg, id).unwrap();
     assert_eq!(list.len(), 1, "{list:?}");
     assert!(list[0].is_main && list[0].is_current);
-    assert_eq!(list[0].path, path.canonicalize().unwrap());
+    assert_eq!(list[0].path, dunce::canonicalize(path).unwrap());
 }
 
 #[test]

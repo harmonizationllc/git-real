@@ -216,6 +216,9 @@ fn is_relevant_rules() {
         ("/w/.git/logs/refs/stash", true),
         ("/w/.git/objects/aa/bbcc", false),
         ("/w/.git/objects", false),
+        ("/w/.git/worktrees", true),
+        ("/w/.git/worktrees/a", false),
+        ("/w/.git/worktrees/a/HEAD", true),
         ("/w/.git/index.lock", false),
         ("/w/.git/refs/heads/main.lock", false),
         ("/w/Cargo.lock", true),
@@ -227,6 +230,28 @@ fn is_relevant_rules() {
         .map(|(p, _)| (*p, is_relevant(w, None, Path::new(p))))
         .collect();
     assert_eq!(actual, cases);
+}
+
+// Windows reports a Modify for the parent directory whose last-write time
+// changed (creating `.git/index.lock` touches `.git`); the child event is
+// classified on its own, so the directory itself is noise.
+#[test]
+fn is_relevant_ignores_the_dot_git_directory_itself() {
+    let w = Path::new("/w");
+    assert!(!is_relevant(w, None, &w.join(".git")));
+    assert!(is_relevant(w, None, &w.join(".git/HEAD")));
+    assert!(is_relevant(w, None, &w.join(".git/refs/heads/main")));
+    assert!(is_relevant(w, None, &w.join("src/a.rs")));
+    assert!(is_relevant(w, None, w));
+}
+
+#[test]
+fn is_relevant_ignores_the_extra_root_itself() {
+    let w = Path::new("/w");
+    let e = Path::new("/common/.git");
+    assert!(!is_relevant(w, Some(e), e));
+    assert!(is_relevant(w, Some(e), &e.join("HEAD")));
+    assert!(is_relevant(w, Some(e), &e.join("refs/heads/main")));
 }
 
 #[test]
@@ -370,6 +395,8 @@ fn is_relevant_extra_root_rules() {
         ("/c/HEAD", true),
         ("/c/refs/heads/main", true),
         ("/c/worktrees/a/HEAD", true),
+        ("/c/worktrees/a", false),
+        ("/c/worktrees", true),
         ("/c/objects/aa/bb", false),
         ("/c/index.lock", false),
         ("/c/refs/heads/main.lock", false),
@@ -416,6 +443,21 @@ fn start_with_extra_root_ignores_objects_there() {
     let _watcher = start_with_extra(dir.path(), extra.path(), &count);
 
     std::fs::write(extra.path().join("objects/aa/bbcc"), "x").unwrap();
+    settle();
+
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn start_with_extra_root_ignores_lock_files_in_a_worktree_gitdir() {
+    let dir = tempfile::tempdir().unwrap();
+    let extra = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(extra.path().join("worktrees/a")).unwrap();
+    settle();
+    let count = counter();
+    let _watcher = start_with_extra(dir.path(), extra.path(), &count);
+
+    std::fs::write(extra.path().join("worktrees/a/index.lock"), "x").unwrap();
     settle();
 
     assert_eq!(count.load(Ordering::SeqCst), 0);
