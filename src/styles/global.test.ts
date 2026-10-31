@@ -34,17 +34,23 @@ describe("global font styles", () => {
     expect(bodyBlock).toMatch(/font-family:\s*var\(--font-ui\);/);
     expect(bodyBlock).toMatch(/font-size:\s*var\(--text-base\);/);
   });
-  it("form controls inherit the font family but keep the medium size", () => {
-    expect(css).toMatch(
-      /button,\s*input,\s*select,\s*textarea\s*\{[^}]*font:\s*inherit;[^}]*font-size:\s*var\(--text-md\);/,
-    );
+  // Longhands, not the `font` shorthand: the shorthand would also inherit the body's line-height.
+  const controls = /button,\s*input,\s*select,\s*textarea\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  it("form controls inherit family, weight and style but keep the medium size", () => {
+    expect(controls).toMatch(/font-family:\s*inherit;/);
+    expect(controls).toMatch(/font-weight:\s*inherit;/);
+    expect(controls).toMatch(/font-style:\s*inherit;/);
+    expect(controls).toMatch(/font-size:\s*var\(--text-md\);/);
+  });
+  it("form controls do not use the font shorthand", () => {
+    expect(controls).not.toMatch(/(^|[^-])font:/);
   });
   it("resets browser default font styles", () => {
     expect(css).toMatch(
-      /h1,\s*h2,\s*h3,\s*h4,\s*h5,\s*h6\s*\{[^}]*font-size:\s*inherit;[^}]*font-weight:\s*inherit;/,
+      /h1,\s*h2,\s*h3,\s*h4,\s*h5,\s*h6\s*\{[^}]*font-size:\s*inherit;[^}]*font-weight:\s*700;/,
     );
     expect(css).toMatch(
-      /code,\s*kbd,\s*pre,\s*samp\s*\{[^}]*font-family:\s*var\(--font-mono-ui\);[^}]*font-size:\s*var\(--text-sm\);/,
+      /code,\s*kbd,\s*pre,\s*samp\s*\{[^}]*font-family:\s*var\(--font-mono-ui\);[^}]*font-size:\s*inherit;/,
     );
     expect(css).toMatch(/strong,\s*b\s*\{[^}]*font-weight:\s*700;/);
   });
