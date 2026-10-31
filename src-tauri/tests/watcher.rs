@@ -229,6 +229,28 @@ fn is_relevant_rules() {
     assert_eq!(actual, cases);
 }
 
+// Windows reports a Modify for the parent directory whose last-write time
+// changed (creating `.git/index.lock` touches `.git`); the child event is
+// classified on its own, so the directory itself is noise.
+#[test]
+fn is_relevant_ignores_the_dot_git_directory_itself() {
+    let w = Path::new("/w");
+    assert!(!is_relevant(w, None, &w.join(".git")));
+    assert!(is_relevant(w, None, &w.join(".git/HEAD")));
+    assert!(is_relevant(w, None, &w.join(".git/refs/heads/main")));
+    assert!(is_relevant(w, None, &w.join("src/a.rs")));
+    assert!(is_relevant(w, None, w));
+}
+
+#[test]
+fn is_relevant_ignores_the_extra_root_itself() {
+    let w = Path::new("/w");
+    let e = Path::new("/common/.git");
+    assert!(!is_relevant(w, Some(e), e));
+    assert!(is_relevant(w, Some(e), &e.join("HEAD")));
+    assert!(is_relevant(w, Some(e), &e.join("refs/heads/main")));
+}
+
 #[test]
 fn is_relevant_allows_objects_directory_outside_dot_git() {
     assert!(is_relevant(

@@ -329,7 +329,7 @@ fn clone_with_account_auth_of_a_local_source_runs_even_with_a_locked_keychain() 
         &mut sink,
     )
     .unwrap();
-    assert_eq!(opened.summary.path, dest.canonicalize().unwrap());
+    assert_eq!(opened.summary.path, dunce::canonicalize(&dest).unwrap());
 }
 
 #[test]

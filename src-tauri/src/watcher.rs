@@ -130,9 +130,18 @@ fn is_relevant_event(roots: &Roots, event: &Event) -> bool {
 /// Whether a change at `path` should refresh the UI. Under `workdir`: false under
 /// `.git/objects` and for `*.lock` files under `.git`. Under `extra` (a common dir):
 /// false under `objects/` and for any `*.lock` file. Paths outside both roots are
-/// conservatively relevant.
+/// conservatively relevant. The `.git` directory itself and the `extra` root itself are
+/// not relevant: Windows (ReadDirectoryChangesW) also reports a Modify for a parent
+/// directory whose last-write time changed, e.g. `.git` when `index.lock` is created,
+/// and the change to the child is always reported and classified on its own.
 pub fn is_relevant(workdir: &Path, extra: Option<&Path>, path: &Path) -> bool {
+    if extra == Some(path) {
+        return false;
+    }
     if let Ok(rel) = path.strip_prefix(workdir) {
+        if rel == Path::new(".git") {
+            return false;
+        }
         if rel.starts_with(".git/objects") {
             return false;
         }
