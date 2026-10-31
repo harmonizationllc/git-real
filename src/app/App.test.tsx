@@ -28,6 +28,7 @@ import { useToasts } from "../lib/store/toasts";
 import { useWorkspace } from "../lib/store/workspace";
 import { networkError, remoteInfo } from "../test/remoteFixtures";
 import App from "./App";
+import { startFontWarmup } from "./fontWarmup";
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -49,6 +50,12 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
   onRepoChanged: vi.fn(),
+}));
+
+vi.mock(import("./fontWarmup"), () => ({
+  startFontWarmup: vi.fn(),
+  warmupOrder: vi.fn(),
+  resetFontWarmupForTests: vi.fn(),
 }));
 
 const repo = (id: number, name: string, headBranch: string | null = "main"): OpenedRepo => ({
@@ -109,6 +116,17 @@ describe("App start screen", () => {
     expect(screen.getByRole("heading", startHeading)).toBeInTheDocument();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     await screen.findByText("No recent repositories");
+  });
+
+  it("starts the font warm-up once and cancels it on unmount", async () => {
+    const cancel = vi.fn();
+    vi.mocked(startFontWarmup).mockReturnValue(cancel);
+    const { unmount } = renderApp();
+    await screen.findByText("No recent repositories");
+    expect(startFontWarmup).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+    unmount();
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('"+" from a repo pane shows the start screen while tabs remain', async () => {

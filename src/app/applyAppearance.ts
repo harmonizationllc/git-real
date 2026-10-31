@@ -1,6 +1,7 @@
 import { syncWindowBackground, type ThemePref } from "../lib/ipc";
 import { installFlushOnPagehide, useSettings } from "../lib/store/settings";
 import type { Platform } from "../styles/fontTokens";
+import { startFontWarmup } from "./fontWarmup";
 
 export interface AppearanceSnapshot {
   theme: ThemePref;
@@ -62,6 +63,7 @@ export function bootstrapAppearance(): () => void {
   const unsubscribe = useSettings.subscribe((state, prev) => {
     if (state.settings.appearance !== prev.settings.appearance) {
       applyAppearance(state.settings.appearance);
+      startFontWarmup();
       if (
         state.settings.appearance.theme === "system" &&
         prev.settings.appearance.theme !== "system"

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Toasts } from "../components/Toasts";
 import { CloneDialog } from "../features/repo/CloneDialog";
 import { StartScreen } from "../features/repo/StartScreen";
@@ -14,6 +14,7 @@ import { useShell } from "../lib/store/shell";
 import type { ShellActions } from "../lib/store/shell";
 import styles from "./App.module.css";
 import { closeRepoTab } from "./closeRepoTab";
+import { startFontWarmup } from "./fontWarmup";
 import { RepoPane } from "./RepoPane";
 import { TabBar } from "./TabBar";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
@@ -52,6 +53,8 @@ function AppShell(): React.JSX.Element {
   };
   useGlobalShortcuts(actions);
   useUpdateCheck();
+  // Pays the cold font lookups while the start screen idles, so the first repo paint does not.
+  useEffect(() => startFontWarmup(), []);
 
   return (
     <div ref={rootRef} tabIndex={-1} data-focus-target className={styles.root}>

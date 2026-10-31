@@ -11,6 +11,12 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   syncWindowBackground: vi.fn(),
 }));
 
+vi.mock(import("./fontWarmup"), () => ({
+  startFontWarmup: vi.fn(),
+  warmupOrder: vi.fn(),
+  resetFontWarmupForTests: vi.fn(),
+}));
+
 beforeEach(() => {
   localStorage.clear();
   delete window.__GIT_REAL_SETTINGS__;
@@ -180,6 +186,17 @@ describe("bootstrapAppearance", () => {
     bootstrapAppearance();
     useSettings.getState().setPref({ appearance: { theme: "dark" } });
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    await useSettings.getState().flush();
+  });
+
+  it("re-runs the font warm-up when appearance changes, not for other sections", async () => {
+    const { bootstrapAppearance, useSettings } = await load();
+    const { startFontWarmup } = await import("./fontWarmup");
+    bootstrapAppearance();
+    useSettings.getState().setPref({ diff: { mode: "unified" } });
+    expect(startFontWarmup).not.toHaveBeenCalled();
+    useSettings.getState().setPref({ appearance: { diffFontSize: 15 } });
+    expect(startFontWarmup).toHaveBeenCalledTimes(1);
     await useSettings.getState().flush();
   });
 
