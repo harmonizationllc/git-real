@@ -2,10 +2,11 @@
 
 mod common;
 
-use std::path::PathBuf;
-use std::time::Duration;
+use common::complete_summary;
 
-use git_real_core::{LogSummary, RepoSession, ResetMode};
+use std::path::PathBuf;
+
+use git_real_core::{RepoSession, ResetMode};
 use git_real_lib::commands::log::{
     checkout_commit_inner, get_commit_inner, get_log_page_inner, get_log_summary_inner,
     reset_to_commit_inner, search_log_inner,
@@ -25,17 +26,6 @@ fn open_fixture() -> (TempDir, PathBuf, RepoRegistry, RepoId) {
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(&path).expect("open"));
     (dir, path, reg, id)
-}
-
-/// Polls the summary command until the graph is complete and not refreshing.
-fn complete_summary(reg: &RepoRegistry, id: RepoId) -> LogSummary {
-    loop {
-        let summary = get_log_summary_inner(reg, id).unwrap();
-        if summary.complete && !summary.refreshing {
-            return summary;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 fn head_oid(path: &std::path::Path) -> Oid {
@@ -402,7 +392,7 @@ fn checkout_commit_inner_makes_the_next_summary_a_new_generation_with_a_head_lab
 // --- pages and search read a snapshot outside the session lock (GR-27) ---
 
 #[test]
-fn get_log_page_inner_serves_a_page_without_the_session_lock() {
+fn a_snapshot_taken_through_the_session_serves_a_page_and_search_while_the_session_is_locked() {
     let (_d, _p, reg, id) = open_fixture();
     let g = complete_summary(&reg, id).generation;
     let snapshot = with_session(&reg, id, |s| s.log_snapshot(g)).unwrap();

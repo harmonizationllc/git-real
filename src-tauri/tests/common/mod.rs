@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use git_real_core::git_cli;
 use git_real_core::hosting::{Account, Provider, Request, Response, Token, Transport, UserInfo};
-use git_real_core::{GitError, Progress, ProgressSink};
+use git_real_core::{GitError, LogSummary, Progress, ProgressSink};
+use git_real_lib::commands::log::get_log_summary_inner;
 use git_real_lib::hosting_store::{HostingStore, TokenStore};
 use git_real_lib::recent_store::RecentStore;
-use git_real_lib::state::RepoRegistry;
+use git_real_lib::state::{RepoId, RepoRegistry};
 
 use git2::{Repository, Signature};
 use tempfile::TempDir;
@@ -463,4 +464,24 @@ pub fn github_account(username: &str) -> Account {
             avatar_url: None,
         },
     )
+}
+
+/// How long [`complete_summary`] polls before it gives up.
+pub const COMPLETE_SUMMARY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Polls the summary command every 10 ms until the graph is complete and not
+/// refreshing; panics after [`COMPLETE_SUMMARY_TIMEOUT`].
+pub fn complete_summary(reg: &RepoRegistry, id: RepoId) -> LogSummary {
+    let deadline = std::time::Instant::now() + COMPLETE_SUMMARY_TIMEOUT;
+    loop {
+        let summary = get_log_summary_inner(reg, id).unwrap();
+        if summary.complete && !summary.refreshing {
+            return summary;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the commit graph did not complete within {COMPLETE_SUMMARY_TIMEOUT:?}: {summary:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }

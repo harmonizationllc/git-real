@@ -2,14 +2,14 @@
 
 mod common;
 
-use std::path::PathBuf;
-use std::time::Duration;
+use common::complete_summary;
 
-use git_real_core::{ChangeKind, FileHistoryEntry, LogSummary, RepoSession};
+use std::path::PathBuf;
+
+use git_real_core::{ChangeKind, FileHistoryEntry, RepoSession};
 use git_real_lib::commands::history::{
     get_blame_inner, get_commit_files_inner, get_file_history_inner, list_tracked_files_inner,
 };
-use git_real_lib::commands::log::get_log_summary_inner;
 use git_real_lib::error::{AppError, AppErrorKind};
 use git_real_lib::state::{RepoId, RepoRegistry};
 use git2::{Oid, Repository};
@@ -25,17 +25,6 @@ fn open_fixture() -> (TempDir, PathBuf, RepoRegistry, RepoId) {
     let reg = RepoRegistry::default();
     let id = reg.register(RepoSession::open(&path).expect("open"));
     (dir, path, reg, id)
-}
-
-/// Polls the summary command until the graph is complete and not refreshing.
-fn complete_summary(reg: &RepoRegistry, id: RepoId) -> LogSummary {
-    loop {
-        let summary = get_log_summary_inner(reg, id).unwrap();
-        if summary.complete && !summary.refreshing {
-            return summary;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 /// Every page of `path`'s history through the command, until `next_row` is `None`.

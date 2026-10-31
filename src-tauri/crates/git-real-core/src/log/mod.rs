@@ -197,3 +197,70 @@ pub(crate) fn signature(sig: &git2::Signature<'_>) -> Signature {
         time: sig.when().seconds(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use git2::{Oid, Repository, Signature, Time};
+
+    use super::builder::{self, Final, Job};
+    use super::cache;
+    use crate::error::GitError;
+    use crate::repo::RepoSession;
+
+    /// A repository with `n` linear commits on HEAD, one second apart.
+    fn chain(n: i64) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let mut parent: Option<Oid> = None;
+        for i in 0..n {
+            let sig = Signature::new("Ada", "ada@example.com", &Time::new(1_000 + i, 0)).unwrap();
+            let parents: Vec<git2::Commit> = parent
+                .iter()
+                .map(|p| repo.find_commit(*p).unwrap())
+                .collect();
+            let parents: Vec<&git2::Commit> = parents.iter().collect();
+            parent = Some(
+                repo.commit(Some("HEAD"), &sig, &sig, &format!("c{i}"), &tree, &parents)
+                    .unwrap(),
+            );
+        }
+        dir
+    }
+
+    fn panicking_build(_: &Job) -> Result<Option<Final>, GitError> {
+        panic!("injected build panic");
+    }
+
+    #[test]
+    fn a_panicking_build_surfaces_as_an_error_and_the_next_call_retries() {
+        let dir = chain(1);
+        let mut s = RepoSession::open(dir.path()).unwrap();
+        s.log.fingerprint = Some(cache::fingerprint(s.repo()).unwrap());
+        s.log.builder = Some(builder::start_job(
+            s.path().to_path_buf(),
+            Arc::clone(&s.log.shared),
+            panicking_build,
+        ));
+        let failed = s.log_summary_complete();
+        assert!(matches!(failed, Err(GitError::Io(_))), "{failed:?}");
+        let retried = s.log_summary_complete().unwrap();
+        assert_eq!((retried.total, retried.complete), (1, true));
+    }
+
+    #[test]
+    fn dropping_the_session_mid_build_joins_the_builder() {
+        let dir = chain(1200);
+        let mut s = RepoSession::open(dir.path()).unwrap();
+        s.log_summary_within(Duration::ZERO).unwrap();
+        let shared = Arc::clone(&s.log.shared);
+        drop(s);
+        // The builder thread held the other clone; joining released it.
+        assert_eq!(Arc::strong_count(&shared), 1);
+    }
+}

@@ -7,8 +7,9 @@
 //! publishes the result as complete: under the build's own generation number
 //! when no reader observed the provisional state, otherwise under the next.
 
-use std::cmp::Reverse;
+use std::cmp::{Ordering as CmpOrdering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -44,6 +45,14 @@ impl Builder {
 /// Starts a build of the repository at `repo_path` under the next generation
 /// number, recording it in `shared.building`.
 pub(crate) fn start(repo_path: PathBuf, shared: SharedLog) -> Builder {
+    start_job(repo_path, shared, Job::build)
+}
+
+/// What a build thread runs: both passes, `None` when cancelled.
+type BuildFn = fn(&Job) -> Result<Option<Final>, GitError>;
+
+/// [`start`] with the passes given, so a test can make them panic.
+pub(crate) fn start_job(repo_path: PathBuf, shared: SharedLog, build: BuildFn) -> Builder {
     let (generation, publish_provisional) = {
         let mut state = lock(&shared);
         let generation = state.next_generation;
@@ -60,6 +69,7 @@ pub(crate) fn start(repo_path: PathBuf, shared: SharedLog) -> Builder {
         cancel: Arc::clone(&cancel),
         generation,
         publish_provisional,
+        build,
     };
     let thread = match std::thread::Builder::new()
         .name("log-builder".to_owned())
@@ -79,16 +89,17 @@ pub(crate) fn start(repo_path: PathBuf, shared: SharedLog) -> Builder {
 }
 
 /// What the builder thread owns.
-struct Job {
+pub(crate) struct Job {
     repo_path: PathBuf,
     shared: SharedLog,
     cancel: Arc<AtomicBool>,
     generation: u64,
     publish_provisional: bool,
+    build: BuildFn,
 }
 
 /// The final state of a build, ready to publish.
-struct Final {
+pub(crate) struct Final {
     chunks: Vec<Arc<Chunk>>,
     max_lanes: u32,
     labels: Arc<RefLabels>,
@@ -97,15 +108,22 @@ struct Final {
 
 impl Job {
     fn run(self) {
-        let result = self.build();
+        // A panic must still settle the shared state, or every reader would
+        // wait on `building` for good.
+        let result = catch_unwind(AssertUnwindSafe(|| (self.build)(&self)))
+            .unwrap_or_else(|_| Err(GitError::Io(std::io::Error::other(BUILD_PANICKED))));
         let mut state = lock(&self.shared);
-        if self.cancelled() {
-            if state.building == Some(self.generation) {
-                state.building = None;
-            }
-            return;
-        }
         match result {
+            // A cancelled build's successor owns the shared state, so only
+            // this build's own `building` mark is cleared.
+            _ if self.cancelled() => {
+                if state.building == Some(self.generation) {
+                    state.building = None;
+                }
+                return;
+            }
+            // Only a cancelled build returns `None`; settle anyway.
+            Ok(None) => {}
             Ok(Some(done)) => {
                 let generation = if state.provisional_observed {
                     self.generation + 1
@@ -122,7 +140,6 @@ impl Job {
                     index: Some(Arc::new(done.index)),
                 });
             }
-            Ok(None) => return,
             Err(e) => {
                 state.error = Some(e);
                 if state.current.as_ref().is_some_and(|g| !g.complete) {
@@ -211,10 +228,16 @@ impl Job {
             return Ok(None);
         }
 
-        let mut slots: Vec<Option<Row>> = into_rows(chunks).into_iter().map(Some).collect();
+        let Some(rows) = self.take_rows(chunks) else {
+            return Ok(None);
+        };
+        let mut slots: Vec<Option<Row>> = rows.into_iter().map(Some).collect();
         let mut layout = LaneLayout::new();
         let mut final_chunks = Vec::with_capacity(order.len().div_ceil(CHUNK_ROWS));
         for block in order.chunks(CHUNK_ROWS) {
+            if self.cancelled() {
+                return Ok(None);
+            }
             let columns_at_start = layout.columns().to_vec();
             let mut rows = Vec::with_capacity(block.len());
             // `order` is a permutation, so every slot is taken exactly once.
@@ -260,20 +283,27 @@ impl Job {
         }
         self.shared.1.notify_all();
     }
+
+    /// The rows of `chunks` in order: moved out of chunks nobody else
+    /// holds, cloned from those a reader (or the provisional generation)
+    /// still shares. `None` when cancelled, checked once per chunk.
+    fn take_rows(&self, chunks: Vec<Arc<Chunk>>) -> Option<Vec<Row>> {
+        let mut rows = Vec::with_capacity(chunks.iter().map(|c| c.rows.len()).sum());
+        for chunk in chunks {
+            if self.cancelled() {
+                return None;
+            }
+            match Arc::try_unwrap(chunk) {
+                Ok(chunk) => rows.extend(chunk.rows),
+                Err(shared) => rows.extend(shared.rows.iter().cloned()),
+            }
+        }
+        Some(rows)
+    }
 }
 
-/// The rows of `chunks` in order: moved out of chunks nobody else holds,
-/// cloned from those a reader (or the provisional generation) still shares.
-fn into_rows(chunks: Vec<Arc<Chunk>>) -> Vec<Row> {
-    let mut rows = Vec::with_capacity(chunks.iter().map(|c| c.rows.len()).sum());
-    for chunk in chunks {
-        match Arc::try_unwrap(chunk) {
-            Ok(chunk) => rows.extend(chunk.rows),
-            Err(shared) => rows.extend(shared.rows.iter().cloned()),
-        }
-    }
-    rows
-}
+/// The error a panicked build reports.
+const BUILD_PANICKED: &str = "the commit graph build stopped unexpectedly";
 
 /// `seen` value of a commit discovered but not yet emitted.
 const PENDING: u32 = u32::MAX;
@@ -285,8 +315,8 @@ pub(crate) struct Traversal<'r> {
     repo: &'r Repository,
     /// Pushed on the first [`Self::next_row`], where lookups may fail.
     tips: Vec<Oid>,
-    /// Committer time, discovery sequence, commit.
-    heap: BinaryHeap<(i64, Reverse<u32>, Oid)>,
+    /// Discovered commits not yet emitted, parsed once.
+    heap: BinaryHeap<Pending>,
     /// Every discovered commit: its row index once emitted, else `PENDING`.
     seen: HashMap<Oid, u32>,
     discovered: u32,
@@ -317,16 +347,14 @@ impl<'r> Traversal<'r> {
         for tip in std::mem::take(&mut self.tips) {
             self.discover(tip)?;
         }
-        let Some((time, _, oid)) = self.heap.pop() else {
+        let Some(next) = self.heap.pop() else {
             return Ok(None);
         };
-        let commit = self.repo.find_commit(oid)?;
-        self.seen.insert(oid, self.emitted);
+        self.seen.insert(next.oid, self.emitted);
         self.emitted += 1;
 
-        let parents: Box<[Oid]> = commit.parent_ids().collect();
         let mut layout_skips = 0u16;
-        for (i, parent) in parents.iter().enumerate() {
+        for (i, parent) in next.parents.iter().enumerate() {
             match self.seen.get(parent) {
                 Some(&row) if row != PENDING => {
                     if i < 16 {
@@ -337,16 +365,15 @@ impl<'r> Traversal<'r> {
                 None => self.discover(*parent)?,
             }
         }
-        let author = commit.author();
         let row = Row {
-            oid,
-            parents,
-            subject: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default()).into(),
-            author: self.intern(author.name_bytes(), author.email_bytes()),
-            author_time: author.when().seconds(),
+            oid: next.oid,
+            parents: next.parents,
+            subject: next.subject,
+            author: next.author,
+            author_time: next.author_time,
             layout_skips,
         };
-        Ok(Some((row, time)))
+        Ok(Some((row, next.time)))
     }
 
     /// Every commit discovered so far, with its row index once emitted.
@@ -359,13 +386,25 @@ impl<'r> Traversal<'r> {
         self.seen
     }
 
+    /// Reads `oid` (the only time it is parsed) and queues it, unless it
+    /// was discovered before.
     fn discover(&mut self, oid: Oid) -> Result<(), GitError> {
         if self.seen.contains_key(&oid) {
             return Ok(());
         }
-        let time = self.repo.find_commit(oid)?.time().seconds();
+        let commit = self.repo.find_commit(oid)?;
+        let author = commit.author();
+        let pending = Pending {
+            time: commit.time().seconds(),
+            seq: self.discovered,
+            oid,
+            parents: commit.parent_ids().collect(),
+            subject: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default()).into(),
+            author: self.intern(author.name_bytes(), author.email_bytes()),
+            author_time: author.when().seconds(),
+        };
         self.seen.insert(oid, PENDING);
-        self.heap.push((time, Reverse(self.discovered), oid));
+        self.heap.push(pending);
         self.discovered += 1;
         Ok(())
     }
@@ -389,6 +428,44 @@ impl<'r> Traversal<'r> {
         author
     }
 }
+
+/// A discovered commit waiting to be emitted, with everything its row needs.
+/// Ordered by committer time, then earlier discovery first.
+struct Pending {
+    time: i64,
+    seq: u32,
+    oid: Oid,
+    parents: Box<[Oid]>,
+    subject: Box<str>,
+    author: Arc<Author>,
+    author_time: i64,
+}
+
+impl Pending {
+    fn key(&self) -> (i64, Reverse<u32>) {
+        (self.time, Reverse(self.seq))
+    }
+}
+
+impl Ord for Pending {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.key().cmp(&other.key())
+    }
+}
+
+impl PartialOrd for Pending {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Pending {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for Pending {}
 
 fn to_u32(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)

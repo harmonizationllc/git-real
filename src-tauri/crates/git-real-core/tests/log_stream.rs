@@ -8,13 +8,16 @@ mod common;
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use git_real_core::{GitError, GraphEdge, LogSummary, RepoSession};
 use git2::{Oid, Repository};
 
 /// Attempts at catching a provisional state before giving up.
 const ATTEMPTS: usize = 50;
+
+/// How long one attempt polls a build before the test fails.
+const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn open(path: &Path) -> RepoSession {
     RepoSession::open(path).expect("open session")
@@ -75,11 +78,16 @@ fn catch_incomplete<T>(
 ) -> (RepoSession, T) {
     for _ in 0..ATTEMPTS {
         let mut s = open(path);
+        let deadline = Instant::now() + POLL_TIMEOUT;
         loop {
             let summary = zero(&mut s);
             if summary.complete {
                 break;
             }
+            assert!(
+                Instant::now() < deadline,
+                "the build did not complete within {POLL_TIMEOUT:?}: {summary:?}"
+            );
             if let Some(found) = probe(&mut s, &summary) {
                 return (s, found);
             }
@@ -323,8 +331,9 @@ fn should_return_a_build_error_once_and_retry() {
     let (_d, path) = common::temp_repo_unborn();
     let oids = chain(&path, 2, 0);
     let hex = oids[0].to_string();
-    std::fs::remove_file(path.join(".git/objects").join(&hex[..2]).join(&hex[2..]))
-        .expect("delete the root commit's object");
+    let object = path.join(".git/objects").join(&hex[..2]).join(&hex[2..]);
+    let bytes = std::fs::read(&object).expect("read the root commit's object");
+    std::fs::remove_file(&object).expect("delete the root commit's object");
     let mut s = open(&path);
     let first = s.log_summary_complete();
     let second = s.log_summary_complete();
@@ -332,6 +341,9 @@ fn should_return_a_build_error_once_and_retry() {
         matches!(first, Err(GitError::Git2(_))) && matches!(second, Err(GitError::Git2(_))),
         "first={first:?} second={second:?}"
     );
+    // Restored, the same refs build: the error was not sticky.
+    std::fs::write(&object, bytes).expect("restore the root commit's object");
+    assert_eq!(s.log_summary_complete().unwrap().total, 2);
 }
 
 #[test]
