@@ -31,7 +31,7 @@ impl RepoSession {
     /// Starts a rebuild when any ref moved since the last build, then waits
     /// up to [`FIRST_ANSWER_MS`] for the graph to complete. Small
     /// repositories get a complete answer; larger ones a provisional one to
-    /// poll.
+    /// poll. A call that finds a build already running answers at once.
     pub fn log_summary(&mut self) -> Result<LogSummary, GitError> {
         self.log_summary_within(Duration::from_millis(FIRST_ANSWER_MS))
     }
@@ -114,7 +114,8 @@ impl RepoSession {
     /// settle (complete, no rebuild running), a build error, or `deadline`.
     fn summary_until(&mut self, deadline: Option<Instant>) -> Result<LogSummary, GitError> {
         let fingerprint = cache::fingerprint(self.repo())?;
-        if self.log.fingerprint != Some(fingerprint) {
+        let started = self.log.fingerprint != Some(fingerprint);
+        if started {
             if let Some(running) = self.log.builder.take() {
                 running.cancel_and_join();
             }
@@ -134,6 +135,13 @@ impl RepoSession {
             self.log.fingerprint = Some(fingerprint);
         }
 
+        // Only the call that started the build waits out its window; a poll on a
+        // build already running answers at once, so it never holds the session
+        // lock for the window. `None` (wait for completion) always waits.
+        let deadline = match deadline {
+            Some(_) if !started => Some(Instant::now()),
+            other => other,
+        };
         let (_, condvar) = &*self.log.shared;
         let mut state = lock(&self.log.shared);
         loop {

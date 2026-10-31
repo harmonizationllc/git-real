@@ -25,6 +25,9 @@ export function useLogSummary(repoId: RepoId): UseLogSummary {
         throw toAppError(e);
       }),
     refetchInterval: (q) => {
+      // A failed poll keeps the last data, so polling on would restart a failing build
+      // twice a second; Retry starts one build instead.
+      if (q.state.status === "error") return false;
       const s = q.state.data;
       return s !== undefined && (!s.complete || s.refreshing) ? SUMMARY_POLL_MS : false;
     },

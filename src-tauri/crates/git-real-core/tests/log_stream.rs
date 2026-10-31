@@ -157,6 +157,30 @@ fn should_stream_sealed_chunks_before_the_build_completes() {
 }
 
 #[test]
+fn should_answer_a_poll_on_a_running_build_without_waiting() {
+    let (_d, path, _oids) = repo_with_chain(1200);
+    for _ in 0..ATTEMPTS {
+        let mut s = open(&path);
+        if zero(&mut s).complete {
+            continue;
+        }
+        let started = Instant::now();
+        let polled = s.log_summary().unwrap();
+        let elapsed = started.elapsed();
+        if polled.complete {
+            // The build finished during the poll; this attempt proves nothing.
+            continue;
+        }
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "a poll on a running build waited {elapsed:?}"
+        );
+        return;
+    }
+    panic!("no poll observed a running build in {ATTEMPTS} attempts");
+}
+
+#[test]
 fn should_land_as_one_generation_when_provisional_was_never_observed() {
     let (_d, path, _oids) = repo_with_chain(1200);
     let mut s = open(&path);

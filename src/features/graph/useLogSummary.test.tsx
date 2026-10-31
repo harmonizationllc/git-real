@@ -131,6 +131,18 @@ describe("useLogSummary polling", () => {
     expect(getLogSummary).toHaveBeenCalledTimes(2);
   });
 
+  it("should stop polling after a failed poll", async () => {
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce({ ...summary, complete: false })
+      .mockRejectedValue({ kind: "git", message: "boom" });
+    renderHookWithProviders(() => useLogSummary(5));
+    await advance(0);
+    await advance(SUMMARY_POLL_MS);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+    await advance(SUMMARY_POLL_MS * 6);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+  });
+
   it("should not poll a summary that arrives complete", async () => {
     renderHookWithProviders(() => useLogSummary(5));
     await advance(0);
