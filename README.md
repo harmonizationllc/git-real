@@ -222,6 +222,12 @@ In CI the `bench` job runs the same suite on every push and pull request, writes
 results table to the job summary, and uploads the JSON report as the
 `bench-results-‹sha›` artifact.
 
+The front end has a frame budget: opening a repository never blocks the main thread
+for more than 100 ms. It is measured in the production build with a
+`requestAnimationFrame` gap monitor, armed through the WebKit inspector before the open
+and run on the synthetic fixture. The walk tooling is attached to Jira GR-28, and the
+causes and guards are recorded in ADR 0004.
+
 The Linux kernel is an informational run, outside the budgets:
 
 ```sh
