@@ -179,7 +179,13 @@ beforeEach(async () => {
   vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
   vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
   vi.mocked(getStashFiles).mockReturnValue(new Promise(() => undefined));
-  vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 2, maxLanes: 1 });
+  vi.mocked(getLogSummary).mockResolvedValue({
+    generation: 1,
+    total: 2,
+    maxLanes: 1,
+    complete: true,
+    refreshing: false,
+  });
   vi.mocked(getLogPage).mockResolvedValue({ start: 0, rows: [makeRow(0), makeRow(1)] });
   vi.mocked(getCommit).mockResolvedValue(commitDetail({ oid: oidOf(0) }));
   vi.mocked(getOperationState).mockResolvedValue({ kind: "none" });

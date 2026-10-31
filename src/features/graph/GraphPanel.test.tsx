@@ -84,6 +84,8 @@ const summary = (over: Partial<LogSummary> = {}): LogSummary => ({
   generation: 1,
   total,
   maxLanes: 2,
+  complete: true,
+  refreshing: false,
   ...over,
 });
 
@@ -166,6 +168,64 @@ const press = (key: string, init: KeyboardEventInit = {}) =>
 
 // Contract: loading, empty and error states of the summary.
 describe("GraphPanel summary states", () => {
+  it("should show Loading history… for an incomplete empty summary", async () => {
+    total = 0;
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    await waitFor(() => expect(getLogSummary).toHaveBeenCalled());
+    await act(() => Promise.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent("Loading history…");
+  });
+
+  it("should show No commits yet only for a complete empty summary", async () => {
+    total = 0;
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ complete: false }))
+      .mockResolvedValue(summary());
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    await waitFor(() => expect(getLogSummary).toHaveBeenCalledOnce());
+    await act(() => Promise.resolve());
+    expect(screen.queryByText("No commits yet")).toBeNull();
+    expect(await screen.findByText("No commits yet", {}, { timeout: 2000 })).toBeInTheDocument();
+  });
+
+  it("should mark the listbox busy while the summary is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    expect(listbox()).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("should not mark the listbox busy once the summary is complete", async () => {
+    await renderPanel();
+    expect(listbox()).not.toHaveAttribute("aria-busy");
+  });
+
+  it("should grow the list when a poll reports more rows", async () => {
+    total = 1000;
+    mockWindow.size = 10;
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ total: 500, complete: false }))
+      .mockResolvedValue(summary({ total: 1000 }));
+    await renderPanel();
+    const inner = () => listbox().firstElementChild as HTMLElement;
+    expect(inner().style.height).toBe(`${500 * 22}px`);
+    await waitFor(() => expect(inner().style.height).toBe(`${1000 * 22}px`), { timeout: 2000 });
+  });
+
+  it("should pass the count and the loading marker to the toolbar", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading… 3 commits");
+  });
+
+  it("should not search while the summary is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue(summary({ complete: false }));
+    await renderPanel();
+    fireEvent.change(searchBox(), { target: { value: "fix" } });
+    expect(await screen.findByText("Loading…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
   it("should show Loading history… with role status while the summary is pending", () => {
     vi.mocked(getLogSummary).mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<GraphPanel repoId={REPO} />);

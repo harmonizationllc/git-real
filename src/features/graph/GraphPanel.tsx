@@ -198,7 +198,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
   let body: React.ReactNode;
   if (summaryError !== null) {
     body = <RepoError error={summaryError} path={null} onRetry={refetch} onDismiss={refetch} />;
-  } else if (summary === undefined) {
+  } else if (summary === undefined || (summary.total === 0 && !summary.complete)) {
     body = <p role="status">Loading history…</p>;
   } else if (summary.total === 0) {
     body = <p className={styles.empty}>No commits yet</p>;
@@ -322,7 +322,7 @@ interface CommitListProps {
 
 /** The search toolbar and the virtualized commit listbox of a non-empty history. */
 function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
-  const { generation, total, maxLanes } = summary;
+  const { generation, total, maxLanes, complete, refreshing } = summary;
   const queryClient = useQueryClient();
   const selectCommit = useWorkspace((s) => s.selectCommit);
   const selected = useWorkspace((s) => s.selectedCommit[repoId] ?? null);
@@ -455,7 +455,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     const timer = setTimeout(() => search(input.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [input]);
-  const { matches, isFetching } = useLogSearch(repoId, generation, query);
+  const { matches, isFetching } = useLogSearch(repoId, generation, query, complete);
   const matchSet = useMemo(() => new Set(matches), [matches]);
   const current =
     cursor.query === query ? Math.min(cursor.index, Math.max(matches.length - 1, 0)) : 0;
@@ -517,10 +517,13 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
           // Clearing is immediate; typing waits for the debounce.
           if (value === "") clearSearch();
         }}
-        matchCount={query === "" || isFetching ? null : matches.length}
+        matchCount={query === "" || isFetching || !complete ? null : matches.length}
         current={current}
         onPrevious={() => step(-1)}
         onNext={() => step(1)}
+        total={total}
+        complete={complete}
+        refreshing={refreshing}
       />
       {pages.error !== null && (
         <RepoError
@@ -536,6 +539,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
         aria-label="Commits"
         tabIndex={0}
         aria-activedescendant={selectedIndex === undefined ? undefined : rowId(selectedIndex)}
+        aria-busy={!complete || undefined}
         className={styles.list}
         onKeyDown={onKeyDown}
         onContextMenu={(e) => e.preventDefault()}

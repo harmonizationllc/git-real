@@ -289,9 +289,21 @@ describe("commit graph DTO shapes", () => {
   });
 
   it("should accept a LogSummary and a LogPage carrying every field", () => {
-    const summary: LogSummary = { generation: 1, total: 2, maxLanes: 3 };
+    const summary: LogSummary = {
+      generation: 1,
+      total: 2,
+      maxLanes: 3,
+      complete: false,
+      refreshing: false,
+    };
     const page: LogPage = { start: 0, rows: [] };
-    expect(Object.keys(summary).sort()).toEqual(["generation", "maxLanes", "total"]);
+    expect(Object.keys(summary).sort()).toEqual([
+      "complete",
+      "generation",
+      "maxLanes",
+      "refreshing",
+      "total",
+    ]);
     expect(Object.keys(page).sort()).toEqual(["rows", "start"]);
   });
 

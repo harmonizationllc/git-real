@@ -1,17 +1,23 @@
-import { waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLogSummary } from "../../lib/ipc";
 import type { LogSummary } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
-import { useLogSummary } from "./useLogSummary";
+import { SUMMARY_POLL_MS, useLogSummary } from "./useLogSummary";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   getLogSummary: vi.fn(),
 }));
 
-const summary: LogSummary = { generation: 3, total: 1200, maxLanes: 4 };
+const summary: LogSummary = {
+  generation: 3,
+  total: 1200,
+  maxLanes: 4,
+  complete: true,
+  refreshing: false,
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -82,5 +88,53 @@ describe("useLogSummary errors", () => {
     await waitFor(() => expect(result.current.summary).toBeDefined());
     result.current.refetch();
     await waitFor(() => expect(getLogSummary).toHaveBeenCalledTimes(2));
+  });
+});
+
+// Contract: the summary polls every SUMMARY_POLL_MS while the graph is incomplete or a
+// rebuild runs behind it, and stops once it is complete and not refreshing.
+describe("useLogSummary polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+  it("should poll every SUMMARY_POLL_MS while the summary is incomplete", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue({ ...summary, complete: false });
+    renderHookWithProviders(() => useLogSummary(5));
+    await advance(0);
+    expect(getLogSummary).toHaveBeenCalledTimes(1);
+    await advance(SUMMARY_POLL_MS);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("should poll while refreshing", async () => {
+    vi.mocked(getLogSummary).mockResolvedValue({ ...summary, refreshing: true });
+    renderHookWithProviders(() => useLogSummary(5));
+    await advance(0);
+    await advance(SUMMARY_POLL_MS);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("should stop polling once complete and not refreshing", async () => {
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce({ ...summary, complete: false })
+      .mockResolvedValue(summary);
+    renderHookWithProviders(() => useLogSummary(5));
+    await advance(0);
+    await advance(SUMMARY_POLL_MS);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+    await advance(SUMMARY_POLL_MS * 4);
+    expect(getLogSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("should not poll a summary that arrives complete", async () => {
+    renderHookWithProviders(() => useLogSummary(5));
+    await advance(0);
+    await advance(SUMMARY_POLL_MS * 4);
+    expect(getLogSummary).toHaveBeenCalledTimes(1);
   });
 });

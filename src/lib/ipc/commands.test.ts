@@ -539,7 +539,13 @@ describe("branch commands", () => {
 // Contract: the commit graph wrappers invoke the pinned Rust command names with camelCase args.
 describe("commit graph command wrappers", () => {
   it("getLogSummary sends get_log_summary with id", async () => {
-    const summary: LogSummary = { generation: 4, total: 10, maxLanes: 2 };
+    const summary: LogSummary = {
+      generation: 4,
+      total: 10,
+      maxLanes: 2,
+      complete: true,
+      refreshing: false,
+    };
     const calls = mockWith(summary);
     const result = await getLogSummary(3);
     expect(calls).toEqual([{ cmd: "get_log_summary", args: { id: 3 } }]);

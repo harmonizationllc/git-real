@@ -37,7 +37,13 @@ const OTHER_ENTRIES: FileHistoryEntry[] = [
   historyEntry(6, { path: "other.ts", subject: "Other 6" }),
 ];
 
-const summary = (generation = 1) => ({ generation, total: 10, maxLanes: 1 });
+const summary = (generation = 1) => ({
+  generation,
+  total: 10,
+  maxLanes: 1,
+  complete: true,
+  refreshing: false,
+});
 
 beforeEach(() => {
   vi.resetAllMocks();

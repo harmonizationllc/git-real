@@ -10,7 +10,13 @@ export interface UseLogSummary {
   refetch(): void;
 }
 
-/** The log's generation, row count and lane width; refreshed with every repo invalidation. */
+/** How often the summary is re-read while the graph is incomplete or refreshing. */
+export const SUMMARY_POLL_MS = 500;
+
+/**
+ * The log's generation, row count, lane width and build state; refreshed with every repo
+ * invalidation, and polled while the graph is still being built or rebuilt.
+ */
 export function useLogSummary(repoId: RepoId): UseLogSummary {
   const query = useQuery<LogSummary, AppError>({
     queryKey: queryKeys.log(repoId),
@@ -18,6 +24,10 @@ export function useLogSummary(repoId: RepoId): UseLogSummary {
       getLogSummary(repoId).catch((e: unknown) => {
         throw toAppError(e);
       }),
+    refetchInterval: (q) => {
+      const s = q.state.data;
+      return s !== undefined && (!s.complete || s.refreshing) ? SUMMARY_POLL_MS : false;
+    },
   });
 
   return {

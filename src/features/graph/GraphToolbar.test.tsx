@@ -10,6 +10,9 @@ function renderToolbar(over: Partial<React.ComponentProps<typeof GraphToolbar>> 
     current: 1,
     onPrevious: vi.fn(),
     onNext: vi.fn(),
+    total: 1200,
+    complete: true,
+    refreshing: false,
     ...over,
   };
   render(<GraphToolbar {...props} />);
@@ -140,5 +143,53 @@ describe("GraphToolbar keyboard", () => {
     expect(props.onNext).not.toHaveBeenCalled();
     expect(props.onPrevious).not.toHaveBeenCalled();
     expect(props.onQueryChange).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the count element reads "Loading… n commits" while incomplete, "Updating… n
+// commits" while refreshing and the plain count otherwise; it is a status region that is
+// not live, and an incomplete graph holds the search counter at "Loading…".
+describe("GraphToolbar count", () => {
+  const count = () => screen.getByRole("status");
+
+  it("should show 'Loading… 1,000 commits' while incomplete", () => {
+    renderToolbar({ total: 1000, complete: false });
+    expect(count()).toHaveTextContent(`Loading… ${(1000).toLocaleString()} commits`);
+  });
+
+  it("should show 'Updating… 1,200 commits' while refreshing", () => {
+    renderToolbar({ total: 1200, refreshing: true });
+    expect(count()).toHaveTextContent(`Updating… ${(1200).toLocaleString()} commits`);
+  });
+
+  it("should show the plain count when complete", () => {
+    renderToolbar({ total: 1200 });
+    expect(count().textContent).toBe(`${(1200).toLocaleString()} commits`);
+  });
+
+  it("should say '1 commit' for a single commit", () => {
+    renderToolbar({ total: 1 });
+    expect(count().textContent).toBe("1 commit");
+  });
+
+  it("should read Loading… in the counter when a query is typed on an incomplete graph", () => {
+    renderToolbar({ query: "fix", matchCount: null, complete: false });
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
+
+  it("should show no counter for an empty query on an incomplete graph", () => {
+    renderToolbar({ query: "", matchCount: null, complete: false });
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("should disable Previous and Next while incomplete", () => {
+    renderToolbar({ matchCount: 5, complete: false });
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("should mark the count as a status region that is not live", () => {
+    renderToolbar();
+    expect(count()).toHaveAttribute("aria-live", "off");
   });
 });

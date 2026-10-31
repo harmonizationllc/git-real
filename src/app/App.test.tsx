@@ -88,7 +88,13 @@ beforeEach(() => {
   vi.mocked(onRepoChanged).mockResolvedValue(vi.fn());
   vi.mocked(getCommitConfig).mockResolvedValue({ name: "A", email: "a@b.c", signing: null });
   vi.mocked(getHeadMessage).mockResolvedValue(null);
-  vi.mocked(getLogSummary).mockResolvedValue({ generation: 1, total: 0, maxLanes: 1 });
+  vi.mocked(getLogSummary).mockResolvedValue({
+    generation: 1,
+    total: 0,
+    maxLanes: 1,
+    complete: true,
+    refreshing: false,
+  });
 });
 
 function renderApp(...seed: OpenedRepo[]) {

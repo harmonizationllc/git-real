@@ -373,6 +373,10 @@ export interface LogSummary {
   generation: number;
   total: number;
   maxLanes: number;
+  /** False while the graph is still being built and `total` can grow. */
+  complete: boolean;
+  /** True while a rebuild for moved refs runs behind the served graph. */
+  refreshing: boolean;
 }
 
 export interface LogPage {
