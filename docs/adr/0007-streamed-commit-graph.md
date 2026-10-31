@@ -41,7 +41,7 @@ traverses the history itself.
   their rows instead of moving them; when no reader or generation holds them they move.
 - **D2 — Compact rows.** A cached row drops `lane` and `edges`. It keeps the oid, a boxed
   parent list, a boxed subject, the author time, an `Arc` to an author interned per
-  distinct name and email, and a `u16` layout-skip mask. Ref labels live in one map per
+  distinct name and email, and a `u32` layout-skip mask. Ref labels live in one map per
   generation, and committer time lives in a build-time side array dropped after pass B. A
   unit test pins `size_of::<Row>()` at 80 bytes or less.
 - **D3 — Lanes derived per page.** Rows live in immutable chunks of 500, the front end's
@@ -74,6 +74,8 @@ call) so a call is bounded on any repository size. The bench gains `firstSummary
 - Two generations can be resident during a rebuild, about 250 MB extra on the kernel.
 - The provisional layout may differ from the final one, so the viewport follows the top
   commit by oid across a generation change rather than by row number.
+- The layout-skip mask covers a merge's first 32 parents, so a later octopus parent emitted
+  before its merge draws a pass-through to the end of the provisional graph, never the final one.
 - Pass B needs all rows in memory and its sort cannot be interrupted, so cancelling a
   superseded kernel build waits for the sort to finish.
 - Ordering among equal committer times follows discovery order, so a test must not depend

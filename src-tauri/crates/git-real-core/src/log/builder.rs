@@ -18,7 +18,9 @@ use std::thread::JoinHandle;
 use git2::{Oid, Repository};
 
 use super::lanes::LaneLayout;
-use super::shared::{Author, CHUNK_ROWS, Chunk, Generation, RefLabels, Row, SharedLog, lock};
+use super::shared::{
+    Author, CHUNK_ROWS, Chunk, Generation, RefLabels, Row, SKIP_BITS, SharedLog, lock,
+};
 use super::topo::topo_order;
 use super::walk::labels_and_tips;
 use crate::error::GitError;
@@ -353,11 +355,11 @@ impl<'r> Traversal<'r> {
         self.seen.insert(next.oid, self.emitted);
         self.emitted += 1;
 
-        let mut layout_skips = 0u16;
+        let mut layout_skips = 0u32;
         for (i, parent) in next.parents.iter().enumerate() {
             match self.seen.get(parent) {
                 Some(&row) if row != PENDING => {
-                    if i < 16 {
+                    if i < SKIP_BITS {
                         layout_skips |= 1 << i;
                     }
                 }
@@ -491,7 +493,7 @@ mod tests {
             .unwrap()
     }
 
-    fn walk(repo: &Repository, tips: &[Oid]) -> Vec<(Oid, i64, u16)> {
+    fn walk(repo: &Repository, tips: &[Oid]) -> Vec<(Oid, i64, u32)> {
         let mut t = Traversal::new(repo, tips);
         let mut out = Vec::new();
         while let Some((row, time)) = t.next_row().unwrap() {
@@ -511,6 +513,19 @@ mod tests {
         let got = walk(&repo, &[c, p]);
         // p (20) pops before c (5) and root (10); c's parent p was emitted.
         assert_eq!(got, vec![(p, 20, 0), (root, 10, 0), (c, 5, 1)]);
+    }
+
+    #[test]
+    fn traversal_marks_an_emitted_octopus_parent_past_index_sixteen() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path()).unwrap();
+        // Twenty roots p0..p19 at times 10..29 and an older octopus over all of
+        // them; p17 is also a tip, so it is emitted before the octopus.
+        let parents: Vec<Oid> = (0..20).map(|i| commit(&repo, 10 + i, &[])).collect();
+        let octopus = commit(&repo, 5, &parents);
+        let got = walk(&repo, &[octopus, parents[17]]);
+        let skips = got.iter().find(|r| r.0 == octopus).map(|r| r.2);
+        assert_eq!(skips, Some(1u32 << 17));
     }
 
     #[test]

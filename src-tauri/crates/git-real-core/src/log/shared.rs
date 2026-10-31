@@ -35,20 +35,25 @@ pub(crate) struct Row {
     pub subject: Box<str>,
     pub author: Arc<Author>,
     pub author_time: i64,
-    /// Bit i set: parent i (i < 16) was ignored by the provisional layout. Parents at index >= 16 are never ignored.
-    pub layout_skips: u16,
+    /// Bit i set: parent i (i < [`SKIP_BITS`]) was ignored by the provisional
+    /// layout. Parents at index >= [`SKIP_BITS`] are never ignored.
+    pub layout_skips: u32,
 }
+
+/// How many leading parents `Row::layout_skips` can mark as ignored.
+pub(crate) const SKIP_BITS: usize = u32::BITS as usize;
 
 impl Row {
     /// The parents the layout follows: `scratch` refilled with every parent
-    /// whose `layout_skips` bit is clear (parents at index 16 and up always).
+    /// whose `layout_skips` bit is clear (parents at index [`SKIP_BITS`] and
+    /// up always).
     pub fn layout_parents<'a>(&self, scratch: &'a mut Vec<Oid>) -> &'a [Oid] {
         scratch.clear();
         scratch.extend(
             self.parents
                 .iter()
                 .enumerate()
-                .filter(|&(i, _)| i >= 16 || self.layout_skips & (1 << i) == 0)
+                .filter(|&(i, _)| i >= SKIP_BITS || self.layout_skips & (1 << i) == 0)
                 .map(|(_, p)| *p),
         );
         scratch
@@ -533,14 +538,14 @@ mod tests {
     }
 
     #[test]
-    fn layout_parents_drops_skipped_parents_below_sixteen_only() {
-        let parents: Vec<u32> = (100..120).collect();
+    fn layout_parents_drops_skipped_parents_below_thirty_two_only() {
+        let parents: Vec<u32> = (100..140).collect();
         let mut r = row_n(1, &parents);
-        r.layout_skips = 0b1000_0000_0000_0101;
+        r.layout_skips = (1 << 31) | (1 << 17) | 0b101;
         let mut scratch = vec![oid(999)];
         let kept: Vec<Oid> = r.layout_parents(&mut scratch).to_vec();
-        let expected: Vec<Oid> = (100..120)
-            .filter(|p| ![100, 102, 115].contains(p))
+        let expected: Vec<Oid> = (100..140)
+            .filter(|p| ![100, 102, 117, 131].contains(p))
             .map(oid)
             .collect();
         assert_eq!(kept, expected);
