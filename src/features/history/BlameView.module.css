@@ -51,13 +51,13 @@
 .author,
 .date {
   color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .lineno {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   text-align: right;
 }
 

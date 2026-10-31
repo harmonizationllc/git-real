@@ -24,7 +24,7 @@
 
 .hash {
   font-family: var(--font-mono-ui);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }

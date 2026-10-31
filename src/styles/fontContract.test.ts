@@ -61,11 +61,11 @@ const PROPS: Record<string, Declaration["prop"]> = {
 /** Finds real font properties; custom properties like `--text-xs:` never match. */
 export function scanDeclarations(text: string, ts: boolean): Declaration[] {
   const re = ts
-    ? /(^|[^\w-])(font-family|font-size|font-weight|fontFamily|fontSize|fontWeight|font)\s*:\s*(?:"([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`)/g
+    ? /(^|[^\w-])(font-family|font-size|font-weight|fontFamily|fontSize|fontWeight|font)\s*:\s*(?:"([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`|(\d+(?:\.\d+)?)(?![\w.]))/g
     : /(^|[^\w-])(font-family|font-size|font-weight|font)\s*:\s*([^;}\n]*)/g;
   const out: Declaration[] = [];
   for (const m of text.matchAll(re)) {
-    const value = (ts ? (m[3] ?? m[4] ?? m[5]) : m[3]).trim().replace(/\s*!important$/, "");
+    const value = (ts ? (m[3] ?? m[4] ?? m[5] ?? m[6]) : m[3]).trim().replace(/\s*!important$/, "");
     const line = text.slice(0, m.index + m[1].length).split("\n").length;
     out.push({ line, prop: PROPS[m[2]], value });
   }
@@ -146,5 +146,24 @@ describe("font contract scanner", () => {
     );
     const found = scanDeclarations(ts, true).filter((d) => violation(d, "x.ts"));
     expect(found).toEqual([{ line: 1, prop: "font-family", value: "Inter" }]);
+  });
+
+  const checkTs = (src: string) =>
+    scanDeclarations(stripComments(src, true), true).filter((d) => violation(d, "x.ts"));
+
+  it("flags a numeric fontSize", () => {
+    expect(checkTs("const a = { fontSize: 14 };")).toEqual([
+      { line: 1, prop: "font-size", value: "14" },
+    ]);
+  });
+
+  it("allows a numeric fontWeight of 600", () => {
+    expect(checkTs("const a = { fontWeight: 600 };")).toEqual([]);
+  });
+
+  it("flags a numeric fontWeight of 500", () => {
+    expect(checkTs("const a = { fontWeight: 500 };")).toEqual([
+      { line: 1, prop: "font-weight", value: "500" },
+    ]);
   });
 });
