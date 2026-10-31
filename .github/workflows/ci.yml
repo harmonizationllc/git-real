@@ -72,7 +72,7 @@ jobs:
         run: cargo test --workspace
 
   core-windows:
-    name: Core crate (Windows)
+    name: Rust workspace (Windows)
     runs-on: windows-latest
 
     steps:
@@ -82,10 +82,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The suite must pass under Git for Windows' default (GR-33): the fixtures
-      # pin autocrlf per repository, so the host setting must not matter.
+      # Every crate's suite must pass under Git for Windows' default (GR-33):
+      # all test and bench fixtures pin autocrlf per repository, so the host
+      # setting must not matter.
       - name: Restore Git for Windows' default autocrlf
         run: git config --system core.autocrlf true
+
+      # The app crate embeds the front-end bundle, so `dist` must exist.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build (frontend)
+        run: npm run build
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -97,13 +111,13 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Rust clippy (core)
+      - name: Rust clippy (workspace)
         working-directory: src-tauri
-        run: cargo clippy -p git-real-core --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Rust tests (core)
+      - name: Rust tests (workspace)
         working-directory: src-tauri
-        run: cargo test -p git-real-core --no-fail-fast
+        run: cargo test --workspace --no-fail-fast
 
   package-linux:
     name: Package (Linux)
