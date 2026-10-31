@@ -1343,9 +1343,19 @@ mod tests {
     // Error paths of prepare.
     #[test]
     fn prepare_rejects_a_directory_that_is_not_utf8() {
-        use std::os::unix::ffi::OsStrExt;
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join(std::ffi::OsStr::from_bytes(b"fx-\xff\xfe"));
+        #[cfg(unix)]
+        let name = {
+            use std::os::unix::ffi::OsStrExt;
+            std::ffi::OsStr::from_bytes(b"fx-\xff\xfe").to_os_string()
+        };
+        // Windows names are UTF-16; a lone surrogate is not valid UTF-8.
+        #[cfg(windows)]
+        let name = {
+            use std::os::windows::ffi::OsStringExt;
+            std::ffi::OsString::from_wide(&[0x66, 0x78, 0x2d, 0xd800])
+        };
+        let dir = tmp.path().join(name);
         let err = prepare(&dir, &synthetic(30, 5), &mut Vec::new())
             .unwrap_err()
             .to_string();
