@@ -190,15 +190,20 @@ under `docs/superpowers` so the reasoning behind each feature travels with the c
 
 `src-tauri/crates/git-real-bench` is a benchmark harness that measures the backend
 against large repositories. For each repository it times opening the repository,
-building the commit graph and serializing the first 500-row page, pages through the
+serializing the first 500-row page and completing the commit graph, pages through the
 whole history while sampling resident memory, and times a working-tree status refresh.
 It fails when a budget is exceeded:
 
-| Metric              | Budget   | What it covers                                      |
-| ------------------- | -------- | --------------------------------------------------- |
-| `openToFirstPageMs` | 3,000 ms | Open, graph build and first page at 100,000 commits |
-| `statusMs`          | 1500 ms  | Status refresh on a worktree of 10,000+ files       |
-| `rssGrowthMb`       | 64 MB    | Memory growth while paging through the full history |
+| Metric              | Budget    | What it covers                                                     |
+| ------------------- | --------- | ------------------------------------------------------------------ |
+| `openToFirstPageMs` | 3,000 ms  | Open to the first streamed page at 100,000 commits                 |
+| `graphCompleteMs`   | 10,000 ms | Open to a complete, topologically ordered graph at 100,000 commits |
+| `statusMs`          | 1500 ms   | Status refresh on a worktree of 10,000+ files                      |
+| `rssGrowthMb`       | 64 MB     | Memory growth while paging through the full history                |
+
+The graph is built in the background and its first rows stream to the panel before
+the build finishes, so `openToFirstPageMs` now measures the first streamed page, and
+`graphCompleteMs` covers the whole build.
 
 Prepare the three fixtures (a deterministic synthetic repository of 100,000 commits and
 10,000 files built with `git fast-import`, the oldest 100,000 commits of `qemu/qemu`
@@ -224,9 +229,8 @@ cargo run --release -p git-real-bench -- prepare public-graph ~/.cache/git-real-
 cargo run --release -p git-real-bench -- run ~/.cache/git-real-bench/linux-graph --no-assert
 ```
 
-Measured on an i9-13900F with a warm page cache, its 1,501,435 commits take 41 s to
-build the graph and 8.8 GB of memory, and paging the full history adds 2 GB. Repositories
-of a million commits and more need a different cache shape, recorded in
+Its 1,501,435 commits were measured before GR-27: 41 s / 8.8 GB / +2 GB; GR-27 numbers
+are recorded in ADR 0007. The budgets themselves are recorded in
 [ADR 0004](docs/adr/0004-performance-budgets-and-benchmarks.md).
 
 ## Releasing

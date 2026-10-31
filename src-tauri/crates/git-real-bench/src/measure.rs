@@ -1,7 +1,7 @@
 //! One cold measurement of a repository, in the spec's order (§3.4).
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use git_real_core::RepoSession;
 use serde::Serialize;
@@ -22,9 +22,11 @@ pub struct Measurement {
     pub files: Option<usize>,
     pub max_lanes: u32,
     pub open_ms: u128,
-    pub graph_build_ms: u128,
+    pub first_summary_ms: u128,
     pub first_page_ms: u128,
     pub open_to_first_page_ms: u128,
+    pub graph_complete_ms: u128,
+    pub rss_after_build_mb: Option<u64>,
     pub page_all_ms: u128,
     pub rss_before_paging_mb: Option<u64>,
     pub rss_after_paging_mb: Option<u64>,
@@ -44,14 +46,26 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
         .map_err(|e| BenchError::new(format!("cannot open {}: {e}", path.display())))?;
     let open_ms = elapsed_ms(started);
 
+    // The first summary with rows (or a complete empty graph), as the
+    // front end's poll would see it.
     let started = Instant::now();
-    let summary = session.log_summary().map_err(bench_error)?;
-    let graph_build_ms = elapsed_ms(started);
+    let first = loop {
+        let summary = session.log_summary().map_err(bench_error)?;
+        if summary.total > 0 || summary.complete {
+            break summary;
+        }
+        std::thread::sleep(Duration::from_millis(SUMMARY_POLL_MS));
+    };
+    let first_summary_ms = elapsed_ms(started);
 
     let started = Instant::now();
-    serialized_page(&session, summary.generation, 0)?;
+    serialized_page(&session, first.generation, 0)?;
     let first_page_ms = elapsed_ms(started);
     let open_to_first_page_ms = elapsed_ms(span);
+
+    let summary = session.log_summary_complete().map_err(bench_error)?;
+    let graph_complete_ms = elapsed_ms(span);
+    let rss_after_build_mb = rss::current_rss_mb();
 
     let rss_before_paging_mb = rss::current_rss_mb();
     let started = Instant::now();
@@ -90,9 +104,11 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
         files,
         max_lanes: summary.max_lanes,
         open_ms,
-        graph_build_ms,
+        first_summary_ms,
         first_page_ms,
         open_to_first_page_ms,
+        graph_complete_ms,
+        rss_after_build_mb,
         page_all_ms,
         rss_before_paging_mb,
         rss_after_paging_mb,
@@ -103,6 +119,9 @@ pub fn measure(path: &Path, label: &str) -> Result<Measurement, BenchError> {
         violations: Vec::new(),
     })
 }
+
+/// Milliseconds between `log_summary` polls while waiting for the first rows.
+const SUMMARY_POLL_MS: u64 = 5;
 
 /// Rows per `log_page` call, the graph panel's page size.
 const PAGE_SIZE: u32 = 500;
@@ -167,14 +186,35 @@ mod tests {
     }
 
     #[test]
-    fn open_to_first_page_is_one_span_covering_the_graph_build() {
+    fn graph_complete_is_at_least_open_to_first_page() {
         if !git_available() {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
         let dir = build_synthetic(tmp.path(), "s", 40, 8);
         let m = measure(&dir, "s").unwrap();
-        assert!(m.open_to_first_page_ms >= m.graph_build_ms);
+        assert!(m.graph_complete_ms >= m.open_to_first_page_ms);
+    }
+
+    #[test]
+    fn rss_after_build_is_present_on_linux() {
+        if !git_available() || rss::current_rss_mb().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = build_synthetic(tmp.path(), "s", 40, 8);
+        assert!(measure(&dir, "s").unwrap().rss_after_build_mb.is_some());
+    }
+
+    #[test]
+    fn first_summary_is_before_first_page() {
+        if !git_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = build_synthetic(tmp.path(), "s", 40, 8);
+        let m = measure(&dir, "s").unwrap();
+        assert!(m.first_summary_ms <= m.open_to_first_page_ms);
     }
 
     #[test]
@@ -228,7 +268,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = build_synthetic(tmp.path(), "s", 40, 8);
         let m = measure(&dir, "s").unwrap();
-        assert!(m.graph_refresh_ms <= m.graph_build_ms.max(1_000));
+        assert!(m.graph_refresh_ms <= m.graph_complete_ms.max(1_000));
     }
 
     // RSS bookkeeping.

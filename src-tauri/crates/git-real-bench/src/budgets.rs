@@ -1,15 +1,16 @@
-//! The three constant budgets and their evaluation.
+//! The four constant budgets and their evaluation.
 
 use std::fmt;
 
 use crate::measure::Measurement;
 
 pub const OPEN_TO_FIRST_PAGE_MS: u128 = 3_000; // AC 2
+pub const GRAPH_COMPLETE_MS: u128 = 10_000; // GR-27: the build no longer sits inside the first page
 pub const STATUS_MS: u128 = 1_500; // AC 3, raised from 500 on 2026-10-30 (GR-32 spec §6.3): CI runner timing
 pub const PAGING_RSS_GROWTH_MB: u64 = 64; // AC 5
 
-/// One exceeded budget. `metric` is the JSON key: `openToFirstPageMs`, `statusMs`
-/// or `rssGrowthMb`.
+/// One exceeded budget. `metric` is the JSON key: `openToFirstPageMs`,
+/// `graphCompleteMs`, `statusMs` or `rssGrowthMb`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Violation {
     pub label: String,
@@ -29,14 +30,19 @@ impl fmt::Display for Violation {
     }
 }
 
-/// One `Violation` per exceeded budget, in the order open-to-first-page, status,
-/// RSS growth. A value equal to its budget is not a violation; `None` metrics are skipped.
+/// One `Violation` per exceeded budget, in the order open-to-first-page, graph
+/// complete, status, RSS growth. A value equal to its budget is not a violation; `None` metrics are skipped.
 pub fn evaluate(m: &Measurement) -> Vec<Violation> {
     let checks = [
         (
             "openToFirstPageMs",
             Some(m.open_to_first_page_ms),
             OPEN_TO_FIRST_PAGE_MS,
+        ),
+        (
+            "graphCompleteMs",
+            Some(m.graph_complete_ms),
+            GRAPH_COMPLETE_MS,
         ),
         ("statusMs", m.status_ms, STATUS_MS),
         (
@@ -72,8 +78,38 @@ mod tests {
     #[test]
     fn budget_constants_match_the_acceptance_criteria() {
         assert_eq!(
-            (OPEN_TO_FIRST_PAGE_MS, STATUS_MS, PAGING_RSS_GROWTH_MB),
-            (3_000, 1_500, 64)
+            (
+                OPEN_TO_FIRST_PAGE_MS,
+                GRAPH_COMPLETE_MS,
+                STATUS_MS,
+                PAGING_RSS_GROWTH_MB
+            ),
+            (3_000, 10_000, 1_500, 64)
+        );
+    }
+
+    #[test]
+    fn graph_complete_over_budget_is_a_violation_named_graph_complete_ms() {
+        let mut m = sample_measurement("synthetic");
+        m.graph_complete_ms = 10_001;
+        assert_eq!(metrics(&m), vec!["graphCompleteMs"]);
+    }
+
+    #[test]
+    fn violations_keep_the_order_first_page_complete_status_rss() {
+        let mut m = sample_measurement("synthetic");
+        m.open_to_first_page_ms = 4_000;
+        m.graph_complete_ms = 12_000;
+        m.status_ms = Some(1_900);
+        m.rss_growth_mb = Some(80);
+        assert_eq!(
+            metrics(&m),
+            vec![
+                "openToFirstPageMs",
+                "graphCompleteMs",
+                "statusMs",
+                "rssGrowthMb"
+            ]
         );
     }
 
@@ -87,7 +123,8 @@ mod tests {
     fn exactly_at_every_budget_is_not_a_violation() {
         let mut m = sample_measurement("synthetic");
         m.open_to_first_page_ms = 3_000;
-        m.status_ms = Some(500);
+        m.graph_complete_ms = 10_000;
+        m.status_ms = Some(1_500);
         m.rss_growth_mb = Some(64);
         assert!(evaluate(&m).is_empty());
     }
