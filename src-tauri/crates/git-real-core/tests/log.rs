@@ -1757,3 +1757,32 @@ fn should_serialize_oids_and_parents_as_forty_character_hex_strings() {
         )
     );
 }
+
+// --- search through a snapshot (GR-27) ---
+
+#[test]
+fn should_find_a_full_hash_through_the_snapshot_index() {
+    let (_d, path, _r, _a, _b, m) = common::merge_fixture();
+    let mut s = open(&path);
+    let g = s.log_summary_complete().unwrap().generation;
+    assert_eq!(s.search_log(g, &m.to_string()).unwrap(), vec![0]);
+    let snapshot = s.log_snapshot(g).unwrap();
+    assert_eq!(
+        snapshot.search(&m.to_string().to_uppercase()).unwrap(),
+        vec![0]
+    );
+}
+
+#[test]
+fn should_search_the_same_results_through_a_snapshot_as_through_the_session() {
+    let (_d, _p, s, g, oids) = search_fixture();
+    let snapshot = s.log_snapshot(g).unwrap();
+    let prefix = &oids[1].to_string()[..7];
+    for query in ["commit", "FEAT", "@", "tokenizer", "zzz", "  ", prefix] {
+        assert_eq!(
+            snapshot.search(query).unwrap(),
+            s.search_log(g, query).unwrap(),
+            "query {query:?}"
+        );
+    }
+}

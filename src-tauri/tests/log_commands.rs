@@ -10,6 +10,7 @@ use git_real_lib::commands::log::{
     checkout_commit_inner, get_commit_inner, get_log_page_inner, get_log_summary_inner,
     reset_to_commit_inner, search_log_inner,
 };
+use git_real_lib::commands::with_session;
 use git_real_lib::error::AppErrorKind;
 use git_real_lib::state::{RepoId, RepoRegistry};
 use git2::{Oid, Repository};
@@ -396,4 +397,34 @@ fn checkout_commit_inner_makes_the_next_summary_a_new_generation_with_a_head_lab
         (after.generation > before.generation, detached),
         (true, true)
     );
+}
+
+// --- pages and search read a snapshot outside the session lock (GR-27) ---
+
+#[test]
+fn get_log_page_inner_serves_a_page_without_the_session_lock() {
+    let (_d, _p, reg, id) = open_fixture();
+    let g = complete_summary(&reg, id).generation;
+    let snapshot = with_session(&reg, id, |s| s.log_snapshot(g)).unwrap();
+    let session = reg.get(id).unwrap();
+    let guard = session.lock().unwrap();
+    assert_eq!(snapshot.page(0, 1).rows.len(), 1);
+    assert_eq!(snapshot.search("initial").unwrap(), vec![0]);
+    drop(guard);
+}
+
+#[test]
+fn search_log_inner_matches_a_subject_after_the_streamed_summary() {
+    let (_d, path, reg, id) = open_fixture();
+    common::commit_file(&path, "readme.txt", "r\n", "update the readme");
+    let g = complete_summary(&reg, id).generation;
+    assert!(!search_log_inner(&reg, id, g, "readme").unwrap().is_empty());
+}
+
+#[test]
+fn search_log_inner_rejects_a_stale_generation_with_log_stale() {
+    let (_d, _p, reg, id) = open_fixture();
+    let g = complete_summary(&reg, id).generation;
+    let err = search_log_inner(&reg, id, g + 1, "initial").unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::LogStale);
 }

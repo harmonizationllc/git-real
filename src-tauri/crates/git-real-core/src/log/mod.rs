@@ -69,22 +69,10 @@ impl RepoSession {
         Ok(self.log_snapshot(generation)?.page(start, count))
     }
 
-    /// Indices, ascending, of the rows of `generation` that match `query`
-    /// (case-insensitive; see [`search::matches`]). A blank query matches nothing.
+    /// Indices, ascending, of the rows of `generation` that match `query`;
+    /// see [`LogSnapshot::search`].
     pub fn search_log(&self, generation: u64, query: &str) -> Result<Vec<u32>, GitError> {
-        let snapshot = self.log_snapshot(generation)?;
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(Vec::new());
-        }
-        let repo = self.repo();
-        Ok((0..snapshot.total())
-            .filter(|&i| {
-                snapshot
-                    .row(i)
-                    .is_some_and(|row| search::matches(repo, row, &query))
-            })
-            .collect())
+        self.log_snapshot(generation)?.search(query)
     }
 
     /// Message, parents, author and committer of the commit `oid` (full hex).

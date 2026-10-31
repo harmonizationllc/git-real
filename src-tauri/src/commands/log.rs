@@ -10,7 +10,7 @@ use super::{run_blocking, with_session};
 use crate::error::AppError;
 use crate::state::{RepoId, RepoRegistry};
 
-/// Rebuilds the session's graph cache when a ref moved.
+/// Starts a graph rebuild when a ref moved and answers within the first-answer window.
 pub fn get_log_summary_inner(reg: &RepoRegistry, id: RepoId) -> Result<LogSummary, AppError> {
     with_session(reg, id, |s| s.log_summary())
 }
@@ -22,7 +22,9 @@ pub fn get_log_page_inner(
     start: u32,
     count: u32,
 ) -> Result<LogPage, AppError> {
-    with_session(reg, id, |s| s.log_page(generation, start, count))
+    // The session lock is held only to take the snapshot.
+    let snapshot = with_session(reg, id, |s| s.log_snapshot(generation))?;
+    Ok(snapshot.page(start, count))
 }
 
 pub fn search_log_inner(
@@ -31,7 +33,9 @@ pub fn search_log_inner(
     generation: u64,
     query: &str,
 ) -> Result<Vec<u32>, AppError> {
-    with_session(reg, id, |s| s.search_log(generation, query))
+    // The scan runs outside the session lock, on the snapshot's own repository.
+    let snapshot = with_session(reg, id, |s| s.log_snapshot(generation))?;
+    snapshot.search(query).map_err(AppError::from)
 }
 
 pub fn get_commit_inner(

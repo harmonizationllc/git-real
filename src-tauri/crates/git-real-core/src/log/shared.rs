@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
-use git2::Oid;
+use git2::{Oid, Repository};
 
 use super::lanes::LaneLayout;
+use super::search;
 use crate::error::GitError;
 use crate::model::{GraphRow, LogPage, RefLabel};
 
@@ -135,9 +136,7 @@ pub struct LogSnapshot {
     total: u32,
     chunks: Vec<Arc<Chunk>>,
     labels: Arc<HashMap<Oid, Vec<RefLabel>>>,
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     index: Option<Arc<HashMap<Oid, u32>>>,
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     repo_path: PathBuf,
 }
 
@@ -202,6 +201,38 @@ impl LogSnapshot {
         LogPage { start, rows }
     }
 
+    /// Indices, ascending, of the served rows that match `query`
+    /// (case-insensitive; see [`search::matches`]). A blank query matches
+    /// nothing; a full 40-hex hash is answered from the oid index without
+    /// reading git. Anything else scans the rows, reading commit messages
+    /// through a `Repository` opened on [`Self::repo_path`] for this call.
+    pub fn search(&self, query: &str) -> Result<Vec<u32>, GitError> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        if query.len() == 40
+            && let Ok(oid) = Oid::from_str(&query)
+        {
+            return Ok(self.find(oid).into_iter().collect());
+        }
+        let repo = Repository::open(self.repo_path())?;
+        Ok(self
+            .rows()
+            .enumerate()
+            .filter(|(_, row)| search::matches(&repo, row, &query))
+            .map(|(i, _)| to_u32(i))
+            .collect())
+    }
+
+    /// The served rows, in order.
+    pub(crate) fn rows(&self) -> impl Iterator<Item = &Row> {
+        self.chunks
+            .iter()
+            .flat_map(|c| c.rows.iter())
+            .take(self.total as usize)
+    }
+
     /// Row `index`, when this snapshot serves it.
     pub(crate) fn row(&self, index: u32) -> Option<&Row> {
         if index >= self.total {
@@ -213,21 +244,13 @@ impl LogSnapshot {
 
     /// The index of `oid`: from the index when present, else a linear scan
     /// over the served rows.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     pub(crate) fn find(&self, oid: Oid) -> Option<u32> {
         match &self.index {
             Some(index) => index.get(&oid).copied().filter(|&i| i < self.total),
-            None => self
-                .chunks
-                .iter()
-                .flat_map(|c| c.rows.iter())
-                .take(self.total as usize)
-                .position(|r| r.oid == oid)
-                .map(to_u32),
+            None => self.rows().position(|r| r.oid == oid).map(to_u32),
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by search (Task 5)"))]
     pub(crate) fn repo_path(&self) -> &Path {
         &self.repo_path
     }

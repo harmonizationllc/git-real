@@ -1,6 +1,6 @@
 //! Matching one stored row against a search query.
 
-use git2::Repository;
+use git2::{Oid, Repository};
 
 use super::shared::Row;
 
@@ -10,7 +10,7 @@ use super::shared::Row;
 /// database when nothing cheaper matched.
 pub(crate) fn matches(repo: &Repository, row: &Row, query: &str) -> bool {
     let is_hex = (4..=40).contains(&query.len()) && query.bytes().all(|b| b.is_ascii_hexdigit());
-    if is_hex && row.oid.to_string().starts_with(query) {
+    if is_hex && hex_starts_with(row.oid, query.as_bytes()) {
         return true;
     }
     if row.author.name.to_lowercase().contains(query)
@@ -24,4 +24,30 @@ pub(crate) fn matches(repo: &Repository, row: &Row, query: &str) -> bool {
             .to_lowercase()
             .contains(query)
     })
+}
+
+/// True when the lowercase hex of `oid` starts with `prefix`, formatted on
+/// the stack rather than into a string per row.
+fn hex_starts_with(oid: Oid, prefix: &[u8]) -> bool {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = [0u8; 40];
+    for (pair, byte) in hex.as_chunks_mut::<2>().0.iter_mut().zip(oid.as_bytes()) {
+        pair[0] = DIGITS[usize::from(byte >> 4)];
+        pair[1] = DIGITS[usize::from(byte & 0x0f)];
+    }
+    hex.starts_with(prefix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_prefix_compares_against_the_lowercase_hex() {
+        let oid = Oid::from_str("0a1b2c3d4e5f60718293a4b5c6d7e8f901234567").unwrap();
+        assert!(hex_starts_with(oid, b"0a1b"));
+        assert!(hex_starts_with(oid, oid.to_string().as_bytes()));
+        assert!(!hex_starts_with(oid, b"a1b2"));
+        assert!(!hex_starts_with(oid, b"0A1B"));
+    }
 }
