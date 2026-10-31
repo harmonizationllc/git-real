@@ -267,7 +267,7 @@ fn register_or_find_is_atomic_under_concurrency() {
 #[test]
 fn register_or_find_leaves_single_entry_after_concurrent_calls() {
     let (_dir, path) = common::temp_repo_with_commit();
-    let canonical = std::fs::canonicalize(&path).expect("canonicalize fixture");
+    let canonical = dunce::canonicalize(&path).expect("canonicalize fixture");
     let registry = RepoRegistry::default();
     let barrier = std::sync::Barrier::new(8);
     let ids: Vec<u64> = std::thread::scope(|scope| {
