@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
   --font-ui: system-ui, sans-serif;
+  /* Same value as the linux block, so an unknown or missing data-platform still resolves. */
   --font-mono-ui: monospace, monospace;
   --font-mono: var(--font-mono-ui);
   --diff-font-size: 13px;

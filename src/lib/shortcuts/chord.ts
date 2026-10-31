@@ -1,3 +1,5 @@
+import { detectPlatform } from "../platform";
+
 /** One keyboard chord: `[Mod+][Alt+][Shift+]<Key>` in canonical form. */
 export interface Chord {
   mod: boolean;
@@ -129,7 +131,7 @@ export const MAC_LABELS: Record<string, string> = { Mod: "⌘", Shift: "⇧", Al
 export const PC_LABELS: Record<string, string> = { Mod: "Ctrl", Shift: "Shift", Alt: "Alt" };
 
 export function isMac(): boolean {
-  return navigator.platform.startsWith("Mac");
+  return detectPlatform() === "macos";
 }
 
 /** The platform words for `Mod` and `Alt`, for copy. */

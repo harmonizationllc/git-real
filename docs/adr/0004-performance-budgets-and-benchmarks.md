@@ -92,3 +92,5 @@ Two guards keep it fixed. The font token contract (`src/styles/fontContract.test
 fails on any font declaration that is not a token, so the set of combinations stays
 finite. The start-screen warm-up (`src/app/fontWarmup.ts`) lays every combination out
 once during idle frames, 40 ms per frame, so the first open finds them all warm.
+`font-style: italic` (syntax highlighting) and `font-variant-numeric` are font-cache axes
+outside the token contract and the warm-up, which the walk measured as cheap.

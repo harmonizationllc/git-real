@@ -1,22 +1,12 @@
 import { syncWindowBackground, type ThemePref } from "../lib/ipc";
 import { installFlushOnPagehide, useSettings } from "../lib/store/settings";
-import type { Platform } from "../styles/fontTokens";
+import { detectPlatform } from "../lib/platform";
 import { startFontWarmup } from "./fontWarmup";
 
 export interface AppearanceSnapshot {
   theme: ThemePref;
   diffFontFamily: string | null;
   diffFontSize: number;
-}
-
-/**
- * Maps `navigator.platform` to the `data-platform` value that tokens.css uses to pick the monospace
- * UI family (`--font-mono-ui`). Anything that is not macOS or Windows is `linux`.
- */
-export function detectPlatform(platform: string = navigator.platform): Platform {
-  if (platform.startsWith("Mac")) return "macos";
-  if (platform.startsWith("Win")) return "windows";
-  return "linux";
 }
 
 /**

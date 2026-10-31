@@ -94,23 +94,10 @@ describe("applyAppearance font tokens", () => {
   });
 });
 
-describe("detectPlatform", () => {
-  it.each([
-    ["MacIntel", "macos"],
-    ["MacARM", "macos"],
-    ["Win32", "windows"],
-    ["Linux x86_64", "linux"],
-    ["X11", "linux"],
-    ["", "linux"],
-  ])("%s -> %s", async (value, expected) => {
-    const { detectPlatform } = await import("./applyAppearance");
-    expect(detectPlatform(value)).toBe(expected);
-  });
-});
-
 describe("applyAppearance platform attribute", () => {
   it("sets data-platform from navigator.platform", async () => {
-    const { applyAppearance, detectPlatform } = await import("./applyAppearance");
+    const { applyAppearance } = await import("./applyAppearance");
+    const { detectPlatform } = await import("../lib/platform");
     const root = document.documentElement;
     root.removeAttribute("data-platform");
     applyAppearance({ theme: "system", diffFontFamily: null, diffFontSize: 13 });

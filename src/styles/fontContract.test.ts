@@ -19,9 +19,6 @@ const SIZES: readonly string[] = [
 const WEIGHTS: readonly string[] = [...FONT_WEIGHTS, "inherit"];
 const SHORTHANDS: readonly string[] = ["inherit"];
 
-/** Files whose `${...}px` template is the sanctioned way to apply the user's diff size. */
-const TEMPLATE_PX_ALLOWED = ["app/applyAppearance.ts"];
-
 export function walk(dir: string): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
@@ -58,26 +55,42 @@ const PROPS: Record<string, Declaration["prop"]> = {
   font: "font",
 };
 
-/** Finds real font properties; custom properties like `--text-xs:` never match. */
+const CSS_DECL = /(^|[^\w-])(font-family|font-size|font-weight|font)\s*:\s*([^;}\n]*)/g;
+/** Font declarations inside template-literal CSS text; the shorthand is left to the key scan. */
+const TEMPLATE_CSS_DECL = /(^|[^\w-])(font-family|font-size|font-weight)\s*:\s*([^;}\n`]*)/g;
+/** Keys bare or quoted (`"font-family":`), with a quoted, template or numeric literal value. */
+const TS_DECL =
+  /(^|[^\w-])(["']?)(font-family|font-size|font-weight|fontFamily|fontSize|fontWeight|font)\2\s*:\s*(?:"([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`|(\d+(?:\.\d+)?)(?![\w.]))/g;
+
+/**
+ * Finds real font properties; custom properties like `--text-xs:` never match. In TS it also scans
+ * the CSS text of template literals, keeping one entry per property position.
+ */
 export function scanDeclarations(text: string, ts: boolean): Declaration[] {
-  const re = ts
-    ? /(^|[^\w-])(font-family|font-size|font-weight|fontFamily|fontSize|fontWeight|font)\s*:\s*(?:"([^"\n]*)"|'([^'\n]*)'|`([^`\n]*)`|(\d+(?:\.\d+)?)(?![\w.]))/g
-    : /(^|[^\w-])(font-family|font-size|font-weight|font)\s*:\s*([^;}\n]*)/g;
-  const out: Declaration[] = [];
-  for (const m of text.matchAll(re)) {
-    const value = (ts ? (m[3] ?? m[4] ?? m[5] ?? m[6]) : m[3]).trim().replace(/\s*!important$/, "");
-    const line = text.slice(0, m.index + m[1].length).split("\n").length;
-    out.push({ line, prop: PROPS[m[2]], value });
+  const found = new Map<number, Declaration>();
+  const add = (at: number, prop: string, raw: string) => {
+    if (found.has(at)) return;
+    const value = raw.trim().replace(/\s*!important$/, "");
+    found.set(at, { line: text.slice(0, at).split("\n").length, prop: PROPS[prop], value });
+  };
+  if (!ts) {
+    for (const m of text.matchAll(CSS_DECL)) add(m.index + m[1].length, m[2], m[3]);
+  } else {
+    for (const m of text.matchAll(TS_DECL)) {
+      add(m.index + m[1].length + m[2].length, m[3], m[4] ?? m[5] ?? m[6] ?? m[7]);
+    }
+    for (const t of text.matchAll(/`[^`]*`/g)) {
+      for (const m of t[0].matchAll(TEMPLATE_CSS_DECL)) {
+        add(t.index + m.index + m[1].length, m[2], m[3]);
+      }
+    }
   }
-  return out;
+  return [...found.entries()].sort(([a], [b]) => a - b).map(([, d]) => d);
 }
 
-export function violation(d: Declaration, file: string): boolean {
+export function violation(d: Declaration): boolean {
   if (d.prop === "font-family") return !FAMILIES.includes(d.value);
-  if (d.prop === "font-size") {
-    if (/^\$\{[^}]*\}px$/.test(d.value)) return !TEMPLATE_PX_ALLOWED.includes(file);
-    return !SIZES.includes(d.value);
-  }
+  if (d.prop === "font-size") return !SIZES.includes(d.value);
   if (d.prop === "font-weight") return !WEIGHTS.includes(d.value);
   return !SHORTHANDS.includes(d.value);
 }
@@ -105,7 +118,7 @@ function findViolations(): string[] {
     const exempt = rel === "styles/tokens.css" ? tokensExemptLines(text) : new Set<number>();
     for (const d of scanDeclarations(text, isTs)) {
       if (exempt.has(d.line)) continue;
-      if (violation(d, rel)) out.push(`src/${rel}:${d.line}: ${d.prop}: ${d.value}`);
+      if (violation(d)) out.push(`src/${rel}:${d.line}: ${d.prop}: ${d.value}`);
     }
   }
   return out;
@@ -119,7 +132,7 @@ describe("font contract", () => {
 
 describe("font contract scanner", () => {
   const check = (css: string) =>
-    scanDeclarations(stripComments(css, false), false).filter((d) => violation(d, "x.css"));
+    scanDeclarations(stripComments(css, false), false).filter((d) => violation(d));
 
   it("ignores declarations inside comments", () => {
     expect(check("/* font-size: 11px; */\n.a { color: red; }")).toEqual([]);
@@ -144,12 +157,12 @@ describe("font contract scanner", () => {
       'const a = { fontFamily: "Inter", fontSize: size, fontWeight: "600" };',
       true,
     );
-    const found = scanDeclarations(ts, true).filter((d) => violation(d, "x.ts"));
+    const found = scanDeclarations(ts, true).filter((d) => violation(d));
     expect(found).toEqual([{ line: 1, prop: "font-family", value: "Inter" }]);
   });
 
   const checkTs = (src: string) =>
-    scanDeclarations(stripComments(src, true), true).filter((d) => violation(d, "x.ts"));
+    scanDeclarations(stripComments(src, true), true).filter((d) => violation(d));
 
   it("flags a numeric fontSize", () => {
     expect(checkTs("const a = { fontSize: 14 };")).toEqual([
@@ -163,6 +176,36 @@ describe("font contract scanner", () => {
 
   it("flags a numeric fontWeight of 500", () => {
     expect(checkTs("const a = { fontWeight: 500 };")).toEqual([
+      { line: 1, prop: "font-weight", value: "500" },
+    ]);
+  });
+
+  it("flags a px template font size, which no file is exempt from", () => {
+    expect(checkTs("const a = { fontSize: `${size}px` };")).toEqual([
+      { line: 1, prop: "font-size", value: "${size}px" },
+    ]);
+  });
+
+  it("flags a quoted kebab-case key whose value is not a token", () => {
+    expect(checkTs(`const a = { "font-family": "Inter", 'font-size': "var(--text-sm)" };`)).toEqual(
+      [{ line: 1, prop: "font-family", value: "Inter" }],
+    );
+  });
+
+  it("flags a raw font size in template-literal CSS", () => {
+    expect(checkTs("const css = `\n.a {\n  font-size: 11px;\n}\n`;")).toEqual([
+      { line: 3, prop: "font-size", value: "11px" },
+    ]);
+  });
+
+  it("allows a token font size in template-literal CSS", () => {
+    expect(checkTs("const css = `.a { font-size: var(--text-sm); font-weight: 600; }`;")).toEqual(
+      [],
+    );
+  });
+
+  it("reports a numeric weight in template-literal CSS once", () => {
+    expect(checkTs("const css = `.a { font-weight: 500; }`;")).toEqual([
       { line: 1, prop: "font-weight", value: "500" },
     ]);
   });
