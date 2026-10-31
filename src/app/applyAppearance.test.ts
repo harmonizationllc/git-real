@@ -16,6 +16,7 @@ beforeEach(() => {
   delete window.__GIT_REAL_SETTINGS__;
   // Reset html element attributes / style between tests.
   document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("data-platform");
   document.documentElement.style.removeProperty("--font-mono");
   document.documentElement.style.removeProperty("--diff-font-size");
 });
@@ -72,10 +73,50 @@ describe("applyAppearance font tokens", () => {
     expect(document.documentElement.style.getPropertyValue("--font-mono")).toBe("monospace");
   });
 
-  it("uses DEFAULT_MONO when the family is null", async () => {
-    const { applyAppearance, DEFAULT_MONO } = await import("./applyAppearance");
+  it("removes the inline --font-mono when the family is null", async () => {
+    const { applyAppearance } = await import("./applyAppearance");
+    const root = document.documentElement;
+    root.style.setProperty("--font-mono", "Fira Code");
     applyAppearance({ theme: "system", diffFontFamily: null, diffFontSize: 13 });
-    expect(document.documentElement.style.getPropertyValue("--font-mono")).toBe(DEFAULT_MONO);
+    expect(root.style.getPropertyValue("--font-mono")).toBe("");
+  });
+
+  it("sets --font-mono inline when a family is chosen", async () => {
+    const { applyAppearance } = await import("./applyAppearance");
+    applyAppearance({ theme: "system", diffFontFamily: "Fira Code", diffFontSize: 13 });
+    expect(document.documentElement.style.getPropertyValue("--font-mono")).toBe("Fira Code");
+  });
+});
+
+describe("detectPlatform", () => {
+  it.each([
+    ["MacIntel", "macos"],
+    ["MacARM", "macos"],
+    ["Win32", "windows"],
+    ["Linux x86_64", "linux"],
+    ["X11", "linux"],
+    ["", "linux"],
+  ])("%s -> %s", async (value, expected) => {
+    const { detectPlatform } = await import("./applyAppearance");
+    expect(detectPlatform(value)).toBe(expected);
+  });
+});
+
+describe("applyAppearance platform attribute", () => {
+  it("sets data-platform from navigator.platform", async () => {
+    const { applyAppearance, detectPlatform } = await import("./applyAppearance");
+    const root = document.documentElement;
+    root.removeAttribute("data-platform");
+    applyAppearance({ theme: "system", diffFontFamily: null, diffFontSize: 13 });
+    expect(root.getAttribute("data-platform")).toBe(detectPlatform());
+  });
+
+  it("tags the element it is given", async () => {
+    const { applyAppearance } = await import("./applyAppearance");
+    const el = document.createElement("div");
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    applyAppearance({ theme: "system", diffFontFamily: null, diffFontSize: 13 }, el);
+    expect(el.getAttribute("data-platform")).toBe("macos");
   });
 });
 
