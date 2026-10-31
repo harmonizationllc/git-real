@@ -4,6 +4,7 @@
 pub(crate) mod cache;
 mod lanes;
 mod search;
+mod topo;
 mod walk;
 
 use git2::{Commit, ResetType};
