@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { TEXT_SIZE_TOKENS } from "./fontTokens";
 
 // Read tokens.css relative to this file.
 const css = readFileSync(resolve(__dirname, "tokens.css"), "utf8");
@@ -112,5 +113,36 @@ describe("tokens.css structure", () => {
 
   it("the attribute dark block declares color-scheme dark", () => {
     expect(attrDarkBlock).toMatch(/color-scheme\s*:\s*dark/);
+  });
+});
+
+describe("font tokens", () => {
+  const root = rootMap;
+  it("defines the family tokens on :root", () => {
+    expect(root.get("--font-ui")).toBe("system-ui, sans-serif");
+    expect(root.get("--font-mono-ui")).toBe("monospace, monospace");
+    expect(root.get("--font-mono")).toBe("var(--font-mono-ui)");
+  });
+  it("selects the mono UI family per platform", () => {
+    expect(parseBlock(selectorBlock(':root[data-platform="linux"] {')).get("--font-mono-ui")).toBe(
+      "monospace, monospace",
+    );
+    expect(parseBlock(selectorBlock(':root[data-platform="macos"] {')).get("--font-mono-ui")).toBe(
+      "ui-monospace, monospace",
+    );
+    expect(
+      parseBlock(selectorBlock(':root[data-platform="windows"] {')).get("--font-mono-ui"),
+    ).toBe("Consolas, monospace");
+  });
+  it("defines the px size scale", () => {
+    expect(TEXT_SIZE_TOKENS.map((t) => root.get(t))).toEqual([
+      "12px",
+      "13px",
+      "14px",
+      "16px",
+      "18px",
+      "20px",
+      "24px",
+    ]);
   });
 });

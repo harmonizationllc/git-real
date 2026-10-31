@@ -17,8 +17,8 @@ body,
 }
 
 body {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
   line-height: 1.5;
   color: var(--color-text);
   background-color: var(--color-bg);
@@ -35,4 +35,36 @@ body {
 [data-focus-target]:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+}
+
+/* Form controls take the page font instead of the browser's own control font. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* Browser default font styles are reset so every size and weight comes from a token. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono-ui);
+  font-size: inherit;
+}
+
+strong,
+b {
+  font-weight: 700;
 }
