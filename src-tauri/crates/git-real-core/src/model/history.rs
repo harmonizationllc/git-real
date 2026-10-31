@@ -32,6 +32,20 @@ pub struct FileHistoryEntry {
     pub old_path: Option<String>,
 }
 
+/// One bounded scan of a file's history, and where the next one resumes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileHistoryPage {
+    /// Newest first, in graph order.
+    pub entries: Vec<FileHistoryEntry>,
+    /// The row the next page starts at; `None` once the scan reached the end
+    /// of a complete graph.
+    pub next_row: Option<u32>,
+    /// The name the scan was following when it stopped (an older name after
+    /// a rename); pass it back with `next_row`.
+    pub follow_path: String,
+}
+
 /// A run of consecutive lines last changed by one commit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -21,7 +21,7 @@ pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
     HunkSelection, TextEncoding,
 };
-pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry};
+pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry, FileHistoryPage};
 pub use linked_worktree::{LinkedWorktree, PrunedWorktrees, WorktreeBranch};
 pub use log::{
     CommitDetail, GraphEdge, GraphRow, LogPage, LogSummary, RefKind, RefLabel, ResetMode, Signature,

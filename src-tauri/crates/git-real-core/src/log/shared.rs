@@ -12,7 +12,7 @@ use git2::{Oid, Repository};
 use super::lanes::LaneLayout;
 use super::search;
 use crate::error::GitError;
-use crate::model::{GraphRow, LogPage, RefLabel};
+use crate::model::{FileHistoryPage, GraphRow, LogPage, RefLabel};
 
 /// Rows per chunk. Every chunk but the last of a generation holds exactly
 /// this many.
@@ -223,6 +223,28 @@ impl LogSnapshot {
             .filter(|(_, row)| search::matches(&repo, row, &query))
             .map(|(i, _)| to_u32(i))
             .collect())
+    }
+
+    /// Up to `max_entries` (clamped to 1..=1000) commits that changed
+    /// `path` against their first parent, in graph order from row
+    /// `start_row`, following renames. One call scans at most
+    /// [`FILE_HISTORY_SCAN_ROWS`](crate::history::FILE_HISTORY_SCAN_ROWS)
+    /// rows; the page says where the next call resumes and under which name
+    /// (`follow_path`, `None` meaning `path`). Reads git through a
+    /// `Repository` opened on [`Self::repo_path`] for this call.
+    ///
+    /// The graph spans every ref while the followed path is one name at a
+    /// time, so same-named files on unrelated branches are listed too, and
+    /// after a rename, commits on other branches that still use the new name
+    /// are missed.
+    pub fn file_history(
+        &self,
+        path: &str,
+        start_row: u32,
+        max_entries: u32,
+        follow_path: Option<&str>,
+    ) -> Result<FileHistoryPage, GitError> {
+        crate::history::history_page(self, path, start_row, max_entries, follow_path)
     }
 
     /// The served rows, in order.

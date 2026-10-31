@@ -5,13 +5,15 @@ mod follow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use git2::{BlameOptions, ErrorCode, ObjectType, Oid};
+use git2::{BlameOptions, ErrorCode, ObjectType, Oid, Repository};
 
 use self::follow::{EntryMemo, rename_source};
 use crate::diff::change_kind;
 use crate::error::GitError;
+use crate::log::LogSnapshot;
+use crate::log::shared::Row;
 use crate::log::signature;
-use crate::model::{Blame, BlameHunk, ChangeKind, CommitFile, FileHistoryEntry};
+use crate::model::{Blame, BlameHunk, ChangeKind, CommitFile, FileHistoryEntry, FileHistoryPage};
 use crate::paths::repo_relative;
 use crate::repo::RepoSession;
 use crate::revision;
@@ -19,6 +21,13 @@ use crate::status::file_path;
 
 /// The largest blob, in bytes, that `blame` will annotate.
 pub const BLAME_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The most graph rows one file-history page scans.
+pub const FILE_HISTORY_SCAN_ROWS: u32 = 20_000;
+
+/// The most entries one file-history page returns; `max_entries` is clamped
+/// to 1..=this.
+pub const FILE_HISTORY_MAX_ENTRIES: u32 = 1_000;
 
 impl RepoSession {
     /// The paths commit `oid` (full hex) changed against its first parent,
@@ -49,64 +58,18 @@ impl RepoSession {
         Ok(files)
     }
 
-    /// The commits of the graph built as `generation` that changed `path`
-    /// against their first parent, in graph order, following renames.
-    ///
-    /// The graph spans every ref while the followed path is one name at a
-    /// time, so same-named files on unrelated branches are listed too, and
-    /// after a rename, commits on other branches that still use the new name
-    /// are missed.
+    /// One page of the commits of the graph built as `generation` that
+    /// changed `path`; see [`LogSnapshot::file_history`].
     pub fn file_history(
         &self,
         generation: u64,
         path: &str,
-    ) -> Result<Vec<FileHistoryEntry>, GitError> {
-        let rel = repo_relative(path)?;
-        let snapshot = self.log_snapshot(generation)?;
-        let repo = self.repo();
-        let mut memo = EntryMemo::new(rel);
-        let mut out = Vec::new();
-        for row in (0..snapshot.total()).filter_map(|i| snapshot.row(i)) {
-            let commit = repo.find_commit(row.oid)?;
-            let tree_id = commit.tree_id();
-            let parent_tree_id = match row.parents.first() {
-                Some(parent) => Some(repo.find_commit(*parent)?.tree_id()),
-                None => None,
-            };
-            let here = memo.entry(repo, tree_id)?;
-            let before = match parent_tree_id {
-                Some(id) => memo.entry(repo, id)?,
-                None => None,
-            };
-            let (change, old_path) = match (here, before) {
-                (Some(a), Some(b)) if a == b => continue,
-                (Some(_), Some(_)) => (ChangeKind::Modified, None),
-                (Some(_), None) => {
-                    let tree = repo.find_tree(tree_id)?;
-                    let parent = parent_tree_id.map(|id| repo.find_tree(id)).transpose()?;
-                    match rename_source(repo, parent.as_ref(), &tree, memo.path())? {
-                        Some(old) => (ChangeKind::Renamed, Some(old)),
-                        None => (ChangeKind::Added, None),
-                    }
-                }
-                (None, Some(_)) => (ChangeKind::Deleted, None),
-                (None, None) => continue,
-            };
-            out.push(FileHistoryEntry {
-                oid: row.oid.to_string(),
-                subject: row.subject.to_string(),
-                author_name: row.author.name.clone(),
-                author_email: row.author.email.clone(),
-                author_time: row.author_time,
-                change,
-                path: memo.path().to_owned(),
-                old_path: old_path.clone(),
-            });
-            if let Some(old) = old_path {
-                memo.follow(old);
-            }
-        }
-        Ok(out)
+        start_row: u32,
+        max_entries: u32,
+        follow_path: Option<&str>,
+    ) -> Result<FileHistoryPage, GitError> {
+        self.log_snapshot(generation)?
+            .file_history(path, start_row, max_entries, follow_path)
     }
 
     /// The commit that last changed each line of `path` as of commit `oid`
@@ -195,6 +158,94 @@ impl RepoSession {
         out.sort();
         Ok(out)
     }
+}
+
+/// The scan behind [`LogSnapshot::file_history`].
+pub(crate) fn history_page(
+    snapshot: &LogSnapshot,
+    path: &str,
+    start_row: u32,
+    max_entries: u32,
+    follow_path: Option<&str>,
+) -> Result<FileHistoryPage, GitError> {
+    let rel = repo_relative(path)?;
+    let followed = match follow_path {
+        Some(follow) => repo_relative(follow)?,
+        None => rel,
+    };
+    let max_entries = max_entries.clamp(1, FILE_HISTORY_MAX_ENTRIES) as usize;
+    let repo = Repository::open(snapshot.repo_path())?;
+    let total = snapshot.total();
+    let end = start_row.saturating_add(FILE_HISTORY_SCAN_ROWS).min(total);
+    let mut memo = EntryMemo::new(followed);
+    let mut entries = Vec::new();
+    let mut next = start_row;
+    for index in start_row..end {
+        next = index + 1;
+        let Some(row) = snapshot.row(index) else {
+            break;
+        };
+        if let Some(entry) = history_entry(&repo, &mut memo, row)? {
+            entries.push(entry);
+            if entries.len() == max_entries {
+                break;
+            }
+        }
+    }
+    let next_row = (next < total || !snapshot.is_complete()).then_some(next);
+    Ok(FileHistoryPage {
+        entries,
+        next_row,
+        follow_path: memo.path().to_owned(),
+    })
+}
+
+/// The entry for `row` when its commit changed the followed path against
+/// its first parent; a rename moves the memo onto the old name.
+fn history_entry(
+    repo: &Repository,
+    memo: &mut EntryMemo,
+    row: &Row,
+) -> Result<Option<FileHistoryEntry>, GitError> {
+    let commit = repo.find_commit(row.oid)?;
+    let tree_id = commit.tree_id();
+    let parent_tree_id = match row.parents.first() {
+        Some(parent) => Some(repo.find_commit(*parent)?.tree_id()),
+        None => None,
+    };
+    let here = memo.entry(repo, tree_id)?;
+    let before = match parent_tree_id {
+        Some(id) => memo.entry(repo, id)?,
+        None => None,
+    };
+    let (change, old_path) = match (here, before) {
+        (Some(a), Some(b)) if a == b => return Ok(None),
+        (Some(_), Some(_)) => (ChangeKind::Modified, None),
+        (Some(_), None) => {
+            let tree = repo.find_tree(tree_id)?;
+            let parent = parent_tree_id.map(|id| repo.find_tree(id)).transpose()?;
+            match rename_source(repo, parent.as_ref(), &tree, memo.path())? {
+                Some(old) => (ChangeKind::Renamed, Some(old)),
+                None => (ChangeKind::Added, None),
+            }
+        }
+        (None, Some(_)) => (ChangeKind::Deleted, None),
+        (None, None) => return Ok(None),
+    };
+    let entry = FileHistoryEntry {
+        oid: row.oid.to_string(),
+        subject: row.subject.to_string(),
+        author_name: row.author.name.clone(),
+        author_email: row.author.email.clone(),
+        author_time: row.author_time,
+        change,
+        path: memo.path().to_owned(),
+        old_path: old_path.clone(),
+    };
+    if let Some(old) = old_path {
+        memo.follow(old);
+    }
+    Ok(Some(entry))
 }
 
 /// The blob's lines, decoded lossily, without `\n` or a trailing `\r`; a

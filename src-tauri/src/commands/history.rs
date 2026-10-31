@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use git_real_core::{Blame, CommitFile, FileHistoryEntry};
+use git_real_core::{Blame, CommitFile, FileHistoryPage};
 use tauri::State;
 
 use super::{run_blocking, with_session};
@@ -22,13 +22,21 @@ pub fn get_commit_files_inner(
     with_session(reg, id, |s| s.commit_files(oid))
 }
 
+/// One bounded page of a file's history. The session lock is held only to
+/// take the snapshot; the scan opens its own repository.
 pub fn get_file_history_inner(
     reg: &RepoRegistry,
     id: RepoId,
     generation: u64,
     path: &str,
-) -> Result<Vec<FileHistoryEntry>, AppError> {
-    with_session(reg, id, |s| s.file_history(generation, path))
+    start_row: u32,
+    max_entries: u32,
+    follow_path: Option<&str>,
+) -> Result<FileHistoryPage, AppError> {
+    let snapshot = with_session(reg, id, |s| s.log_snapshot(generation))?;
+    snapshot
+        .file_history(path, start_row, max_entries, follow_path)
+        .map_err(AppError::from)
 }
 
 pub fn get_blame_inner(
@@ -65,9 +73,23 @@ pub async fn get_file_history(
     id: RepoId,
     generation: u64,
     path: String,
-) -> Result<Vec<FileHistoryEntry>, AppError> {
+    start_row: u32,
+    max_entries: u32,
+    follow_path: Option<String>,
+) -> Result<FileHistoryPage, AppError> {
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || get_file_history_inner(&reg, id, generation, &path)).await
+    run_blocking(move || {
+        get_file_history_inner(
+            &reg,
+            id,
+            generation,
+            &path,
+            start_row,
+            max_entries,
+            follow_path.as_deref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
