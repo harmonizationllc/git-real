@@ -394,6 +394,25 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
       .catch(ignore);
   };
 
+  /**
+   * The row of `oid` in this generation, found through searchLog and verified against its page
+   * row (a revert or cherry-pick message contains the full oid too). Undefined when the commit
+   * is absent, or once `wanted` turns false after a page fetch.
+   */
+  const locate = useCallback(
+    async (oid: string, wanted = () => mounted.current): Promise<number | undefined> => {
+      const candidates = await queryClient.fetchQuery(logSearchOptions(repoId, generation, oid));
+      for (const index of candidates) {
+        const page = pageOf(index);
+        const { rows } = await queryClient.fetchQuery(logPageOptions(repoId, generation, page));
+        if (!wanted()) return undefined;
+        if (rows[index - pageStart(page)]?.oid === oid) return index;
+      }
+      return undefined;
+    },
+    [queryClient, repoId, generation],
+  );
+
   // Reveal: a selection made elsewhere (the summary's parent links, a search) whose row is
   // not rendered is located through searchLog, verified against its page row, and centred.
   useEffect(() => {
@@ -403,22 +422,38 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
     const oid = selected;
     const stillSelected = () =>
       mounted.current && useWorkspace.getState().selectedCommit[repoId] === oid;
-    const reveal = async () => {
-      // A revert or cherry-pick message contains the full oid too, so verify each candidate.
-      const candidates = await queryClient.fetchQuery(logSearchOptions(repoId, generation, oid));
-      for (const index of candidates) {
-        const page = pageOf(index);
-        const { rows } = await queryClient.fetchQuery(logPageOptions(repoId, generation, page));
-        if (!stillSelected()) return;
-        if (rows[index - pageStart(page)]?.oid === oid) {
-          lastIndex.current = index;
-          virtualizer.scrollToIndex(index, { align: "center" });
-          return;
-        }
-      }
-    };
-    reveal().catch(ignore);
-  }, [settled, selected, selectedIndex, repoId, generation, queryClient, virtualizer]);
+    locate(oid, stillSelected)
+      .then((index) => {
+        if (index === undefined) return;
+        lastIndex.current = index;
+        virtualizer.scrollToIndex(index, { align: "center" });
+      })
+      .catch(ignore);
+  }, [settled, selected, selectedIndex, repoId, locate, virtualizer]);
+
+  // Anchor: when the generation changes, the commit that was at the top of a scrolled list is
+  // located in the new generation and kept at the top; one no longer in the graph leaves the
+  // scroll where it is. Declared before the effect that records the top, so it reads the top
+  // the previous generation rendered.
+  const topOid = useRef<{ oid: string; index: number } | null>(null);
+  const anchoredGeneration = useRef(generation);
+  const anchorSeq = useRef(0);
+  useEffect(() => {
+    if (anchoredGeneration.current === generation) return;
+    anchoredGeneration.current = generation;
+    const top = topOid.current;
+    if (top === null || top.index === 0) return;
+    const n = ++anchorSeq.current;
+    locate(top.oid, () => mounted.current && n === anchorSeq.current)
+      .then((index) => {
+        if (index !== undefined) virtualizer.scrollToIndex(index, { align: "start" });
+      })
+      .catch(ignore);
+  }, [generation, locate, virtualizer]);
+  const top = rendered[0];
+  useEffect(() => {
+    if (top?.row) topOid.current = { oid: top.row.oid, index: top.item.index };
+  });
 
   // Search: the input is debounced into the query that is searched. The debounce also starts
   // the fetch and reveals the first match when it answers, so the reveal happens once per

@@ -107,6 +107,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   scrolls.mockReset();
   mockWindow.size = Infinity;
+  mockWindow.start = 0;
   total = 3;
   refsByIndex = { 0: [ref("branch", "main", true)] };
   parentsByIndex = {};
@@ -1538,6 +1539,87 @@ describe("GraphPanel generation change", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Contract: across a generation change the commit that was at the top of the viewport stays at
+// the top: it is located in the new generation, verified against its page row, and scrolled to
+// with align start. A list at its top, or a commit gone from the new graph, is left alone.
+describe("GraphPanel top commit anchor", () => {
+  const isStart = (call: unknown[]) =>
+    JSON.stringify(call[1]) === JSON.stringify({ align: "start" });
+  const scrolledToStart = (index: number) =>
+    scrolls.mock.calls.some((call) => call[0] === index && isStart(call));
+  const anyStartScroll = () => scrolls.mock.calls.some(isStart);
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 30)));
+
+  // Generation 2 puts three new commits on top, so every older commit moves down three rows.
+  const shiftedRows = () =>
+    vi.mocked(getLogPage).mockImplementation((_id, generation, start, count) =>
+      Promise.resolve({
+        start,
+        rows: Array.from({ length: Math.max(0, Math.min(count, total - start)) }, (_, i) => {
+          const index = start + i;
+          if (generation === 1) return makeRow(index);
+          return makeRow(index, { oid: index < 3 ? oidOf(1000 + index) : oidOf(index - 3) });
+        }),
+      }),
+    );
+
+  async function renderThenRebuild(start: number) {
+    total = 600;
+    mockWindow.size = 10;
+    mockWindow.start = start;
+    shiftedRows();
+    vi.mocked(getLogSummary)
+      .mockResolvedValueOnce(summary({ generation: 1 }))
+      .mockResolvedValue(summary({ generation: 2 }));
+    const { queryClient } = await renderPanel();
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.log(REPO) }));
+    await waitFor(() => expect(getLogPage).toHaveBeenCalledWith(REPO, 2, 0, 500));
+  }
+
+  it("should scroll so the previous top commit stays on top when the generation changes", async () => {
+    vi.mocked(searchLog).mockImplementation((_id, generation, query) =>
+      Promise.resolve(generation === 2 && query === oidOf(2) ? [5] : []),
+    );
+    await renderThenRebuild(2);
+    await waitFor(() => expect(scrolledToStart(5)).toBe(true));
+    expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2));
+  });
+
+  it("should not anchor when the top of the list was visible", async () => {
+    vi.mocked(searchLog).mockResolvedValue([3]);
+    await renderThenRebuild(0);
+    await settle();
+    expect(searchLog).not.toHaveBeenCalled();
+    expect(anyStartScroll()).toBe(false);
+  });
+
+  it("should leave the scroll alone when the top commit is gone from the new generation", async () => {
+    vi.mocked(searchLog).mockResolvedValue([]);
+    await renderThenRebuild(2);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
+    await settle();
+    expect(scrolls).not.toHaveBeenCalled();
+  });
+
+  it("should not scroll to a candidate whose row is another commit", async () => {
+    // Row 4 of generation 2 is oidOf(1); a message quoting oidOf(2) must not move the list.
+    vi.mocked(searchLog).mockResolvedValue([4]);
+    await renderThenRebuild(2);
+    await waitFor(() => expect(searchLog).toHaveBeenCalledWith(REPO, 2, oidOf(2)));
+    await settle();
+    expect(anyStartScroll()).toBe(false);
+  });
+
+  it("should not anchor on the first render", async () => {
+    total = 600;
+    mockWindow.size = 10;
+    mockWindow.start = 2;
+    await renderPanel();
+    await settle();
+    expect(searchLog).not.toHaveBeenCalled();
   });
 });
 

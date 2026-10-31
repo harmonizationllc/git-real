@@ -18,21 +18,27 @@ export const scrollToIndex =
   vi.fn<(index: number, options?: { align?: "start" | "center" | "end" | "auto" }) => void>();
 
 /**
- * How many leading items the fake reports as rendered. Infinity (the default) renders every row;
- * a finite size models a scrolled window so "not rendered" differs from "not loaded". Tests that
- * change it must reset it in beforeEach.
+ * The window the fake reports as rendered: `size` items from index `start`. Infinity (the
+ * default size) renders every row; a finite size models a scrolled window so "not rendered"
+ * differs from "not loaded", and a `start` above 0 models a list scrolled down. Tests that
+ * change either must reset it in beforeEach.
  */
-export const mockWindow = { size: Infinity };
+export const mockWindow = { size: Infinity, start: 0 };
 
 /** Renders every row, and calls each option callback the way the real hook would. */
 export function useVirtualizer({ count, getScrollElement, estimateSize, getItemKey }: Options) {
   getScrollElement();
-  const items = Array.from({ length: Math.min(count, mockWindow.size) }, (_, index) => ({
-    index,
-    key: getItemKey(index),
-    start: index * estimateSize(index),
-    size: estimateSize(index),
-  }));
+  const first = Math.min(mockWindow.start, count);
+  const length = Math.min(count - first, mockWindow.size);
+  const items = Array.from({ length }, (_, i) => {
+    const index = first + i;
+    return {
+      index,
+      key: getItemKey(index),
+      start: index * estimateSize(index),
+      size: estimateSize(index),
+    };
+  });
   return {
     getTotalSize: () => count * 22,
     getVirtualItems: () => items,
