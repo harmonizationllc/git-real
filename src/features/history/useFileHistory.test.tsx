@@ -316,6 +316,24 @@ describe("useFileHistory pages", () => {
     expect(getFileHistory).toHaveBeenCalledTimes(2);
   });
 
+  it("should resume paging after a failed page once a refetch succeeds", async () => {
+    vi.mocked(getFileHistory)
+      .mockResolvedValueOnce(page([historyEntry(0)], 700, "old.txt"))
+      .mockRejectedValueOnce({ kind: "git", message: "boom" })
+      .mockResolvedValueOnce(page([historyEntry(0)], 700, "old.txt"))
+      .mockResolvedValueOnce(page([historyEntry(1)]));
+    const { result } = renderHookWithProviders(() => useFileHistory(1, 7, "a.txt", true));
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.fetchMore());
+    await waitFor(() => expect(result.current.hasMore).toBe(false));
+    act(() => result.current.refetch());
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    act(() => result.current.fetchMore());
+    await waitFor(() => expect(getFileHistory).toHaveBeenCalledTimes(4));
+    expect(getFileHistory).toHaveBeenLastCalledWith(1, 7, "a.txt", 700, 100, "old.txt");
+    await waitFor(() => expect(result.current.entries).toEqual([historyEntry(0), historyEntry(1)]));
+  });
+
   it("should report hasMore false when nextRow is null", async () => {
     const { result } = renderHookWithProviders(() => useFileHistory(1, 7, "a.txt", true));
     await waitFor(() => expect(result.current.entries).toBeDefined());

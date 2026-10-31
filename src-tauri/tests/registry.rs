@@ -6,13 +6,86 @@ use git_real_core::RepoSession;
 use git_real_lib::state::{RepoRegistry, WatcherRegistry};
 use git_real_lib::watcher::RepoWatcher;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 fn session() -> (TempDir, RepoSession) {
     let (dir, path) = common::temp_repo_with_commit();
     let session = RepoSession::open(&path).expect("open fixture repo");
     (dir, session)
+}
+
+/// A repository with one commit and `tags` lightweight tags on it, written straight into
+/// `packed-refs` so the fixture is quick to build. The graph builder reads every ref before
+/// its first cancel check, so dropping a session mid-build joins for that whole read.
+fn session_with_tags(tags: usize) -> (TempDir, RepoSession) {
+    let (dir, path) = common::temp_repo_with_commit();
+    let head = git2::Repository::open(&path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .target()
+        .unwrap();
+    let mut packed = String::from("# pack-refs with: peeled fully-peeled \n");
+    for i in 0..tags {
+        packed.push_str(&format!("{head} refs/tags/t{i:06}\n"));
+    }
+    std::fs::write(path.join(".git").join("packed-refs"), packed).unwrap();
+    let session = RepoSession::open(&path).expect("open fixture repo");
+    (dir, session)
+}
+
+/// Tags enough for the builder's ref read to outlast [`SLOW_JOIN`] in a debug build.
+const TAGS_FOR_A_SLOW_JOIN: usize = 150_000;
+/// A remove this slow joined a running build, so the test is conclusive.
+const SLOW_JOIN: Duration = Duration::from_millis(150);
+/// The longest a lookup of another session may take while the remove runs.
+const LOOKUP_LIMIT: Duration = Duration::from_millis(50);
+/// Fresh builds to try when the build finished before the remove.
+const ATTEMPTS_AT_A_SLOW_JOIN: usize = 5;
+
+// remove: the removed session, whose drop joins its graph builder, drops after the registry
+// guard is released, so a lookup of another session never waits for the join.
+#[test]
+fn registry_remove_does_not_hold_the_registry_while_the_session_drops() {
+    for _ in 0..ATTEMPTS_AT_A_SLOW_JOIN {
+        let (_d1, mut busy) = session_with_tags(TAGS_FOR_A_SLOW_JOIN);
+        let (_d2, other) = session();
+        let registry = Arc::new(RepoRegistry::default());
+        busy.log_summary_within(Duration::ZERO)
+            .expect("start build");
+        let busy_id = registry.register(busy);
+        let other_id = registry.register(other);
+        let done = Arc::new(AtomicBool::new(false));
+        let prober = {
+            let (registry, done) = (Arc::clone(&registry), Arc::clone(&done));
+            std::thread::spawn(move || {
+                let mut slowest = Duration::ZERO;
+                while !done.load(Ordering::Relaxed) {
+                    let started = Instant::now();
+                    assert!(registry.get(other_id).is_some());
+                    slowest = slowest.max(started.elapsed());
+                }
+                slowest
+            })
+        };
+        let started = Instant::now();
+        assert!(registry.remove(busy_id));
+        let join = started.elapsed();
+        done.store(true, Ordering::Relaxed);
+        let slowest = prober.join().unwrap();
+        if join >= SLOW_JOIN {
+            assert!(
+                slowest < LOOKUP_LIMIT,
+                "a lookup waited {slowest:?} while remove took {join:?}"
+            );
+            return;
+        }
+        // The build finished before the remove; this attempt proves nothing.
+    }
+    panic!("no remove joined a running build in {ATTEMPTS_AT_A_SLOW_JOIN} attempts");
 }
 
 // register / get: ids start at 1 and increase; ids are never reused.
