@@ -368,6 +368,81 @@ describe("bootstrapAppearance", () => {
     await useSettings.getState().flush();
   });
 
+  it("sends two waiting changes in the order they were made", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    let settle: () => void = () => {};
+    vi.mocked(syncWindowBackground).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    useSettings.getState().setPref({ appearance: { theme: "light" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    settle();
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(3));
+    await useSettings.getState().flush();
+    expect(vi.mocked(syncWindowBackground).mock.calls).toEqual([
+      ["system", false],
+      ["dark", false],
+      ["light", false],
+    ]);
+  });
+
+  it("a waiting send carries the desktop flag from when it was requested", async () => {
+    await injectTheme("dark");
+    const media = fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    let settle: () => void = () => {};
+    vi.mocked(syncWindowBackground).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    // The theme is dark now, so the flip is ignored and must not change the waiting send.
+    media.fire(true);
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    settle();
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
+    // A later request reads the flipped flag.
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(syncWindowBackground).mock.calls[2]).toEqual(["system", true]);
+    await useSettings.getState().flush();
+  });
+
+  it("a synchronous throw does not block the next send", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    vi.mocked(syncWindowBackground).mockImplementationOnce(() => {
+      throw new Error("sync");
+    });
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
+    await useSettings.getState().flush();
+  });
+
   it("does not sync for a font-only appearance edit", async () => {
     await injectTheme("dark");
     fakeMatchMedia(false);
