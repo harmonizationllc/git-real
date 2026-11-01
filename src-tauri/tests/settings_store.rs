@@ -395,21 +395,6 @@ fn init_script_leaves_system_theme_to_the_page() {
 }
 
 #[test]
-fn theme_changed_only_when_the_theme_differs() {
-    use git_real_core::settings::{Settings, Theme};
-    use git_real_lib::commands::settings::theme_changed;
-
-    let before = Settings::default();
-    let mut dark = before.clone();
-    dark.appearance.theme = Theme::Dark;
-    let mut font = before.clone();
-    font.appearance.diff_font_size = 15;
-    assert!(theme_changed(&before, &dark));
-    assert!(!theme_changed(&before, &font));
-    assert!(!theme_changed(&before, &before));
-}
-
-#[test]
 fn path_returns_the_file_location() {
     let (_dir, path) = common::temp_file_path("settings.json");
     let store = SettingsStore::load(path.clone());

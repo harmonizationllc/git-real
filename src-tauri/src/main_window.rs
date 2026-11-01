@@ -60,6 +60,11 @@ pub fn desktop_theme(desktop_dark: bool) -> tauri::Theme {
     }
 }
 
+/// The background colour for a theme and desktop colour scheme the page reports.
+pub fn sync_background_color(theme: Theme, desktop_dark: bool) -> Color {
+    background_color(theme, Some(desktop_theme(desktop_dark)))
+}
+
 /// Sets the window and webview background for `theme`. `desktop` is the
 /// desktop's colour scheme when the caller knows it; when it is `None` and the
 /// theme follows the desktop, the window is asked. That answer is only fresh

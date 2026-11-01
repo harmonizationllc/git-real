@@ -174,21 +174,16 @@ which on GTK happens for a few frames of newly exposed area during a resize.
 If the user switches theme in Settings and later resizes, that sliver would
 be in the launch theme. So the colour follows the theme:
 
-- When a settings patch changes `appearance.theme` to `dark` or `light`,
-  `update_settings` recomputes the colour and calls `set_background_color`
-  on the main window directly.
-- While the theme is `system`, the page reports the desktop scheme. In
-  `bootstrapAppearance()` a `matchMedia("(prefers-color-scheme: dark)")`
-  listener calls the `sync_window_background` command with the current
-  `matches` on every change, and a settings switch to `system` calls it once.
-  The command trusts the page's report and recolours the window for that
-  scheme without re-checking the stored theme: the page store updates at
-  once but the file save is debounced, so right after a switch to `system`
-  the stored theme is still the old one. The debounced `update_settings` for
-  `system` skips the recolour by rule, and a later explicit theme still
-  recolours through `update_settings`. A recolour failure is only logged.
-  There is no startup sync: `build` already coloured the window from the
-  portal answer at creation, which is fresh at launch.
+- The page sends `sync_window_background(theme, desktopDark)` on every theme
+  change in the store, and, while the theme is `system`, on every desktop
+  scheme change from a `matchMedia("(prefers-color-scheme: dark)")` listener
+  in `bootstrapAppearance()`. The command recolours the window for the
+  page's theme and scheme without reading the store.
+- Sends are serialised on the page: one at a time, in the order they were
+  made, so the last theme the page shows is the last colour applied.
+  `update_settings` never repaints the window. A recolour failure is only
+  logged. There is no startup sync: `build` already coloured the window from
+  the portal answer at creation, which is fresh at launch.
 
 There is no `WindowEvent::ThemeChanged` handler. On Linux `tao` delivers the
 portal's colour-scheme change to a dummy window id that `tauri-runtime-wry`
@@ -196,7 +191,7 @@ drops, and `window.theme()` returns the answer cached at window creation, so
 neither can see a desktop flip after launch; the page's
 `prefers-color-scheme` does follow it.
 
-Neither path blocks the IPC thread or writes to `settings.json`.
+The sync command neither blocks the IPC thread nor writes `settings.json`.
 
 ### 3.4 Documentation
 
@@ -228,7 +223,8 @@ right theme. No new ADR.
   `desktopDark` argument, rejection passes through), and in
   `bootstrapAppearance()`: a scheme change syncs while on `system`, is
   ignored on an explicit theme, a switch to `system` syncs once, and the
-  uninstaller removes the media-query listener.
+  uninstaller removes the media-query listener. (GR-30) The contract is now
+  `(theme, desktopDark)` and every theme change syncs; see §3.3.
 - Gate as in GR-29 §9: `npm run lint`, `npm run typecheck`, `npm test`,
   `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`,
   coverage unchanged at 100 %.
@@ -296,6 +292,9 @@ Results are recorded in a §8 of this document, as GR-29 did.
 3. ~~Which ticket carries the fix?~~ **Decided by the owner (2026-10-26):
    the fix is implemented under GR-19**, on branch
    `feature/gr-19-cold-start-theme`.
+4. GR-30 (2026-11-01): the page is the only post-launch writer; the earlier
+   claim that a later explicit theme recolours through `update_settings` was
+   false inside the save debounce.
 
 Everything else in this document is the writer's call.
 

@@ -37,29 +37,43 @@ export function applyAppearance(
  * Applies the injected appearance now, follows later settings changes, saves pending edits when the
  * window goes away, and reconciles with the backend once; returns the uninstaller.
  *
- * While the theme is `system`, desktop colour-scheme changes are reported to Rust so the window
- * background follows them: on Linux the page is the only reliable source after launch. Rust already
- * coloured the window at creation, so there is no startup sync.
+ * After launch the page is the only writer of the native window background: it reports every theme
+ * change in the store, and every desktop colour-scheme change while the theme is `system`, to Rust.
+ * Reports go one at a time in the order they were made, each carrying the theme and scheme read when
+ * it was requested; a failed report does not hold up the next. Rust already coloured the window at
+ * creation, so there is no startup sync.
  */
 export function bootstrapAppearance(): () => void {
   applyAppearance(useSettings.getState().settings.appearance);
   const mql = window.matchMedia("(prefers-color-scheme: dark)");
+  let busy = false;
+  const waiting: Array<() => void> = [];
+  const requestSync = () => {
+    const theme = useSettings.getState().settings.appearance.theme;
+    const dark = mql.matches;
+    const run = () => {
+      busy = true;
+      // The executor runs at once, so an idle send stays synchronous; a synchronous throw becomes
+      // a rejection, so it cannot leave the queue busy.
+      void new Promise<void>((resolve) => resolve(syncWindowBackground(theme, dark)))
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+          waiting.shift()?.();
+        });
+    };
+    if (busy) waiting.push(run);
+    else run();
+  };
   const onSchemeChange = () => {
-    if (useSettings.getState().settings.appearance.theme === "system") {
-      void syncWindowBackground(mql.matches);
-    }
+    if (useSettings.getState().settings.appearance.theme === "system") requestSync();
   };
   mql.addEventListener("change", onSchemeChange);
   const unsubscribe = useSettings.subscribe((state, prev) => {
     if (state.settings.appearance !== prev.settings.appearance) {
       applyAppearance(state.settings.appearance);
       startFontWarmup();
-      if (
-        state.settings.appearance.theme === "system" &&
-        prev.settings.appearance.theme !== "system"
-      ) {
-        void syncWindowBackground(mql.matches);
-      }
+      if (state.settings.appearance.theme !== prev.settings.appearance.theme) requestSync();
     }
   });
   const uninstallFlush = installFlushOnPagehide();

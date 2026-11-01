@@ -129,17 +129,19 @@ describe("checkSettingsHealth", () => {
   });
 });
 
-// Contract (GR-19): syncWindowBackground invokes sync_window_background with the page's scheme flag.
+// Contract (GR-30): syncWindowBackground invokes sync_window_background with the page's theme and scheme flag.
 describe("syncWindowBackground", () => {
-  it("sends sync_window_background with desktopDark and resolves to undefined", async () => {
+  it("sends sync_window_background with the theme and desktopDark and resolves to undefined", async () => {
     const calls = mockWith(null);
-    await expect(syncWindowBackground(true)).resolves.toBeUndefined();
-    expect(calls).toEqual([{ cmd: "sync_window_background", args: { desktopDark: true } }]);
+    await expect(syncWindowBackground("dark", true)).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      { cmd: "sync_window_background", args: { theme: "dark", desktopDark: true } },
+    ]);
   });
 
   it("syncWindowBackground rejection passes through", async () => {
     const err = { kind: "io", message: "no window" };
     mockThrowing(err);
-    await expect(syncWindowBackground(false)).rejects.toBe(err);
+    await expect(syncWindowBackground("system", false)).rejects.toBe(err);
   });
 });
