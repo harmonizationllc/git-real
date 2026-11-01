@@ -322,9 +322,7 @@ describe("bootstrapAppearance", () => {
     // The first send is synchronous; the second waits for it to settle.
     expect(syncWindowBackground).toHaveBeenCalledTimes(1);
     expect(vi.mocked(syncWindowBackground).mock.calls[0]).toEqual(["system", false]);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(syncWindowBackground).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
     expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
     await useSettings.getState().flush();
   });

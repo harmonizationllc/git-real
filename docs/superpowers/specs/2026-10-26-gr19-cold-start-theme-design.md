@@ -223,7 +223,8 @@ right theme. No new ADR.
   `desktopDark` argument, rejection passes through), and in
   `bootstrapAppearance()`: a scheme change syncs while on `system`, is
   ignored on an explicit theme, a switch to `system` syncs once, and the
-  uninstaller removes the media-query listener.
+  uninstaller removes the media-query listener. (GR-30) The contract is now
+  `(theme, desktopDark)` and every theme change syncs; see §3.3.
 - Gate as in GR-29 §9: `npm run lint`, `npm run typecheck`, `npm test`,
   `cargo test --workspace`, `cargo clippy --workspace -- -D warnings`,
   coverage unchanged at 100 %.

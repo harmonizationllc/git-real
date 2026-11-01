@@ -33,8 +33,8 @@ carried over.
   It also builds the window hidden, sets the window and webview background from the
   stored theme (desktop scheme via the settings portal for "system") and pre-applies
   `data-theme` in the init script before showing it, so the first frame is already in the
-  right theme (GR-19). After launch the page reports every theme change and desktop
-  colour-scheme change to Rust, which repaints the background on that report alone;
+  right theme (GR-19). After launch the page reports every theme change, and every desktop
+  colour-scheme change while the theme is `system`, to Rust, which repaints the background on that report alone;
   `update_settings` does not touch the window (GR-30).
 - **No `localStorage` for preferences.** The four persist stores are deleted.
 - **`lastCheckedAt` stays in the browser.** The time of the last update check is
