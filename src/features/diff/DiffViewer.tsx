@@ -35,6 +35,7 @@ export function DiffViewer({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Keyed by row so measured heights follow their rows across mode switches and refetches.
   const getItemKey = useCallback((i: number) => rows[i].key, [rows]);
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
