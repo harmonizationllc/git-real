@@ -5,7 +5,7 @@
 use git_real_core::settings::{Settings, WindowGeometry};
 use git_real_lib::main_window::{
     LABEL, TITLE, background_color, close_geometry, desktop_theme, follows_desktop,
-    initial_geometry, logical_geometry,
+    initial_geometry, logical_geometry, sync_background_color,
 };
 
 #[test]
@@ -31,6 +31,27 @@ fn background_color_follows_the_stored_theme_then_the_desktop() {
     assert_eq!(
         background_color(Theme::System, None),
         Color(246, 246, 246, 255)
+    );
+}
+
+#[test]
+fn sync_background_color_uses_the_desktop_only_for_system() {
+    use git_real_core::settings::Theme;
+    assert_eq!(
+        sync_background_color(Theme::Dark, false),
+        background_color(Theme::Dark, None)
+    );
+    assert_eq!(
+        sync_background_color(Theme::Light, true),
+        background_color(Theme::Light, None)
+    );
+    assert_eq!(
+        sync_background_color(Theme::System, true),
+        background_color(Theme::System, Some(tauri::Theme::Dark))
+    );
+    assert_eq!(
+        sync_background_color(Theme::System, false),
+        background_color(Theme::System, Some(tauri::Theme::Light))
     );
 }
 

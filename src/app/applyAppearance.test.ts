@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Contract: applyAppearance sets or removes data-theme and the two CSS custom properties.
 // bootstrapAppearance applies the injected settings before first render, follows the settings
-// store, installs the flush hook and reconciles with the backend once.
+// store, installs the flush hook and reconciles with the backend once. It is also the only
+// post-launch writer of the native window background: it sends (theme, desktopDark) on every theme
+// change in the store and on desktop scheme changes while the theme is system, one send at a time
+// and in order.
 
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -125,6 +128,29 @@ async function load(reply?: { theme: "system" | "light" | "dark" }) {
   vi.mocked(updateSettings).mockResolvedValue(DEFAULT_SETTINGS);
   const { bootstrapAppearance } = await import("./applyAppearance");
   return { getSettings, DEFAULT_SETTINGS, useSettings, bootstrapAppearance };
+}
+
+/** Injects settings whose theme is `theme`, as the Rust-side initialization script does. */
+async function injectTheme(theme: "system" | "light" | "dark") {
+  const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+  window.__GIT_REAL_SETTINGS__ = {
+    ...DEFAULT_SETTINGS,
+    appearance: { ...DEFAULT_SETTINGS.appearance, theme },
+  };
+}
+
+/**
+ * Makes `updateSettings` answer like Rust: the settings the backend holds with the patch applied.
+ * Without it a save would answer with the defaults and change the theme behind the test's back.
+ */
+async function echoSaves(theme: "system" | "light" | "dark") {
+  const { updateSettings } = await import("../lib/ipc");
+  const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
+  let held = { ...DEFAULT_SETTINGS, appearance: { ...DEFAULT_SETTINGS.appearance, theme } };
+  vi.mocked(updateSettings).mockImplementation((patch) => {
+    held = { ...held, appearance: { ...held.appearance, ...patch.appearance } };
+    return Promise.resolve(held);
+  });
 }
 
 /**
@@ -250,7 +276,7 @@ describe("bootstrapAppearance", () => {
     expect(window.matchMedia).toHaveBeenCalledWith("(prefers-color-scheme: dark)");
     media.fire(true);
     expect(syncWindowBackground).toHaveBeenCalledTimes(1);
-    expect(syncWindowBackground).toHaveBeenCalledWith(true);
+    expect(syncWindowBackground).toHaveBeenCalledWith("system", true);
   });
 
   it("ignores desktop scheme changes while the theme is explicit", async () => {
@@ -267,22 +293,120 @@ describe("bootstrapAppearance", () => {
     expect(syncWindowBackground).not.toHaveBeenCalled();
   });
 
-  it("syncs once when the theme switches to system", async () => {
-    const { DEFAULT_SETTINGS } = await import("../lib/store/settings");
-    window.__GIT_REAL_SETTINGS__ = {
-      ...DEFAULT_SETTINGS,
-      appearance: { ...DEFAULT_SETTINGS.appearance, theme: "dark" },
-    };
+  it("sends the new theme and the desktop flag on every theme change", async () => {
+    await injectTheme("dark");
     fakeMatchMedia(false);
     const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
     const { syncWindowBackground } = await import("../lib/ipc");
     bootstrapAppearance();
     useSettings.getState().setPref({ appearance: { theme: "system" } });
     expect(syncWindowBackground).toHaveBeenCalledTimes(1);
-    expect(syncWindowBackground).toHaveBeenCalledWith(false);
-    useSettings.getState().setPref({ appearance: { theme: "dark" } });
-    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    expect(syncWindowBackground).toHaveBeenCalledWith("system", false);
     await useSettings.getState().flush();
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    expect(syncWindowBackground).toHaveBeenCalledTimes(2);
+    expect(syncWindowBackground).toHaveBeenLastCalledWith("dark", false);
+    await useSettings.getState().flush();
+  });
+
+  it("dark → system → dark inside the save debounce sends both, in order, last dark", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    // The first send is synchronous; the second waits for it to settle.
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(syncWindowBackground).mock.calls[0]).toEqual(["system", false]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(syncWindowBackground).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
+    await useSettings.getState().flush();
+  });
+
+  it("queues the second send until the first settles", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    let settle: () => void = () => {};
+    vi.mocked(syncWindowBackground).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(syncWindowBackground).toHaveBeenCalledTimes(1);
+    settle();
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
+    await useSettings.getState().flush();
+  });
+
+  it("a rejected send does not block the next", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    vi.mocked(syncWindowBackground).mockRejectedValueOnce(new Error("no window"));
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    useSettings.getState().setPref({ appearance: { theme: "dark" } });
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(syncWindowBackground).mock.calls[1]).toEqual(["dark", false]);
+    await useSettings.getState().flush();
+  });
+
+  it("does not sync for a font-only appearance edit", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { diffFontSize: 15 } });
+    expect(syncWindowBackground).not.toHaveBeenCalled();
+    await useSettings.getState().flush();
+    expect(syncWindowBackground).not.toHaveBeenCalled();
+  });
+
+  it("syncs when reconcile reports a different theme", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(true);
+    const { bootstrapAppearance, getSettings } = await load({ theme: "light" });
+    const { syncWindowBackground } = await import("../lib/ipc");
+    bootstrapAppearance();
+    await vi.waitFor(() => expect(getSettings).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(1));
+    expect(syncWindowBackground).toHaveBeenCalledWith("light", true);
+  });
+
+  it("sends again with the reverted theme when the save fails", async () => {
+    await injectTheme("dark");
+    fakeMatchMedia(false);
+    const { bootstrapAppearance, useSettings } = await load({ theme: "dark" });
+    await echoSaves("dark");
+    const { syncWindowBackground, updateSettings } = await import("../lib/ipc");
+    vi.mocked(updateSettings).mockRejectedValueOnce({ kind: "io", message: "disk" });
+    bootstrapAppearance();
+    useSettings.getState().setPref({ appearance: { theme: "system" } });
+    expect(syncWindowBackground).toHaveBeenCalledWith("system", false);
+    await useSettings.getState().flush();
+    // The store reverted to the server-known theme, which is just another theme change.
+    await vi.waitFor(() => expect(syncWindowBackground).toHaveBeenCalledTimes(2));
+    expect(syncWindowBackground).toHaveBeenLastCalledWith("dark", false);
+    expect(useSettings.getState().settings.appearance.theme).toBe("dark");
   });
 
   it("the uninstaller removes the media-query listener", async () => {
