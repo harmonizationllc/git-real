@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, SettingsHealth, SettingsPatch } from "./types";
+import type { Settings, SettingsHealth, SettingsPatch, ThemePref } from "./types";
 
 export function getSettings(): Promise<Settings> {
   return invoke<Settings>("get_settings");
@@ -23,7 +23,7 @@ export function settingsFilePath(): Promise<string> {
   return invoke<string>("settings_file_path");
 }
 
-/** Tells Rust the desktop colour scheme the page sees, so the window background follows it on `system`. */
-export async function syncWindowBackground(desktopDark: boolean): Promise<void> {
-  await invoke("sync_window_background", { desktopDark });
+/** Tells Rust the page's theme and the desktop colour scheme it sees, so the window background matches. */
+export async function syncWindowBackground(theme: ThemePref, desktopDark: boolean): Promise<void> {
+  await invoke("sync_window_background", { theme, desktopDark });
 }
