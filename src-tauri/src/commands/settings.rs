@@ -24,11 +24,6 @@ pub fn update_settings_inner(
     store.update(patch)
 }
 
-/// Whether an update changed the theme, so the window background must follow.
-pub fn theme_changed(before: &Settings, after: &Settings) -> bool {
-    before.appearance.theme != after.appearance.theme
-}
-
 /// Settings whose target is missing on disk, for the front end to flag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,45 +64,35 @@ pub async fn get_settings(settings: State<'_, Arc<SettingsStore>>) -> Result<Set
     run_blocking(move || Ok(get_settings_inner(&store))).await
 }
 
+/// Saves `patch` and returns the new settings. It never touches the window:
+/// after launch the page alone repaints the background, through
+/// `sync_window_background`.
 #[tauri::command]
 pub async fn update_settings(
-    app: AppHandle,
     settings: State<'_, Arc<SettingsStore>>,
     patch: SettingsPatch,
 ) -> Result<Settings, AppError> {
     let store = Arc::clone(settings.inner());
-    let (before, next) = run_blocking(move || {
-        let before = store.get();
-        update_settings_inner(&store, &patch).map(|next| (before, next))
-    })
-    .await?;
-    // The settings are saved; a failure to recolour the window is only logged.
-    // A switch to `system` is left to `sync_window_background`, which the page
-    // calls with the desktop's real colour scheme.
-    if theme_changed(&before, &next)
-        && !main_window::follows_desktop(next.appearance.theme)
-        && let Some(window) = app.get_webview_window(main_window::LABEL)
-        && let Err(e) = main_window::apply_background(&window, next.appearance.theme, None)
-    {
-        eprintln!("settings: cannot update window background: {e}");
-    }
-    Ok(next)
+    run_blocking(move || update_settings_inner(&store, &patch)).await
 }
 
-/// Recolours the window for the desktop colour scheme the page reports. On
-/// Linux the window's own theme is cached at creation, so the page is the
-/// source of truth after launch. The page calls this only while its theme is
-/// `system`, and the command trusts that rather than re-checking the stored
-/// theme: the page store updates at once but the file save is debounced, so
-/// right after a switch to `system` the stored theme is still the old one. A
-/// recolour failure is only logged.
+/// Recolours the window for the theme and desktop colour scheme the page
+/// reports. The page is the only writer after launch: it sends every theme
+/// change and, while on `system`, every desktop scheme change, in order. The
+/// command trusts the page's theme and scheme and does not read the store,
+/// whose file save is debounced behind the page. A recolour failure is only
+/// logged.
 #[tauri::command]
-pub async fn sync_window_background(app: AppHandle, desktop_dark: bool) -> Result<(), AppError> {
+pub async fn sync_window_background(
+    app: AppHandle,
+    theme: Theme,
+    desktop_dark: bool,
+) -> Result<(), AppError> {
     run_blocking(move || {
         if let Some(window) = app.get_webview_window(main_window::LABEL)
             && let Err(e) = main_window::apply_background(
                 &window,
-                Theme::System,
+                theme,
                 Some(main_window::desktop_theme(desktop_dark)),
             )
         {
