@@ -53,7 +53,9 @@ export function bootstrapAppearance(): () => void {
     const dark = mql.matches;
     const run = () => {
       busy = true;
-      void Promise.resolve(syncWindowBackground(theme, dark))
+      // The executor runs at once, so an idle send stays synchronous; a synchronous throw becomes
+      // a rejection, so it cannot leave the queue busy.
+      void new Promise<void>((resolve) => resolve(syncWindowBackground(theme, dark)))
         .catch(() => {})
         .finally(() => {
           busy = false;

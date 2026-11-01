@@ -191,7 +191,7 @@ drops, and `window.theme()` returns the answer cached at window creation, so
 neither can see a desktop flip after launch; the page's
 `prefers-color-scheme` does follow it.
 
-Neither path blocks the IPC thread or writes to `settings.json`.
+The sync command neither blocks the IPC thread nor writes `settings.json`.
 
 ### 3.4 Documentation
 

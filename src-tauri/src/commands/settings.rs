@@ -90,11 +90,10 @@ pub async fn sync_window_background(
 ) -> Result<(), AppError> {
     run_blocking(move || {
         if let Some(window) = app.get_webview_window(main_window::LABEL)
-            && let Err(e) = main_window::apply_background(
-                &window,
+            && let Err(e) = window.set_background_color(Some(main_window::sync_background_color(
                 theme,
-                Some(main_window::desktop_theme(desktop_dark)),
-            )
+                desktop_dark,
+            )))
         {
             eprintln!("settings: cannot update window background: {e}");
         }
