@@ -252,6 +252,39 @@ fn connect_asks_the_providers_user_endpoint_with_a_bearer_token() {
 }
 
 #[test]
+fn connect_to_azure_devops_stores_an_organization_account() {
+    let (_dir, store, _tokens) = hosting_store();
+    let body = r#"{"authenticatedUser":{"providerDisplayName":"Jason Harmon","properties":{"Account":{"$type":"System.String","$value":"jason@example.com"}}}}"#;
+    let t = FakeTransport::new().reply(200, body);
+    let a = hosting_connect_inner(
+        &store,
+        &t,
+        Provider::AzureDevOps,
+        Some("https://dev.azure.com/contoso"),
+        SECRET,
+    )
+    .unwrap();
+    assert_eq!(a.provider, Provider::AzureDevOps);
+    assert_eq!(a.host, "dev.azure.com/contoso");
+    assert_eq!(a.username, "jason@example.com");
+    let reqs = t.requests();
+    assert_eq!(
+        reqs[0].url,
+        "https://dev.azure.com/contoso/_apis/connectionData?api-version=7.1"
+    );
+    let auth = reqs[0]
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.as_str());
+    assert!(auth.is_some_and(|v| v.starts_with("Basic ")), "{auth:?}");
+    assert_eq!(
+        hosting_list_accounts_inner(&store)[0].host,
+        "dev.azure.com/contoso"
+    );
+}
+
+#[test]
 fn connect_stores_the_token_in_the_keychain() {
     let (_dir, store, tokens) = hosting_store();
     let t = FakeTransport::new().reply(200, r#"{"login":"octo"}"#);

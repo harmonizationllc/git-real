@@ -592,6 +592,27 @@ fn credentials_for_picks_the_account_of_the_urls_organization() {
 }
 
 #[test]
+fn credentials_for_gives_a_non_azure_account_on_an_azure_host_nothing() {
+    let (_dir, store, _tokens) = hosting_store();
+    let t = Token::new("ghp-not-for-azure").unwrap();
+    store
+        .connect(account(Provider::GitHub, "dev.azure.com", "octo"), &t)
+        .unwrap();
+    store
+        .connect(
+            account(Provider::GitHub, "contoso.visualstudio.com", "octo"),
+            &t,
+        )
+        .unwrap();
+    for url in [
+        "https://dev.azure.com/contoso/p/_git/r",
+        "https://contoso.visualstudio.com/p/_git/r",
+    ] {
+        assert!(store.credentials_for(&[url.to_owned()]).is_none(), "{url}");
+    }
+}
+
+#[test]
 fn credentials_for_with_a_failing_keychain_is_none() {
     let (_dir, store, _tokens) = hosting_store_with(MemoryTokenStore {
         fail_get: true,

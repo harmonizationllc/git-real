@@ -392,7 +392,7 @@ fn validate_host_for_azure_takes_a_name_or_an_organization_url() {
 
 #[test]
 fn account_origin_for_matches_hosts_and_organizations() {
-    let cases: [(&str, &str, Option<&str>); 19] = [
+    let cases: [(&str, &str, Option<&str>); 22] = [
         (
             "github.com",
             "https://GitHub.com/o/r",
@@ -471,6 +471,22 @@ fn account_origin_for_matches_hosts_and_organizations() {
             "dev.azure.com/contoso",
             "https://dev.azure.com/Contoso",
             Some("https://dev.azure.com"),
+        ),
+        // A plain-host account on an Azure DevOps host is not an organization account.
+        (
+            "dev.azure.com",
+            "https://dev.azure.com/contoso/p/_git/r",
+            None,
+        ),
+        (
+            "contoso.visualstudio.com",
+            "https://contoso.visualstudio.com/p/_git/r",
+            None,
+        ),
+        (
+            "DEV.azure.com",
+            "https://dev.azure.com/contoso/p/_git/r",
+            None,
         ),
     ];
     for (host, url, want) in cases {

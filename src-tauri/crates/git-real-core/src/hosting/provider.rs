@@ -294,6 +294,11 @@ pub fn azure_org(input: &str) -> Option<String> {
 pub fn account_origin_for(account_host: &str, url: &str) -> Option<String> {
     let host = https_host(url)?;
     let Some((base, org)) = account_host.split_once('/') else {
+        // An account without an organization is never an Azure DevOps one.
+        let lower = account_host.to_ascii_lowercase();
+        if lower == Provider::AzureDevOps.default_host() || lower.ends_with(".visualstudio.com") {
+            return None;
+        }
         return host
             .eq_ignore_ascii_case(account_host)
             .then(|| format!("https://{host}"));

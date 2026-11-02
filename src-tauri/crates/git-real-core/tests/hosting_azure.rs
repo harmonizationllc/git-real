@@ -801,6 +801,24 @@ fn list_my_repos_drops_unknown_projects_and_unusable_urls_and_builds_missing_web
 }
 
 #[test]
+fn a_repository_without_a_remote_url_is_dropped_and_the_rest_of_the_page_is_kept() {
+    let repos = wrap(vec![
+        element(fixture!("azure_repositories.json"), 0, |_| {}),
+        element(fixture!("azure_repositories.json"), 2, |e| {
+            e["name"] = json!("no remote");
+            e.as_object_mut().unwrap().remove("remoteUrl");
+        }),
+        element(fixture!("azure_repositories.json"), 2, |_| {}),
+    ]);
+    let t = FakeTransport::new()
+        .reply(200, fixture!("azure_projects.json"))
+        .reply(200, &repos);
+    let page = my_repos(&t, "", 1).unwrap();
+    assert_eq!(page.repos.len(), 2);
+    assert!(page.repos.iter().all(|r| r.name != "no remote"));
+}
+
+#[test]
 fn a_project_without_a_usable_time_lists_its_repositories_at_epoch_zero_last() {
     // ADO sends `0001-01-01T00:00:00` (no zone) on shallow project references.
     let projects = wrap(vec![

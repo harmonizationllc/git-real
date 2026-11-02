@@ -167,7 +167,8 @@ struct WireProject {
 struct WireRepository {
     name: String,
     project: WireProjectRef,
-    remote_url: String,
+    /// Absent on a row the caller cannot clone; such a row is dropped.
+    remote_url: Option<String>,
     ssh_url: Option<String>,
     web_url: Option<String>,
     #[serde(default)]
@@ -356,6 +357,9 @@ pub fn list_my_repos(
         let Some(project) = projects.value.iter().find(|p| p.id == r.project.id) else {
             continue;
         };
+        let Some(https_url) = r.remote_url else {
+            continue;
+        };
         // One project without a usable time must not hide the organization: it sorts last.
         let updated_at = project
             .last_update_time
@@ -378,7 +382,7 @@ pub fn list_my_repos(
             description: None,
             private: project.visibility != "public",
             updated_at,
-            https_url: r.remote_url,
+            https_url,
             ssh_url: r.ssh_url,
             web_url,
         };
