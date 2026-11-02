@@ -6,9 +6,7 @@
   touch-action: none;
 }
 
-.handle:hover,
-.handle:focus-visible {
-  outline: none;
+.handle:hover {
   background: linear-gradient(
     to right,
     transparent 2px,
@@ -17,8 +15,9 @@
   );
 }
 
-/* A focusable separator keeps a clear keyboard cue; after the hover rule so it wins. */
+/* A focusable separator keeps a clear keyboard cue in the accent colour. */
 .handle:focus-visible {
+  outline: none;
   background: linear-gradient(
     to right,
     transparent 2px,
