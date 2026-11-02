@@ -446,3 +446,16 @@ describe("SyncToolbar Create pull request menu item when the prop is absent", ()
     ]);
   });
 });
+
+// Contract: Push is the primary action, Fetch and Pull neutral, Remotes a ghost, carets small.
+describe("SyncToolbar variants", () => {
+  it("marks Push primary and the others neutral", () => {
+    renderToolbar();
+    expect(button("Push")).toHaveAttribute("data-variant", "primary");
+    expect(button("Fetch")).toHaveAttribute("data-variant", "neutral");
+    expect(button("Pull")).toHaveAttribute("data-variant", "neutral");
+    expect(button("Remotes…")).toHaveAttribute("data-variant", "ghost");
+    expect(button("Pull options")).toHaveAttribute("data-size", "sm");
+    expect(button("Push options")).toHaveAttribute("data-size", "sm");
+  });
+});

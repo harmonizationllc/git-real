@@ -1,9 +1,11 @@
 import { render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { useShell } from "../lib/store/shell";
+import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
 import { TabBar } from "./TabBar";
 
@@ -139,5 +141,27 @@ describe("TabBar learned keycaps", () => {
       "title",
       "Command palette (Ctrl+T)",
     );
+  });
+});
+
+// Contract: the COSMIC look, pinned at the source: pill tabs, the active one on a card.
+describe("TabBar styling", () => {
+  const css = readFileSync("src/app/TabBar.module.css", "utf8");
+
+  it("lays tabs out as pills with the active one on a card", () => {
+    expect(declarationsOf(css, "tab")).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(declarationsOf(css, "active")).toMatch(/background:\s*var\(--color-surface\)/);
+    expect(declarationsOf(css, "active")).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    expect(css).not.toMatch(/border-bottom/);
+  });
+
+  it("renders the add, palette, settings and close buttons as icon variants", () => {
+    setup();
+    for (const name of [/start screen/i, /command palette/i, /^settings$/i]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("data-variant", "icon");
+    }
+    const close = screen.getByRole("button", { name: /close alpha/i });
+    expect(close).toHaveAttribute("data-variant", "icon");
+    expect(close).toHaveAttribute("data-size", "sm");
   });
 });

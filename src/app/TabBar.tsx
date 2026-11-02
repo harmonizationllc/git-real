@@ -41,7 +41,8 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
               <button
                 type="button"
                 aria-label={`Close ${tab.summary.name}`}
-                className={styles.close}
+                data-variant="icon"
+                data-size="sm"
                 onClick={() => onClose(tab.id)}
               >
                 <span aria-hidden="true">×</span>
@@ -53,7 +54,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
       <button
         type="button"
         aria-label="Start screen"
-        className={styles.plus}
+        data-variant="icon"
         onClick={() => onActivate(null)}
       >
         <span aria-hidden="true">+</span>
@@ -63,6 +64,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
         aria-label="Command palette"
         title={titleFor("Command palette", paletteKeys, keycaps)}
         className={styles.shell}
+        data-variant="icon"
         onClick={() => useShell.getState().open({ kind: "palette" })}
       >
         <span aria-hidden="true">⌘</span>
@@ -72,6 +74,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
         aria-label="Settings"
         title={titleFor("Settings", settingsKeys, keycaps)}
         className={styles.shell}
+        data-variant="icon"
         onClick={() => useShell.getState().open({ kind: "settings" })}
       >
         <span aria-hidden="true">⚙</span>

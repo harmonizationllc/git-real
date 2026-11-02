@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -37,6 +38,7 @@ import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useSettings } from "../lib/store/settings";
+import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
 import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
@@ -2079,5 +2081,25 @@ describe("RepoPane repoActions publication (GR-14)", () => {
     // fileHistory sets picker to true, which shows the File history dialog (line 126).
     act(() => ra.fileHistory());
     await screen.findByRole("dialog", { name: "File history" });
+  });
+});
+
+// Contract: the header is a card whose sync controls sit right and wrap below the name when narrow.
+describe("RepoPane styling", () => {
+  const css = readFileSync("src/app/RepoPane.module.css", "utf8");
+
+  it("wraps the header so sync buttons drop below the name on a narrow window", () => {
+    expect(declarationsOf(css, "header")).toMatch(/flex-wrap:\s*wrap/);
+    expect(declarationsOf(css, "header")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(declarationsOf(css, "syncRow")).toMatch(/margin-left:\s*auto/);
+    expect(declarationsOf(css, "body")).toMatch(/\bgap:\s*0;/);
+  });
+
+  it("makes the three columns cards", () => {
+    for (const cls of ["refs", "center", "sidebar"]) {
+      expect(declarationsOf(css, cls)).toMatch(/background:\s*var\(--color-surface\)/);
+      expect(declarationsOf(css, cls)).toMatch(/border-radius:\s*var\(--radius-s\)/);
+      expect(declarationsOf(css, cls)).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    }
   });
 });
