@@ -267,3 +267,14 @@ describe("CommitSummary files", () => {
     expect(getCommitFiles).not.toHaveBeenCalled();
   });
 });
+
+describe("CommitSummary button variants", () => {
+  it("gives Copy and Close small ghost buttons", async () => {
+    await renderSummary();
+    for (const name of ["Copy", "Close commit details"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("data-variant", "ghost");
+      expect(button).toHaveAttribute("data-size", "sm");
+    }
+  });
+});

@@ -34,7 +34,7 @@ export function CommitFiles({ repoId, oid }: CommitFilesProps) {
     return (
       <div role="alert" className={styles.error}>
         <p className={styles.message}>{error.message}</p>
-        <button type="button" onClick={refetch}>
+        <button type="button" data-variant="neutral" onClick={refetch}>
           Retry
         </button>
       </div>

@@ -309,3 +309,12 @@ describe("FileHeader COSMIC look", () => {
     expect(close).toHaveAttribute("data-size", "sm");
   });
 });
+
+describe("FileHeader hidden radio", () => {
+  it("hides the radio with opacity only, so it stays focusable", () => {
+    const css = readFileSync("src/features/diff/FileHeader.module.css", "utf8");
+    const block = css.match(/\.option input\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(block).toMatch(/opacity:\s*0/);
+    expect(block).not.toMatch(/display:\s*none|visibility:\s*hidden/);
+  });
+});

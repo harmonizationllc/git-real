@@ -46,7 +46,7 @@
   font-size: var(--text-xs);
 }
 
-.remove {
+.remove[data-variant] {
   flex: none;
   color: var(--color-text-muted);
 }

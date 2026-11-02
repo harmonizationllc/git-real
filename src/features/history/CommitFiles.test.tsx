@@ -316,3 +316,14 @@ describe("CommitFiles styling", () => {
     expect(declarationsOf(css, "row")).toMatch(/border-radius:\s*var\(--radius-s\)/);
   });
 });
+
+describe("CommitFiles button variants", () => {
+  it("gives the error Retry a neutral button", async () => {
+    vi.mocked(getCommitFiles).mockRejectedValue({ kind: "git", message: "files boom" });
+    renderWithProviders(<CommitFiles repoId={1} oid={OID} />);
+    const retry = await within(await screen.findByRole("alert")).findByRole("button", {
+      name: "Retry",
+    });
+    expect(retry).toHaveAttribute("data-variant", "neutral");
+  });
+});

@@ -387,3 +387,16 @@ describe("Toasts COSMIC look", () => {
     expect(toast).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
   });
 });
+
+describe("Toasts buttons", () => {
+  it("gives the action a small ghost variant and dismiss a small icon variant", () => {
+    render(<Toasts />);
+    show("Saved", { label: "Undo", run: vi.fn() });
+    const action = screen.getByRole("button", { name: "Undo" });
+    expect(action).toHaveAttribute("data-variant", "ghost");
+    expect(action).toHaveAttribute("data-size", "sm");
+    const dismiss = screen.getByRole("button", { name: "Dismiss notification" });
+    expect(dismiss).toHaveAttribute("data-variant", "icon");
+    expect(dismiss).toHaveAttribute("data-size", "sm");
+  });
+});

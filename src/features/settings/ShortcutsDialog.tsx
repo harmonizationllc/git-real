@@ -101,7 +101,7 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
           >
             Customize…
           </button>
-          <button data-variant="primary" type="button" onClick={onClose}>
+          <button data-variant="neutral" type="button" onClick={onClose}>
             Close
           </button>
         </div>

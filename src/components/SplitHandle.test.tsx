@@ -637,11 +637,19 @@ describe("SplitHandle COSMIC look", () => {
     expect(rest).not.toMatch(/--color-border|--color-accent|gradient/);
   });
 
-  it("draws the border-token line on hover and focus-visible", () => {
+  it("draws the border-token line on hover and the accent line on focus-visible", () => {
     const rules = [...css.matchAll(/([^{}]*:(?:hover|focus-visible)[^{]*)\{([^}]*)\}/g)];
     expect(rules.length).toBeGreaterThan(0);
-    for (const [, , body] of rules) expect(body).toMatch(/var\(--color-border\)/);
-    expect(css).toMatch(/\.handle:hover/);
-    expect(css).toMatch(/\.horizontal:hover/);
+    for (const [, selector, body] of rules) {
+      const token =
+        selector!.includes("focus-visible") && !selector!.includes("hover")
+          ? "--color-accent"
+          : "--color-border";
+      expect(body).toContain(`var(${token})`);
+    }
+    for (const orientation of ["handle", "horizontal"]) {
+      expect(css).toMatch(new RegExp(`\\.${orientation}:hover`));
+      expect(css).toMatch(new RegExp(`\\.${orientation}:focus-visible`));
+    }
   });
 });

@@ -668,3 +668,12 @@ describe("FileHistoryPanel pages", () => {
     expect(getFileHistory).not.toHaveBeenCalled();
   });
 });
+
+describe("FileHistoryPanel button variants", () => {
+  it("gives Close a small ghost button", async () => {
+    await renderPanel();
+    const button = screen.getByRole("button", { name: "Close file history" });
+    expect(button).toHaveAttribute("data-variant", "ghost");
+    expect(button).toHaveAttribute("data-size", "sm");
+  });
+});

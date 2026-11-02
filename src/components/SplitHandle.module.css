@@ -17,17 +17,35 @@
   );
 }
 
+/* A focusable separator keeps a clear keyboard cue; after the hover rule so it wins. */
+.handle:focus-visible {
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--color-accent) 2px 3px,
+    transparent 3px
+  );
+}
+
 /* A section separator: height set inline, the line drawn across its middle. */
 .horizontal {
   cursor: row-resize;
 }
 
-.horizontal:hover,
-.horizontal:focus-visible {
+.horizontal:hover {
   background: linear-gradient(
     to bottom,
     transparent 2px,
     var(--color-border) 2px 3px,
+    transparent 3px
+  );
+}
+
+.horizontal:focus-visible {
+  background: linear-gradient(
+    to bottom,
+    transparent 2px,
+    var(--color-accent) 2px 3px,
     transparent 3px
   );
 }

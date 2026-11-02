@@ -224,7 +224,7 @@ describe("RepoError COSMIC look", () => {
     expect(css).toMatch(/\.root\s*\{[^}]*border-radius:\s*var\(--radius-s\)/);
   });
 
-  it("gives the retry and dismiss buttons the small ghost variant", () => {
+  it("gives the retry and dismiss buttons the small size and a neutral or ghost variant", () => {
     render(
       <RepoError
         error={{ kind: "io", message: "boom" }}
@@ -236,5 +236,13 @@ describe("RepoError COSMIC look", () => {
     for (const name of ["Retry", "Dismiss"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("data-size", "sm");
     }
+    expect(screen.getByRole("button", { name: "Retry" })).toHaveAttribute(
+      "data-variant",
+      "neutral",
+    );
+    expect(screen.getByRole("button", { name: "Dismiss" })).toHaveAttribute(
+      "data-variant",
+      "ghost",
+    );
   });
 });

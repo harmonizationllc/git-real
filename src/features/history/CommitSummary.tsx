@@ -66,10 +66,16 @@ function Details({ repoId, commit, onClose }: DetailsProps) {
     <section aria-label="Commit details" className={styles.root}>
       <header className={styles.header}>
         <h2 className={styles.title}>{`Commit ${shortOid(oid)}`}</h2>
-        <button type="button" onClick={copy}>
+        <button type="button" data-variant="ghost" data-size="sm" onClick={copy}>
           Copy
         </button>
-        <button type="button" aria-label="Close commit details" onClick={onClose}>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-size="sm"
+          aria-label="Close commit details"
+          onClick={onClose}
+        >
           Close
         </button>
       </header>

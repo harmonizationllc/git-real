@@ -61,6 +61,8 @@ function ToastItem({ toast }: { toast: Toast }) {
       {action !== null && (
         <button
           type="button"
+          data-variant="ghost"
+          data-size="sm"
           onClick={() => {
             action.run();
             dismiss();
@@ -69,7 +71,13 @@ function ToastItem({ toast }: { toast: Toast }) {
           {action.label}
         </button>
       )}
-      <button type="button" aria-label="Dismiss notification" onClick={dismiss}>
+      <button
+        type="button"
+        data-variant="icon"
+        data-size="sm"
+        aria-label="Dismiss notification"
+        onClick={dismiss}
+      >
         ×
       </button>
     </div>
