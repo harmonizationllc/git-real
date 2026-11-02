@@ -15,6 +15,7 @@ import { queryKeys } from "../../lib/query/keys";
 import { useSettings } from "../../lib/store/settings";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
+  azureRepoContext,
   hostingAccount,
   hostingError,
   issue,
@@ -94,6 +95,15 @@ describe("IssuesPanel visibility", () => {
     const heading = screen.getByRole("heading", { name: /^Issues/ });
     expect(heading).toHaveAttribute("data-focus-target");
     expect(heading).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+// Contract: Azure DevOps calls its issues work items.
+describe("IssuesPanel for Azure DevOps", () => {
+  it("heads the section Work items for an Azure repository", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Work items (2)" })).toBeInTheDocument();
   });
 });
 

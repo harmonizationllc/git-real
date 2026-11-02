@@ -166,7 +166,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
             aria-controls={bodyId}
             onClick={() => setIssuesCollapsed(!collapsed)}
           >
-            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore)}
+            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore, provider)}
           </button>
         </h2>
         <button

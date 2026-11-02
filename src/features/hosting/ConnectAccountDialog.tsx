@@ -8,8 +8,10 @@ import type { AccountsPreset } from "./AccountsDialog";
 import styles from "./ConnectAccountDialog.module.css";
 import {
   DEFAULT_HOST,
+  ORGANIZATION_HINT,
   PROVIDER_LABEL,
   SCOPE_HINT,
+  azureOrganization,
   hostingErrorText,
   tokenPageUrl,
 } from "./hostingCopy";
@@ -25,7 +27,7 @@ export interface ConnectAccountDialogProps {
   onCancel(): void;
 }
 
-const PROVIDERS: HostingProvider[] = ["github", "gitlab", "bitbucket"];
+const PROVIDERS: HostingProvider[] = ["github", "gitlab", "bitbucket", "azure"];
 
 /**
  * Checks a personal access token with the provider and stores it in the system keychain. The token
@@ -46,7 +48,12 @@ export function ConnectAccountDialog({
   const tokenRef = useRef<HTMLInputElement>(null);
   const { connect, pending } = useAccountActions();
   const [provider, setProvider] = useState<HostingProvider>(preset?.provider ?? "github");
-  const [host, setHost] = useState(preset?.host ?? "");
+  // An Azure DevOps account's host is dev.azure.com/<org>; the field holds only the organization.
+  const [host, setHost] = useState(
+    preset?.provider === "azure"
+      ? preset.host.replace(/^dev\.azure\.com\//, "")
+      : (preset?.host ?? ""),
+  );
   const [token, setToken] = useState("");
   const [error, setError] = useState<AppError | null>(null);
   const [replacing, setReplacing] = useState<HostingAccount | null>(null);
@@ -54,7 +61,15 @@ export function ConnectAccountDialog({
   // Bitbucket Cloud has one host, so its form has no Host field.
   const hasHost = provider !== "bitbucket";
   const typedHost = hasHost ? host.trim() : "";
-  const resolvedHost = typedHost === "" ? DEFAULT_HOST[provider] : typedHost.toLowerCase();
+  // Azure DevOps accounts are keyed by organization, so the host to match is dev.azure.com/<org>.
+  const isAzure = provider === "azure";
+  const organization = isAzure ? azureOrganization(typedHost) : null;
+  const resolvedHost =
+    organization !== null
+      ? `${DEFAULT_HOST.azure}/${organization}`
+      : typedHost === ""
+        ? DEFAULT_HOST[provider]
+        : typedHost.toLowerCase();
 
   useRestoreFocus();
   // Token takes focus on open, after a failure and when the replace confirm closes (its own restore
@@ -79,7 +94,7 @@ export function ConnectAccountDialog({
     e.preventDefault();
     // Connect is disabled until the accounts have loaded.
     const existing = (accounts as HostingAccount[]).find(
-      (a) => a.provider === provider && a.host === resolvedHost,
+      (a) => a.provider === provider && a.host.toLowerCase() === resolvedHost.toLowerCase(),
     );
     if (existing === undefined) void send();
     else setReplacing(existing);
@@ -131,12 +146,12 @@ export function ConnectAccountDialog({
             </fieldset>
             {hasHost && (
               <div className={styles.field}>
-                <label htmlFor={hostId}>Host</label>
+                <label htmlFor={hostId}>{isAzure ? "Organization" : "Host"}</label>
                 <input
                   id={hostId}
                   type="text"
                   value={host}
-                  placeholder={DEFAULT_HOST[provider]}
+                  placeholder={isAzure ? "contoso" : DEFAULT_HOST[provider]}
                   disabled={pending}
                   aria-describedby={hostHintId}
                   spellCheck={false}
@@ -144,7 +159,7 @@ export function ConnectAccountDialog({
                   onChange={(e) => setHost(e.target.value)}
                 />
                 <p id={hostHintId} className={styles.note}>
-                  Leave empty for {DEFAULT_HOST[provider]}.
+                  {isAzure ? ORGANIZATION_HINT : `Leave empty for ${DEFAULT_HOST[provider]}.`}
                 </p>
               </div>
             )}
@@ -178,7 +193,12 @@ export function ConnectAccountDialog({
               <button
                 data-variant="primary"
                 type="submit"
-                disabled={pending || token === "" || accounts === undefined}
+                disabled={
+                  pending ||
+                  token === "" ||
+                  accounts === undefined ||
+                  (isAzure && organization === null)
+                }
               >
                 {pending ? "Connecting…" : "Connect"}
               </button>

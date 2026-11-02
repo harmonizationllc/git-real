@@ -1,10 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hostingConnect, openExternal } from "../../lib/ipc";
-import { hostingAccount, hostingError } from "../../test/hostingFixtures";
+import { azureAccount, hostingAccount, hostingError } from "../../test/hostingFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { ConnectAccountDialog } from "./ConnectAccountDialog";
-import { SCOPE_HINT } from "./hostingCopy";
+import { ORGANIZATION_HINT, SCOPE_HINT } from "./hostingCopy";
 import type { HostingAccount } from "../../lib/ipc";
 import type { AccountsPreset } from "./AccountsDialog";
 
@@ -44,14 +44,14 @@ describe("ConnectAccountDialog form", () => {
     );
   });
 
-  it("groups the three providers under Provider with GitHub checked", () => {
+  it("groups the four providers under Provider with GitHub checked", () => {
     renderDialog();
     expect(screen.getByRole("group", { name: "Provider" })).toBeInTheDocument();
-    expect([radio("GitHub"), radio("GitLab"), radio("Bitbucket")].map((r) => r.checked)).toEqual([
-      true,
-      false,
-      false,
-    ]);
+    expect(
+      [radio("GitHub"), radio("GitLab"), radio("Bitbucket"), radio("Azure DevOps")].map(
+        (r) => r.checked,
+      ),
+    ).toEqual([true, false, false, false]);
   });
 
   it("starts on the preset's provider and host", () => {
@@ -84,6 +84,7 @@ describe("ConnectAccountDialog form", () => {
     ["GitHub", "github"],
     ["GitLab", "gitlab"],
     ["Bitbucket", "bitbucket"],
+    ["Azure DevOps", "azure"],
   ] as const)("shows the %s scope hint", async (label, provider) => {
     const { user } = renderDialog();
     await user.click(radio(label));
@@ -350,5 +351,73 @@ describe("ConnectAccountDialog cancel", () => {
     const { user } = renderDialog();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(hostingConnect).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: Azure DevOps is keyed by organization, which the dialog asks for in place of a host.
+describe("ConnectAccountDialog Azure DevOps", () => {
+  it("asks for an Organization and keeps Connect disabled until it parses", async () => {
+    const { user } = renderDialog();
+    await user.click(radio("Azure DevOps"));
+    const org = screen.getByLabelText("Organization");
+    expect(org).toHaveAttribute("placeholder", "contoso");
+    expect(screen.queryByLabelText("Host")).toBeNull();
+    expect(screen.getByText(ORGANIZATION_HINT)).toBeInTheDocument();
+    expect(screen.queryByText(/^Leave empty for/)).toBeNull();
+    await user.type(token(), "pat");
+    expect(connect()).toBeDisabled();
+    await user.type(org, "contoso");
+    expect(connect()).toBeEnabled();
+    await user.clear(org);
+    expect(connect()).toBeDisabled();
+  });
+
+  it("sends the typed organization as the host", async () => {
+    const { user } = renderDialog();
+    await user.click(radio("Azure DevOps"));
+    await user.type(screen.getByLabelText("Organization"), "https://dev.azure.com/contoso");
+    await user.type(token(), "pat");
+    await user.click(connect());
+    expect(hostingConnect).toHaveBeenCalledExactlyOnceWith(
+      "azure",
+      "https://dev.azure.com/contoso",
+      "pat",
+    );
+  });
+
+  it("pre-fills the organization from a preset host", () => {
+    renderDialog({ preset: { provider: "azure", host: "dev.azure.com/contoso" } });
+    expect(screen.getByLabelText("Organization")).toHaveValue("contoso");
+  });
+
+  it("asks before replacing the account of the same organization", async () => {
+    const { user } = renderDialog({ accounts: [azureAccount()] });
+    await user.click(radio("Azure DevOps"));
+    await user.type(screen.getByLabelText("Organization"), "Contoso");
+    await user.type(token(), "pat");
+    await user.click(connect());
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Replace jason@example.com on dev.azure.com/contoso?",
+      }),
+    ).toBeInTheDocument();
+    expect(hostingConnect).not.toHaveBeenCalled();
+  });
+
+  it("opens the organization's token page", async () => {
+    const { user } = renderDialog();
+    await user.click(radio("Azure DevOps"));
+    await user.type(screen.getByLabelText("Organization"), "contoso");
+    await user.click(screen.getByRole("button", { name: "Create a token" }));
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(
+      "https://dev.azure.com/contoso/_usersSettings/tokens",
+    );
+  });
+
+  it("opens the service root while the organization is unparseable", async () => {
+    const { user } = renderDialog();
+    await user.click(radio("Azure DevOps"));
+    await user.click(screen.getByRole("button", { name: "Create a token" }));
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://dev.azure.com/");
   });
 });

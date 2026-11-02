@@ -598,9 +598,9 @@ describe("hosting types", () => {
     ]);
   });
 
-  it("should accept all three HostingProvider values", () => {
-    const providers: HostingProvider[] = ["github", "gitlab", "bitbucket"];
-    expect(providers).toHaveLength(3);
+  it("should accept all four HostingProvider values", () => {
+    const providers: HostingProvider[] = ["github", "gitlab", "bitbucket", "azure"];
+    expect(providers).toHaveLength(4);
   });
 
   it("should accept a RepoContext with and without an account", () => {
