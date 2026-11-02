@@ -35,9 +35,9 @@ export function sectionFloor(natural: number): number {
  * Branches height is a true height, only floored. Leftover space goes to an automatic Branches;
  * an overflow is taken from the automatic sections in proportion to their room above the floor,
  * then from the fixed ones. Floors are never crossed. Heights are whole pixels: when the shares
- * fill the container, the rounding remainder goes to the last automatic section with a non-zero
- * height, so the heights sum exactly to the container. An unmeasured container (<= 0) returns the
- * content heights unchanged.
+ * fill the container, the rounding remainder goes to the last automatic section that is sharing,
+ * else to an automatic Branches above its floor, so the heights sum exactly to the container.
+ * An unmeasured container (<= 0) returns the content heights unchanged.
  */
 export function fitSections(container: number, sections: SectionInput[]): number[] {
   if (container <= 0) return sections.map((s) => s.natural);
@@ -60,21 +60,32 @@ export function fitSections(container: number, sections: SectionInput[]): number
       over -= taken;
     }
   }
-  return toWholePixels(container, sections, heights);
+  return toWholePixels(container, sections, floors, heights);
 }
 
 /**
- * Rounds each height; when the unrounded heights fill the container, the last automatic section
- * with a non-zero height absorbs the rounding remainder so the sum stays exact.
+ * Rounds each height. When the unrounded heights fill the container, the rounding remainder goes
+ * to the last automatic section that is sharing (above its floor and shrunk below its content),
+ * else to an automatic Branches above its floor, else it stays unassigned. A section shown whole
+ * never gives or takes the pixel.
  */
-function toWholePixels(container: number, sections: SectionInput[], heights: number[]): number[] {
+function toWholePixels(
+  container: number,
+  sections: SectionInput[],
+  floors: number[],
+  heights: number[],
+): number[] {
   const rounded = heights.map(Math.round);
   const sum = heights.reduce((total, h) => total + h, 0);
   if (Math.abs(sum - container) >= 0.5) return rounded;
-  for (let i = rounded.length - 1; i >= 0; i--) {
-    if (sections[i].fixed !== null || rounded[i] === 0) continue;
-    rounded[i] += container - rounded.reduce((total, h) => total + h, 0);
-    break;
+  const automatic = (i: number) => sections[i].fixed === null && heights[i] > floors[i];
+  let recipient = -1;
+  for (let i = rounded.length - 1; i >= 0 && recipient < 0; i--) {
+    if (automatic(i) && heights[i] < sections[i].natural) recipient = i;
+  }
+  if (recipient < 0 && automatic(0)) recipient = 0;
+  if (recipient >= 0) {
+    rounded[recipient] += container - rounded.reduce((total, h) => total + h, 0);
   }
   return rounded;
 }

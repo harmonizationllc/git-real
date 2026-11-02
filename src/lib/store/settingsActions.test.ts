@@ -135,11 +135,12 @@ describe("layout setters", () => {
     expect(await patches()).toEqual([{ layout: { pullRequestsHeight: null } }]);
   });
 
-  it("the defaults carry four null section heights", () => {
+  it("the defaults carry five null section heights", () => {
     expect(DEFAULT_SETTINGS.layout).toMatchObject({
       branchesHeight: null,
       stashesHeight: null,
       tagsHeight: null,
+      worktreesHeight: null,
       pullRequestsHeight: null,
     });
   });

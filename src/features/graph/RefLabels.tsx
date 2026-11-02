@@ -27,10 +27,14 @@ export function RefLabels({ refs }: RefLabelsProps) {
 
   // The +n pill's width as last used by measure; null until a pill has been measured.
   const moreWidthRef = useRef<number | null>(null);
+  // Re-measures effect B has made since the last external trigger; capped at MAX_LABELS.
+  const remeasuresRef = useRef(0);
   // The +n pill's drawn width, or the MORE_PILL_PX estimate before it is laid out.
   const moreWidth = () => moreRef.current?.offsetWidth || MORE_PILL_PX;
   const measure = () => {
-    const parent = (rootRef.current as HTMLElement).parentElement as HTMLElement;
+    // Unset after unmount, when a late observer callback may still arrive.
+    const parent = rootRef.current?.parentElement;
+    if (!parent) return;
     const widths = pillRefs.current
       .slice(0, candidateCount)
       .map((el) => (el as HTMLElement).offsetWidth);
@@ -51,24 +55,30 @@ export function RefLabels({ refs }: RefLabelsProps) {
 
   // One observer per label set: measure on mount and when the candidates or the total change,
   // then on every resize of the parent cell. React skips the re-render when the fitted count is
-  // unchanged.
+  // unchanged. Each of these external triggers resets the re-measure cap.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    remeasuresRef.current = 0;
     measureRef.current();
-    const ro = new ResizeObserver(() => measureRef.current());
+    const ro = new ResizeObserver(() => {
+      remeasuresRef.current = 0;
+      measureRef.current();
+    });
     ro.observe(root.parentElement as HTMLElement);
     return () => ro.disconnect();
     // candidateKey and total are the triggers; measure reads the rest through refs.
   }, [candidateKey, total]);
 
   // A changed fit can draw a +n pill of a new width. When it differs from the width the last
-  // measure used, measure once more with the drawn width; once the pill's width is stable the
-  // fit is too, so this does not loop.
+  // measure used, measure once more with the drawn width. A pill width that grows with n settles
+  // in one pass; one that does not could flip the fit back and forth, so the re-measures per
+  // trigger are capped at MAX_LABELS (the fit has at most that many values to try).
   useLayoutEffect(() => {
     if (!moreRef.current) return;
     const drawn = moreWidth();
-    if (drawn === moreWidthRef.current) return;
+    if (drawn === moreWidthRef.current || remeasuresRef.current >= MAX_LABELS) return;
+    remeasuresRef.current += 1;
     moreWidthRef.current = drawn;
     measureRef.current();
     // fit is the trigger; the pill is read through refs.

@@ -60,7 +60,7 @@ must default); any new dependency.
 
 `src/app/refsLayout.ts` (pure, tested with numbers, no DOM):
 
-- `REFS_SECTIONS = ["branches", "stashes", "tags", "pullRequests", "issues"]`
+- `REFS_SECTIONS = ["branches", "stashes", "tags", "worktrees", "pullRequests", "issues"]`
   in column order; `RefsSection` is their union and `ResizableSection`
   excludes `"issues"`.
 - `SECTION_MIN = 72` px: the least an expanded section with content keeps
@@ -87,9 +87,13 @@ must default); any new dependency.
      the fixed sections in the same way. Sections at their floor stay there;
      if the floors alone exceed the container the column scrolls. Heights
      are returned as whole pixels; when the shares fill the container, the
-     rounding remainder goes to the last automatic section with a non-zero
-     height, so the column's inline heights sum exactly to its container
-     _(GR-31, review minor on independent rounding)_.
+     rounding remainder goes to the last automatic section that is sharing
+     (above its floor and shrunk below its content), else to Branches when
+     it is automatic and above its floor, else it stays unassigned. A
+     section shown whole never gains or loses the pixel, and the column's
+     inline heights otherwise sum exactly to its container _(GR-31, review
+     minor on independent rounding; recipient narrowed at the GR-31 final
+     review)_.
   4. `container ≤ 0` (unmeasured) passes the naturals through, as
      `clampWidths` does for widths.
 - `maxSectionHeight(container, sections, index)` =

@@ -345,6 +345,39 @@ describe("RefLabels fit", () => {
     expect(observers[0]!.disconnect).toHaveBeenCalled();
   });
 
+  it("should settle when the +N pill width is not monotone in N", () => {
+    // budget 170: with +2 at 60 the fit is one, with +3 at 30 it is two again; capped re-measures stop the flip.
+    widths.d = 40;
+    widths["+2"] = 60;
+    widths["+3"] = 30;
+    cellWidth = 240;
+    expect(() => renderInCell([...three, ref("tag", "d")])).not.toThrow();
+    expect(morePill()).toHaveTextContent(/^\+\d+ more: /);
+    expect(observers).toHaveLength(1);
+  });
+
+  it("should still correct the +N width after repeated resizes", () => {
+    // Each resize between 240 and 400 changes the fit; the +N correction must keep working.
+    widths.d = 40;
+    widths["+2"] = 60;
+    widths["+3"] = 60;
+    cellWidth = 240;
+    renderInCell([...three, ref("tag", "d")]);
+    for (const width of [400, 240, 400, 240, 400, 240]) {
+      cellWidth = width;
+      act(() => observers.forEach((o) => o.fire()));
+    }
+    expect(morePill()).toHaveTextContent(/^\+3 more: b, c, d$/);
+    expect(observers).toHaveLength(1);
+  });
+
+  it("should ignore an observer callback after unmount", () => {
+    cellWidth = 200;
+    const { unmount } = renderInCell();
+    unmount();
+    expect(() => act(() => observers.forEach((o) => o.fire()))).not.toThrow();
+  });
+
   it("should disconnect on unmount", () => {
     cellWidth = 200;
     const { unmount } = renderInCell();

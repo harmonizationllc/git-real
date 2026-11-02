@@ -63,6 +63,21 @@ describe("fitSections", () => {
     expect(fitSections(600, [fixed(400, 250.4), auto(60), auto(150)])).toEqual([250, 60, 150]);
   });
 
+  it("should never take the rounding pixel from a section shown whole", () => {
+    // two sharers at 454.5 both round up; the 92 px section keeps its content height
+    expect(fitSections(1001, [auto(1000), auto(1000), auto(92)])).toEqual([455, 454, 92]);
+  });
+
+  it("should give a fits-all rounding pixel to the automatic Branches", () => {
+    // Branches holds the 389.4 px leftover; no section is shrunk, so Branches takes the pixel
+    expect(fitSections(600, [auto(200.4), auto(60.3), auto(150.3)])).toEqual([390, 60, 150]);
+  });
+
+  it("should leave the rounding pixel unassigned when no automatic section can take it", () => {
+    // fixed Branches, nothing shrunk: 460.4 rounds to 460 in a 460.6 container
+    expect(fitSections(460.6, [fixed(400, 250.4), auto(60), auto(150)])).toEqual([250, 60, 150]);
+  });
+
   it("should clamp a stored height on a small section to its content and show it whole", () => {
     expect(fitSections(1000, [auto(100), fixed(92, 500)])).toEqual([908, 92]);
   });

@@ -1,6 +1,7 @@
 // Test support: read the declarations that apply to a CSS-module class from raw CSS text.
 // Handles grouped selectors (`.a, .root`) and pseudo/attribute suffixes (`.root:hover`), which
-// a single-selector regex misses. Only top-level rules are read; nested at-rules are not.
+// a single-selector regex misses. Rules nested in an at-rule (`@media`, `@supports`) are read
+// as if top-level, without their condition.
 
 /**
  * The concatenated declaration blocks of every top-level rule whose comma-separated selector
