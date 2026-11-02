@@ -430,6 +430,12 @@ describe("GraphPanel rows", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
+  it("should render the page failure alert in the panel variant", async () => {
+    vi.mocked(getLogPage).mockRejectedValue({ kind: "git", message: "page boom" });
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should request the page again when Retry is clicked after a page failure", async () => {
     vi.mocked(getLogPage).mockRejectedValue({ kind: "git", message: "page boom" });
     renderWithProviders(<GraphPanel repoId={REPO} />);

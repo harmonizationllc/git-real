@@ -191,8 +191,8 @@ action error pass `variant="panel"`. No reason to keep the default was found:
 each sits in a column at most a few hundred pixels wide.
 
 _(Amended 2026-11-02, GR-31.)_ The list errors of `BranchesPanel`,
-`StashesPanel`, `TagsPanel` and `WorktreesPanel`, and `GraphPanel`'s summary
-and panel errors, pass `variant="panel"` too. On the GR-31 walk, a path error
+`StashesPanel`, `TagsPanel` and `WorktreesPanel`, and `GraphPanel`'s summary,
+panel and page errors, pass `variant="panel"` too. On the GR-31 walk, a path error
 in the default variant wrapped at about ten characters per line beside its
 buttons in the 240 px refs column.
 

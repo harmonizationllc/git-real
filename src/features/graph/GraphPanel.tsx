@@ -583,6 +583,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
         <RepoError
           error={pages.error}
           path={null}
+          variant="panel"
           onRetry={pages.refetch}
           onDismiss={pages.refetch}
         />
