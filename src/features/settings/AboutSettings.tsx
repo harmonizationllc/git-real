@@ -37,7 +37,7 @@ export function AboutSettings() {
   return (
     <Section id="about" name="About">
       <p className={styles.value}>Git Real{version.data ? ` ${version.data}` : ""}</p>
-      <label className={styles.field}>
+      <label className={styles.radio}>
         <input
           type="checkbox"
           checked={checkOnStartup}

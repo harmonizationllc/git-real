@@ -176,6 +176,11 @@ describe("bundle config", () => {
     expect(bundle.licenseFile).toBe("../LICENSE");
   });
 
+  it("long description names all four hosting providers", () => {
+    const conf = readJson("src-tauri/tauri.conf.json") as { bundle: { longDescription: string } };
+    expect(conf.bundle.longDescription).toContain("GitHub, GitLab, Bitbucket, and Azure DevOps");
+  });
+
   // icon list must include icons/icon.png and every listed file must exist on disk
   it("icon list includes icon.png and every file exists", () => {
     const icons = bundle.icon as string[];
