@@ -8,6 +8,7 @@ import { useToasts } from "../../lib/store/toasts";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import type { UpdateInfo } from "../../lib/ipc";
 import { AboutSettings } from "./AboutSettings";
+import styles from "./SettingsDialog.module.css";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -100,6 +101,16 @@ describe("AboutSettings checkbox", () => {
       name: /check for updates on startup/i,
     });
     expect(checkbox).not.toBeChecked();
+  });
+
+  // Contract: the checkbox and its label sit on one row, like the theme radios.
+  it("wraps the checkbox in an inline row label, not a column field", async () => {
+    await setup();
+    const checkbox = screen.getByRole("checkbox", { name: /check for updates on startup/i });
+    const label = checkbox.closest("label");
+    expect(label).not.toBeNull();
+    expect(label).toHaveClass(styles.radio);
+    expect(label).not.toHaveClass(styles.field);
   });
 });
 
