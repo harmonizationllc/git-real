@@ -544,6 +544,12 @@ describe("IssuePicker states", () => {
     expect(await screen.findByText("No open issues match")).toBeInTheDocument();
   });
 
+  it("shows No open work items match for an empty answer on Azure DevOps", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    await renderPicker({ provider: "azure" }, false);
+    expect(await screen.findByText("No open work items match")).toBeInTheDocument();
+  });
+
   it("shows no options for an empty answer", async () => {
     vi.mocked(hostingListIssues).mockResolvedValue([]);
     await renderPicker({}, false);

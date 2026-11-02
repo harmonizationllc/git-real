@@ -12,6 +12,7 @@ import {
   RECONNECT_TEXT,
   hostingMessage,
   issueCountLabel,
+  noIssuesText,
 } from "./hostingCopy";
 import { IssueRow } from "./IssueRow";
 import styles from "./IssuesPanel.module.css";
@@ -112,7 +113,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     body = <p role="status">Loading issues…</p>;
   } else if (issues.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>No open issues</p>;
+    body = <p className={styles.empty}>{noIssuesText(provider)}</p>;
   } else {
     listed = true;
     body = (

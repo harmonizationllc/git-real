@@ -137,6 +137,16 @@ export function issueCountLabel(
   return count === null ? noun : `${noun} (${count}${more ? "+" : ""})`;
 }
 
+/** The Issues panel's empty state (work items on Azure DevOps). */
+export function noIssuesText(provider: HostingProvider): string {
+  return provider === "azure" ? "No open work items" : "No open issues";
+}
+
+/** The issue picker's empty state (work items on Azure DevOps). */
+export function noIssuesMatchText(provider: HostingProvider): string {
+  return `${noIssuesText(provider)} match`;
+}
+
 /** The Issues panel and the issue picker when the repository's tracker is switched off. */
 export const ISSUES_OFF_TEXT = "Issues are turned off for this repository";
 

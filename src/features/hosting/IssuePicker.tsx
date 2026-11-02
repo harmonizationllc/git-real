@@ -3,7 +3,7 @@ import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import type { HostingProvider, RepoId } from "../../lib/ipc";
 import { NetworkError } from "../remotes/NetworkError";
-import { ISSUES_OFF_TEXT, hostingMessage } from "./hostingCopy";
+import { ISSUES_OFF_TEXT, hostingMessage, noIssuesMatchText } from "./hostingCopy";
 import styles from "./IssuePicker.module.css";
 import { useIssues } from "./useIssues";
 import { issuesAllowed, useRepoInfo } from "./useRepoInfo";
@@ -149,7 +149,7 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
   } else if (issues === undefined) {
     body = <p role="status">Searching…</p>;
   } else if (issues.length === 0) {
-    body = <p className={styles.empty}>No open issues match</p>;
+    body = <p className={styles.empty}>{noIssuesMatchText(provider)}</p>;
   }
 
   return (

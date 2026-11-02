@@ -105,6 +105,13 @@ describe("IssuesPanel for Azure DevOps", () => {
     renderWithProviders(<IssuesPanel repoId={1} />);
     expect(await screen.findByRole("button", { name: "Work items (2)" })).toBeInTheDocument();
   });
+
+  it("shows No open work items for an empty list", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("No open work items")).toBeInTheDocument();
+  });
 });
 
 // Contract (Review Focus 5): the section starts collapsed and a collapsed section calls no provider.
