@@ -158,7 +158,8 @@ struct WireProject {
     name: String,
     /// `private` or `public`.
     visibility: String,
-    last_update_time: String,
+    /// `0001-01-01T00:00:00`, without a zone, on shallow references; absent on some.
+    last_update_time: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -184,9 +185,9 @@ pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<User
         "{}/_apis/connectionData?{API_VERSION}",
         Provider::AzureDevOps.api_base(host)
     );
-    let org = host.rsplit('/').next().unwrap_or(host);
-    let data: WireConnectionData = send_json(t, &get_as(SCHEME, url, token, &[]), token, host)
-        .map_err(|e| scope_error(e, &org_message(org)))?;
+    let org = host.rsplit_once('/').map_or(host, |(_, org)| org);
+    let req = get_as(SCHEME, url, token, &[]);
+    let data: WireConnectionData = fetch(t, &req, token, host, &org_message(org))?;
     let user = data.authenticated_user;
     let username = user
         .properties
@@ -303,22 +304,21 @@ pub fn list_issues(
     }
     let csv: Vec<String> = ids.iter().map(u64::to_string).collect();
     let url = format!(
-        "{}/_apis/wit/workitems?ids={}&fields={WORK_ITEM_FIELDS}&{API_VERSION}",
+        "{}/_apis/wit/workitems?ids={}&fields={WORK_ITEM_FIELDS}&errorPolicy=omit&{API_VERSION}",
         project_url(repo),
         csv.join(",")
     );
-    let mut items: WireList<WireWorkItem> = fetch(
+    // `errorPolicy=omit` answers a work item deleted since the query with `null`; it is dropped.
+    let items: WireList<Option<WireWorkItem>> = fetch(
         t,
         &get_as(SCHEME, url, token, &[]),
         token,
         &repo.host,
         SCOPE_WORK,
     )?;
+    let mut items: Vec<WireWorkItem> = items.value.into_iter().flatten().collect();
+    items.sort_by_key(|w| ids.iter().position(|id| *id == w.id));
     items
-        .value
-        .sort_by_key(|w| ids.iter().position(|id| *id == w.id));
-    items
-        .value
         .into_iter()
         .map(|w| convert_work_item(w, repo))
         .collect()
@@ -356,8 +356,12 @@ pub fn list_my_repos(
         let Some(project) = projects.value.iter().find(|p| p.id == r.project.id) else {
             continue;
         };
-        let updated_at =
-            parse_timestamp(&project.last_update_time).ok_or_else(|| unexpected(host))?;
+        // One project without a usable time must not hide the organization: it sorts last.
+        let updated_at = project
+            .last_update_time
+            .as_deref()
+            .and_then(parse_timestamp)
+            .unwrap_or(0);
         let web_url = r.web_url.unwrap_or_else(|| {
             RepoRef {
                 provider: Provider::AzureDevOps,

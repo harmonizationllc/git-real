@@ -42,7 +42,8 @@ pub fn current_user(
     }
 }
 
-/// One page (1-based, 50 per page) of `repo`'s open pull requests, newest update first.
+/// One page (1-based, 50 per page) of `repo`'s open pull requests, newest update first (newest
+/// created first on Azure DevOps).
 pub fn list_pull_requests(
     t: &dyn Transport,
     repo: &RepoRef,
@@ -105,7 +106,8 @@ pub fn list_issues(
 
 /// One page (1-based, 50 per page) of the repositories `account` can clone, matching `query`
 /// by name (all of them when blank), newest update first. Rows with an unusable clone URL are
-/// left out; `has_more` still reflects the raw page.
+/// left out; `has_more` still reflects the raw page (on Azure DevOps, the rows remaining after
+/// the client-side page).
 pub fn list_my_repos(
     t: &dyn Transport,
     account: &Account,

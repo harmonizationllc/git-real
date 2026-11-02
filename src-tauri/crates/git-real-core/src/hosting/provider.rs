@@ -162,10 +162,15 @@ pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef>
     })
 }
 
+/// The raw authority and the path after its `/` of a `scheme://` URL; `None` for another form
+/// or a URL with no path.
+fn authority_and_path(url: &str) -> Option<(&str, &str)> {
+    url.split_once("://")?.1.split_once('/')
+}
+
 /// The authority of a `scheme://` URL names a port (`split_url` drops a default one).
 fn has_port(url: &str) -> bool {
-    url.split_once("://")
-        .and_then(|(_, rest)| rest.split_once('/'))
+    authority_and_path(url)
         .and_then(|(authority, _)| host_port(strip_user(authority)))
         .is_some_and(|(_, port)| port.is_some())
 }
@@ -284,7 +289,8 @@ pub fn azure_org(input: &str) -> Option<String> {
 /// The `https://` origin to scope an account's git credentials to when `url` belongs to the
 /// account on `account_host`; `None` otherwise. A plain host matches the URL's https host; an
 /// Azure DevOps `dev.azure.com/<org>` matches `https://dev.azure.com/<org>/…` (organization
-/// compared ASCII case-insensitively) or `https://<org>.visualstudio.com/…`.
+/// compared ASCII case-insensitively) or `https://<org>.visualstudio.com/…`, and never a path
+/// with a `.` or `..` segment.
 pub fn account_origin_for(account_host: &str, url: &str) -> Option<String> {
     let host = https_host(url)?;
     let Some((base, org)) = account_host.split_once('/') else {
@@ -295,12 +301,15 @@ pub fn account_origin_for(account_host: &str, url: &str) -> Option<String> {
     if base != Provider::AzureDevOps.default_host() {
         return None;
     }
-    let first_segment = url
-        .split_once("://")
-        .and_then(|(_, rest)| rest.split_once('/'))
-        .and_then(|(_, path)| path.split('/').next());
+    let path = authority_and_path(url).map_or("", |(_, path)| path);
+    // A `.` or `..` segment (encoded or not) could walk the path out of the organization.
+    let dot_segment = |s: &str| percent_decode(s).is_some_and(|d| d == "." || d == "..");
+    if path.split('/').any(dot_segment) {
+        return None;
+    }
     let matches = if host == "dev.azure.com" {
-        first_segment.is_some_and(|s| s.eq_ignore_ascii_case(org))
+        let first = path.split_once('/').map_or(path, |(first, _)| first);
+        first.eq_ignore_ascii_case(org)
     } else {
         host.strip_suffix(".visualstudio.com")
             .is_some_and(|label| label.eq_ignore_ascii_case(org))

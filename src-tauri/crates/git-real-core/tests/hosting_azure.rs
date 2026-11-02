@@ -189,6 +189,12 @@ fn current_user_203_names_the_organization() {
             "{status}"
         );
     }
+    // A bare organization as host still names it.
+    let t = FakeTransport::new().reply(401, "{}");
+    assert_eq!(
+        err(hosting::current_user(&t, P::AzureDevOps, "contoso", &tok())),
+        want
+    );
     let t = FakeTransport::new().reply(404, "{}");
     assert_eq!(
         err(hosting::current_user(
@@ -534,7 +540,7 @@ fn list_issues_runs_wiql_then_batch_get_in_wiql_order() {
     assert_eq!(
         reqs[1].url,
         format!(
-            "https://dev.azure.com/contoso/My%20Project/_apis/wit/workitems?ids=300,299,17&{FIELDS}&api-version=7.1"
+            "https://dev.azure.com/contoso/My%20Project/_apis/wit/workitems?ids=300,299,17&{FIELDS}&errorPolicy=omit&api-version=7.1"
         )
     );
     assert_eq!(header(&reqs[1], "authorization"), Some("Basic OnQwaw=="));
@@ -636,6 +642,21 @@ fn list_issues_pages_client_side() {
     let t = FakeTransport::new().reply(200, &wiql_ids([]));
     hosting::list_issues(&t, &ado(), &tok(), "", 1000).unwrap();
     assert!(t.requests()[0].url.contains("$top=20000&"));
+}
+
+#[test]
+fn a_work_item_deleted_after_the_query_is_dropped() {
+    // With `errorPolicy=omit`, ADO answers a missing id with `null` in its place.
+    let batch = wrap(vec![
+        element(fixture!("azure_workitems.json"), 0, |_| {}),
+        "null".to_owned(),
+        element(fixture!("azure_workitems.json"), 2, |_| {}),
+    ]);
+    let t = FakeTransport::new()
+        .reply(200, fixture!("azure_wiql.json"))
+        .reply(200, &batch);
+    let list = hosting::list_issues(&t, &ado(), &tok(), "", 1).unwrap();
+    assert_eq!(list.iter().map(|i| i.number).collect::<Vec<_>>(), [300, 17]);
 }
 
 #[test]
@@ -780,14 +801,43 @@ fn list_my_repos_drops_unknown_projects_and_unusable_urls_and_builds_missing_web
 }
 
 #[test]
-fn list_my_repos_with_an_unparsable_project_time_is_unexpected() {
-    let projects = wrap(vec![element(fixture!("azure_projects.json"), 0, |e| {
-        e["lastUpdateTime"] = json!("0001-01-01T00:00:00");
-    })]);
+fn a_project_without_a_usable_time_lists_its_repositories_at_epoch_zero_last() {
+    // ADO sends `0001-01-01T00:00:00` (no zone) on shallow project references.
+    let projects = wrap(vec![
+        element(fixture!("azure_projects.json"), 0, |e| {
+            e["lastUpdateTime"] = json!("0001-01-01T00:00:00");
+        }),
+        element(fixture!("azure_projects.json"), 1, |_| {}),
+    ]);
     let t = FakeTransport::new()
         .reply(200, &projects)
         .reply(200, fixture!("azure_repositories.json"));
-    assert_eq!(err(my_repos(&t, "", 1)), e(unexpected()));
+    let page = my_repos(&t, "", 1).unwrap();
+    assert_eq!(
+        page.repos
+            .iter()
+            .map(|r| (r.name.as_str(), r.updated_at))
+            .collect::<Vec<_>>(),
+        [
+            ("widgets", parse_timestamp("2026-09-01T08:00:00Z").unwrap()),
+            ("my repo", 0),
+        ]
+    );
+
+    let projects = wrap(vec![
+        element(fixture!("azure_projects.json"), 0, |e| {
+            e.as_object_mut().unwrap().remove("lastUpdateTime");
+        }),
+        element(fixture!("azure_projects.json"), 1, |_| {}),
+    ]);
+    let t = FakeTransport::new()
+        .reply(200, &projects)
+        .reply(200, fixture!("azure_repositories.json"));
+    let page = my_repos(&t, "", 1).unwrap();
+    assert_eq!(
+        page.repos.last().map(|r| (r.name.as_str(), r.updated_at)),
+        Some(("my repo", 0))
+    );
 }
 
 #[test]
