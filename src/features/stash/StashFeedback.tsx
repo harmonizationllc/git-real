@@ -14,7 +14,7 @@ export function StashFeedback({ actions }: StashFeedbackProps) {
       {actions.notice && (
         <div role="status" className={styles.notice}>
           <p className={styles.text}>{noticeText(actions.notice)}</p>
-          <button type="button" onClick={actions.clearNotice}>
+          <button data-variant="ghost" data-size="sm" type="button" onClick={actions.clearNotice}>
             Dismiss
           </button>
         </div>

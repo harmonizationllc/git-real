@@ -16,6 +16,8 @@ export function RecentList({ recents, onOpen, onRemove }: RecentListProps) {
             <span className={styles.name}>{name}</span> <span className={styles.path}>{path}</span>
           </button>
           <button
+            data-variant="icon"
+            data-size="sm"
             type="button"
             className={styles.remove}
             aria-label={`Remove ${name} from recent repositories`}

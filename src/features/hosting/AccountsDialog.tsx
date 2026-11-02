@@ -110,6 +110,8 @@ function AccountsDialogBody({ onClose, preset }: { onClose(): void; preset?: Acc
             <div className={styles.rowActions}>
               {a.needsReconnect && (
                 <button
+                  data-variant="ghost"
+                  data-size="sm"
                   type="button"
                   aria-label={`Reconnect ${a.username} on ${a.host}`}
                   onClick={() => reconnect(a)}
@@ -118,6 +120,8 @@ function AccountsDialogBody({ onClose, preset }: { onClose(): void; preset?: Acc
                 </button>
               )}
               <button
+                data-variant="danger"
+                data-size="sm"
                 type="button"
                 aria-label={`Disconnect ${a.username} on ${a.host}`}
                 disabled={pending}
@@ -157,10 +161,14 @@ function AccountsDialogBody({ onClose, preset }: { onClose(): void; preset?: Acc
           )}
           {list}
           <div className={styles.actions}>
-            <button type="button" onClick={() => setView({ kind: "connect" })}>
+            <button
+              data-variant="neutral"
+              type="button"
+              onClick={() => setView({ kind: "connect" })}
+            >
               Connect account…
             </button>
-            <button type="button" onClick={onClose}>
+            <button data-variant="neutral" type="button" onClick={onClose}>
               Close
             </button>
           </div>

@@ -46,7 +46,7 @@ export function AboutSettings() {
         Check for updates on startup
       </label>
       <div className={styles.row}>
-        <button type="button" disabled={busy} onClick={() => void check()}>
+        <button data-variant="neutral" type="button" disabled={busy} onClick={() => void check()}>
           {busy ? "Checking…" : "Check for updates"}
         </button>
       </div>
@@ -58,7 +58,12 @@ export function AboutSettings() {
         result !== null && <CheckResult result={result} />
       )}
       <div className={styles.row}>
-        <button type="button" onClick={() => void openExternal(REPO_URL)}>
+        <button
+          data-variant="ghost"
+          data-size="sm"
+          type="button"
+          onClick={() => void openExternal(REPO_URL)}
+        >
           Source and issues
         </button>
       </div>
@@ -74,7 +79,12 @@ function CheckResult({ result }: { result: UpdateInfo }) {
       <p role="status" className={styles.value}>
         Git Real {result.latest} is available
         {url !== null && (
-          <button type="button" onClick={() => void openExternal(url)}>
+          <button
+            data-variant="ghost"
+            data-size="sm"
+            type="button"
+            onClick={() => void openExternal(url)}
+          >
             Release notes
           </button>
         )}

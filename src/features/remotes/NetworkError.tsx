@@ -24,11 +24,16 @@ export function NetworkError({ message, onAction, onDismiss, flush }: NetworkErr
       )}
       <div className={styles.actions}>
         {action !== null && onAction && (
-          <button type="button" onClick={() => onAction(action.kind)}>
+          <button
+            data-variant="neutral"
+            data-size="sm"
+            type="button"
+            onClick={() => onAction(action.kind)}
+          >
             {action.label}
           </button>
         )}
-        <button type="button" onClick={onDismiss}>
+        <button data-variant="ghost" data-size="sm" type="button" onClick={onDismiss}>
           Dismiss
         </button>
       </div>

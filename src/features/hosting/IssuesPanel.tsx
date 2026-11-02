@@ -81,7 +81,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         <p className={styles.empty}>
           Connect your {PROVIDER_LABEL[provider]} account to see issues
         </p>
-        <button type="button" onClick={openAccounts}>
+        <button data-variant="ghost" data-size="sm" type="button" onClick={openAccounts}>
           Connect…
         </button>
       </div>
@@ -90,7 +90,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     body = (
       <div className={styles.notice}>
         <p className={styles.empty}>{RECONNECT_TEXT}</p>
-        <button type="button" onClick={openAccounts}>
+        <button data-variant="ghost" data-size="sm" type="button" onClick={openAccounts}>
           Reconnect
         </button>
       </div>
@@ -135,6 +135,8 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         )}
         {list.hasMore && (
           <button
+            data-variant="ghost"
+            data-size="sm"
             type="button"
             className={styles.more}
             disabled={list.loadingMore}
@@ -168,6 +170,8 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
           </button>
         </h2>
         <button
+          data-variant="icon"
+          data-size="sm"
           type="button"
           className={styles.refresh}
           aria-label="Refresh issues"

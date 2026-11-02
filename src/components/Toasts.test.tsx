@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../test/cssRules";
 import { useToasts } from "../lib/store/toasts";
 import { TOAST_MS, Toasts } from "./Toasts";
 import type { ToastVariant } from "../lib/store/toasts";
@@ -374,5 +376,14 @@ describe("Toasts variants (GR-14)", () => {
       vi.advanceTimersByTime(TOAST_MS);
     });
     expect(screen.queryByText("gone")).toBeNull();
+  });
+});
+
+describe("Toasts COSMIC look", () => {
+  it("draws a small-radius card with the card shadow", () => {
+    const css = readFileSync("src/components/Toasts.module.css", "utf8");
+    const toast = declarationsOf(css, "toast");
+    expect(toast).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(toast).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
   });
 });

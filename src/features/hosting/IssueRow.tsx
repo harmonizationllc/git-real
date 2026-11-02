@@ -57,6 +57,8 @@ export function IssueRow({ issue, onOpen, onContextMenu, buttonRef }: IssueRowPr
         </span>
       </button>
       <button
+        data-variant="icon"
+        data-size="sm"
         type="button"
         className={styles.open}
         aria-label={`Open #${issue.number} in browser`}

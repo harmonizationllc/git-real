@@ -73,7 +73,12 @@ export function RepoBrowser({
     return (
       <div className={styles.notice}>
         <p className={styles.empty}>Connect a hosting account to browse your repositories</p>
-        <button type="button" onClick={() => onManageAccounts()}>
+        <button
+          data-variant="ghost"
+          data-size="sm"
+          type="button"
+          onClick={() => onManageAccounts()}
+        >
           Hosting accounts…
         </button>
       </div>
@@ -106,7 +111,13 @@ export function RepoBrowser({
     <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
   );
   const showMore = list.hasMore && (
-    <button type="button" disabled={list.loadingMore} onClick={list.loadMore}>
+    <button
+      data-variant="ghost"
+      data-size="sm"
+      type="button"
+      disabled={list.loadingMore}
+      onClick={list.loadMore}
+    >
       {list.loadingMore ? "Loading…" : "Show more"}
     </button>
   );
@@ -185,7 +196,12 @@ export function RepoBrowser({
       {reconnect ? (
         <div className={styles.notice}>
           <p className={styles.empty}>{RECONNECT_TEXT}</p>
-          <button type="button" onClick={() => onManageAccounts({ provider, host: account.host })}>
+          <button
+            data-variant="ghost"
+            data-size="sm"
+            type="button"
+            onClick={() => onManageAccounts({ provider, host: account.host })}
+          >
             Reconnect
           </button>
         </div>

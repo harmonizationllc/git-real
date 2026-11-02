@@ -75,7 +75,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
         <p className={styles.empty}>
           Connect your {PROVIDER_LABEL[provider]} account to see pull requests
         </p>
-        <button type="button" onClick={openAccounts}>
+        <button data-variant="ghost" data-size="sm" type="button" onClick={openAccounts}>
           Connect…
         </button>
       </div>
@@ -84,7 +84,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
     body = (
       <div className={styles.notice}>
         <p className={styles.empty}>{RECONNECT_TEXT}</p>
-        <button type="button" onClick={openAccounts}>
+        <button data-variant="ghost" data-size="sm" type="button" onClick={openAccounts}>
           Reconnect
         </button>
       </div>
@@ -119,6 +119,8 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
         )}
         {list.hasMore && (
           <button
+            data-variant="ghost"
+            data-size="sm"
             type="button"
             className={styles.more}
             disabled={list.loadingMore}
@@ -158,6 +160,8 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
           </button>
         </h2>
         <button
+          data-variant="icon"
+          data-size="sm"
           type="button"
           className={styles.create}
           aria-label="Create pull request"
@@ -168,6 +172,8 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
           +
         </button>
         <button
+          data-variant="icon"
+          data-size="sm"
           type="button"
           className={styles.refresh}
           aria-label="Refresh pull requests"

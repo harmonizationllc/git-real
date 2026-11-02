@@ -1,14 +1,9 @@
-/* A hit area (width set inline from SPLIT_HANDLE_WIDTH) drawing a 1px line down its middle. */
+/* A hit area (width set inline from SPLIT_HANDLE_WIDTH). Its 6px track shows the window ground
+   between cards; the 1px border line appears only on hover and keyboard focus. */
 .handle {
   flex: none;
   cursor: col-resize;
   touch-action: none;
-  background: linear-gradient(
-    to right,
-    transparent 2px,
-    var(--color-border) 2px 3px,
-    transparent 3px
-  );
 }
 
 .handle:hover,
@@ -17,20 +12,14 @@
   background: linear-gradient(
     to right,
     transparent 2px,
-    var(--color-accent) 2px 3px,
+    var(--color-border) 2px 3px,
     transparent 3px
   );
 }
 
-/* A section separator: height set inline, the 1px line drawn across its middle. */
+/* A section separator: height set inline, the line drawn across its middle. */
 .horizontal {
   cursor: row-resize;
-  background: linear-gradient(
-    to bottom,
-    transparent 2px,
-    var(--color-border) 2px 3px,
-    transparent 3px
-  );
 }
 
 .horizontal:hover,
@@ -38,7 +27,7 @@
   background: linear-gradient(
     to bottom,
     transparent 2px,
-    var(--color-accent) 2px 3px,
+    var(--color-border) 2px 3px,
     transparent 3px
   );
 }

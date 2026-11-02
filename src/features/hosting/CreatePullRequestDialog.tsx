@@ -143,7 +143,7 @@ export function CreatePullRequestDialog({
           {hostingErrorText(loadError, context?.repo.provider ?? "github")}
         </p>
         <div className={styles.actions}>
-          <button type="button" onClick={onClose}>
+          <button data-variant="neutral" type="button" onClick={onClose}>
             Close
           </button>
         </div>
@@ -154,7 +154,7 @@ export function CreatePullRequestDialog({
       <>
         <p className={styles.note}>{blocked}</p>
         <div className={styles.actions}>
-          <button type="button" onClick={onClose}>
+          <button data-variant="neutral" type="button" onClick={onClose}>
             Close
           </button>
         </div>
@@ -310,10 +310,10 @@ function CreatePrForm({
         <NetworkError message={hostingMessage(error, base.provider)} onDismiss={onDismissError} />
       )}
       <div className={styles.actions}>
-        <button type="button" disabled={pending} onClick={onCancel}>
+        <button data-variant="neutral" type="button" disabled={pending} onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" disabled={pending || title.trim() === ""}>
+        <button data-variant="primary" type="submit" disabled={pending || title.trim() === ""}>
           {pending ? "Creating…" : "Create pull request"}
         </button>
       </div>

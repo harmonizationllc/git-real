@@ -108,10 +108,10 @@ function CredentialDialogBody({
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" onClick={prompt.cancel}>
+            <button data-variant="neutral" type="button" onClick={prompt.cancel}>
               Cancel
             </button>
-            <button type="submit" disabled={!ready}>
+            <button data-variant="primary" type="submit" disabled={!ready}>
               Sign in
             </button>
           </div>

@@ -144,10 +144,10 @@ function CreateTagDialogBody({
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onClose}>
+            <button data-variant="neutral" type="button" disabled={pending} onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={blank || pending}>
+            <button data-variant="primary" type="submit" disabled={blank || pending}>
               {pending ? "Working…" : "Create"}
             </button>
           </div>

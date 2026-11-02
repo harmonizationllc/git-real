@@ -95,12 +95,13 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
         ))}
         <div className={styles.actions}>
           <button
+            data-variant="neutral"
             type="button"
             onClick={() => useShell.getState().open({ kind: "settings", section: "shortcuts" })}
           >
             Customize…
           </button>
-          <button type="button" onClick={onClose}>
+          <button data-variant="primary" type="button" onClick={onClose}>
             Close
           </button>
         </div>

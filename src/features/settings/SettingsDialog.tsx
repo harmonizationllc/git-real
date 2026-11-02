@@ -90,10 +90,14 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
         <FileSettings />
         <AboutSettings />
         <div className={styles.actions}>
-          <button type="button" onClick={() => useShell.getState().open({ kind: "shortcuts" })}>
+          <button
+            data-variant="neutral"
+            type="button"
+            onClick={() => useShell.getState().open({ kind: "shortcuts" })}
+          >
             Keyboard shortcuts…
           </button>
-          <button type="button" onClick={onClose}>
+          <button data-variant="neutral" type="button" onClick={onClose}>
             Close
           </button>
         </div>
@@ -243,10 +247,15 @@ function CloneSettings() {
           </p>
         )}
         <span className={styles.row}>
-          <button type="button" onClick={() => void choose()}>
+          <button data-variant="neutral" type="button" onClick={() => void choose()}>
             Choose folder…
           </button>
-          <button type="button" disabled={current === null} onClick={() => void save(null)}>
+          <button
+            data-variant="neutral"
+            type="button"
+            disabled={current === null}
+            onClick={() => void save(null)}
+          >
             Clear
           </button>
           {saved && (
@@ -338,10 +347,10 @@ function GitSettings() {
         onCommit={save}
       />
       <div className={styles.row}>
-        <button type="button" onClick={() => void browse()}>
+        <button data-variant="neutral" type="button" onClick={() => void browse()}>
           Browse…
         </button>
-        <button type="button" onClick={() => void save(null)}>
+        <button data-variant="neutral" type="button" onClick={() => void save(null)}>
           Use PATH
         </button>
       </div>
@@ -380,7 +389,7 @@ function FileSettings() {
           {path.isPending ? "Locating…" : path.isError ? "Unavailable" : path.data}
         </span>
         <span className={styles.row}>
-          <button type="button" onClick={() => void reveal()}>
+          <button data-variant="neutral" type="button" onClick={() => void reveal()}>
             Show in folder
           </button>
         </span>

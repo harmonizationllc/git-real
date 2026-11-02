@@ -6,7 +6,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: 10vh 16px 16px;
-  background: rgb(0 0 0 / 40%);
+  background: var(--color-backdrop);
 }
 
 .dialog {
@@ -18,8 +18,8 @@
   overflow: hidden;
   color: var(--color-text);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-card);
 }
 
 .srOnly {
@@ -54,7 +54,7 @@
 .list {
   flex: 1;
   margin: 0;
-  padding: 4px 0;
+  padding: var(--space-1) 6px;
   overflow-y: auto;
   list-style: none;
 }
@@ -64,9 +64,11 @@
 }
 
 .groupLabel {
-  padding: 6px 16px 2px;
+  padding: 12px 10px 4px;
   font-size: var(--text-xs);
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--color-text-muted);
 }
 
@@ -78,14 +80,22 @@
 
 .option {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 16px;
+  gap: var(--space-3);
+  min-height: var(--control-h);
+  padding: 0 10px;
+  border-radius: var(--radius-s);
   cursor: pointer;
 }
 
+.option:hover {
+  background: var(--color-surface-hover);
+}
+
+/* After the hover rule at higher specificity, so the tint holds under the pointer. */
 .option[aria-selected="true"] {
-  background: var(--color-selection, rgb(128 128 128 / 20%));
+  background: var(--color-accent-tint);
 }
 
 .disabled {

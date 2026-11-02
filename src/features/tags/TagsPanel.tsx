@@ -178,6 +178,8 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
           </button>
         </h2>
         <button
+          data-variant="icon"
+          data-size="sm"
           type="button"
           className={styles.add}
           aria-label={CREATE_LABEL}

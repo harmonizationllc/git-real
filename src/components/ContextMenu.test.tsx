@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { StrictMode, useLayoutEffect, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
+import { declarationsOf } from "../test/cssRules";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 function makeItems(overrides: Partial<MenuItem>[] = []): MenuItem[] {
@@ -749,5 +751,20 @@ describe("ContextMenu item title", () => {
   it("should render no title attribute on an item without one", () => {
     renderMenu(makeItems());
     expect(screen.getByRole("menuitem", { name: "Bravo" })).not.toHaveAttribute("title");
+  });
+});
+
+describe("ContextMenu COSMIC look", () => {
+  const css = readFileSync("src/components/ContextMenu.module.css", "utf8");
+
+  it("draws a small-radius card with the card shadow", () => {
+    const menu = declarationsOf(css, "menu");
+    expect(menu).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(menu).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+  });
+
+  it("rounds items and hovers them on the surface-hover token", () => {
+    expect(declarationsOf(css, "item")).toMatch(/border-radius:\s*var\(--radius-xs\)/);
+    expect(css).toMatch(/\.item:hover[^{]*\{[^}]*background:\s*var\(--color-surface-hover\)/);
   });
 });

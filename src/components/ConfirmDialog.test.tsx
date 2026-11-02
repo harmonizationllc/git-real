@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { StrictMode, useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../test/cssRules";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 type Props = Partial<React.ComponentProps<typeof ConfirmDialog>>;
@@ -560,5 +562,60 @@ describe("ConfirmDialog pending focus", () => {
     view.rerender(ui(true));
     view.rerender(ui(false));
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+});
+
+// Contract: the dialog is a rounded card on the shared backdrop, with variant-styled footer buttons.
+describe("ConfirmDialog COSMIC look", () => {
+  const css = readFileSync("src/components/ConfirmDialog.module.css", "utf8");
+
+  it("draws a medium-radius card with the card shadow and padding", () => {
+    const dialog = declarationsOf(css, "dialog");
+    expect(dialog).toMatch(/border-radius:\s*var\(--radius-m\)/);
+    expect(dialog).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    expect(dialog).toMatch(/padding:\s*var\(--space-4\)/);
+  });
+
+  it("dims the page with the backdrop token", () => {
+    expect(declarationsOf(css, "backdrop")).toMatch(/background:\s*var\(--color-backdrop\)/);
+  });
+
+  it("gives Cancel the neutral variant and Confirm the primary one", () => {
+    renderDialog();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute(
+      "data-variant",
+      "neutral",
+    );
+    const confirm = screen.getByRole("button", { name: "Confirm" });
+    expect(confirm).toHaveAttribute("data-variant", "primary");
+    expect(confirm).not.toHaveAttribute("data-danger");
+  });
+
+  it("fills a destructive Confirm with the danger colour through data-danger", () => {
+    renderDialog({ danger: true });
+    const confirm = screen.getByRole("button", { name: "Confirm" });
+    expect(confirm).toHaveAttribute("data-variant", "primary");
+    expect(confirm).toHaveAttribute("data-danger", "true");
+  });
+});
+
+// Contract: every dialog that draws its own backdrop and card uses the shared tokens.
+describe("standalone dialog modules", () => {
+  it.each([
+    "src/features/palette/CommandPalette.module.css",
+    "src/features/repo/CloneDialog.module.css",
+    "src/features/settings/SettingsDialog.module.css",
+    "src/features/settings/ShortcutsDialog.module.css",
+    "src/features/history/FilePickerDialog.module.css",
+  ])("%s uses the backdrop token and a medium-radius card", (path) => {
+    const css = readFileSync(path, "utf8");
+    expect(declarationsOf(css, "backdrop")).toMatch(/background:\s*var\(--color-backdrop\)/);
+    expect(declarationsOf(css, "dialog")).toMatch(/border-radius:\s*var\(--radius-m\)/);
+    expect(declarationsOf(css, "dialog")).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+  });
+
+  it("keeps no literal danger fallback in the settings dialog", () => {
+    const css = readFileSync("src/features/settings/SettingsDialog.module.css", "utf8");
+    expect(css).not.toMatch(/--color-danger\s*,/);
   });
 });
