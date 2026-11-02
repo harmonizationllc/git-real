@@ -13,16 +13,34 @@ pub enum Provider {
     GitHub,
     GitLab,
     Bitbucket,
+    /// Azure DevOps Services (`dev.azure.com`); an account's host is `dev.azure.com/<org>`.
+    #[serde(rename = "azure")]
+    AzureDevOps,
+}
+
+/// How a request carries an account token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthScheme {
+    /// `Authorization: Bearer <token>`.
+    Bearer,
+    /// `Authorization: Basic base64(":" + token)`, Azure DevOps' personal access tokens.
+    BasicPat,
 }
 
 impl Provider {
-    const ALL: [Provider; 3] = [Provider::GitHub, Provider::GitLab, Provider::Bitbucket];
+    const ALL: [Provider; 4] = [
+        Provider::GitHub,
+        Provider::GitLab,
+        Provider::Bitbucket,
+        Provider::AzureDevOps,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Provider::GitHub => "github",
             Provider::GitLab => "gitlab",
             Provider::Bitbucket => "bitbucket",
+            Provider::AzureDevOps => "azure",
         }
     }
 
@@ -31,6 +49,7 @@ impl Provider {
             Provider::GitHub => "github.com",
             Provider::GitLab => "gitlab.com",
             Provider::Bitbucket => "bitbucket.org",
+            Provider::AzureDevOps => "dev.azure.com",
         }
     }
 
@@ -41,6 +60,8 @@ impl Provider {
             Provider::GitHub => format!("https://{host}/api/v3"),
             Provider::GitLab => format!("https://{host}/api/v4"),
             Provider::Bitbucket => "https://api.bitbucket.org/2.0".to_owned(),
+            // `host` is `dev.azure.com/<org>`, for an account and a repository alike.
+            Provider::AzureDevOps => format!("https://{host}"),
         }
     }
 
@@ -50,6 +71,16 @@ impl Provider {
             Provider::GitHub => "x-access-token",
             Provider::GitLab => "oauth2",
             Provider::Bitbucket => "x-bitbucket-api-token-auth",
+            // Azure DevOps ignores the username for a PAT, but git needs a non-empty one.
+            Provider::AzureDevOps => "git-real",
+        }
+    }
+
+    /// How this provider's REST API takes the account token.
+    pub fn auth_scheme(self) -> AuthScheme {
+        match self {
+            Provider::AzureDevOps => AuthScheme::BasicPat,
+            _ => AuthScheme::Bearer,
         }
     }
 }
@@ -59,7 +90,8 @@ impl Provider {
 #[serde(rename_all = "camelCase")]
 pub struct RepoRef {
     pub provider: Provider,
-    /// Lower-case `name[:port]`.
+    /// Lower-case `name[:port]`; for Azure DevOps `dev.azure.com/<org>`, the organization in
+    /// the case typed (compared ASCII case-insensitively).
     pub host: String,
     pub namespace: String,
     pub name: String,
@@ -97,6 +129,8 @@ pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef>
     let fits = match provider {
         Provider::GitHub | Provider::Bitbucket => namespace.len() == 1,
         Provider::GitLab => !namespace.is_empty(),
+        // Azure DevOps URLs have their own grammar; none has this generic shape.
+        Provider::AzureDevOps => false,
     };
     fits.then(|| RepoRef {
         provider,

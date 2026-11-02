@@ -1,0 +1,119 @@
+{
+  "value": [
+    {
+      "repository": {
+        "id": "3411ebc1-0000-4000-8000-000000000001",
+        "name": "my repo",
+        "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001",
+        "project": {
+          "id": "a7573007-0000-4000-8000-000000000001",
+          "name": "My Project",
+          "state": "unchanged",
+          "visibility": "unchanged",
+          "lastUpdateTime": "0001-01-01T00:00:00"
+        }
+      },
+      "pullRequestId": 22,
+      "codeReviewId": 22,
+      "status": "active",
+      "createdBy": {
+        "displayName": "Jason Harmon",
+        "url": "https://spsprodeus27.vssps.visualstudio.com/_apis/Identities/6f1a2b3c-0000-4000-8000-000000000001",
+        "id": "6f1a2b3c-0000-4000-8000-000000000001",
+        "uniqueName": "jason@example.com",
+        "imageUrl": "https://dev.azure.com/contoso/_api/_common/identityImage?id=6f1a2b3c-0000-4000-8000-000000000001",
+        "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx"
+      },
+      "creationDate": "2026-10-20T12:00:00.1234567Z",
+      "title": "Add the sidebar",
+      "description": "Adds the sidebar.",
+      "sourceRefName": "refs/heads/topic",
+      "targetRefName": "refs/heads/main",
+      "mergeStatus": "succeeded",
+      "isDraft": false,
+      "mergeId": "f5fc8381-0000-4000-8000-000000000001",
+      "lastMergeSourceCommit": {
+        "commitId": "b60280bc6e62e2f880f1b63c1e24987664d3bda3",
+        "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001/commits/b60280bc6e62e2f880f1b63c1e24987664d3bda3"
+      },
+      "reviewers": [],
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001/pullRequests/22",
+      "supportsIterations": true
+    },
+    {
+      "repository": {
+        "id": "3411ebc1-0000-4000-8000-000000000001",
+        "name": "my repo",
+        "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001",
+        "project": {
+          "id": "a7573007-0000-4000-8000-000000000001",
+          "name": "My Project"
+        }
+      },
+      "pullRequestId": 21,
+      "codeReviewId": 21,
+      "status": "active",
+      "createdBy": {
+        "url": "https://spsprodeus27.vssps.visualstudio.com/_apis/Identities/6f1a2b3c-0000-4000-8000-000000000002",
+        "id": "6f1a2b3c-0000-4000-8000-000000000002",
+        "uniqueName": "sam@example.com",
+        "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy"
+      },
+      "creationDate": "2026-10-19T08:30:00Z",
+      "title": "WIP: rework the toolbar",
+      "description": "",
+      "sourceRefName": "refs/heads/wip/toolbar",
+      "targetRefName": "refs/heads/main",
+      "mergeStatus": "notSet",
+      "isDraft": true,
+      "reviewers": [],
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001/pullRequests/21",
+      "supportsIterations": true
+    },
+    {
+      "repository": {
+        "id": "3411ebc1-0000-4000-8000-000000000001",
+        "name": "my repo",
+        "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001",
+        "project": {
+          "id": "a7573007-0000-4000-8000-000000000001",
+          "name": "My Project"
+        }
+      },
+      "pullRequestId": 17,
+      "codeReviewId": 17,
+      "status": "active",
+      "createdBy": {
+        "displayName": "Alex Fork",
+        "url": "https://spsprodeus27.vssps.visualstudio.com/_apis/Identities/6f1a2b3c-0000-4000-8000-000000000003",
+        "id": "6f1a2b3c-0000-4000-8000-000000000003",
+        "uniqueName": "alex@example.com",
+        "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAz"
+      },
+      "creationDate": "2026-10-18T09:15:42.5Z",
+      "title": "Fix the crash on open",
+      "description": "From a fork.",
+      "sourceRefName": "refs/heads/feature",
+      "targetRefName": "refs/heads/main",
+      "mergeStatus": "succeeded",
+      "isDraft": false,
+      "forkSource": {
+        "name": "refs/heads/feature",
+        "repository": {
+          "id": "77aa0001-0000-4000-8000-000000000009",
+          "name": "fork-repo",
+          "url": "https://dev.azure.com/contoso/_apis/git/repositories/77aa0001-0000-4000-8000-000000000009",
+          "project": {
+            "id": "a7573007-0000-4000-8000-000000000001",
+            "name": "My Project"
+          },
+          "remoteUrl": "https://contoso@dev.azure.com/contoso/My%20Project/_git/fork-repo"
+        }
+      },
+      "reviewers": [],
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001/pullRequests/17",
+      "supportsIterations": true
+    }
+  ],
+  "count": 3
+}

@@ -1,10 +1,12 @@
-//! Hosting providers (GitHub, GitLab, Bitbucket): detecting the provider behind a remote URL,
-//! building REST requests, mapping their statuses to [`GitError`] and their JSON to DTOs.
+//! Hosting providers (GitHub, GitLab, Bitbucket, Azure DevOps): detecting the provider behind a
+//! remote URL, building REST requests, mapping their statuses to [`GitError`] and their JSON to
+//! DTOs.
 //!
 //! This domain is pure: it reaches the network only through a [`Transport`], whose real
 //! implementation is [`ureq_transport::UreqTransport`]. The git side of checking out a pull
 //! request lives in [`crate::remote::pr_checkout`].
 
+pub mod azure;
 pub mod bitbucket;
 pub mod github;
 pub mod gitlab;
@@ -20,7 +22,7 @@ pub use model::{
     Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest,
     PullRequest, RepoContext, UserInfo,
 };
-pub use provider::{Provider, RepoRef};
+pub use provider::{AuthScheme, Provider, RepoRef};
 
 use crate::error::GitError;
 use crate::refs::validate_branch_name;
@@ -36,6 +38,7 @@ pub fn current_user(
         Provider::GitHub => github::current_user(t, host, token),
         Provider::GitLab => gitlab::current_user(t, host, token),
         Provider::Bitbucket => bitbucket::current_user(t, host, token),
+        Provider::AzureDevOps => azure::current_user(t, host, token),
     }
 }
 
@@ -50,6 +53,7 @@ pub fn list_pull_requests(
         Provider::GitHub => github::list_pull_requests(t, repo, token, page),
         Provider::GitLab => gitlab::list_pull_requests(t, repo, token, page),
         Provider::Bitbucket => bitbucket::list_pull_requests(t, repo, token, page),
+        Provider::AzureDevOps => azure::list_pull_requests(t, repo, token, page),
     }
 }
 
@@ -64,6 +68,7 @@ pub fn get_pull_request(
         Provider::GitHub => github::get_pull_request(t, repo, token, number),
         Provider::GitLab => gitlab::get_pull_request(t, repo, token, number),
         Provider::Bitbucket => bitbucket::get_pull_request(t, repo, token, number),
+        Provider::AzureDevOps => azure::get_pull_request(t, repo, token, number),
     }
 }
 
@@ -77,6 +82,7 @@ pub fn repo_info(
         Provider::GitHub => github::repo_info(t, repo, token),
         Provider::GitLab => gitlab::repo_info(t, repo, token),
         Provider::Bitbucket => bitbucket::repo_info(t, repo, token),
+        Provider::AzureDevOps => azure::repo_info(t, repo, token),
     }
 }
 
@@ -93,6 +99,7 @@ pub fn list_issues(
         Provider::GitHub => github::list_issues(t, repo, token, query, page),
         Provider::GitLab => gitlab::list_issues(t, repo, token, query, page),
         Provider::Bitbucket => bitbucket::list_issues(t, repo, token, query, page),
+        Provider::AzureDevOps => azure::list_issues(t, repo, token, query, page),
     }
 }
 
@@ -110,6 +117,7 @@ pub fn list_my_repos(
         Provider::GitHub => github::list_my_repos(t, account, token, query, page),
         Provider::GitLab => gitlab::list_my_repos(t, account, token, query, page),
         Provider::Bitbucket => bitbucket::list_my_repos(t, account, token, query, page),
+        Provider::AzureDevOps => azure::list_my_repos(t, account, token, query, page),
     }
 }
 
@@ -132,6 +140,7 @@ pub fn create_pull_request(
         Provider::GitHub => github::create_pull_request(t, repo, token, new),
         Provider::GitLab => gitlab::create_pull_request(t, repo, token, new),
         Provider::Bitbucket => bitbucket::create_pull_request(t, repo, token, new),
+        Provider::AzureDevOps => azure::create_pull_request(t, repo, token, new),
     }
 }
 
@@ -146,7 +155,8 @@ pub enum CheckoutPlan {
 }
 
 /// Decides what to fetch for `pr`. `InvalidBranchName` for a head branch git would refuse (or
-/// read as a flag); `HostingNotFound` for a Bitbucket fork whose repository is gone.
+/// read as a flag); `HostingNotFound` for a Bitbucket or Azure DevOps fork whose repository is
+/// gone or whose URL was dropped.
 pub fn checkout_plan(provider: Provider, pr: &PullRequest) -> Result<CheckoutPlan, GitError> {
     validate_branch_name(&pr.source_branch)?;
     if !pr.from_fork {
@@ -158,7 +168,7 @@ pub fn checkout_plan(provider: Provider, pr: &PullRequest) -> Result<CheckoutPla
     let (source, refspec) = match provider {
         Provider::GitHub => ("origin".to_owned(), format!("refs/pull/{n}/head")),
         Provider::GitLab => ("origin".to_owned(), format!("refs/merge-requests/{n}/head")),
-        Provider::Bitbucket => {
+        Provider::Bitbucket | Provider::AzureDevOps => {
             let url = pr.fork_clone_url.clone().ok_or(GitError::HostingNotFound)?;
             (url, format!("refs/heads/{}", pr.source_branch))
         }

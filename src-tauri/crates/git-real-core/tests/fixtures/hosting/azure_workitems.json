@@ -1,0 +1,56 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": 17,
+      "rev": 4,
+      "fields": {
+        "System.WorkItemType": "User Story",
+        "System.Title": "Users can sign in",
+        "System.CreatedBy": {
+          "displayName": "Sam Lee",
+          "url": "https://spsprodeus27.vssps.visualstudio.com/_apis/Identities/6f1a2b3c-0000-4000-8000-000000000002",
+          "id": "6f1a2b3c-0000-4000-8000-000000000002",
+          "uniqueName": "sam@example.com",
+          "imageUrl": "https://dev.azure.com/contoso/_apis/GraphProfile/MemberAvatars/aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy",
+          "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAy"
+        },
+        "System.ChangedDate": "2026-10-10T09:00:00.25Z"
+      },
+      "url": "https://dev.azure.com/contoso/_apis/wit/workItems/17"
+    },
+    {
+      "id": 299,
+      "rev": 2,
+      "fields": {
+        "System.WorkItemType": "Task",
+        "System.Title": "Write the release notes",
+        "System.CreatedBy": {
+          "displayName": "Jason Harmon",
+          "id": "6f1a2b3c-0000-4000-8000-000000000001",
+          "uniqueName": "jason@example.com",
+          "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx"
+        },
+        "System.ChangedDate": "2026-10-19T16:45:00Z"
+      },
+      "url": "https://dev.azure.com/contoso/_apis/wit/workItems/299"
+    },
+    {
+      "id": 300,
+      "rev": 7,
+      "fields": {
+        "System.WorkItemType": "Bug",
+        "System.Title": "Sidebar flickers on resize",
+        "System.Tags": "ui; urgent",
+        "System.CreatedBy": {
+          "displayName": "Alex Fork",
+          "id": "6f1a2b3c-0000-4000-8000-000000000003",
+          "uniqueName": "alex@example.com",
+          "descriptor": "aad.NmYxYTJiM2MtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAz"
+        },
+        "System.ChangedDate": "2026-10-20T11:59:59.997Z"
+      },
+      "url": "https://dev.azure.com/contoso/_apis/wit/workItems/300"
+    }
+  ]
+}

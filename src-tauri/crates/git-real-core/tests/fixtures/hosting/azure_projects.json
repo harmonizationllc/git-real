@@ -1,0 +1,24 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": "a7573007-0000-4000-8000-000000000001",
+      "name": "My Project",
+      "description": "The main product.",
+      "url": "https://dev.azure.com/contoso/_apis/projects/a7573007-0000-4000-8000-000000000001",
+      "state": "wellFormed",
+      "revision": 11,
+      "visibility": "private",
+      "lastUpdateTime": "2026-10-20T12:00:00.33Z"
+    },
+    {
+      "id": "b8684118-0000-4000-8000-000000000002",
+      "name": "Open Source",
+      "url": "https://dev.azure.com/contoso/_apis/projects/b8684118-0000-4000-8000-000000000002",
+      "state": "wellFormed",
+      "revision": 5,
+      "visibility": "public",
+      "lastUpdateTime": "2026-09-01T08:00:00Z"
+    }
+  ]
+}

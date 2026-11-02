@@ -1,0 +1,21 @@
+{
+  "id": "3411ebc1-0000-4000-8000-000000000001",
+  "name": "my repo",
+  "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001",
+  "project": {
+    "id": "a7573007-0000-4000-8000-000000000001",
+    "name": "My Project",
+    "url": "https://dev.azure.com/contoso/_apis/projects/a7573007-0000-4000-8000-000000000001",
+    "state": "wellFormed",
+    "revision": 11,
+    "visibility": "private",
+    "lastUpdateTime": "2026-10-20T12:00:00.33Z"
+  },
+  "defaultBranch": "refs/heads/main",
+  "size": 482193,
+  "remoteUrl": "https://contoso@dev.azure.com/contoso/My%20Project/_git/my%20repo",
+  "sshUrl": "git@ssh.dev.azure.com:v3/contoso/My%20Project/my%20repo",
+  "webUrl": "https://dev.azure.com/contoso/My%20Project/_git/my%20repo",
+  "isDisabled": false,
+  "isInMaintenance": false
+}

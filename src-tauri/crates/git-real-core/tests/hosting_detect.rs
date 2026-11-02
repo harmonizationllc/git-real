@@ -174,12 +174,22 @@ fn provider_constants() {
         "https://api.bitbucket.org/2.0"
     );
     assert_eq!(
+        P::AzureDevOps.api_base("dev.azure.com/contoso"),
+        "https://dev.azure.com/contoso"
+    );
+    assert_eq!(
         [
             P::GitHub.git_username(),
             P::GitLab.git_username(),
-            P::Bitbucket.git_username()
+            P::Bitbucket.git_username(),
+            P::AzureDevOps.git_username()
         ],
-        ["x-access-token", "oauth2", "x-bitbucket-api-token-auth"]
+        [
+            "x-access-token",
+            "oauth2",
+            "x-bitbucket-api-token-auth",
+            "git-real"
+        ]
     );
     assert_eq!(serde_json::to_value(P::GitLab).unwrap(), "gitlab");
     assert_eq!(
