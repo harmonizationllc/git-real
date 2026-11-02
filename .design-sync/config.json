@@ -1,0 +1,97 @@
+{
+  "projectId": "44b3cc1b-4e42-43f1-ab16-edf55380be3e",
+  "shape": "package",
+  "pkg": "git-real",
+  "globalName": "GitReal",
+  "entry": ".design-sync/entry.ts",
+  "tsconfig": "tsconfig.json",
+  "tokensGlob": "src/styles/*.css",
+  "overrides": {
+    "ConfirmDialog": {
+      "cardMode": "single",
+      "viewport": "640x400"
+    },
+    "PromptDialog": {
+      "cardMode": "single",
+      "viewport": "640x400"
+    },
+    "ContextMenu": {
+      "cardMode": "single",
+      "viewport": "360x240"
+    },
+    "Toasts": {
+      "cardMode": "single",
+      "viewport": "480x240"
+    },
+    "TabBar": {
+      "cardMode": "column"
+    },
+    "BranchRow": {
+      "cardMode": "column"
+    },
+    "FileHeader": {
+      "cardMode": "column"
+    },
+    "HunkHeader": {
+      "cardMode": "column"
+    },
+    "SplitHandle": {
+      "cardMode": "column"
+    },
+    "GraphToolbar": {
+      "cardMode": "column"
+    },
+    "RefLabels": {
+      "cardMode": "column"
+    },
+    "HistoryRow": {
+      "cardMode": "column"
+    },
+    "NetworkError": {
+      "cardMode": "column"
+    },
+    "SyncMessage": {
+      "cardMode": "column"
+    },
+    "SyncToolbar": {
+      "cardMode": "column"
+    },
+    "RepoError": {
+      "cardMode": "column"
+    },
+    "Section": {
+      "cardMode": "column"
+    },
+    "TextSetting": {
+      "cardMode": "column"
+    },
+    "StashRow": {
+      "cardMode": "column"
+    },
+    "TagRow": {
+      "cardMode": "column"
+    },
+    "FileRow": {
+      "cardMode": "column"
+    }
+  },
+  "dtsPropsFor": {
+    "TabBar": "  tabs: Array<{ id: number; summary: { path: string; name: string; headBranch: string | null; isBare: boolean; }; }>;\n  activeId: number | null;\n  onActivate: (id: number | null) => void;\n  onClose: (id: number) => void;",
+    "BranchRow": "  target: { kind: \"local\"; branch: { name: string; oid: string; isHead: boolean; tracking: { upstream: string; ahead: number | null; behind: number | null; } | null; worktree: string | null; }; } | { kind: \"remote\"; branch: { remote: string; name: string; oid: string; }; };\n  current: boolean;\n  /** Drag-to-merge wiring; the panel owns the state, the row only reports events. */\n  drag?: {\n    /** The row can be picked up. */\n    draggable: boolean;\n    /** The row accepts a drop: the current branch while another branch is dragged. */\n    target: boolean;\n    /** A dragged branch is over the row. */\n    over: boolean;\n    onDragStart: () => void;\n    onDragEnd: () => void;\n    onDragEnter: () => void;\n    onDragLeave: () => void;\n    onDrop: (x: number, y: number) => void;\n  };\n  onActivate: () => void;\n  onContextMenu: (x: number, y: number) => void;",
+    "FileHeader": "  path: string;\n  oldPath?: string | null;\n  view: \"diff\" | \"blame\";\n  onViewChange: (view: \"diff\" | \"blame\") => void;\n  onHistory: () => void;\n  onClose: () => void;\n  /** Disables the Blame option; shown as its title. */\n  blameDisabledReason?: string;\n  repoId: number;\n  scope: \"staged\" | \"unstaged\" | { commit: string; };\n  /** A stash file has no working-tree path, so it offers no external tools. */\n  isStash: boolean;",
+    "HunkHeader": "  header: string;\n  scope: \"staged\" | \"unstaged\" | { commit: string; };\n  selectedCount: number;\n  disabledReason?: string;\n  /** Disables only the whole-hunk form of each button; selected-line actions stay enabled. */\n  wholeHunkDisabledReason?: string;\n  /** Absent for a read-only viewer, and ignored for a commit scope: no buttons are rendered. */\n  onAction?: (action: \"stage\" | \"unstage\" | \"discard\") => void;",
+    "ContextMenu": "  open: boolean;\n  x: number;\n  y: number;\n  items: Array<{\n    id: string;\n    label: string;\n    danger?: boolean;\n    disabled?: boolean;\n    /** Tooltip explaining what the item does. */\n    title?: string;\n    onSelect: () => void;\n  }>;\n  onClose: () => void;\n  /** Takes focus on close when the opener is gone, disabled or never had focus. */\n  fallbackFocus?: React.RefObject<HTMLElement | null>;\n  /** The button that opened the menu: a primary mousedown on it does not close the menu, so the click that follows can toggle it from the parent. */\n  ignore?: React.RefObject<HTMLElement | null>;",
+    "ConfirmDialog": "  open: boolean;\n  title: string;\n  /** Block content is allowed; it is the dialog's accessible description. */\n  body?: React.ReactNode;\n  confirmLabel?: string;\n  cancelLabel?: string;\n  danger?: boolean;\n  /** Disables both buttons and ignores Escape and backdrop clicks; confirm reads \"Working…\". */\n  pending?: boolean;\n  onConfirm: () => void;\n  onCancel: () => void;\n  /** Takes focus on close when the opener is gone, disabled or never had focus. */\n  fallbackFocus?: React.RefObject<HTMLElement | null>;",
+    "PromptDialog": "  open: boolean;\n  title: string;\n  label: string;\n  initialValue?: string;\n  confirmLabel?: string;\n  checkbox?: { label: string; checked: boolean; onChange: (on: boolean) => void; };\n  error: {\n    kind: \"notARepository\" | \"alreadyARepository\" | \"pathNotFound\" | \"gitCliMissing\" | \"cloneFailed\" | \"io\" | \"git\" | \"unknownRepo\" | \"noChanges\" | \"badSelection\" | \"applyFailed\" | \"tooLarge\" | \"emptyMessage\" | \"nothingToCommit\" | \"commitFailed\" | \"invalidBranchName\" | \"branchExists\" | \"branchCaseCollision\" | \"branchNotFound\" | \"branchNotMerged\" | \"cannotDeleteCurrent\" | \"unbornHead\" | \"revisionNotFound\" | \"remoteNotFound\" | \"checkoutFailed\" | \"logStale\" | \"commitNotFound\" | \"binaryFile\" | \"operationFailed\" | \"operationInProgress\" | \"noOperation\" | \"unresolvedConflicts\" | \"mergeCommit\" | \"nothingToStash\" | \"staleStash\" | \"invalidTagName\" | \"tagExists\" | \"tagNotFound\" | \"networkFailed\" | \"noRemotes\" | \"noUpstream\" | \"detachedHead\" | \"invalidRemoteName\" | \"invalidRemoteUrl\" | \"remoteExists\" | \"invalidCredentials\" | \"hostingAuth\" | \"hostingNotFound\" | \"hostingRateLimited\" | \"hostingRejected\" | \"hostingUnreachable\" | \"keychainUnavailable\" | \"noHostingAccount\" | \"invalidHostingHost\" | \"invalidToken\" | \"invalidSettings\" | \"gitCliInvalid\" | \"noExternalTool\" | \"externalToolFailed\" | \"updateCheckFailed\" | \"branchCheckedOut\" | \"worktreeNotFound\" | \"worktreeDirty\" | \"worktreeLocked\" | \"cannotRemoveMain\" | \"cannotRemoveCurrent\" | \"pathExists\" | \"pathNotAbsolute\";\n    message: string;\n    /** Present on `networkFailed` only. */\n    network?: {\n      verb: \"fetch\" | \"pull\" | \"push\";\n      kind: \"httpsAuthRequired\" | \"httpsAuthRejected\" | \"sshAuthFailed\" | \"hostKeyUnverified\" | \"hostUnreachable\" | \"repoNotFound\" | \"pushRejectedNonFastForward\" | \"leaseStale\" | \"remoteRejected\" | \"other\";\n      https: boolean;\n      origin: string | null;\n      host: string | null;\n      reason: string | null;\n    };\n  } | null;\n  pending: boolean;\n  /** Receives the trimmed, non-blank value. */\n  onConfirm: (value: string) => void;\n  onCancel: () => void;\n  /** Takes focus on close when the opener is gone, disabled or never had focus. */\n  fallbackFocus?: React.RefObject<HTMLElement | null>;",
+    "RefLabels": "  refs: Array<{ kind: \"head\" | \"branch\" | \"remote\" | \"tag\"; name: string; isHead: boolean; }>;",
+    "HistoryRow": "  entry: { oid: string; subject: string; authorName: string; authorEmail: string; /** Unix seconds. */ authorTime: number; change: \"added\" | \"modified\" | \"deleted\" | \"renamed\" | \"typeChange\" | \"untracked\" | \"conflicted\"; /** The file's path in this commit. */ path: string; oldPath: string | null; };\n  /** The current time in Unix seconds; the row never reads the clock itself. */\n  now: number;\n  selected: boolean;\n  id: string;\n  onSelect: () => void;",
+    "NetworkError": "  message: { title: string; hint: string | null; action: { kind: \"pull\" | \"fetch\" | \"editRemote\" | \"addRemote\"; label: string; } | null; details: string | null; };\n  onAction?: (kind: \"pull\" | \"fetch\" | \"editRemote\" | \"addRemote\") => void;\n  onDismiss: () => void;\n  /** Drop the horizontal margin so the panel lines up with a padded container (the sync row). */\n  flush?: boolean;",
+    "SyncMessage": "  sync: {\n    gates: { fetch: string | null; pull: string | null; push: string | null; forcePush: string | null; };\n    upstream: { text: string; ahead: number; behind: number; } | null;\n    /** The remote of the current upstream, for \"Edit remote…\". */\n    upstreamRemote: string | null;\n    /** The verb this instance is running, for the busy label. */\n    running: \"fetch\" | \"pull\" | \"push\" | null;\n    fetch: () => void;\n    /** Pulls in `mode`, or in the repo's default mode. */\n    pull: (mode?: \"merge\" | \"rebase\") => void;\n    push: () => void;\n    requestForcePush: () => void;\n    message: { title: string; hint: string | null; action: { kind: \"pull\" | \"fetch\" | \"editRemote\" | \"addRemote\"; label: string; } | null; details: string | null; } | null;\n    dismissMessage: () => void;\n    prompt: { origin: string; host: string; rejected: boolean; submit: (username: string, token: string) => void; cancel: () => void; } | null;\n    setUpstream: { remotes: string[]; branch: string; error: {\n    kind: \"notARepository\" | \"alreadyARepository\" | \"pathNotFound\" | \"gitCliMissing\" | \"cloneFailed\" | \"io\" | \"git\" | \"unknownRepo\" | \"noChanges\" | \"badSelection\" | \"applyFailed\" | \"tooLarge\" | \"emptyMessage\" | \"nothingToCommit\" | \"commitFailed\" | \"invalidBranchName\" | \"branchExists\" | \"branchCaseCollision\" | \"branchNotFound\" | \"branchNotMerged\" | \"cannotDeleteCurrent\" | \"unbornHead\" | \"revisionNotFound\" | \"remoteNotFound\" | \"checkoutFailed\" | \"logStale\" | \"commitNotFound\" | \"binaryFile\" | \"operationFailed\" | \"operationInProgress\" | \"noOperation\" | \"unresolvedConflicts\" | \"mergeCommit\" | \"nothingToStash\" | \"staleStash\" | \"invalidTagName\" | \"tagExists\" | \"tagNotFound\" | \"networkFailed\" | \"noRemotes\" | \"noUpstream\" | \"detachedHead\" | \"invalidRemoteName\" | \"invalidRemoteUrl\" | \"remoteExists\" | \"invalidCredentials\" | \"hostingAuth\" | \"hostingNotFound\" | \"hostingRateLimited\" | \"hostingRejected\" | \"hostingUnreachable\" | \"keychainUnavailable\" | \"noHostingAccount\" | \"invalidHostingHost\" | \"invalidToken\" | \"invalidSettings\" | \"gitCliInvalid\" | \"noExternalTool\" | \"externalToolFailed\" | \"updateCheckFailed\" | \"branchCheckedOut\" | \"worktreeNotFound\" | \"worktreeDirty\" | \"worktreeLocked\" | \"cannotRemoveMain\" | \"cannotRemoveCurrent\" | \"pathExists\" | \"pathNotAbsolute\";\n    message: string;\n    /** Present on `networkFailed` only. */\n    network?: {\n      verb: \"fetch\" | \"pull\" | \"push\";\n      kind: \"httpsAuthRequired\" | \"httpsAuthRejected\" | \"sshAuthFailed\" | \"hostKeyUnverified\" | \"hostUnreachable\" | \"repoNotFound\" | \"pushRejectedNonFastForward\" | \"leaseStale\" | \"remoteRejected\" | \"other\";\n      https: boolean;\n      origin: string | null;\n      host: string | null;\n      reason: string | null;\n    };\n  } | null; } | null;\n    publish: (remote: string, branch: string) => void;\n    cancelSetUpstream: () => void;\n    forcePush: { local: string; remote: string; upstream: string; } | null;\n    confirmForcePush: () => void;\n    cancelForcePush: () => void;\n  };\n  onOpenRemotes: (target: { mode: \"list\"; } | { mode: \"add\"; } | { mode: \"edit\"; name: string; }) => void;",
+    "SyncToolbar": "  sync: {\n    gates: { fetch: string | null; pull: string | null; push: string | null; forcePush: string | null; };\n    upstream: { text: string; ahead: number; behind: number; } | null;\n    /** The remote of the current upstream, for \"Edit remote…\". */\n    upstreamRemote: string | null;\n    /** The verb this instance is running, for the busy label. */\n    running: \"fetch\" | \"pull\" | \"push\" | null;\n    fetch: () => void;\n    /** Pulls in `mode`, or in the repo's default mode. */\n    pull: (mode?: \"merge\" | \"rebase\") => void;\n    push: () => void;\n    requestForcePush: () => void;\n    message: { title: string; hint: string | null; action: { kind: \"pull\" | \"fetch\" | \"editRemote\" | \"addRemote\"; label: string; } | null; details: string | null; } | null;\n    dismissMessage: () => void;\n    prompt: { origin: string; host: string; rejected: boolean; submit: (username: string, token: string) => void; cancel: () => void; } | null;\n    setUpstream: { remotes: string[]; branch: string; error: {\n    kind: \"notARepository\" | \"alreadyARepository\" | \"pathNotFound\" | \"gitCliMissing\" | \"cloneFailed\" | \"io\" | \"git\" | \"unknownRepo\" | \"noChanges\" | \"badSelection\" | \"applyFailed\" | \"tooLarge\" | \"emptyMessage\" | \"nothingToCommit\" | \"commitFailed\" | \"invalidBranchName\" | \"branchExists\" | \"branchCaseCollision\" | \"branchNotFound\" | \"branchNotMerged\" | \"cannotDeleteCurrent\" | \"unbornHead\" | \"revisionNotFound\" | \"remoteNotFound\" | \"checkoutFailed\" | \"logStale\" | \"commitNotFound\" | \"binaryFile\" | \"operationFailed\" | \"operationInProgress\" | \"noOperation\" | \"unresolvedConflicts\" | \"mergeCommit\" | \"nothingToStash\" | \"staleStash\" | \"invalidTagName\" | \"tagExists\" | \"tagNotFound\" | \"networkFailed\" | \"noRemotes\" | \"noUpstream\" | \"detachedHead\" | \"invalidRemoteName\" | \"invalidRemoteUrl\" | \"remoteExists\" | \"invalidCredentials\" | \"hostingAuth\" | \"hostingNotFound\" | \"hostingRateLimited\" | \"hostingRejected\" | \"hostingUnreachable\" | \"keychainUnavailable\" | \"noHostingAccount\" | \"invalidHostingHost\" | \"invalidToken\" | \"invalidSettings\" | \"gitCliInvalid\" | \"noExternalTool\" | \"externalToolFailed\" | \"updateCheckFailed\" | \"branchCheckedOut\" | \"worktreeNotFound\" | \"worktreeDirty\" | \"worktreeLocked\" | \"cannotRemoveMain\" | \"cannotRemoveCurrent\" | \"pathExists\" | \"pathNotAbsolute\";\n    message: string;\n    /** Present on `networkFailed` only. */\n    network?: {\n      verb: \"fetch\" | \"pull\" | \"push\";\n      kind: \"httpsAuthRequired\" | \"httpsAuthRejected\" | \"sshAuthFailed\" | \"hostKeyUnverified\" | \"hostUnreachable\" | \"repoNotFound\" | \"pushRejectedNonFastForward\" | \"leaseStale\" | \"remoteRejected\" | \"other\";\n      https: boolean;\n      origin: string | null;\n      host: string | null;\n      reason: string | null;\n    };\n  } | null; } | null;\n    publish: (remote: string, branch: string) => void;\n    cancelSetUpstream: () => void;\n    forcePush: { local: string; remote: string; upstream: string; } | null;\n    confirmForcePush: () => void;\n    cancelForcePush: () => void;\n  };\n  onOpenRemotes: (target: { mode: \"list\"; } | { mode: \"add\"; } | { mode: \"edit\"; name: string; }) => void;\n  /** Opens the create pull request dialog; null or absent leaves it out of Push options. */\n  onCreatePullRequest?: (() => void) | null;",
+    "RepoError": "  error: {\n    kind: \"notARepository\" | \"alreadyARepository\" | \"pathNotFound\" | \"gitCliMissing\" | \"cloneFailed\" | \"io\" | \"git\" | \"unknownRepo\" | \"noChanges\" | \"badSelection\" | \"applyFailed\" | \"tooLarge\" | \"emptyMessage\" | \"nothingToCommit\" | \"commitFailed\" | \"invalidBranchName\" | \"branchExists\" | \"branchCaseCollision\" | \"branchNotFound\" | \"branchNotMerged\" | \"cannotDeleteCurrent\" | \"unbornHead\" | \"revisionNotFound\" | \"remoteNotFound\" | \"checkoutFailed\" | \"logStale\" | \"commitNotFound\" | \"binaryFile\" | \"operationFailed\" | \"operationInProgress\" | \"noOperation\" | \"unresolvedConflicts\" | \"mergeCommit\" | \"nothingToStash\" | \"staleStash\" | \"invalidTagName\" | \"tagExists\" | \"tagNotFound\" | \"networkFailed\" | \"noRemotes\" | \"noUpstream\" | \"detachedHead\" | \"invalidRemoteName\" | \"invalidRemoteUrl\" | \"remoteExists\" | \"invalidCredentials\" | \"hostingAuth\" | \"hostingNotFound\" | \"hostingRateLimited\" | \"hostingRejected\" | \"hostingUnreachable\" | \"keychainUnavailable\" | \"noHostingAccount\" | \"invalidHostingHost\" | \"invalidToken\" | \"invalidSettings\" | \"gitCliInvalid\" | \"noExternalTool\" | \"externalToolFailed\" | \"updateCheckFailed\" | \"branchCheckedOut\" | \"worktreeNotFound\" | \"worktreeDirty\" | \"worktreeLocked\" | \"cannotRemoveMain\" | \"cannotRemoveCurrent\" | \"pathExists\" | \"pathNotAbsolute\";\n    message: string;\n    /** Present on `networkFailed` only. */\n    network?: {\n      verb: \"fetch\" | \"pull\" | \"push\";\n      kind: \"httpsAuthRequired\" | \"httpsAuthRejected\" | \"sshAuthFailed\" | \"hostKeyUnverified\" | \"hostUnreachable\" | \"repoNotFound\" | \"pushRejectedNonFastForward\" | \"leaseStale\" | \"remoteRejected\" | \"other\";\n      https: boolean;\n      origin: string | null;\n      host: string | null;\n      reason: string | null;\n    };\n  };\n  path: string | null;\n  onInitHere?: (path: string) => void;\n  /** When given, a Retry button sits before Dismiss. */\n  onRetry?: () => void;\n  onDismiss: () => void;\n  /** \"panel\": a compact, height-capped layout for narrow sidebars. */\n  variant?: \"panel\";",
+    "StashRow": "  entry: { index: number; oid: string; message: string; branch: string | null; /** Unix seconds. */ time: number; /** The commit the stash was made on. */ base: string; hasUntracked: boolean; };\n  selected: boolean;\n  /** The current time in Unix seconds, from the panel's clock. */\n  now: number;\n  onSelect: () => void;\n  onContextMenu: (x: number, y: number) => void;",
+    "TagRow": "  tag: { /** Short name, without `refs/tags/`. */ name: string; /** Full hex id of the commit the tag peels to. */ target: string; annotated: boolean; /** First line of an annotated tag's message, trimmed; null when blank or lightweight. */ subject: string | null; /** Tagger time (annotated) or the commit's time (lightweight), in Unix seconds. */ time: number; };\n  onSelect: () => void;\n  onContextMenu: (x: number, y: number) => void;",
+    "FileRow": "  entry: { path: string; oldPath: string | null; index: \"added\" | \"modified\" | \"deleted\" | \"renamed\" | \"typeChange\" | \"untracked\" | \"conflicted\" | null; worktree: \"added\" | \"modified\" | \"deleted\" | \"renamed\" | \"typeChange\" | \"untracked\" | \"conflicted\" | null; conflicted: boolean; };\n  section: \"staged\" | \"unstaged\" | \"conflicts\";\n  /** The kind this section shows for the entry; the panel owns the section rules. */\n  kind: \"added\" | \"modified\" | \"deleted\" | \"renamed\" | \"typeChange\" | \"untracked\" | \"conflicted\";\n  selected: boolean;\n  disabled: boolean;\n  onClick: (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; }) => void;\n  onContextMenu: (x: number, y: number) => void;\n  onPrimary: () => void;\n  onDiscard?: () => void;"
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}

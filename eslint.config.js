@@ -9,7 +9,16 @@ const restrictedTauriImports = {
 
 export default tseslint.config(
   {
-    ignores: ["dist", "node_modules", "src-tauri/target", "coverage"],
+    ignores: [
+      "dist",
+      "node_modules",
+      "src-tauri/target",
+      "coverage",
+      // design-sync scratch: staged converter, build output, machine state
+      ".ds-sync",
+      "ds-bundle",
+      ".design-sync/.cache",
+    ],
   },
   ...tseslint.configs.recommended,
   reactHooks.configs.flat["recommended-latest"],
