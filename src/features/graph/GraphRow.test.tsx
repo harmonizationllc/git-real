@@ -141,3 +141,19 @@ describe("GraphRow interaction", () => {
     expect(props.onContextMenu).not.toHaveBeenCalled();
   });
 });
+
+// Contract: the COSMIC row recipe, pinned at the CSS source: rounded, tinted selection, no marker.
+describe("GraphRow styling", () => {
+  const css = readFileSync("src/features/graph/GraphRow.module.css", "utf8");
+
+  it("tints the selected row and draws no left-border marker", () => {
+    expect(declarationsOf(css, "selected")).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(css).not.toMatch(/border-left/);
+    expect(css.indexOf(".row:hover")).toBeLessThan(css.indexOf(".selected"));
+  });
+
+  it("rounds the row and keeps the 28px density", () => {
+    expect(declarationsOf(css, "row")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(declarationsOf(css, "row")).toMatch(/\bheight:\s*28px/);
+  });
+});

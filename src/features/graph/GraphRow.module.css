@@ -4,10 +4,11 @@
      than 72px, so a narrow centre keeps its space for the labels and subject. */
   grid-template-columns: auto minmax(0, 1fr) minmax(72px, min(140px, 20%)) 110px;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   height: 28px;
-  padding-right: 8px;
-  border-left: 2px solid transparent;
+  margin: 0 6px;
+  padding-right: 10px;
+  border-radius: var(--radius-s);
   color: var(--color-text);
   cursor: default;
 }
@@ -20,10 +21,9 @@
   background: var(--color-line-selected);
 }
 
-.selected,
-.selected:hover {
-  background: var(--color-surface-hover);
-  border-left-color: var(--color-accent);
+/* After the hover rule at equal specificity, so the tint holds under the pointer. */
+.row.selected {
+  background: var(--color-accent-tint);
 }
 
 .message {

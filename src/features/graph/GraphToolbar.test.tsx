@@ -193,3 +193,16 @@ describe("GraphToolbar count", () => {
     expect(count()).toHaveAttribute("aria-live", "off");
   });
 });
+
+// Contract: the search field is a pill input and Previous/Next are small ghost buttons.
+describe("GraphToolbar styling", () => {
+  it("renders a search input and small ghost Previous and Next buttons", () => {
+    renderToolbar();
+    expect(input()).toHaveAttribute("type", "search");
+    for (const name of ["Previous", "Next"]) {
+      const b = screen.getByRole("button", { name });
+      expect(b).toHaveAttribute("data-variant", "ghost");
+      expect(b).toHaveAttribute("data-size", "sm");
+    }
+  });
+});

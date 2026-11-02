@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../../test/cssRules";
 import { historyEntry } from "../../test/historyFixtures";
 import { fullDate } from "../graph/model/relativeTime";
 import { HISTORY_ROW_HEIGHT, HistoryRow, RENAME_LINE_HEIGHT, historyRowHeight } from "./HistoryRow";
@@ -109,5 +111,17 @@ describe("historyRowHeight", () => {
 
   it("should use 44 and 16 as the line heights", () => {
     expect([HISTORY_ROW_HEIGHT, RENAME_LINE_HEIGHT]).toEqual([44, 16]);
+  });
+});
+
+// Contract: the COSMIC row recipe, pinned at the CSS source.
+describe("HistoryRow styling", () => {
+  const css = readFileSync("src/features/history/HistoryRow.module.css", "utf8");
+
+  it("tints the selected row and draws no left-border marker", () => {
+    expect(declarationsOf(css, "selected")).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(css).not.toMatch(/border-left/);
+    expect(css.indexOf(".row:hover")).toBeLessThan(css.indexOf(".selected"));
+    expect(declarationsOf(css, "row")).toMatch(/border-radius:\s*var\(--radius-s\)/);
   });
 });
