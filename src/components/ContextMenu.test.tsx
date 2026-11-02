@@ -757,10 +757,11 @@ describe("ContextMenu item title", () => {
 describe("ContextMenu COSMIC look", () => {
   const css = readFileSync("src/components/ContextMenu.module.css", "utf8");
 
-  it("draws a small-radius card with the card shadow", () => {
+  it("draws a small-radius card with the popover shadow and no duplicate border", () => {
     const menu = declarationsOf(css, "menu");
     expect(menu).toMatch(/border-radius:\s*var\(--radius-s\)/);
-    expect(menu).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    expect(menu).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
+    expect(menu).not.toMatch(/\bborder:/);
   });
 
   it("rounds items and hovers them on the surface-hover token", () => {

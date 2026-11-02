@@ -602,7 +602,6 @@ describe("ConfirmDialog COSMIC look", () => {
 // Contract: every dialog that draws its own backdrop and card uses the shared tokens.
 describe("standalone dialog modules", () => {
   it.each([
-    "src/features/palette/CommandPalette.module.css",
     "src/features/repo/CloneDialog.module.css",
     "src/features/settings/SettingsDialog.module.css",
     "src/features/settings/ShortcutsDialog.module.css",
@@ -612,6 +611,14 @@ describe("standalone dialog modules", () => {
     expect(declarationsOf(css, "backdrop")).toMatch(/background:\s*var\(--color-backdrop\)/);
     expect(declarationsOf(css, "dialog")).toMatch(/border-radius:\s*var\(--radius-m\)/);
     expect(declarationsOf(css, "dialog")).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+  });
+
+  // The palette floats over the page like a popover, so it takes the popover shadow instead.
+  it("gives the command palette the backdrop token, a medium-radius card and the popover shadow", () => {
+    const css = readFileSync("src/features/palette/CommandPalette.module.css", "utf8");
+    expect(declarationsOf(css, "backdrop")).toMatch(/background:\s*var\(--color-backdrop\)/);
+    expect(declarationsOf(css, "dialog")).toMatch(/border-radius:\s*var\(--radius-m\)/);
+    expect(declarationsOf(css, "dialog")).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
   });
 
   it("keeps no literal danger fallback in the settings dialog", () => {

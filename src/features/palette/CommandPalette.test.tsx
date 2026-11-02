@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { declarationsOf } from "../../test/cssRules";
 // Task 14: Failing tests for CommandPalette component.
 // These tests import modules/symbols that do not exist yet — red phase.
 
@@ -444,3 +446,10 @@ describe("CommandPalette focus restoration", () => {
 
 // Suppress unused-import warning: the mock uses openInEditor.
 void openInEditor;
+
+describe("CommandPalette popover look", () => {
+  it("separates from the page with the popover shadow", () => {
+    const css = readFileSync("src/features/palette/CommandPalette.module.css", "utf8");
+    expect(declarationsOf(css, "dialog")).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
+  });
+});

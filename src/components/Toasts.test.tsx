@@ -380,11 +380,11 @@ describe("Toasts variants (GR-14)", () => {
 });
 
 describe("Toasts COSMIC look", () => {
-  it("draws a small-radius card with the card shadow", () => {
+  it("draws a small-radius card with the popover shadow", () => {
     const css = readFileSync("src/components/Toasts.module.css", "utf8");
     const toast = declarationsOf(css, "toast");
     expect(toast).toMatch(/border-radius:\s*var\(--radius-s\)/);
-    expect(toast).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    expect(toast).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
   });
 });
 

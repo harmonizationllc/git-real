@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { declarationsOf } from "../../test/cssRules";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -667,5 +669,12 @@ describe("IssuePicker edge behaviour", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(options()).toEqual(["#7 Issue 7", "#8 Issue 8", "#9 Issue 9"]));
     expect(hostingListIssues).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("IssuePicker popover look", () => {
+  it("separates from the card beneath with the popover shadow", () => {
+    const css = readFileSync("src/features/hosting/IssuePicker.module.css", "utf8");
+    expect(declarationsOf(css, "root")).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
   });
 });

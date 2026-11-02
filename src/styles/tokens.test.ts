@@ -33,8 +33,8 @@ const lightTheme = themeTokens(rootMap);
 const mediaDarkTheme = themeTokens(mediaDarkMap);
 // Review Focus item 3 (plan § Task 7): token structure assertions.
 describe("tokens.css structure", () => {
-  it("declares 42 theme tokens on :root plus --font-mono and --diff-font-size", () => {
-    expect(lightTheme.size).toBe(42); // 38 + surface-2, accent-tint, shadow-card, backdrop
+  it("declares 43 theme tokens on :root plus --font-mono and --diff-font-size", () => {
+    expect(lightTheme.size).toBe(43); // 38 + surface-2, accent-tint, shadow-card, backdrop, shadow-popover
     expect(rootMap.has("--font-mono")).toBe(true);
     expect(rootMap.has("--diff-font-size")).toBe(true);
   });
@@ -56,6 +56,7 @@ describe("tokens.css structure", () => {
     expect(rootMap.get("--graph-lane-0")).toBe("var(--color-accent)");
     expect(rootMap.get("--shadow-card")).toBe("0 0 0 1px rgba(0, 0, 0, 0.08)");
     expect(rootMap.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
+    expect(rootMap.get("--shadow-popover")).toBe("0 4px 16px rgba(0, 0, 0, 0.18)");
   });
 
   it("uses the COSMIC dark palette in both dark blocks", () => {
@@ -73,6 +74,7 @@ describe("tokens.css structure", () => {
       expect(map.get("--color-removed")).toBe("#ffa09a");
       expect(map.get("--shadow-card")).toBe("0 0 0 1px rgba(255, 255, 255, 0.08)");
       expect(map.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
+      expect(map.get("--shadow-popover")).toBe("0 4px 16px rgba(0, 0, 0, 0.5)");
     }
   });
 
