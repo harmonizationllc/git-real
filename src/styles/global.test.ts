@@ -94,21 +94,41 @@ describe("control vocabulary", () => {
     const ring = block("button[data-variant]:focus-visible");
     expect(ring).toMatch(/outline:\s*2px solid var\(--color-accent\)/);
     expect(ring).toMatch(/box-shadow:\s*0 0 0 4px var\(--color-accent-tint\)/);
-    expect(css).toMatch(/input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible/);
+    expect(css).toMatch(
+      /:where\(\s*input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible\s*\)\s*\{[^}]*outline:\s*2px solid var\(--color-accent\)/,
+    );
   });
-  it("styles text inputs on surface-2 with the border token", () => {
-    const i = block('input:not([type="checkbox"]):not([type="radio"])');
+  it("fills danger-primary with the danger colour", () => {
+    const d = block('button[data-variant="primary"][data-danger="true"]');
+    expect(d).toMatch(/background:\s*var\(--color-danger\)/);
+    expect(d).toMatch(/color:\s*var\(--color-on-accent\)/);
+    expect(
+      block('button[data-variant="primary"][data-danger="true"]:hover:not(:disabled)'),
+    ).toMatch(/filter:\s*brightness\(1\.08\)/);
+  });
+  // :where() keeps these at zero specificity so any module rule on an input wins.
+  const TEXT_TYPES = ["text", "search", "url", "email", "password", "number"];
+  const inputRule = /^:where\(([^)]*(?:\([^)]*\)[^)]*)*)\)\s*\{([^}]*)\}/gm;
+  const rules = [...css.matchAll(inputRule)];
+  const textInput = rules.find((m) => m[1].includes("input:not([type])"));
+  it("styles only text-like inputs, at zero specificity, on surface-2 with the border token", () => {
+    expect(textInput).toBeDefined();
+    const [, sel, i] = textInput!;
+    for (const t of TEXT_TYPES) expect(sel).toContain(`input[type="${t}"]`);
+    expect(sel).not.toMatch(/checkbox|radio|range|file/);
     expect(i).toMatch(/background:\s*var\(--color-surface-2\)/);
     expect(i).toMatch(/border:\s*1px solid var\(--color-border\)/);
     expect(i).toMatch(/height:\s*var\(--control-h\)/);
     expect(i).toMatch(/padding:\s*0 12px/);
     expect(i).toMatch(/border-radius:\s*var\(--radius-s\)/);
     expect(i).toMatch(/color:\s*var\(--color-text\)/);
-    expect(block('input[type="search"]')).toMatch(/border-radius:\s*var\(--radius-pill\)/);
   });
-  it("styles textareas with the same fill and border", () => {
-    // Standalone rule, not the `button, input, select, textarea` font group.
-    const t = /(?<!,\n)^textarea \{([^}]*)\}/m.exec(css)?.[1] ?? "";
+  it("makes search inputs pill-shaped", () => {
+    const search = rules.find((m) => m[1].trim() === 'input[type="search"]');
+    expect(search?.[2]).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+  });
+  it("styles textareas with the same fill and border, at zero specificity", () => {
+    const t = rules.find((m) => m[1].trim() === "textarea")?.[2] ?? "";
     expect(t).toMatch(/background:\s*var\(--color-surface-2\)/);
     expect(t).toMatch(/border:\s*1px solid var\(--color-border\)/);
     expect(t).toMatch(/border-radius:\s*var\(--radius-s\)/);

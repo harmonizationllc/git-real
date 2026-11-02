@@ -71,6 +71,11 @@ button[data-variant="primary"] {
   color: var(--color-on-accent);
 }
 
+button[data-variant="primary"][data-danger="true"] {
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
 button[data-variant="neutral"] {
   background: rgba(158, 158, 158, 0.25);
   color: var(--color-text);
@@ -103,7 +108,8 @@ button[data-variant="icon"][data-size="sm"] {
   padding: 0;
 }
 
-button[data-variant="primary"]:hover:not(:disabled) {
+button[data-variant="primary"]:hover:not(:disabled),
+button[data-variant="primary"][data-danger="true"]:hover:not(:disabled) {
   filter: brightness(1.08);
 }
 
@@ -132,15 +138,21 @@ button[data-variant]:focus-visible {
   box-shadow: 0 0 0 4px var(--color-accent-tint);
 }
 
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
+:where(input:focus-visible, select:focus-visible, textarea:focus-visible) {
   outline: 2px solid var(--color-accent);
   outline-offset: 0;
   box-shadow: 0 0 0 4px var(--color-accent-tint);
 }
 
-input:not([type="checkbox"]):not([type="radio"]) {
+:where(
+  input:not([type]),
+  input[type="text"],
+  input[type="search"],
+  input[type="url"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"]
+) {
   height: var(--control-h);
   padding: 0 12px;
   border: 1px solid var(--color-border);
@@ -149,11 +161,11 @@ input:not([type="checkbox"]):not([type="radio"]) {
   color: var(--color-text);
 }
 
-input[type="search"] {
+:where(input[type="search"]) {
   border-radius: var(--radius-pill);
 }
 
-textarea {
+:where(textarea) {
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-s);
