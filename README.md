@@ -23,7 +23,7 @@ packages.
 - **Stashes and tags**: create, apply, pop, and drop stashes; create and delete tags.
 - **Remotes**: fetch, pull, and push with SSH and HTTPS credential prompts; manage
   remotes.
-- **Hosting integration** (GitHub, GitLab, Bitbucket): connect accounts with personal
+- **Hosting integration** (GitHub, GitLab, Bitbucket and Azure DevOps): connect accounts with personal
   access tokens stored in the OS keychain, list and check out pull requests, create a
   pull request from the current branch, browse open issues, and insert `#n` issue
   references while committing.
@@ -247,9 +247,11 @@ workflow refuses a tag that does not match.
 
 1. Set the same `X.Y.Z` version in `package.json`, `src-tauri/tauri.conf.json`, and
    `src-tauri/Cargo.toml`.
-2. Run `npm test` — a contract test checks that the three versions agree.
-3. Commit the version bump.
-4. Tag and push:
+2. Add a `## X.Y.Z` section with the release notes to `CHANGELOG.md`.
+3. Run `npm test` — a contract test checks that the three versions agree and that the
+   changelog has a section for that version.
+4. Commit the version bump and the changelog.
+5. Tag and push:
 
    ```sh
    git tag vX.Y.Z
@@ -259,11 +261,12 @@ workflow refuses a tag that does not match.
 The `Release` workflow first checks the tag against the version, then builds the
 `.deb`, `.rpm` and AppImage on Linux, the NSIS `.exe` and `.msi` on Windows and the
 universal `.dmg` on macOS in parallel, then publishes one GitHub release carrying all
-six files with generated release notes. The macOS job signs and notarizes the app when
-the `APPLE_*` repository secrets are present (see
+six files, with the version's `CHANGELOG.md` section as the release notes. The macOS
+job signs and notarizes the app when the `APPLE_*` repository secrets are present (see
 [ADR 0006](docs/adr/0006-per-platform-bundles-and-release.md)) and builds ad-hoc
-signed, without notarization, otherwise. A tag whose version differs from `tauri.conf.json` fails before anything
-is built. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
+signed, without notarization, otherwise. A tag whose version differs from
+`tauri.conf.json` fails before anything is built. A tag whose version has no changelog
+section fails in `check-version`. Release tags are always `vX.Y.Z`; the workflow rejects any other shape, and
 every release is a full release that the in-app update check can offer.
 
 ## Project layout

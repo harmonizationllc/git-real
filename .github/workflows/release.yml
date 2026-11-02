@@ -23,6 +23,10 @@ jobs:
           test "$tag" = "$conf" || { echo "tag v$tag != tauri.conf.json $conf"; exit 1; }
           [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version $tag must be X.Y.Z (release tags carry no pre-release suffix)"; exit 1; }
 
+      - name: Check the changelog has notes for this version
+        shell: bash
+        run: .github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" CHANGELOG.md > /dev/null
+
   build-linux:
     runs-on: ubuntu-22.04
     needs: check-version
@@ -171,6 +175,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download the built bundles
         uses: actions/download-artifact@v4
         with:
@@ -178,11 +185,15 @@ jobs:
           merge-multiple: true
           path: release-assets
 
+      - name: Write the release notes
+        shell: bash
+        run: .github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" CHANGELOG.md > release-notes.md
+
       - name: Publish the GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: Git Real ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           fail_on_unmatched_files: true
           files: |
             release-assets/deb/*.deb
