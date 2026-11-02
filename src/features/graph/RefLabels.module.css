@@ -11,10 +11,12 @@
 .pill {
   flex: none;
   max-width: 24ch;
-  padding: 0 6px;
+  height: 18px;
+  padding: 0 8px;
   border: 1px solid var(--color-border);
-  border-radius: 9px;
-  font-size: var(--text-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 600;
   line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -42,7 +44,6 @@
 }
 
 .head {
-  font-weight: 600;
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-on-accent);

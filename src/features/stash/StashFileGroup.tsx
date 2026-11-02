@@ -23,7 +23,7 @@ export function StashFileGroup({ repoId, title, listLabel, files, commit }: Stas
 
   return (
     <div className={styles.group}>
-      <h3 className={styles.heading}>{`${title} (${files.length})`}</h3>
+      <h3 className={`gr-section-heading ${styles.heading}`}>{`${title} (${files.length})`}</h3>
       <ul aria-label={listLabel} className={styles.list}>
         {files.map((file) => (
           <li key={file.path}>

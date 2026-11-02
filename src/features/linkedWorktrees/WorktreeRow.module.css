@@ -5,11 +5,14 @@
 .row {
   flex: 1;
   min-width: 0;
+  min-height: var(--control-h);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
-  padding: 3px 8px 3px 16px;
+  padding: 0 10px;
   border: none;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--color-text);
   text-align: left;
@@ -18,6 +21,11 @@
 
 .row:hover {
   background: var(--color-surface-hover);
+}
+
+/* After the hover rule at equal specificity, so the tint holds under the pointer. */
+.row.current {
+  background: var(--color-accent-tint);
 }
 
 .current .name {

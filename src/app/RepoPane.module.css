@@ -43,10 +43,11 @@
   margin-left: auto;
 }
 
-.branch {
+/* The header chip is the global pill at 24px. */
+.branch[data-kind] {
   margin: 0;
-  color: var(--color-accent);
-  font-family: var(--font-mono-ui);
+  height: var(--control-h-sm);
+  line-height: 22px;
 }
 
 /* A sync failure takes its own full-width row, so it never changes the toolbar row's height. */

@@ -1,7 +1,9 @@
 import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalBranch, RemoteBranch, Tracking } from "../../lib/ipc";
+import { declarationsOf } from "../../test/cssRules";
 import { BranchRow } from "./BranchRow";
 import type { BranchDrag, BranchRowProps, BranchTarget } from "./BranchRow";
 
@@ -488,5 +490,53 @@ describe("BranchRow worktree badge", () => {
   it("should render no badge when worktree is null", () => {
     renderRow({ target: local({ worktree: null }) });
     expect(screen.queryByTitle(/Checked out in worktree/)).toBeNull();
+  });
+});
+
+// Contract: the refs column rows share the COSMIC recipe, pinned at the CSS source.
+describe("refs row styling", () => {
+  const read = (path: string) => readFileSync(path, "utf8");
+
+  it("selects with the accent tint and keeps it under hover", () => {
+    const css = read("src/features/branches/BranchRow.module.css");
+    expect(declarationsOf(css, "row")).toMatch(/gap:\s*var\(--space-2\)/);
+    expect(declarationsOf(css, "current")).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(css.indexOf(".row:hover")).toBeLessThan(css.indexOf(".current"));
+    expect(css).not.toMatch(/border-left/);
+    expect(declarationsOf(css, "row")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(declarationsOf(css, "name")).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it.each([
+    ["src/features/branches/BranchRow.module.css"],
+    ["src/features/tags/TagRow.module.css"],
+    ["src/features/stash/StashRow.module.css"],
+    ["src/features/linkedWorktrees/WorktreeRow.module.css"],
+  ])("gives %s the rounded row recipe and a surface hover", (path) => {
+    const row = declarationsOf(read(path), "row");
+    expect(row).toMatch(/min-height:\s*var\(--control-h\)/);
+    expect(row).toMatch(/padding:\s*0 10px/);
+    expect(row).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(read(path)).toMatch(/\.row:hover\s*\{[^}]*var\(--color-surface-hover\)/);
+  });
+
+  it("tints the selected stash and the current worktree, after hover", () => {
+    const stash = read("src/features/stash/StashRow.module.css");
+    expect(declarationsOf(stash, "selected")).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(stash.indexOf(".row:hover")).toBeLessThan(stash.indexOf(".selected"));
+    const tree = read("src/features/linkedWorktrees/WorktreeRow.module.css");
+    expect(declarationsOf(tree, "current")).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(tree.indexOf(".row:hover")).toBeLessThan(tree.indexOf(".current"));
+  });
+
+  it("uses the shared section heading class in every panel", () => {
+    for (const path of [
+      "src/features/branches/BranchGroup.tsx",
+      "src/features/tags/TagsPanel.tsx",
+      "src/features/stash/StashesPanel.tsx",
+      "src/features/linkedWorktrees/WorktreesPanel.tsx",
+    ]) {
+      expect(read(path)).toMatch(/gr-section-heading/);
+    }
   });
 });

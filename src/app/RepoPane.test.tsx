@@ -2095,6 +2095,14 @@ describe("RepoPane styling", () => {
     expect(declarationsOf(css, "body")).toMatch(/\bgap:\s*0;/);
   });
 
+  it("draws the branch chip as the global head pill", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const chip = within(header()).getByText("main");
+    expect(chip).toHaveClass("gr-pill");
+    expect(chip).toHaveAttribute("data-kind", "head");
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
   it("makes the three columns cards", () => {
     for (const cls of ["refs", "center", "sidebar"]) {
       expect(declarationsOf(css, cls)).toMatch(/background:\s*var\(--color-surface\)/);

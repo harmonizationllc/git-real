@@ -7,16 +7,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 8px 4px;
+  padding-right: 10px;
 }
 
 .heading {
   flex: 1;
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
 }
 
 /* A text-styled button carrying the heading's font. */
@@ -27,6 +22,7 @@
   color: inherit;
   font: inherit;
   text-transform: inherit;
+  letter-spacing: inherit;
   cursor: pointer;
 }
 
@@ -47,11 +43,11 @@
 
 .list {
   margin: 0;
-  padding: 0 0 8px;
+  padding: var(--space-1) 6px;
   list-style: none;
 }
 
 .empty {
-  margin: 4px 16px 8px;
+  margin: 4px 10px 8px;
   color: var(--color-text-muted);
 }

@@ -56,7 +56,7 @@ export function BranchGroup({
   }
   return (
     <section className={styles.group} aria-labelledby={headingId}>
-      <h2 id={headingId} className={styles.heading} {...menuProps}>
+      <h2 id={headingId} className="gr-section-heading" {...menuProps}>
         {heading}
       </h2>
       {leading}

@@ -134,3 +134,24 @@ describe("control vocabulary", () => {
     expect(t).toMatch(/border-radius:\s*var\(--radius-s\)/);
   });
 });
+
+describe("section heading and pill helpers", () => {
+  it("styles .gr-section-heading as a small uppercase muted label", () => {
+    const h = block(".gr-section-heading");
+    expect(h).toMatch(/font-size:\s*var\(--text-xs\)/);
+    expect(h).toMatch(/text-transform:\s*uppercase/);
+    expect(h).toMatch(/letter-spacing:\s*0\.06em/);
+    expect(h).toMatch(/color:\s*var\(--color-text-muted\)/);
+    expect(h).toMatch(/font-weight:\s*600/);
+  });
+  it("styles .gr-pill as an 18px pill with a kind per ref type", () => {
+    const p = block(".gr-pill");
+    expect(p).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(p).toMatch(/height:\s*18px/);
+    expect(block('.gr-pill[data-kind="head"]')).toMatch(/background:\s*var\(--color-accent\)/);
+    expect(block('.gr-pill[data-kind="head"]')).toMatch(/color:\s*var\(--color-on-accent\)/);
+    expect(block('.gr-pill[data-kind="branch"]')).toMatch(/color:\s*var\(--color-accent\)/);
+    expect(block('.gr-pill[data-kind="remote"]')).toMatch(/color:\s*var\(--color-text-muted\)/);
+    expect(block('.gr-pill[data-kind="tag"]')).toMatch(/color:\s*var\(--color-warning\)/);
+  });
+});

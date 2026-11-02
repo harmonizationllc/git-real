@@ -149,7 +149,9 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
         </h1>
         <p className={styles.path}>{path}</p>
         <div className={styles.syncRow}>
-          <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
+          <p className={`gr-pill ${styles.branch}`} data-kind="head">
+            {headLine(branches?.head, headBranch)}
+          </p>
           <SyncToolbar
             sync={sync}
             onOpenRemotes={openRemotes}
