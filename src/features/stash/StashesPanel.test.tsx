@@ -84,6 +84,12 @@ describe("StashesPanel list", () => {
     expect(await screen.findByRole("list", { name: "Stash list" })).toBeInTheDocument();
   });
 
+  it("should render the list error alert in the panel variant", async () => {
+    vi.mocked(listStashes).mockRejectedValueOnce({ kind: "io", message: "list broke" });
+    renderWithProviders(<StashesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should show Stashes (2) and one row per stash", async () => {
     await renderPanel();
     expect(screen.getByRole("heading", { name: "Stashes (2)" })).toBeInTheDocument();

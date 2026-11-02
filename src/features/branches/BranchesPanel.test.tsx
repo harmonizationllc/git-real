@@ -943,10 +943,10 @@ describe("BranchesPanel head states", () => {
 
 // Contract: query errors show a RepoError with Retry.
 describe("BranchesPanel query errors", () => {
-  it("should render the list error alert without a data-variant", async () => {
+  it("should render the list error alert in the panel variant", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
     renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
-    expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should show the list error with its message", async () => {
