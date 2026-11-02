@@ -68,7 +68,11 @@ must default); any new dependency.
 - `sectionFloor(natural) = natural` when `natural ≤ SECTION_WHOLE_MAX = 144`,
   else `SECTION_MIN`: a section short enough to show whole is shown whole
   _(amended 2026-11-02 after the GR-31 walk: a one-row Worktrees section at
-  92 px lost its row to the 72 px floor)_.
+  92 px lost its row to the 72 px floor)_. 144 is the 40 px header plus two
+  rows of the tallest row kind (stash and worktree rows are 52 px), so a
+  section of up to two rows of anything is never clipped; a taller section
+  may still be squeezed to `SECTION_MIN`, which the owner confirmed on
+  2026-11-02 as the accepted trade-off against measuring row heights.
 - `fitSections(container, sections)` where each section is
   `{ natural, fixed }` (`natural` = the measured height of its content,
   `fixed` = the stored height or `null` for automatic) returns one height per
