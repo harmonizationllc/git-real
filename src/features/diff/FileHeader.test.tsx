@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { openExternalDiff, openInEditor } from "../../lib/ipc";
 import type { DiffScope } from "../../lib/ipc";
@@ -6,6 +7,7 @@ import { queryClient } from "../../lib/query/client";
 import { useShell } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
 import type { CentreView } from "../../lib/store/workspace";
+import { declarationsOf } from "../../test/cssRules";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { CloseDiffButton, FileHeader } from "./FileHeader";
@@ -265,5 +267,54 @@ describe("FileHeader external tool buttons (GR-14)", () => {
       .getState()
       .toasts.find((t) => t.text.startsWith("Couldn't open diff tool:"));
     expect(toast?.action?.label).toBe("Settings…");
+  });
+});
+
+// Contract: the restyle draws Diff/Blame as a segmented pill control and uses small ghost buttons.
+describe("FileHeader COSMIC look", () => {
+  const css = readFileSync("src/features/diff/FileHeader.module.css", "utf8");
+
+  it("draws the views as a surface-2 pill track", () => {
+    const track = declarationsOf(css, "views");
+    expect(track).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(track).toMatch(/background:\s*var\(--color-surface-2\)/);
+  });
+
+  it("lifts the active segment on the surface with the card shadow", () => {
+    const active = css.match(/\.option\[data-active\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(active).toMatch(/background:\s*var\(--color-surface\)/);
+    expect(active).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+  });
+
+  it("marks only the checked segment active", () => {
+    setup({ view: "blame" });
+    const labelOf = (name: string) => screen.getByRole("radio", { name }).closest("label");
+    expect(labelOf("Blame")).toHaveAttribute("data-active");
+    expect(labelOf("Diff")).not.toHaveAttribute("data-active");
+  });
+
+  it("gives the tool buttons the small ghost variant", () => {
+    setup();
+    for (const name of ["Open in editor", "External diff", "Show file history"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("data-variant", "ghost");
+      expect(button).toHaveAttribute("data-size", "sm");
+    }
+  });
+
+  it("gives Close diff a small icon variant", () => {
+    setup();
+    const close = screen.getByRole("button", { name: "Close diff" });
+    expect(close).toHaveAttribute("data-variant", "icon");
+    expect(close).toHaveAttribute("data-size", "sm");
+  });
+});
+
+describe("FileHeader hidden radio", () => {
+  it("hides the radio with opacity only, so it stays focusable", () => {
+    const css = readFileSync("src/features/diff/FileHeader.module.css", "utf8");
+    const block = css.match(/\.option input\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(block).toMatch(/opacity:\s*0/);
+    expect(block).not.toMatch(/display:\s*none|visibility:\s*hidden/);
   });
 });

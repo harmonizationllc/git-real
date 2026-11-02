@@ -1,8 +1,11 @@
+/* The centre column is already a card; the pane fills it and clips its content. */
 .root {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .empty {
@@ -11,8 +14,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 16px;
+  gap: var(--space-2);
+  padding: var(--space-4);
   color: var(--color-text-muted);
   text-align: center;
 }

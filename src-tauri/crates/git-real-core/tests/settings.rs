@@ -50,13 +50,13 @@ fn fields(warnings: &[git_real_core::settings::SettingsWarning]) -> Vec<&str> {
 #[test]
 fn background_rgb_matches_tokens_css() {
     use git_real_core::settings::{BG_DARK_RGB, BG_LIGHT_RGB, Theme, background_rgb};
-    assert_eq!(BG_DARK_RGB, (30, 30, 30));
-    assert_eq!(BG_LIGHT_RGB, (246, 246, 246));
-    assert_eq!(background_rgb(Theme::Dark, false), (30, 30, 30));
-    assert_eq!(background_rgb(Theme::Dark, true), (30, 30, 30));
-    assert_eq!(background_rgb(Theme::Light, true), (246, 246, 246));
-    assert_eq!(background_rgb(Theme::System, true), (30, 30, 30));
-    assert_eq!(background_rgb(Theme::System, false), (246, 246, 246));
+    assert_eq!(BG_DARK_RGB, (27, 27, 27));
+    assert_eq!(BG_LIGHT_RGB, (215, 215, 215));
+    assert_eq!(background_rgb(Theme::Dark, false), (27, 27, 27));
+    assert_eq!(background_rgb(Theme::Dark, true), (27, 27, 27));
+    assert_eq!(background_rgb(Theme::Light, true), (215, 215, 215));
+    assert_eq!(background_rgb(Theme::System, true), (27, 27, 27));
+    assert_eq!(background_rgb(Theme::System, false), (215, 215, 215));
 }
 
 /// The `--color-bg` value inside the block whose header line is `header`

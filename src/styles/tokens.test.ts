@@ -1,74 +1,30 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TEXT_SIZE_TOKENS } from "./fontTokens";
-
-// Read tokens.css relative to this file.
-const css = readFileSync(resolve(__dirname, "tokens.css"), "utf8");
-
-/**
- * Parse a CSS block into a map of property → value.
- * Strips comments and matches `{ decls }` blocks (ignoring @media wrappers).
- */
-function parseBlock(source: string): Map<string, string> {
-  const map = new Map<string, string>();
-  const declRe = /(--[\w-]+)\s*:\s*([^;]+);/g;
-  let m: RegExpExecArray | null;
-  while ((m = declRe.exec(source)) !== null) {
-    map.set(m[1].trim(), m[2].trim());
-  }
-  return map;
-}
-
-/**
- * Extract the declarations from one selector block identified by a string prefix.
- * E.g. selectorBlock(":root {") returns everything inside that first :root block.
- */
-function selectorBlock(selector: string): string {
-  const idx = css.indexOf(selector);
-  if (idx === -1) return "";
-  const start = css.indexOf("{", idx);
-  let depth = 1;
-  let i = start + 1;
-  while (i < css.length && depth > 0) {
-    if (css[i] === "{") depth++;
-    else if (css[i] === "}") depth--;
-    i++;
-  }
-  return css.slice(start + 1, i - 1);
-}
+import {
+  css,
+  mediaDarkBlock as readMediaDarkBlock,
+  parseBlock,
+  selectorBlock,
+} from "./tokenSource";
 
 // The bare :root block (light values).
 const rootBlock = selectorBlock(":root {");
 const rootMap = parseBlock(rootBlock);
 
 // The media-dark block: @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { … } }
-const mediaDarkBlock = (() => {
-  const mediaIdx = css.indexOf("@media (prefers-color-scheme: dark)");
-  if (mediaIdx === -1) return "";
-  // Find the first nested { … } inside the media block that belongs to the selector.
-  const mediaOpen = css.indexOf("{", mediaIdx);
-  const selectorOpen = css.indexOf("{", mediaOpen + 1);
-  let depth = 1;
-  let i = selectorOpen + 1;
-  while (i < css.length && depth > 0) {
-    if (css[i] === "{") depth++;
-    else if (css[i] === "}") depth--;
-    i++;
-  }
-  return css.slice(selectorOpen + 1, i - 1);
-})();
+const mediaDarkBlock = readMediaDarkBlock();
 const mediaDarkMap = parseBlock(mediaDarkBlock);
 
 // The attribute-dark block: :root[data-theme="dark"] { … }
 const attrDarkBlock = selectorBlock(':root[data-theme="dark"] {');
 const attrDarkMap = parseBlock(attrDarkBlock);
 
-// Theme tokens are --color-*, --syntax-* and --graph-lane-* only.
+// Theme tokens are --color-*, --syntax-*, --graph-lane-* and --shadow-*; fonts, type scale,
+// spacing, radius and control sizes are theme-independent.
 function themeTokens(m: Map<string, string>): Map<string, string> {
   const out = new Map<string, string>();
   for (const [k, v] of m) {
-    if (/^--(color|syntax|graph-lane)-/.test(k)) out.set(k, v);
+    if (/^--(color|syntax|graph-lane|shadow)-/.test(k)) out.set(k, v);
   }
   return out;
 }
@@ -77,10 +33,139 @@ const lightTheme = themeTokens(rootMap);
 const mediaDarkTheme = themeTokens(mediaDarkMap);
 // Review Focus item 3 (plan § Task 7): token structure assertions.
 describe("tokens.css structure", () => {
-  it("declares 38 theme tokens on :root plus --font-mono and --diff-font-size", () => {
-    expect(lightTheme.size).toBe(38);
+  it("declares 43 theme tokens on :root plus --font-mono and --diff-font-size", () => {
+    expect(lightTheme.size).toBe(43); // 38 + surface-2, accent-tint, shadow-card, backdrop, shadow-popover
     expect(rootMap.has("--font-mono")).toBe(true);
     expect(rootMap.has("--diff-font-size")).toBe(true);
+  });
+
+  it("uses the COSMIC light palette on :root", () => {
+    expect(rootMap.get("--color-bg")).toBe("#d7d7d7");
+    expect(rootMap.get("--color-surface")).toBe("#ffffff");
+    expect(rootMap.get("--color-surface-2")).toBe("#f0f0f0");
+    expect(rootMap.get("--color-text")).toBe("#161616");
+    expect(rootMap.get("--color-text-muted")).toBe("#555555");
+    expect(rootMap.get("--color-accent")).toBe("#00525a");
+    expect(rootMap.get("--color-on-accent")).toBe("#ffffff");
+    expect(rootMap.get("--color-accent-tint")).toBe("rgba(0, 82, 90, 0.12)");
+    expect(rootMap.get("--color-danger")).toBe("#890418");
+    expect(rootMap.get("--color-warning")).toBe("#792c00");
+    expect(rootMap.get("--color-added")).toBe("#00572c");
+    expect(rootMap.get("--color-modified")).toBe("#624000");
+    expect(rootMap.get("--color-removed")).toBe("#890418");
+    expect(rootMap.get("--graph-lane-0")).toBe("var(--color-accent)");
+    expect(rootMap.get("--shadow-card")).toBe("0 0 0 1px rgba(0, 0, 0, 0.08)");
+    expect(rootMap.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
+    expect(rootMap.get("--shadow-popover")).toBe("0 4px 16px rgba(0, 0, 0, 0.18)");
+  });
+
+  it("uses the COSMIC dark palette in both dark blocks", () => {
+    for (const map of [mediaDarkMap, attrDarkMap]) {
+      expect(map.get("--color-bg")).toBe("#1b1b1b");
+      expect(map.get("--color-surface")).toBe("#262626");
+      expect(map.get("--color-surface-2")).toBe("#303030");
+      expect(map.get("--color-text")).toBe("#f2f2f2");
+      expect(map.get("--color-text-muted")).toBe("#b4b4b4");
+      expect(map.get("--color-accent")).toBe("#63d0df");
+      expect(map.get("--color-on-accent")).toBe("#111111");
+      expect(map.get("--color-accent-tint")).toBe("rgba(99, 208, 223, 0.16)");
+      expect(map.get("--color-added")).toBe("#5edb8c");
+      expect(map.get("--color-modified")).toBe("#ffad00");
+      expect(map.get("--color-removed")).toBe("#ffa09a");
+      expect(map.get("--shadow-card")).toBe("0 0 0 1px rgba(255, 255, 255, 0.08)");
+      expect(map.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
+      expect(map.get("--shadow-popover")).toBe("0 4px 16px rgba(0, 0, 0, 0.5)");
+    }
+  });
+
+  it("pins the rest of the spec table in light and dark", () => {
+    const light: Record<string, string> = {
+      "--color-surface-hover": "rgba(46, 46, 46, 0.08)",
+      "--color-border": "rgba(0, 0, 0, 0.08)",
+      "--color-added-bg": "rgba(0, 87, 44, 0.1)",
+      "--color-removed-bg": "rgba(137, 4, 24, 0.1)",
+      "--color-added-word-bg": "rgba(0, 87, 44, 0.24)",
+      "--color-removed-word-bg": "rgba(137, 4, 24, 0.22)",
+      "--color-hunk-bg": "rgba(0, 82, 90, 0.08)",
+      "--color-line-selected": "rgba(98, 64, 0, 0.14)",
+      "--graph-lane-1": "#185529",
+      "--graph-lane-2": "#624000",
+      "--graph-lane-3": "#78292e",
+      "--graph-lane-4": "#68217c",
+      "--graph-lane-5": "#2e496d",
+      "--graph-lane-6": "#86043a",
+      "--graph-lane-7": "#554742",
+      "--syntax-keyword": "#86043a",
+      "--syntax-string": "#185529",
+      "--syntax-number": "#2e496d",
+      "--syntax-comment": "#636363",
+      "--syntax-variable": "#624000",
+      "--syntax-type": "#68217c",
+      "--syntax-function": "#68217c",
+      "--syntax-operator": "#00525a",
+      "--syntax-punctuation": "#2e2e2e",
+      "--syntax-meta": "#00572c",
+      "--syntax-invalid": "#890418",
+    };
+    const dark: Record<string, string> = {
+      "--color-surface-hover": "rgba(158, 158, 158, 0.1)",
+      "--color-border": "rgba(255, 255, 255, 0.08)",
+      "--color-danger": "#ffa09a",
+      "--color-warning": "#ffad00",
+      "--color-added-bg": "rgba(94, 219, 140, 0.12)",
+      "--color-removed-bg": "rgba(255, 160, 154, 0.14)",
+      "--color-added-word-bg": "rgba(94, 219, 140, 0.32)",
+      "--color-removed-word-bg": "rgba(255, 160, 154, 0.36)",
+      "--color-hunk-bg": "rgba(99, 208, 223, 0.1)",
+      "--color-line-selected": "rgba(255, 173, 0, 0.18)",
+      "--graph-lane-0": "var(--color-accent)",
+      "--graph-lane-1": "#5edb8c",
+      "--graph-lane-2": "#ffad00",
+      "--graph-lane-3": "#ffa09a",
+      "--graph-lane-4": "#e79cfe",
+      "--graph-lane-5": "#a1c0eb",
+      "--graph-lane-6": "#ff9cb1",
+      "--graph-lane-7": "#cabab4",
+      "--syntax-keyword": "#ff9cb1",
+      "--syntax-string": "#92cf9c",
+      "--syntax-number": "#a1c0eb",
+      "--syntax-comment": "#9e9e9e",
+      "--syntax-variable": "#ffad00",
+      "--syntax-type": "#e79cfe",
+      "--syntax-function": "#e79cfe",
+      "--syntax-operator": "#63d0df",
+      "--syntax-punctuation": "#dedede",
+      "--syntax-meta": "#5edb8c",
+      "--syntax-invalid": "#ffa09a",
+    };
+    for (const [k, v] of Object.entries(light)) expect([k, rootMap.get(k)]).toEqual([k, v]);
+    for (const [k, v] of Object.entries(dark)) {
+      expect([k, mediaDarkMap.get(k)]).toEqual([k, v]);
+      expect([k, attrDarkMap.get(k)]).toEqual([k, v]);
+    }
+  });
+
+  it("retires the GitHub palette", () => {
+    expect(css).not.toMatch(/#396cd8|#f6f6f6|#cf222e|#1a7f37|#9a6700/i);
+  });
+
+  it("declares theme-independent spacing, radius and control tokens once on :root", () => {
+    expect(rootMap.get("--space-1")).toBe("4px");
+    expect(rootMap.get("--space-2")).toBe("8px");
+    expect(rootMap.get("--space-3")).toBe("12px");
+    expect(rootMap.get("--space-4")).toBe("16px");
+    expect(rootMap.get("--space-5")).toBe("24px");
+    expect(rootMap.get("--space-6")).toBe("32px");
+    expect(rootMap.get("--radius-xs")).toBe("4px");
+    expect(rootMap.get("--radius-s")).toBe("8px");
+    expect(rootMap.get("--radius-m")).toBe("16px");
+    expect(rootMap.get("--radius-pill")).toBe("999px");
+    expect(rootMap.get("--control-h")).toBe("32px");
+    expect(rootMap.get("--control-h-sm")).toBe("24px");
+    for (const k of ["--space-2", "--radius-s", "--control-h"]) {
+      expect(mediaDarkMap.has(k)).toBe(false);
+      expect(attrDarkMap.has(k)).toBe(false);
+    }
   });
 
   it(":root declares color-scheme light", () => {

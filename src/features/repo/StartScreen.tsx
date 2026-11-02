@@ -24,16 +24,29 @@ export function StartScreen({ opener, onClone }: { opener: UseOpenRepo; onClone(
         Git Real
       </h1>
       <div className={styles.actions}>
-        <button type="button" onClick={() => pickThen("Open repository", open)}>
+        <button
+          data-variant="primary"
+          type="button"
+          onClick={() => pickThen("Open repository", open)}
+        >
           Open repository
         </button>
-        <button type="button" onClick={onClone}>
+        <button data-variant="neutral" type="button" onClick={onClone}>
           Clone repository
         </button>
-        <button type="button" onClick={() => pickThen("Initialize repository", init)}>
+        <button
+          data-variant="neutral"
+          type="button"
+          onClick={() => pickThen("Initialize repository", init)}
+        >
           Initialize repository
         </button>
-        <button type="button" onClick={() => setAccountsOpen(true)}>
+        <button
+          data-variant="ghost"
+          data-size="sm"
+          type="button"
+          onClick={() => setAccountsOpen(true)}
+        >
           Hosting accounts…
         </button>
       </div>

@@ -144,12 +144,16 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
       aria-labelledby={headingId}
     >
       <header className={styles.header}>
-        <h1 id={headingId} className={styles.name}>
-          {name}
-        </h1>
-        <p className={styles.path}>{path}</p>
+        <div className={styles.titles}>
+          <h1 id={headingId} className={styles.name}>
+            {name}
+          </h1>
+          <p className={styles.path}>{path}</p>
+        </div>
         <div className={styles.syncRow}>
-          <p className={styles.branch}>{headLine(branches?.head, headBranch)}</p>
+          <p className={`gr-pill ${styles.branch}`} data-kind="head">
+            {headLine(branches?.head, headBranch)}
+          </p>
           <SyncToolbar
             sync={sync}
             onOpenRemotes={openRemotes}

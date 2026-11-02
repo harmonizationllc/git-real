@@ -58,7 +58,8 @@ function Actions({
   const button = (action: HunkAction, text: string, danger = false) => (
     <button
       type="button"
-      className={danger ? styles.danger : styles.action}
+      data-variant={danger ? "danger" : "ghost"}
+      data-size="sm"
       disabled={disabledReason !== undefined}
       title={disabledReason}
       onClick={() => onAction(action)}

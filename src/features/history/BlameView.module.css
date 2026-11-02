@@ -28,7 +28,6 @@
   gap: 8px;
   height: 100%;
   padding: 0 8px;
-  border-left: 2px solid transparent;
 }
 
 .row[data-hunk-parity="1"] {
@@ -36,8 +35,7 @@
 }
 
 .row[data-current="true"] {
-  border-left-color: var(--color-accent);
-  background: var(--color-line-selected);
+  background: var(--color-accent-tint);
 }
 
 .hash,

@@ -86,6 +86,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
         )}
         <button
           type="button"
+          data-variant="neutral"
           disabled={gates.fetch !== null}
           title={gates.fetch ?? undefined}
           onClick={() => sync.fetch()}
@@ -95,6 +96,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
         <span className={styles.split}>
           <button
             type="button"
+            data-variant="neutral"
             disabled={gates.pull !== null}
             title={gates.pull ?? undefined}
             onClick={() => sync.pull()}
@@ -104,6 +106,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
           <button
             type="button"
             aria-label="Pull options"
+            data-variant="neutral"
             aria-haspopup="menu"
             disabled={gates.pull !== null}
             title={gates.pull ?? undefined}
@@ -115,6 +118,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
         <span className={styles.split}>
           <button
             type="button"
+            data-variant="primary"
             disabled={gates.push !== null}
             title={gates.push ?? undefined}
             onClick={() => sync.push()}
@@ -124,6 +128,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
           <button
             type="button"
             aria-label="Push options"
+            data-variant="primary"
             aria-haspopup="menu"
             disabled={gates.push !== null}
             title={gates.push ?? undefined}
@@ -132,7 +137,7 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
             ▾
           </button>
         </span>
-        <button type="button" onClick={() => onOpenRemotes({ mode: "list" })}>
+        <button type="button" data-variant="ghost" onClick={() => onOpenRemotes({ mode: "list" })}>
           Remotes…
         </button>
       </div>

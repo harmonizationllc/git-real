@@ -66,6 +66,8 @@ export function PullRequestRow({ pr, onOpen, onContextMenu, buttonRef }: PullReq
         </span>
       </button>
       <button
+        data-variant="icon"
+        data-size="sm"
         type="button"
         className={styles.open}
         aria-label={`Open #${pr.number} in browser`}

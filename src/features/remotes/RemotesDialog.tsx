@@ -163,6 +163,8 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
               </div>
               <div className={styles.rowActions}>
                 <button
+                  data-variant="ghost"
+                  data-size="sm"
                   data-edit={r.name}
                   type="button"
                   aria-label={`Edit ${r.name}`}
@@ -172,6 +174,8 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
                   Edit
                 </button>
                 <button
+                  data-variant="danger"
+                  data-size="sm"
                   type="button"
                   aria-label={`Remove ${r.name}`}
                   disabled={busy || network.pending}
@@ -185,10 +189,16 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
         </ul>
       )}
       <div className={styles.actions}>
-        <button ref={addRef} type="button" disabled={busy} onClick={() => setView({ kind: "add" })}>
+        <button
+          data-variant="neutral"
+          ref={addRef}
+          type="button"
+          disabled={busy}
+          onClick={() => setView({ kind: "add" })}
+        >
           Add remote
         </button>
-        <button type="button" disabled={busy} onClick={onClose}>
+        <button data-variant="neutral" type="button" disabled={busy} onClick={onClose}>
           Close
         </button>
       </div>
@@ -207,7 +217,7 @@ export function RemotesDialog({ repoId, target, onClose, fallbackFocus }: Remote
           onDismiss={refetch}
         />
         <div className={styles.actions}>
-          <button type="button" onClick={onClose}>
+          <button data-variant="neutral" type="button" onClick={onClose}>
             Close
           </button>
         </div>
@@ -380,10 +390,10 @@ function RemoteForm({ remote, error, pending, dialogRef, onSubmit, onCancel }: R
         </label>
       )}
       <div className={styles.actions}>
-        <button type="button" disabled={pending} onClick={onCancel}>
+        <button data-variant="neutral" type="button" disabled={pending} onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" disabled={pending || blank}>
+        <button data-variant="primary" type="submit" disabled={pending || blank}>
           {pending ? "Working…" : remote === undefined ? "Add" : "Save"}
         </button>
       </div>

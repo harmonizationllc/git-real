@@ -96,7 +96,13 @@ export function FileHistoryPanel({ repoId, path }: FileHistoryPanelProps) {
         <span className={styles.path} title={path}>
           {path}
         </span>
-        <button type="button" aria-label="Close file history" onClick={close}>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-size="sm"
+          aria-label="Close file history"
+          onClick={close}
+        >
           Close
         </button>
       </header>

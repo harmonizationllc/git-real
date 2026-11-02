@@ -1,67 +1,59 @@
+/* Tabs are pills on the ground; the active one is a card. */
 .root {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: var(--space-1);
+  /* overflow-x makes overflow-y auto: the bottom padding keeps focus rings and the active tab's
+     hairline unclipped, the negative margin keeps the gap to the header card unchanged. */
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  margin-bottom: calc(-1 * var(--space-1));
   overflow-x: auto;
   background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .list {
   display: flex;
+  gap: var(--space-1);
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  border-bottom: 2px solid transparent;
+  height: var(--control-h);
+  padding: 0 var(--space-1) 0 var(--space-1);
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
 }
 
 .active {
   color: var(--color-text);
   background: var(--color-surface);
-  border-bottom-color: var(--color-accent);
+  box-shadow: var(--shadow-card);
 }
 
-.label,
-.close,
-.plus,
-.shell {
+.label {
+  max-width: 16rem;
+  padding: 0 var(--space-2);
+  overflow: hidden;
   background: none;
   border: 0;
   color: inherit;
-  font: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
+.label:focus-visible {
+  outline: 2px solid var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+/* The palette and settings buttons sit at the right edge. */
 .shell {
   margin-left: auto;
 }
 
 .shell + .shell {
   margin-left: 0;
-}
-
-.label,
-.close,
-.plus,
-.shell {
-  padding: 6px 8px;
-}
-
-.label {
-  max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.close {
-  padding-left: 2px;
-}
-
-.label:focus-visible,
-.close:focus-visible,
-.plus:focus-visible {
-  outline: 2px solid var(--color-accent);
 }

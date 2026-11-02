@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { declarationsOf } from "../../test/cssRules";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -664,5 +666,12 @@ describe("IssuesPanel row menu toggle", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
     await user.click(row(12));
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+describe("section header alignment", () => {
+  it("bottom-aligns the action button with the heading text", () => {
+    const css = readFileSync("src/features/hosting/IssuesPanel.module.css", "utf8");
+    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
   });
 });

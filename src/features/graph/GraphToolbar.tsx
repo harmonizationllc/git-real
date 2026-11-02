@@ -74,10 +74,22 @@ export function GraphToolbar({
           {counter}
         </span>
       )}
-      <button type="button" disabled={noMatches} onClick={onPrevious}>
+      <button
+        type="button"
+        data-variant="ghost"
+        data-size="sm"
+        disabled={noMatches}
+        onClick={onPrevious}
+      >
         Previous
       </button>
-      <button type="button" disabled={noMatches} onClick={onNext}>
+      <button
+        type="button"
+        data-variant="ghost"
+        data-size="sm"
+        disabled={noMatches}
+        onClick={onNext}
+      >
         Next
       </button>
       {/* Not live: a screen reader would otherwise read the growing count twice a second. */}

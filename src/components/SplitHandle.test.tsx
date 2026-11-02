@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { SplitHandle } from "./SplitHandle";
 
@@ -620,5 +621,36 @@ describe("SplitHandle horizontal", () => {
     const { handle } = renderHandle();
     expect(handle).toHaveAttribute("aria-orientation", "vertical");
     expect(handle.style.width).toBe("6px");
+  });
+});
+
+// Contract: the 6px track shows the window ground between cards; a 1px border line appears only
+// on hover and keyboard focus.
+describe("SplitHandle COSMIC look", () => {
+  const css = readFileSync("src/components/SplitHandle.module.css", "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const rest = css.replace(/[^{}]*:(hover|focus-visible)[^{]*\{[^}]*\}/g, "");
+
+  it("draws no resting line", () => {
+    expect(rest).not.toMatch(/--color-border|--color-accent|gradient/);
+  });
+
+  it("draws the border-token line on hover and the accent line on focus-visible", () => {
+    const rules = [...css.matchAll(/([^{}]*:(?:hover|focus-visible)[^{]*)\{([^}]*)\}/g)];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const [, selector, body] of rules) {
+      if (selector!.includes("focus-visible")) {
+        expect(body).toContain("var(--color-accent)");
+        expect(body).not.toContain("--color-border");
+      } else {
+        expect(body).toContain("var(--color-border)");
+      }
+    }
+    for (const orientation of ["handle", "horizontal"]) {
+      expect(css).toMatch(new RegExp(`\\.${orientation}:hover`));
+      expect(css).toMatch(new RegExp(`\\.${orientation}:focus-visible`));
+    }
   });
 });

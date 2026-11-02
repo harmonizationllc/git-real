@@ -49,7 +49,12 @@ export function FileHeader({
         {(["diff", "blame"] as const).map((v) => {
           const reason = v === "blame" ? blameDisabledReason : undefined;
           return (
-            <label key={v} className={styles.option} title={reason}>
+            <label
+              key={v}
+              className={styles.option}
+              title={reason}
+              data-active={view === v || undefined}
+            >
               <input
                 type="radio"
                 name={groupName}
@@ -64,19 +69,32 @@ export function FileHeader({
         })}
       </div>
       {canEditInPlace && (
-        <button type="button" onClick={() => void editor.run(() => openInEditor(path, repoId))}>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-size="sm"
+          onClick={() => void editor.run(() => openInEditor(path, repoId))}
+        >
           Open in editor
         </button>
       )}
       {canExternalDiff && (
         <button
           type="button"
+          data-variant="ghost"
+          data-size="sm"
           onClick={() => void diff.run(() => openExternalDiff(repoId, path, externalScope(scope)))}
         >
           External diff
         </button>
       )}
-      <button type="button" aria-label="Show file history" onClick={onHistory}>
+      <button
+        type="button"
+        data-variant="ghost"
+        data-size="sm"
+        aria-label="Show file history"
+        onClick={onHistory}
+      >
         History
       </button>
       <CloseDiffButton onClick={onClose} />
@@ -86,7 +104,13 @@ export function FileHeader({
 
 export function CloseDiffButton({ onClick }: { onClick(): void }) {
   return (
-    <button type="button" aria-label="Close diff" onClick={onClick}>
+    <button
+      type="button"
+      data-variant="icon"
+      data-size="sm"
+      aria-label="Close diff"
+      onClick={onClick}
+    >
       ✕
     </button>
   );

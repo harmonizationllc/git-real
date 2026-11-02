@@ -11,7 +11,7 @@
 .word {
   background: var(--word-bg, transparent);
   color: inherit;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .eof {

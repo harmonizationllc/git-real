@@ -111,7 +111,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
     fileList = (
       <div role="alert" className={styles.error}>
         <p className={styles.message}>{filesError.message}</p>
-        <button type="button" onClick={onRetryFiles}>
+        <button data-variant="neutral" data-size="sm" type="button" onClick={onRetryFiles}>
           Retry
         </button>
       </div>
@@ -151,7 +151,13 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         <h2 ref={headingRef} tabIndex={-1} data-focus-target className={styles.title}>
           {stashRef(entry.index)}
         </h2>
-        <button type="button" aria-label="Close stash details" onClick={onClose}>
+        <button
+          data-variant="ghost"
+          data-size="sm"
+          type="button"
+          aria-label="Close stash details"
+          onClick={onClose}
+        >
           Close
         </button>
       </header>
@@ -171,6 +177,8 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
       </p>
       <div className={styles.actions}>
         <button
+          data-variant="neutral"
+          data-size="sm"
           type="button"
           disabled={actions.pending || apply.disabled}
           title={apply.title}
@@ -179,6 +187,8 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
           Apply
         </button>
         <button
+          data-variant="neutral"
+          data-size="sm"
           type="button"
           disabled={actions.pending || apply.disabled || popKept}
           title={apply.title ?? (popKept ? POP_KEPT_TITLE : undefined)}
@@ -186,7 +196,13 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
         >
           Pop
         </button>
-        <button type="button" disabled={actions.pending} onClick={() => setConfirming(true)}>
+        <button
+          data-variant="danger"
+          data-size="sm"
+          type="button"
+          disabled={actions.pending}
+          onClick={() => setConfirming(true)}
+        >
           Drop…
         </button>
       </div>

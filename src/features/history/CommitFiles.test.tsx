@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCommitFiles } from "../../lib/ipc";
 import type { CommitFile } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
+import { declarationsOf } from "../../test/cssRules";
 import { oidOf } from "../../test/graphFixtures";
 import { commitFile } from "../../test/historyFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -302,5 +304,26 @@ describe("CommitFiles error actions", () => {
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(within(alert).queryByRole("button", { name: /dismiss/i })).toBeNull();
     expect(within(alert).getAllByRole("button")).toHaveLength(1);
+  });
+});
+
+// Contract: the current file row is marked by a tint, not an inset left bar.
+describe("CommitFiles styling", () => {
+  it("tints the current row and draws no inset marker", () => {
+    const css = readFileSync("src/features/history/CommitFiles.module.css", "utf8");
+    expect(css).not.toMatch(/inset 2px/);
+    expect(declarationsOf(css, "row")).toMatch(/accent-tint/);
+    expect(declarationsOf(css, "row")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+  });
+});
+
+describe("CommitFiles button variants", () => {
+  it("gives the error Retry a neutral button", async () => {
+    vi.mocked(getCommitFiles).mockRejectedValue({ kind: "git", message: "files boom" });
+    renderWithProviders(<CommitFiles repoId={1} oid={OID} />);
+    const retry = await within(await screen.findByRole("alert")).findByRole("button", {
+      name: "Retry",
+    });
+    expect(retry).toHaveAttribute("data-variant", "neutral");
   });
 });

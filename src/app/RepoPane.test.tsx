@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -37,6 +38,7 @@ import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
 import { useSettings } from "../lib/store/settings";
+import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
 import { useShell } from "../lib/store/shell";
 import { useWorkspace } from "../lib/store/workspace";
@@ -402,7 +404,7 @@ describe("RepoPane repo-changed subscription", () => {
   });
 });
 
-const header = () => screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+const header = () => screen.getByRole("heading", { level: 1 }).closest("header") as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 const body = () => handle("Resize branches column").parentElement as HTMLElement;
 // The pane's own observer is the one watching the body; the refs column keeps its own.
@@ -2079,5 +2081,47 @@ describe("RepoPane repoActions publication (GR-14)", () => {
     // fileHistory sets picker to true, which shows the File history dialog (line 126).
     act(() => ra.fileHistory());
     await screen.findByRole("dialog", { name: "File history" });
+  });
+});
+
+// Contract: the header is a card whose sync controls sit right and wrap below the name when narrow.
+describe("RepoPane styling", () => {
+  const css = readFileSync("src/app/RepoPane.module.css", "utf8");
+
+  it("wraps the header so sync buttons drop below the name on a narrow window", () => {
+    expect(declarationsOf(css, "header")).toMatch(/flex-wrap:\s*wrap/);
+    expect(declarationsOf(css, "header")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(declarationsOf(css, "syncRow")).toMatch(/margin-left:\s*auto/);
+    expect(declarationsOf(css, "body")).toMatch(/\bgap:\s*0;/);
+  });
+
+  it("draws the branch chip as the global head pill", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    const chip = within(header()).getByText("main");
+    expect(chip).toHaveClass("gr-pill");
+    expect(chip).toHaveAttribute("data-kind", "head");
+    await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("truncates a long branch name instead of overflowing the header", () => {
+    const branch = declarationsOf(css, "branch");
+    expect(branch).toMatch(/max-width:\s*100%/);
+    expect(branch).toMatch(/overflow:\s*hidden/);
+    expect(branch).toMatch(/text-overflow:\s*ellipsis/);
+    expect(branch).not.toMatch(/line-height/);
+    expect(declarationsOf(css, "syncRow")).toMatch(/min-width:\s*0/);
+  });
+
+  it("sizes the name at 18px and stacks it over the path", () => {
+    expect(declarationsOf(css, "name")).toMatch(/font-size:\s*var\(--text-lg\)/);
+    expect(declarationsOf(css, "titles")).toMatch(/flex-direction:\s*column/);
+  });
+
+  it("makes the three columns cards", () => {
+    for (const cls of ["refs", "center", "sidebar"]) {
+      expect(declarationsOf(css, cls)).toMatch(/background:\s*var\(--color-surface\)/);
+      expect(declarationsOf(css, cls)).toMatch(/border-radius:\s*var\(--radius-s\)/);
+      expect(declarationsOf(css, cls)).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    }
   });
 });

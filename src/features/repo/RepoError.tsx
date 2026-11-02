@@ -26,16 +26,21 @@ export function RepoError({
       <p className={styles.message}>{error.message}</p>
       <div className={styles.actions}>
         {canInit && (
-          <button type="button" onClick={() => onInitHere(path)}>
+          <button
+            type="button"
+            data-variant="neutral"
+            data-size="sm"
+            onClick={() => onInitHere(path)}
+          >
             Initialize repository here
           </button>
         )}
         {onRetry && (
-          <button type="button" onClick={onRetry}>
+          <button type="button" data-variant="neutral" data-size="sm" onClick={onRetry}>
             Retry
           </button>
         )}
-        <button type="button" onClick={onDismiss}>
+        <button type="button" data-variant="ghost" data-size="sm" onClick={onDismiss}>
           Dismiss
         </button>
       </div>

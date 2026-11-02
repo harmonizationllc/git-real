@@ -6,55 +6,89 @@
   color: var(--color-text);
 }
 
+/* The header card: name over path on the left, the sync row pushed right, wrapping below on a
+   narrow window. */
 .header {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-card);
+}
+
+/* Name over path, on the left. */
+.titles {
+  display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 16px;
-  border-bottom: 1px solid var(--color-border);
+  gap: 2px;
+  min-width: 0;
 }
 
 .name {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 
 .path {
   margin: 0;
   color: var(--color-text-muted);
+  font-family: var(--font-mono-ui);
+  font-size: var(--text-xs);
   word-break: break-all;
 }
 
-/* The branch line and the sync toolbar share a row, wrapping on a narrow window. */
+/* The branch chip and the sync toolbar share a row, right-aligned, wrapping on a narrow window. */
 .syncRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+  margin-left: auto;
 }
 
-.branch {
+/* The header chip is the global pill at 24px. */
+.branch[data-kind] {
   margin: 0;
-  color: var(--color-accent);
-  font-family: var(--font-mono-ui);
+  height: var(--control-h-sm);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* grid-template-columns is set inline from the clamped column widths. */
+/* A sync failure takes its own full-width row, so it never changes the toolbar row's height. */
+.header > [role="alert"] {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* grid-template-columns is set inline from the clamped column widths. The split handles are grid
+   tracks of their own and the width clamp counts only them, so the gap stays 0: a gap would
+   overflow the clamped widths. The handle tracks are what separate the cards. */
 .body {
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   display: grid;
+  gap: 0;
 }
 
-/* The split handles draw the column dividers. */
+/* Each column is a card on the ground. */
 .refs {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-card);
 }
 
 .sidebar {
@@ -62,6 +96,10 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-card);
 }
 
 .center {
@@ -69,4 +107,8 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-card);
 }

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -444,5 +445,22 @@ describe("SyncToolbar Create pull request menu item when the prop is absent", ()
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Force push (with lease)…",
     ]);
+  });
+});
+
+// Contract: Push is the primary action, Fetch and Pull neutral, Remotes a ghost, carets small.
+describe("SyncToolbar variants", () => {
+  it("marks Push primary and the others neutral", () => {
+    renderToolbar();
+    expect(button("Push")).toHaveAttribute("data-variant", "primary");
+    expect(button("Fetch")).toHaveAttribute("data-variant", "neutral");
+    expect(button("Pull")).toHaveAttribute("data-variant", "neutral");
+    expect(button("Remotes…")).toHaveAttribute("data-variant", "ghost");
+    // Carets match the 32px pill height: no data-size, a narrower padding in CSS instead.
+    expect(button("Pull options")).not.toHaveAttribute("data-size");
+    expect(button("Push options")).not.toHaveAttribute("data-size");
+    const css = readFileSync("src/features/remotes/SyncToolbar.module.css", "utf8");
+    expect(css).toMatch(/\.split > button:last-child\s*\{[^}]*padding:\s*0 8px/);
+    expect(css).toMatch(/\.split > button:last-child\s*\{[^}]*border-top-left-radius:\s*0/);
   });
 });

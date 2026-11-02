@@ -121,7 +121,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           ref={headingRef}
           tabIndex={-1}
           data-focus-target
-          className={styles.heading}
+          className={`gr-section-heading ${styles.heading}`}
         >
           {`Stashes (${stashes?.length ?? 0})`}
         </h2>

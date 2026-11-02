@@ -16,7 +16,7 @@ export function TagFeedback({ actions }: TagFeedbackProps) {
       {actions.status && (
         <div role="status" className={styles.notice}>
           <p className={styles.text}>{statusText(actions.status)}</p>
-          <button type="button" onClick={actions.clearStatus}>
+          <button data-variant="ghost" data-size="sm" type="button" onClick={actions.clearStatus}>
             Dismiss
           </button>
         </div>

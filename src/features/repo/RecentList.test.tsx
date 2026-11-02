@@ -1,6 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../../test/cssRules";
 import type { RecentEntry } from "../../lib/ipc";
 import { RecentList } from "./RecentList";
 
@@ -59,5 +61,25 @@ describe("RecentList remove", () => {
     render(<RecentList recents={[entry("b")]} onOpen={onOpen} onRemove={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Remove b from recent repositories" }));
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("RecentList name styling", () => {
+  const css = readFileSync("src/features/repo/RecentList.module.css", "utf8");
+
+  it("keeps a repository name on one line at its natural width", () => {
+    const name = declarationsOf(css, "name");
+    expect(name).toMatch(/flex:\s*0 0 auto/);
+    expect(name).toMatch(/max-width:\s*16rem/);
+    expect(name).toMatch(/white-space:\s*nowrap/);
+    expect(name).not.toMatch(/min-width/);
+  });
+
+  it("lets the path take the ellipsis", () => {
+    const path = declarationsOf(css, "path");
+    expect(path).toMatch(/min-width:\s*0/);
+    expect(path).toMatch(/overflow:\s*hidden/);
+    expect(path).toMatch(/text-overflow:\s*ellipsis/);
+    expect(path).toMatch(/white-space:\s*nowrap/);
   });
 });

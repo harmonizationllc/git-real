@@ -92,6 +92,8 @@ export function RebaseStepRow({
       <span className={styles.author}>{step.author.name}</span>
       <button
         type="button"
+        data-variant="icon"
+        data-size="sm"
         aria-label="Move up"
         disabled={disabled || index === 0}
         onClick={() => onMove(index - 1)}
@@ -100,6 +102,8 @@ export function RebaseStepRow({
       </button>
       <button
         type="button"
+        data-variant="icon"
+        data-size="sm"
         aria-label="Move down"
         disabled={disabled || index === count - 1}
         onClick={() => onMove(index + 1)}

@@ -14,23 +14,23 @@ fn background_color_follows_the_stored_theme_then_the_desktop() {
     use tauri::webview::Color;
     assert_eq!(
         background_color(Theme::Dark, Some(tauri::Theme::Light)),
-        Color(30, 30, 30, 255)
+        Color(27, 27, 27, 255)
     );
     assert_eq!(
         background_color(Theme::Light, Some(tauri::Theme::Dark)),
-        Color(246, 246, 246, 255)
+        Color(215, 215, 215, 255)
     );
     assert_eq!(
         background_color(Theme::System, Some(tauri::Theme::Dark)),
-        Color(30, 30, 30, 255)
+        Color(27, 27, 27, 255)
     );
     assert_eq!(
         background_color(Theme::System, Some(tauri::Theme::Light)),
-        Color(246, 246, 246, 255)
+        Color(215, 215, 215, 255)
     );
     assert_eq!(
         background_color(Theme::System, None),
-        Color(246, 246, 246, 255)
+        Color(215, 215, 215, 255)
     );
 }
 

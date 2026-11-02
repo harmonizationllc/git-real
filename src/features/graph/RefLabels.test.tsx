@@ -136,6 +136,13 @@ describe("RefLabels pill sizing", () => {
     expect(morePill().className).toMatch(/pill/);
   });
 
+  it("should draw pills with the pill radius and 18px height, HEAD on the accent", () => {
+    expect(declarationsOf(css, "pill")).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(declarationsOf(css, "pill")).toMatch(/height:\s*18px/);
+    expect(declarationsOf(css, "head")).toMatch(/color:\s*var\(--color-on-accent\)/);
+    expect(declarationsOf(css, "tag")).toMatch(/var\(--color-warning\)/);
+  });
+
   it("should declare the pill rule non-shrinking", () => {
     expect(declarationsOf(css, "pill")).toMatch(/flex:\s*none/);
   });

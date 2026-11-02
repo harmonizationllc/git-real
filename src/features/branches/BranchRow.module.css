@@ -5,11 +5,13 @@
 .row {
   flex: 1;
   min-width: 0;
+  min-height: var(--control-h);
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 8px 3px 16px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 10px;
   border: none;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--color-text);
   text-align: left;
@@ -20,7 +22,9 @@
   background: var(--color-surface-hover);
 }
 
-.current {
+/* After the hover rule at equal specificity, so the tint holds under the pointer. */
+.row.current {
+  background: var(--color-accent-tint);
   font-weight: 600;
   color: var(--color-accent);
 }
@@ -44,4 +48,5 @@
 .item[data-drop-over] {
   outline: 2px solid var(--color-accent);
   outline-offset: -2px;
+  border-radius: var(--radius-s);
 }

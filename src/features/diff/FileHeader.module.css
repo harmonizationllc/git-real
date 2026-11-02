@@ -1,8 +1,9 @@
+/* The card's top strip: path, the Diff/Blame segmented control and the tools. */
 .root {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2) var(--space-3);
   padding: 6px 12px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text);
@@ -16,12 +17,52 @@
 }
 
 .views {
-  display: flex;
-  gap: 8px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
 }
 
 .option {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  height: calc(var(--control-h-sm) - 4px);
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+/* The radio stays focusable and clickable but is drawn by the segment itself. */
+.option input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.option:hover:not([data-active]) {
+  color: var(--color-text);
+}
+
+/* After the base rule at higher specificity, so the lifted segment wins. */
+.option[data-active] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.option:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.option:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }

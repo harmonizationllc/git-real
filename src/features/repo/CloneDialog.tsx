@@ -168,7 +168,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
             <>
               <p>Git was not found on your PATH. Install Git to clone repositories.</p>
               <div className={styles.actions}>
-                <button type="button" onClick={onClose} autoFocus>
+                <button data-variant="neutral" type="button" onClick={onClose} autoFocus>
                   Close
                 </button>
               </div>
@@ -235,7 +235,7 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
                 )}
               </div>
               <div className={styles.field}>
-                <button type="button" disabled={cloning} onClick={choose}>
+                <button data-variant="neutral" type="button" disabled={cloning} onClick={choose}>
                   Choose folder
                 </button>
                 {dest !== null && <p className={styles.destination}>{`Destination: ${dest}`}</p>}
@@ -253,10 +253,10 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
               )}
               {error !== null && <RepoError error={error} path={null} onDismiss={clearError} />}
               <div className={styles.actions}>
-                <button type="button" disabled={cloning} onClick={onClose}>
+                <button data-variant="neutral" type="button" disabled={cloning} onClick={onClose}>
                   Cancel
                 </button>
-                <button type="submit" disabled={!canClone}>
+                <button data-variant="primary" type="submit" disabled={!canClone}>
                   Clone
                 </button>
               </div>

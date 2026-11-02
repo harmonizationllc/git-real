@@ -162,7 +162,7 @@ export function ConnectAccountDialog({
             </div>
             <p className={styles.note}>{SCOPE_HINT[provider]}</p>
             <div>
-              <button type="button" disabled={pending} onClick={createToken}>
+              <button data-variant="neutral" type="button" disabled={pending} onClick={createToken}>
                 Create a token
               </button>
             </div>
@@ -172,10 +172,14 @@ export function ConnectAccountDialog({
               </p>
             )}
             <div className={styles.actions}>
-              <button type="button" disabled={pending} onClick={onCancel}>
+              <button data-variant="neutral" type="button" disabled={pending} onClick={onCancel}>
                 Cancel
               </button>
-              <button type="submit" disabled={pending || token === "" || accounts === undefined}>
+              <button
+                data-variant="primary"
+                type="submit"
+                disabled={pending || token === "" || accounts === undefined}
+              >
                 {pending ? "Connecting…" : "Connect"}
               </button>
             </div>

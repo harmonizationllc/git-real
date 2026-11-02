@@ -122,10 +122,10 @@ function PromptDialogBody({
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onCancel}>
+            <button type="button" data-variant="neutral" disabled={pending} onClick={onCancel}>
               Cancel
             </button>
-            <button type="submit" disabled={pending || blank}>
+            <button type="submit" data-variant="primary" disabled={pending || blank}>
               {pending ? "Working…" : confirmLabel}
             </button>
           </div>

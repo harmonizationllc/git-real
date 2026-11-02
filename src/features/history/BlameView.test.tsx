@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getBlame } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
+import { declarationsOf } from "../../test/cssRules";
 import { oidOf, shortOf } from "../../test/graphFixtures";
 import { blameHunk, blameOf } from "../../test/historyFixtures";
 import { mockWindow } from "../../test/mockVirtualizer";
@@ -347,5 +349,14 @@ describe("BlameView hunk shapes", () => {
     expect(rows[1199]).toHaveAttribute("aria-rowindex", "1200");
     expect(within(rows[1199]).getByText("1200")).toBeInTheDocument();
     expect(within(rows[999]).getByText("1000")).toBeInTheDocument();
+  });
+});
+
+// Contract: the current blame line is marked by a background tint, never a left border.
+describe("BlameView styling", () => {
+  it("marks the current line with a tint and no left border", () => {
+    const css = readFileSync("src/features/history/BlameView.module.css", "utf8");
+    expect(css).not.toMatch(/border-left/);
+    expect(declarationsOf(css, "row")).toMatch(/accent-tint/);
   });
 });

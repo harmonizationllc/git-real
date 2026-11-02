@@ -204,6 +204,8 @@ export function ShortcutSettings() {
                     <td>{s.label}</td>
                     <td>
                       <button
+                        data-variant="neutral"
+                        data-size="sm"
                         type="button"
                         ref={(el) => {
                           chordButtons.current.set(s.id, el);
@@ -249,6 +251,8 @@ export function ShortcutSettings() {
                             Already used by {shortcut(mine.otherId).label}
                           </span>
                           <button
+                            data-variant="neutral"
+                            data-size="sm"
                             type="button"
                             ref={replaceButton}
                             onClick={() => {
@@ -265,7 +269,12 @@ export function ShortcutSettings() {
                           >
                             Replace
                           </button>
-                          <button type="button" onClick={() => endConflict(s.id)}>
+                          <button
+                            data-variant="ghost"
+                            data-size="sm"
+                            type="button"
+                            onClick={() => endConflict(s.id)}
+                          >
                             Cancel
                           </button>
                         </span>
@@ -273,6 +282,8 @@ export function ShortcutSettings() {
                         <span className={styles.row}>
                           {keys !== null && (
                             <button
+                              data-variant="ghost"
+                              data-size="sm"
                               type="button"
                               aria-label={`Unbind ${s.label}`}
                               onClick={() => {
@@ -285,6 +296,8 @@ export function ShortcutSettings() {
                           )}
                           {s.id in overrides && (
                             <button
+                              data-variant="ghost"
+                              data-size="sm"
                               type="button"
                               aria-label={`Reset ${s.label} to default`}
                               title={`Reset to ${formatKeys(s.keys, keycaps)}`}
@@ -322,6 +335,7 @@ export function ShortcutSettings() {
       </p>
       <div className={styles.row}>
         <button
+          data-variant="neutral"
           type="button"
           disabled={Object.keys(overrides).length === 0 && Object.keys(keycaps).length === 0}
           onClick={resetAll}

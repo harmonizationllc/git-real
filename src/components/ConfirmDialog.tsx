@@ -79,12 +79,18 @@ function ConfirmDialogBody({
           </div>
         )}
         <div className={styles.actions}>
-          <button ref={cancelRef} type="button" disabled={pending} onClick={onCancel}>
+          <button
+            ref={cancelRef}
+            type="button"
+            data-variant="neutral"
+            disabled={pending}
+            onClick={onCancel}
+          >
             {cancelLabel}
           </button>
           <button
             type="button"
-            className={styles.confirm}
+            data-variant="primary"
             data-danger={danger ? "true" : undefined}
             disabled={pending}
             onClick={onConfirm}

@@ -1802,3 +1802,18 @@ describe("ChangesPanel Stash button", () => {
     expect(stashBtn()).toBeDisabled();
   });
 });
+
+describe("ChangesPanel COSMIC look", () => {
+  it("gives Stage all and Unstage all the small ghost variant", async () => {
+    await renderPanel(unstaged("a.txt"), staged("b.txt"));
+    for (const name of ["Stage all", "Unstage all"]) {
+      expect(btn(name)).toHaveAttribute("data-variant", "ghost");
+      expect(btn(name)).toHaveAttribute("data-size", "sm");
+    }
+  });
+
+  it("styles the section headings with the shared class", async () => {
+    await renderPanel(unstaged("a.txt"));
+    expect(screen.getByRole("heading", { name: /Unstaged/ })).toHaveClass("gr-section-heading");
+  });
+});

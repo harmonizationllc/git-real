@@ -144,11 +144,17 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
         <h2 className={styles.heading}>Can’t edit {name} here</h2>
         <p className={styles.message}>{reason}</p>
         <div className={styles.actions}>
-          <button type="button" disabled={integration.pending} onClick={() => void resolve("ours")}>
+          <button
+            type="button"
+            data-variant="neutral"
+            disabled={integration.pending}
+            onClick={() => void resolve("ours")}
+          >
             Keep {labels.ours}
           </button>
           <button
             type="button"
+            data-variant="neutral"
             disabled={integration.pending}
             onClick={() => void resolve("theirs")}
           >

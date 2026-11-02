@@ -123,10 +123,10 @@ export function SetUpstreamDialog({
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onCancel}>
+            <button data-variant="neutral" type="button" disabled={pending} onClick={onCancel}>
               Cancel
             </button>
-            <button type="submit" disabled={pending || blank}>
+            <button data-variant="primary" type="submit" disabled={pending || blank}>
               {pending ? "Working…" : "Publish"}
             </button>
           </div>

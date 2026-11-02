@@ -114,10 +114,10 @@ function StashDialogBody({ repoId, onClose, fallbackFocus }: Omit<StashDialogPro
             </p>
           )}
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onClose}>
+            <button data-variant="neutral" type="button" disabled={pending} onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={pending}>
+            <button data-variant="primary" type="submit" disabled={pending}>
               {pending ? "Working…" : "Stash"}
             </button>
           </div>

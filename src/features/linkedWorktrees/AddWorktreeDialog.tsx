@@ -293,7 +293,12 @@ function AddWorktreeDialogBody({
                   setFolderTouched(true);
                 }}
               />
-              <button type="button" disabled={pending} onClick={() => void browse()}>
+              <button
+                data-variant="neutral"
+                type="button"
+                disabled={pending}
+                onClick={() => void browse()}
+              >
                 Browse…
               </button>
             </div>
@@ -302,10 +307,10 @@ function AddWorktreeDialogBody({
             <RepoError error={error} path={null} variant="panel" onDismiss={() => setError(null)} />
           )}
           <div className={styles.actions}>
-            <button type="button" disabled={pending} onClick={onClose}>
+            <button data-variant="neutral" type="button" disabled={pending} onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={blank || pending}>
+            <button data-variant="primary" type="submit" disabled={blank || pending}>
               Add
             </button>
           </div>

@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../test/cssRules";
 import { useToasts } from "../lib/store/toasts";
 import { TOAST_MS, Toasts } from "./Toasts";
 import type { ToastVariant } from "../lib/store/toasts";
@@ -374,5 +376,27 @@ describe("Toasts variants (GR-14)", () => {
       vi.advanceTimersByTime(TOAST_MS);
     });
     expect(screen.queryByText("gone")).toBeNull();
+  });
+});
+
+describe("Toasts COSMIC look", () => {
+  it("draws a small-radius card with the popover shadow", () => {
+    const css = readFileSync("src/components/Toasts.module.css", "utf8");
+    const toast = declarationsOf(css, "toast");
+    expect(toast).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(toast).toMatch(/box-shadow:\s*var\(--shadow-popover\)/);
+  });
+});
+
+describe("Toasts buttons", () => {
+  it("gives the action a small ghost variant and dismiss a small icon variant", () => {
+    render(<Toasts />);
+    show("Saved", { label: "Undo", run: vi.fn() });
+    const action = screen.getByRole("button", { name: "Undo" });
+    expect(action).toHaveAttribute("data-variant", "ghost");
+    expect(action).toHaveAttribute("data-size", "sm");
+    const dismiss = screen.getByRole("button", { name: "Dismiss notification" });
+    expect(dismiss).toHaveAttribute("data-variant", "icon");
+    expect(dismiss).toHaveAttribute("data-size", "sm");
   });
 });

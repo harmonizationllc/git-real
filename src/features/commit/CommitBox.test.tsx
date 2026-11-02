@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   commit,
@@ -20,6 +21,7 @@ import {
   repoContext,
   repoInfo,
 } from "../../test/hostingFixtures";
+import { declarationsOf } from "../../test/cssRules";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { CommitBox } from "./CommitBox";
 
@@ -738,5 +740,41 @@ describe("CommitBox issue link", () => {
     await renderUnhosted(null);
     expect(hostingRepoInfo).not.toHaveBeenCalled();
     expect(hostingListIssues).not.toHaveBeenCalled();
+  });
+});
+
+describe("CommitBox COSMIC look", () => {
+  const read = (name: string) => readFileSync(`src/features/commit/${name}.module.css`, "utf8");
+
+  it("renders Commit as the primary button", async () => {
+    renderWithProviders(<CommitBox repoId={1} />);
+    await screen.findByText("Ada <ada@x.org>");
+    expect(button()).toHaveAttribute("data-variant", "primary");
+  });
+
+  it("keeps no square-cornered literal radius in the module", () => {
+    expect(read("CommitBox")).not.toMatch(/border-radius:\s*4px/);
+    expect(read("MessageEditor")).not.toMatch(/border-radius:\s*\d+px/);
+  });
+
+  it("pads the box and rules it off from the list above", () => {
+    const root = declarationsOf(read("CommitBox"), "root");
+    expect(root).toMatch(/padding:\s*10px/);
+    expect(root).toMatch(/border-top:\s*1px solid var\(--color-border\)/);
+  });
+
+  it("fills the editor fields with surface-2 and a rounded corner", () => {
+    const field = declarationsOf(read("MessageEditor"), "subject");
+    expect(field).toMatch(/background:\s*var\(--color-surface-2\)/);
+    expect(field).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(declarationsOf(read("MessageEditor"), "body")).toMatch(
+      /background:\s*var\(--color-surface-2\)/,
+    );
+  });
+
+  it("mutes the Amend label", () => {
+    expect(declarationsOf(read("CommitBox"), "amend")).toMatch(
+      /color:\s*var\(--color-text-muted\)/,
+    );
   });
 });
