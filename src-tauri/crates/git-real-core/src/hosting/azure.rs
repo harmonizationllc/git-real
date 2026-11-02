@@ -181,9 +181,10 @@ struct WireProjectRef {
 }
 
 /// `connectionData` needs no scope: it checks only that the PAT reaches the organization.
+/// Its 7.1 resource is still in preview, and the service answers 400 unless the version says so.
 pub fn current_user(t: &dyn Transport, host: &str, token: &Token) -> Result<UserInfo, GitError> {
     let url = format!(
-        "{}/_apis/connectionData?{API_VERSION}",
+        "{}/_apis/connectionData?api-version=7.1-preview",
         Provider::AzureDevOps.api_base(host)
     );
     let org = host.rsplit_once('/').map_or(host, |(_, org)| org);

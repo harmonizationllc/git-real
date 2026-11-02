@@ -270,7 +270,7 @@ fn connect_to_azure_devops_stores_an_organization_account() {
     let reqs = t.requests();
     assert_eq!(
         reqs[0].url,
-        "https://dev.azure.com/contoso/_apis/connectionData?api-version=7.1"
+        "https://dev.azure.com/contoso/_apis/connectionData?api-version=7.1-preview"
     );
     let auth = reqs[0]
         .headers

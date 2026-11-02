@@ -138,7 +138,7 @@ fn current_user_reads_connection_data_with_basic_auth() {
     assert_eq!(req.method, Method::Get);
     assert_eq!(
         req.url,
-        "https://dev.azure.com/contoso/_apis/connectionData?api-version=7.1"
+        "https://dev.azure.com/contoso/_apis/connectionData?api-version=7.1-preview"
     );
     assert_eq!(header(req, "authorization"), Some("Basic OnQwaw=="));
     assert_eq!(header(req, "accept"), Some("application/json"));
