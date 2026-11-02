@@ -98,6 +98,11 @@ export function hostingErrorText(error: AppError, provider: HostingProvider): st
       return "Enter a host name such as github.example.com, optionally with :port.";
     case "invalidToken":
       return `Paste the token exactly as ${label} showed it.`;
+    case "hostingRejected": {
+      // The backend prefixes the provider's sentence; the user should see only the sentence.
+      const refusal = error.message.replace(/^the provider refused the request:/, "").trim();
+      return refusal || `${label} refused the request.`;
+    }
     default:
       return error.message;
   }

@@ -166,6 +166,33 @@ describe("hostingErrorText", () => {
       expect(hostingErrorText(hostingError(kind, "the message"), "github")).toBe("the message");
     },
   );
+
+  it("should drop the Rust prefix from a provider refusal", () => {
+    expect(
+      hostingErrorText(
+        hostingError(
+          "hostingRejected",
+          "the provider refused the request: TF401179: An active pull request for the source and target branch already exists.",
+        ),
+        "azure",
+      ),
+    ).toBe("TF401179: An active pull request for the source and target branch already exists.");
+  });
+
+  it("should return a provider refusal without the prefix unchanged", () => {
+    expect(
+      hostingErrorText(
+        hostingError("hostingRejected", "A pull request already exists for feat."),
+        "github",
+      ),
+    ).toBe("A pull request already exists for feat.");
+  });
+
+  it("should say the provider refused the request when the refusal is blank", () => {
+    expect(hostingErrorText(hostingError("hostingRejected", ""), "github")).toBe(
+      "GitHub refused the request.",
+    );
+  });
 });
 
 // Contract: hosting kinds become a plain message; anything else goes through networkMessage.
