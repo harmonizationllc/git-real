@@ -15,6 +15,7 @@ import {
   hostingErrorText,
   hostingMessage,
   issueCountLabel,
+  issuesNoun,
   noIssuesMatchText,
   noIssuesText,
   openedToastText,
@@ -304,6 +305,14 @@ describe("issueCountLabel", () => {
 });
 
 // Contract: the empty states say work items on Azure DevOps and issues everywhere else.
+describe("issuesNoun", () => {
+  it("should be work items on Azure DevOps and issues elsewhere", () => {
+    expect(issuesNoun("azure")).toBe("work items");
+    for (const p of ["github", "gitlab", "bitbucket"] as const)
+      expect(issuesNoun(p)).toBe("issues");
+  });
+});
+
 describe("empty-state copy", () => {
   it("should say issues for the issue-tracker providers", () => {
     for (const p of ["github", "gitlab", "bitbucket"] as const) {

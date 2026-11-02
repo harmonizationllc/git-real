@@ -127,6 +127,11 @@ export function prCountLabel(count: number | null, more: boolean): string {
   return count === null ? "Pull requests" : `Pull requests (${count}${more ? "+" : ""})`;
 }
 
+/** What the provider calls its issues: Azure DevOps has work items. */
+export function issuesNoun(provider: HostingProvider): "issues" | "work items" {
+  return provider === "azure" ? "work items" : "issues";
+}
+
 /** The Issues heading (Work items on Azure DevOps); `more` adds a plus while further pages exist. */
 export function issueCountLabel(
   count: number | null,
@@ -139,7 +144,7 @@ export function issueCountLabel(
 
 /** The Issues panel's empty state (work items on Azure DevOps). */
 export function noIssuesText(provider: HostingProvider): string {
-  return provider === "azure" ? "No open work items" : "No open issues";
+  return `No open ${issuesNoun(provider)}`;
 }
 
 /** The issue picker's empty state (work items on Azure DevOps). */

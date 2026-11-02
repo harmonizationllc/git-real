@@ -106,6 +106,28 @@ describe("IssuesPanel for Azure DevOps", () => {
     expect(await screen.findByRole("button", { name: "Work items (2)" })).toBeInTheDocument();
   });
 
+  it("says work items in the loading text and the refresh button", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    vi.mocked(hostingListIssues).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("Loading work items…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh work items" })).toBeInTheDocument();
+  });
+
+  it("names the list Work item list on Azure DevOps", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("list", { name: "Work item list" })).toBeInTheDocument();
+  });
+
+  it("asks to connect to see work items without an Azure account", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext(null));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(
+      await screen.findByText("Connect your Azure DevOps account to see work items"),
+    ).toBeInTheDocument();
+  });
+
   it("shows No open work items for an empty list", async () => {
     vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
     vi.mocked(hostingListIssues).mockResolvedValue([]);

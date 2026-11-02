@@ -3,7 +3,7 @@ import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 import { useRestoreFocus } from "../../components/useRestoreFocus";
 import type { HostingProvider, RepoId } from "../../lib/ipc";
 import { NetworkError } from "../remotes/NetworkError";
-import { ISSUES_OFF_TEXT, hostingMessage, noIssuesMatchText } from "./hostingCopy";
+import { ISSUES_OFF_TEXT, hostingMessage, issuesNoun, noIssuesMatchText } from "./hostingCopy";
 import styles from "./IssuePicker.module.css";
 import { useIssues } from "./useIssues";
 import { issuesAllowed, useRepoInfo } from "./useRepoInfo";
@@ -89,6 +89,7 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
+  const noun = issuesNoun(provider);
   const off = info?.issuesEnabled === false;
   const issues = off ? undefined : list.issues;
   const results = issues ?? [];
@@ -164,7 +165,7 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
       <input
         ref={inputRef}
         type="search"
-        aria-label="Search issues"
+        aria-label={`Search ${noun}`}
         placeholder="Type to search"
         aria-controls={listId}
         aria-activedescendant={results.length > 0 ? optionId(current) : undefined}
@@ -176,7 +177,12 @@ export function IssuePicker({ repoId, provider, onPick, onClose, ignore }: Issue
         onChange={(e) => setQuery(e.target.value)}
       />
       {body}
-      <ul id={listId} role="listbox" aria-label="Issues" className={styles.list}>
+      <ul
+        id={listId}
+        role="listbox"
+        aria-label={provider === "azure" ? "Work items" : "Issues"}
+        className={styles.list}
+      >
         {results.map((issue, index) => (
           <li
             key={issue.number}
