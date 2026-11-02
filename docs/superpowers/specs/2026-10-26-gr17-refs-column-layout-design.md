@@ -219,3 +219,49 @@ one object or two; the exact handle gradient for the horizontal orientation
    branch filter: Tags shows matches even while collapsed.
 8. Trigger a status error (e.g. remove read permission on `.git/index`): the
    Changes alert is the compact variant with its buttons below the text.
+
+### Walk results (2026-11-02, GR-31 branch, agent walk on COSMIC)
+
+Fixtures: `many-branches` (301 local branches, 40 annotated tags, one stash
+made through the app's Stash dialog, one worktree, no hosting account),
+`no-stashes` (the same repository without the stash) and `demo` (two
+branches). Dev build at 1280×800 and at the window's 960 px minimum width;
+drags as pointer events on the handles, keys from a uinput keyboard, state
+read through the WebKit inspector. The column was 638 px tall at 1280×800
+(614 px after four handle tracks) and 1185 px maximised.
+
+1. Pass, with one change. Stashes with no entries is its header and "No
+   stashes" (68 px); Tags expanded shows its rows; Branches takes the rest.
+   On `many-branches` the proportional split gave, at 1280×800 and
+   maximised: Branches 343 and 793 px (10 and 28 rows of 301), Tags 130 and
+   227 px (2 and 4 rows of 40, with a scrollbar), Worktrees 73 and 74 px of
+   its 92 px single row. Ruling: Tags is tight but usable, and the handle
+   stores a preferred height, so the §3.1 step 3 rule stands (a fair share
+   per section with content was computed and rejected: five such sections
+   leave Branches about 120 px). The clipped Worktrees row was the defect:
+   §3.1 now keeps a section of at most `SECTION_WHOLE_MAX` whole, which
+   gives 327 / 68 / 127 / 92 px at 1280×800, summing to the column.
+2. Pass. Collapse: Tags 40 px, Branches 414 px. Expand: 327 and 127 px.
+3. Pass. Tags handle +60 px: Tags 187, Branches 267, sum unchanged; −100 px:
+   87, stored as `tagsHeight`. Relaunch: the stored 187 px came back. On
+   `no-stashes` the Stashes handle stays at 68 px (min = max) and nothing is
+   stored. On `demo` the Branches handle up by 80 px: Branches 342 → 262 px,
+   the heights sum to 558 px of 638 and the blank space sits at the end.
+4. Pass. Double-click the Tags handle: 127 px again, `tagsHeight` null.
+5. Pass. ArrowDown ×3: 127 → 175 px. ArrowUp ×3: 127 px.
+6. Pass at the 960 px minimum: `master` in full, the other two candidates
+   hidden, a `+68` pill whose title lists the remaining branches and tags.
+   The fixture has no remote, so `origin/main` was not exercised.
+7. Pass. The context menu opens on a graph row; typing `v1.1` in the branch
+   filter with Tags collapsed shows its 11 matching tags.
+8. Pass after two fixes. An unreadable or corrupt `.git/index` is read by
+   libgit2 as an empty index and raises no error, so the trigger was an
+   unreadable `.git` directory plus a working-tree write. That exposed a
+   segfault: libgit2 1.9.7 frees an uninitialised config entry when a
+   string read follows a failed file read, reached from `pull_default_mode`
+   (GR-31 moved those reads to a config snapshot, pinned in
+   `tests/remote_sync.rs`). With the fix, the Changes box is the compact
+   variant with Dismiss below the text. The list-error boxes of the refs
+   panels and the graph panel were still the default variant and wrapped
+   the path about ten characters per line at 240 px; GR-31 moved them to
+   the panel variant (§5).
