@@ -24,7 +24,9 @@
   border-bottom-right-radius: 0;
 }
 
+/* The caret is a full-height button, narrower than the main one. */
 .split > button:last-child {
+  padding: 0 8px;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }

@@ -2103,6 +2103,15 @@ describe("RepoPane styling", () => {
     await screen.findByRole("region", { name: "Changes" });
   });
 
+  it("truncates a long branch name instead of overflowing the header", () => {
+    const branch = declarationsOf(css, "branch");
+    expect(branch).toMatch(/max-width:\s*100%/);
+    expect(branch).toMatch(/overflow:\s*hidden/);
+    expect(branch).toMatch(/text-overflow:\s*ellipsis/);
+    expect(branch).not.toMatch(/line-height/);
+    expect(declarationsOf(css, "syncRow")).toMatch(/min-width:\s*0/);
+  });
+
   it("sizes the name at 18px and stacks it over the path", () => {
     expect(declarationsOf(css, "name")).toMatch(/font-size:\s*var\(--text-lg\)/);
     expect(declarationsOf(css, "titles")).toMatch(/flex-direction:\s*column/);

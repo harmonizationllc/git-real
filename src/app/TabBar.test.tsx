@@ -155,6 +155,12 @@ describe("TabBar styling", () => {
     expect(css).not.toMatch(/border-bottom/);
   });
 
+  it("pads the bottom so overflow-x clipping spares focus rings, with a margin that keeps the gap", () => {
+    const root = declarationsOf(css, "root");
+    expect(root).toMatch(/padding:\s*var\(--space-2\) var\(--space-2\) var\(--space-1\)/);
+    expect(root).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--space-1\)\)/);
+  });
+
   it("renders the add, palette, settings and close buttons as icon variants", () => {
     setup();
     for (const name of [/start screen/i, /command palette/i, /^settings$/i]) {

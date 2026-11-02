@@ -107,7 +107,6 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
             type="button"
             aria-label="Pull options"
             data-variant="neutral"
-            data-size="sm"
             aria-haspopup="menu"
             disabled={gates.pull !== null}
             title={gates.pull ?? undefined}
@@ -130,7 +129,6 @@ export function SyncToolbar({ sync, onOpenRemotes, onCreatePullRequest }: SyncTo
             type="button"
             aria-label="Push options"
             data-variant="primary"
-            data-size="sm"
             aria-haspopup="menu"
             disabled={gates.push !== null}
             title={gates.push ?? undefined}

@@ -3,7 +3,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) 0;
+  /* overflow-x makes overflow-y auto: the bottom padding keeps focus rings and the active tab's
+     hairline unclipped, the negative margin keeps the gap to the header card unchanged. */
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  margin-bottom: calc(-1 * var(--space-1));
   overflow-x: auto;
   background: var(--color-bg);
 }
