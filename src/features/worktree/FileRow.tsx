@@ -60,7 +60,8 @@ export function FileRow({
       </button>
       <button
         type="button"
-        className={styles.action}
+        data-variant="ghost"
+        data-size="sm"
         aria-label={`${primary} ${path}`}
         disabled={disabled}
         onClick={onPrimary}
@@ -70,7 +71,8 @@ export function FileRow({
       {onDiscard && (
         <button
           type="button"
-          className={styles.action}
+          data-variant="danger"
+          data-size="sm"
           aria-label={`Discard ${path}`}
           disabled={disabled}
           onClick={onDiscard}

@@ -1,16 +1,21 @@
 .item {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: var(--space-1);
+  padding-right: var(--space-1);
+  border-radius: var(--radius-s);
 }
 
 .row {
   flex: 1;
   min-width: 0;
+  min-height: var(--control-h);
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 3px 8px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 10px;
   border: none;
+  border-radius: var(--radius-s);
   background: transparent;
   color: var(--color-text);
   text-align: left;
@@ -21,12 +26,14 @@
   background: var(--color-surface-hover);
 }
 
+/* After the hover rule at higher specificity, so the tint holds under the pointer. */
 .row[aria-pressed="true"] {
-  background: var(--color-surface-hover);
-  box-shadow: inset 2px 0 0 var(--color-accent);
+  background: var(--color-accent-tint);
 }
 
 .path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -34,23 +41,4 @@
 
 .muted {
   color: var(--color-text-muted);
-}
-
-.action {
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--text-md);
-  cursor: pointer;
-}
-
-.action:hover:not(:disabled) {
-  color: var(--color-text);
-  background: var(--color-surface-hover);
-}
-
-.action:disabled {
-  cursor: default;
-  opacity: 0.5;
 }

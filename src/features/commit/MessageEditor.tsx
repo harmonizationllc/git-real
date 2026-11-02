@@ -151,7 +151,8 @@ export function MessageEditor(props: MessageEditorProps): React.JSX.Element {
           <button
             ref={linkButtonRef}
             type="button"
-            className={styles.link}
+            data-variant="ghost"
+            data-size="sm"
             aria-label="Link issue"
             disabled={disabled}
             onClick={() => trigger(onLinkIssue, lastField.current)}

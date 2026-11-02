@@ -39,10 +39,10 @@
 .body {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
+  border-radius: var(--radius-s);
+  background: var(--color-surface-2);
   color: var(--color-text);
   font: inherit;
 }
@@ -50,21 +50,4 @@
 .body {
   resize: vertical;
   min-height: 4em;
-}
-
-/* The # button: as small as the label it sits beside. */
-.link {
-  padding: 0 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: transparent;
-  color: var(--color-text-muted);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.link:disabled {
-  opacity: 0.5;
-  cursor: default;
 }

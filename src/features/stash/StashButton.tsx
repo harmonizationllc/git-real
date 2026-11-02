@@ -50,6 +50,8 @@ export function StashButton({
         ref={buttonRef}
         type="button"
         className={className}
+        data-variant={icon ? "icon" : "ghost"}
+        data-size="sm"
         aria-label={icon ? ICON_LABEL : undefined}
         title={icon ? (gate.title ?? ICON_LABEL) : gate.title}
         disabled={isDisabled}

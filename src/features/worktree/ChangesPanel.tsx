@@ -223,7 +223,8 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
       return (
         <button
           type="button"
-          className={styles.headerAction}
+          data-variant="ghost"
+          data-size="sm"
           disabled={pending}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
@@ -238,7 +239,8 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     return (
       <button
         type="button"
-        className={styles.headerAction}
+        data-variant="ghost"
+        data-size="sm"
         disabled={pending}
         onClick={() => run()}
       >
@@ -265,7 +267,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
           return (
             <section key={section} className={styles.section} aria-labelledby={headingId}>
               <div className={styles.sectionHeader}>
-                <h2 id={headingId} className={styles.heading}>
+                <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
                   {title} ({rows[section].length})
                 </h2>
                 {headerAction(section)}
@@ -307,7 +309,6 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
           <StashButton
             repoId={repoId}
             variant="text"
-            className={styles.headerAction}
             disabled={pending || statusError !== null}
             fallbackFocus={rootRef}
           />

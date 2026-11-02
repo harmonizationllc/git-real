@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { ChangeKind, StatusEntry } from "../../lib/ipc";
+import { declarationsOf } from "../../test/cssRules";
 import { FileRow, type FileRowProps, type Section } from "./FileRow";
 
 const entry = (over: Partial<StatusEntry> = {}): StatusEntry => ({
@@ -223,5 +225,51 @@ describe("FileRow context menu", () => {
       clientY: 6,
     });
     expect(props.onContextMenu).toHaveBeenCalledWith(5, 6);
+  });
+});
+
+describe("FileRow COSMIC look", () => {
+  const css = readFileSync("src/features/worktree/FileRow.module.css", "utf8");
+
+  it("follows the rounded row recipe", () => {
+    const item = declarationsOf(css, "row");
+    expect(item).toMatch(/min-height:\s*var\(--control-h\)/);
+    expect(item).toMatch(/padding:\s*0 10px/);
+    expect(item).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(css).toMatch(/\.row:hover\s*\{[^}]*var\(--color-surface-hover\)/);
+  });
+
+  it("rounds the whole item", () => {
+    expect(declarationsOf(css, "item")).toMatch(/border-radius:\s*var\(--radius-s\)/);
+  });
+
+  it("tints the pressed row after the hover rule, with no left border marker", () => {
+    const pressed = css.match(/\.row\[aria-pressed="true"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(pressed).toMatch(/background:\s*var\(--color-accent-tint\)/);
+    expect(pressed).not.toMatch(/box-shadow|border-left/);
+    expect(css.indexOf(".row:hover")).toBeLessThan(css.indexOf('.row[aria-pressed="true"]'));
+  });
+
+  it("ellipsises the path", () => {
+    expect(declarationsOf(css, "path")).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it("gives Stage, Unstage and Discard the small ghost variant", () => {
+    setup({ onDiscard: vi.fn() });
+    for (const name of ["Stage src/a.txt", "Discard src/a.txt"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute(
+        "data-variant",
+        name.startsWith("Discard") ? "danger" : "ghost",
+      );
+      expect(button).toHaveAttribute("data-size", "sm");
+    }
+  });
+
+  it("gives Unstage the small ghost variant", () => {
+    setup({ section: "staged" });
+    const button = screen.getByRole("button", { name: "Unstage src/a.txt" });
+    expect(button).toHaveAttribute("data-variant", "ghost");
+    expect(button).toHaveAttribute("data-size", "sm");
   });
 });

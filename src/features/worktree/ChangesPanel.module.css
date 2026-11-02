@@ -1,3 +1,4 @@
+/* The sidebar column is already a card; the panel fills it, scrolls inside it and insets its lists. */
 .root {
   flex: 1;
   display: flex;
@@ -8,51 +9,35 @@
 }
 
 .section {
-  padding: 8px 0;
+  padding: 0 0 var(--space-2);
 }
 
 .sectionHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 0 8px 4px;
+  padding-right: 6px;
 }
 
+/* Type comes from the shared gr-section-heading class. */
 .heading {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.headerAction {
-  padding: 2px 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-accent);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.headerAction:disabled {
-  color: var(--color-text-muted);
-  cursor: default;
+  flex: 1;
+  min-width: 0;
 }
 
 .list {
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) 6px;
   list-style: none;
 }
 
 .empty {
-  margin: 16px;
+  margin: var(--space-4);
   color: var(--color-text-muted);
 }
 
 .toolbar {
   display: flex;
   justify-content: flex-end;
-  padding: 4px 8px;
+  padding: var(--space-1) 6px;
 }

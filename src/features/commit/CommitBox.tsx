@@ -86,7 +86,7 @@ export function CommitBox({ repoId }: { repoId: RepoId }): React.JSX.Element {
         </label>
         <button
           type="button"
-          className={styles.button}
+          data-variant="primary"
           disabled={!canCommit}
           title={pending ? undefined : (reason ?? undefined)}
           onClick={submit}
