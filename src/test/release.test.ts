@@ -8,8 +8,17 @@
  * Note: the `yaml` package uses YAML 1.2 schema by default, so the key `on:`
  * in a workflow file parses as the string "on", not the boolean true.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -34,6 +43,27 @@ function fileExists(relPath: string): boolean {
 
 function fileSize(relPath: string): number {
   return statSync(resolve(ROOT, relPath)).size;
+}
+
+/** Run the release-notes script with a version and a changelog path. */
+function runNotes(
+  version: string,
+  changelog: string,
+): { status: number; stdout: string; stderr: string } {
+  const r = spawnSync(
+    "bash",
+    [resolve(ROOT, ".github/scripts/release-notes.sh"), version, changelog],
+    { encoding: "utf8" },
+  );
+  return { status: r.status ?? -1, stdout: r.stdout, stderr: r.stderr };
+}
+
+/** Write `text` to a fresh file in a new temp directory and return its path. */
+function fixture(text: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "gr38-"));
+  const path = join(dir, "CHANGELOG.md");
+  writeFileSync(path, text);
+  return path;
 }
 
 /**
@@ -662,7 +692,8 @@ describe("release workflow", () => {
     expect(dl["path"]).toBe("release-assets");
 
     const w = (steps[releaseIdx]?.with ?? {}) as Record<string, unknown>;
-    expect(w["generate_release_notes"]).toBe(true);
+    expect(w).not.toHaveProperty("generate_release_notes");
+    expect(w["body_path"]).toBe("release-notes.md");
     expect(w["fail_on_unmatched_files"]).toBe(true);
     expect(w).not.toHaveProperty("prerelease");
     expect(readText(".github/workflows/release.yml")).not.toContain("prerelease");
@@ -716,6 +747,119 @@ describe("release workflow", () => {
     const concurrency = conf["concurrency"] as Record<string, unknown>;
     expect(concurrency).toBeDefined();
     expect(String(concurrency["group"])).toContain("release-");
+  });
+
+  // GR-38: the release body is the version's CHANGELOG.md section, proven to
+  //        exist in check-version before any build, then written in publish.
+  const NOTES_RUN = '.github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" CHANGELOG.md';
+  const notesIdx = (steps: Step[]): number =>
+    steps.findIndex((s) => typeof s.run === "string" && (s.run as string).includes(NOTES_RUN));
+
+  it("check-version proves the changelog section exists before any build", () => {
+    const steps = stepsOf("check-version");
+    const guardIdx = steps.findIndex(
+      (s) => typeof s.run === "string" && (s.run as string).includes("tauri.conf.json"),
+    );
+    const idx = notesIdx(steps);
+    expect(idx).toBeGreaterThan(guardIdx);
+    expect(String(steps[idx]?.run)).toContain("> /dev/null");
+  });
+
+  it("publish checks out, writes release-notes.md, then releases with body_path", () => {
+    const steps = stepsOf("publish");
+    const checkoutIdx = steps.findIndex(
+      (s) => typeof s.uses === "string" && (s.uses as string).startsWith("actions/checkout@v4"),
+    );
+    const idx = notesIdx(steps);
+    const releaseIdx = steps.findIndex(
+      (s) =>
+        typeof s.uses === "string" &&
+        (s.uses as string).startsWith("softprops/action-gh-release@v2"),
+    );
+    expect(checkoutIdx).toBeGreaterThanOrEqual(0);
+    expect(checkoutIdx).toBeLessThan(idx);
+    expect(idx).toBeLessThan(releaseIdx);
+    expect(String(steps[idx]?.run)).toContain("> release-notes.md");
+    expect(readText(".github/workflows/release.yml")).not.toContain("generate_release_notes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// changelog
+// ---------------------------------------------------------------------------
+
+// GR-38: CHANGELOG.md holds one "## X.Y.Z" section per release. The release
+//        workflow publishes that section as the release body, so the
+//        release-notes.sh script must extract it verbatim and fail loudly.
+describe("changelog", () => {
+  const SCRIPT = ".github/scripts/release-notes.sh";
+  const version = String((readJson("src-tauri/tauri.conf.json") as { version: string }).version);
+
+  it("script exists and is executable", () => {
+    expect(fileExists(SCRIPT)).toBe(true);
+    expect(statSync(resolve(ROOT, SCRIPT)).mode & 0o111).not.toBe(0);
+  });
+
+  it("CHANGELOG.md has a non-empty section for the app version", () => {
+    const changelog = readText("CHANGELOG.md");
+    expect(changelog).toContain(`\n## ${version}\n`);
+    const r = runNotes(version, resolve(ROOT, "CHANGELOG.md"));
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim().length).toBeGreaterThan(0);
+  });
+
+  it("0.1.0 notes name every feature group and the six downloads", () => {
+    const r = runNotes("0.1.0", resolve(ROOT, "CHANGELOG.md"));
+    for (const word of [
+      "Repositories",
+      "Working tree",
+      "Commits",
+      "Branches",
+      "History",
+      "Merge and rebase",
+      "Stashes and tags",
+      "Remotes",
+      "Hosting",
+      "Azure DevOps",
+      ".deb",
+      ".rpm",
+      "AppImage",
+      ".exe",
+      "MSI",
+      ".dmg",
+    ]) {
+      expect(r.stdout).toContain(word);
+    }
+  });
+
+  it("prints only the requested section, verbatim, without the heading or blank edges", () => {
+    const path = fixture(
+      "# Changelog\n\nPreamble that must never appear.\n\n## 0.2.0\n\n- Two `code` $HOME %s \\n *star*\n\n\n## 0.1.0\n\n- One\n",
+    );
+    const two = runNotes("0.2.0", path);
+    expect(two.status).toBe(0);
+    expect(two.stdout).toBe("- Two `code` $HOME %s \\n *star*\n");
+    const one = runNotes("0.1.0", path);
+    expect(one.status).toBe(0);
+    expect(one.stdout).toBe("- One\n");
+  });
+
+  it("matches the heading whole-line, never by prefix", () => {
+    const path = fixture("## 0.1.0-rc1\n\n- rc\n\n## 0.1.0.1\n\n- patch\n");
+    const r = runNotes("0.1.0", path);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('no section "## 0.1.0"');
+    const short = runNotes("0.1", fixture("## 0.1.0\n\n- x\n"));
+    expect(short.status).toBe(1);
+  });
+
+  it("fails on an empty section and on a missing changelog", () => {
+    const empty = runNotes("0.1.0", fixture("## 0.1.0\n\n\n## 0.0.9\n\n- old\n"));
+    expect(empty.status).toBe(1);
+    expect(empty.stderr).toContain('section "## 0.1.0"');
+    expect(empty.stderr).toContain("is empty");
+    const missing = runNotes("0.1.0", "/nonexistent/CHANGELOG.md");
+    expect(missing.status).toBe(2);
   });
 });
 
@@ -819,6 +963,23 @@ describe("README", () => {
     expect(adr).toContain("Windows signing stays out of the code");
     expect(adr).not.toContain("— Signing stays out of the code");
     expect(readText("docs/adr/0003-release-pipeline-and-update-check.md")).toContain("ADR 0006");
+  });
+
+  it("features list Azure DevOps among the hosting providers", () => {
+    const features = section(readme, "Features");
+    expect(features).toMatch(/GitHub, GitLab, Bitbucket,? and Azure DevOps/);
+  });
+
+  it("releasing section documents CHANGELOG.md and no generated notes", () => {
+    const releasing = section(readme, "Releasing");
+    expect(releasing).toContain("CHANGELOG.md");
+    expect(releasing).not.toContain("generated release notes");
+  });
+
+  it("ADR 0003 no longer describes generated notes", () => {
+    expect(readText("docs/adr/0003-release-pipeline-and-update-check.md")).not.toMatch(
+      /generated notes/,
+    );
   });
 });
 
