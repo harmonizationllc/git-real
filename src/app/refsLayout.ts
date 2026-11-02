@@ -12,8 +12,11 @@ export type RefsSection = (typeof REFS_SECTIONS)[number];
 /** Sections whose height the user can drag; Issues is not resizable. */
 export type ResizableSection = Exclude<RefsSection, "issues">;
 
-/** The smallest height a section is shrunk to; a shorter section keeps its own height. */
+/** The smallest height a taller section is shrunk to. */
 export const SECTION_MIN = 72;
+
+/** A section whose content is at most this tall (a header plus one or two rows) is never squeezed. */
+export const SECTION_WHOLE_MAX = 144;
 
 /** A section's measured content height and its stored height (null = automatic). */
 export interface SectionInput {
@@ -21,9 +24,9 @@ export interface SectionInput {
   fixed: number | null;
 }
 
-/** The height a section never shrinks below: SECTION_MIN, or its content if that is shorter. */
+/** The height a section never shrinks below: its content up to SECTION_WHOLE_MAX, else SECTION_MIN. */
 export function sectionFloor(natural: number): number {
-  return Math.min(SECTION_MIN, natural);
+  return natural <= SECTION_WHOLE_MAX ? natural : SECTION_MIN;
 }
 
 /**
@@ -31,7 +34,9 @@ export function sectionFloor(natural: number): number {
  * its content height, or its stored height clamped between its floor and its content; a stored
  * Branches height is a true height, only floored. Leftover space goes to an automatic Branches;
  * an overflow is taken from the automatic sections in proportion to their room above the floor,
- * then from the fixed ones. Floors are never crossed. An unmeasured container (<= 0) returns the
+ * then from the fixed ones. Floors are never crossed. Heights are whole pixels: when the shares
+ * fill the container, the rounding remainder goes to the last automatic section with a non-zero
+ * height, so the heights sum exactly to the container. An unmeasured container (<= 0) returns the
  * content heights unchanged.
  */
 export function fitSections(container: number, sections: SectionInput[]): number[] {
@@ -45,17 +50,33 @@ export function fitSections(container: number, sections: SectionInput[]): number
   let over = heights.reduce((sum, h) => sum + h, 0) - container;
   if (over <= 0) {
     if (sections[0].fixed === null) heights[0] -= over;
-    return heights;
+  } else {
+    for (const automatic of [true, false]) {
+      const members = sections.flatMap((s, i) => ((s.fixed === null) === automatic ? [i] : []));
+      const room = members.reduce((sum, i) => sum + heights[i] - floors[i], 0);
+      if (room <= 0) continue;
+      const taken = Math.min(over, room);
+      for (const i of members) heights[i] -= (taken * (heights[i] - floors[i])) / room;
+      over -= taken;
+    }
   }
-  for (const automatic of [true, false]) {
-    const members = sections.flatMap((s, i) => ((s.fixed === null) === automatic ? [i] : []));
-    const room = members.reduce((sum, i) => sum + heights[i] - floors[i], 0);
-    if (room <= 0) continue;
-    const taken = Math.min(over, room);
-    for (const i of members) heights[i] -= (taken * (heights[i] - floors[i])) / room;
-    over -= taken;
+  return toWholePixels(container, sections, heights);
+}
+
+/**
+ * Rounds each height; when the unrounded heights fill the container, the last automatic section
+ * with a non-zero height absorbs the rounding remainder so the sum stays exact.
+ */
+function toWholePixels(container: number, sections: SectionInput[], heights: number[]): number[] {
+  const rounded = heights.map(Math.round);
+  const sum = heights.reduce((total, h) => total + h, 0);
+  if (Math.abs(sum - container) >= 0.5) return rounded;
+  for (let i = rounded.length - 1; i >= 0; i--) {
+    if (sections[i].fixed !== null || rounded[i] === 0) continue;
+    rounded[i] += container - rounded.reduce((total, h) => total + h, 0);
+    break;
   }
-  return heights;
+  return rounded;
 }
 
 /**

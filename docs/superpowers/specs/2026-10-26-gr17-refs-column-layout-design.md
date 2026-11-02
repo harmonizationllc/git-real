@@ -65,8 +65,10 @@ must default); any new dependency.
   excludes `"issues"`.
 - `SECTION_MIN = 72` px: the least an expanded section with content keeps
   (one header plus about two rows) _(my call)_.
-- `sectionFloor(natural) = min(SECTION_MIN, natural)`: a collapsed or empty
-  section is never padded up to the minimum.
+- `sectionFloor(natural) = natural` when `natural ≤ SECTION_WHOLE_MAX = 144`,
+  else `SECTION_MIN`: a section short enough to show whole is shown whole
+  _(amended 2026-11-02 after the GR-31 walk: a one-row Worktrees section at
+  92 px lost its row to the 72 px floor)_.
 - `fitSections(container, sections)` where each section is
   `{ natural, fixed }` (`natural` = the measured height of its content,
   `fixed` = the stored height or `null` for automatic) returns one height per
@@ -83,7 +85,11 @@ must default); any new dependency.
   3. Otherwise the overflow is taken from the automatic sections in
      proportion to their room (`pref − floor`), then, if room runs out, from
      the fixed sections in the same way. Sections at their floor stay there;
-     if the floors alone exceed the container the column scrolls.
+     if the floors alone exceed the container the column scrolls. Heights
+     are returned as whole pixels; when the shares fill the container, the
+     rounding remainder goes to the last automatic section with a non-zero
+     height, so the column's inline heights sum exactly to its container
+     _(GR-31, review minor on independent rounding)_.
   4. `container ≤ 0` (unmeasured) passes the naturals through, as
      `clampWidths` does for widths.
 - `maxSectionHeight(container, sections, index)` =
