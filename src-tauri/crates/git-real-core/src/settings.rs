@@ -201,10 +201,10 @@ pub enum Theme {
 }
 
 /// The dark theme's window background, `--color-bg` in `src/styles/tokens.css`.
-pub const BG_DARK_RGB: (u8, u8, u8) = (30, 30, 30);
+pub const BG_DARK_RGB: (u8, u8, u8) = (27, 27, 27);
 
 /// The light theme's window background, `--color-bg` in `src/styles/tokens.css`.
-pub const BG_LIGHT_RGB: (u8, u8, u8) = (246, 246, 246);
+pub const BG_LIGHT_RGB: (u8, u8, u8) = (215, 215, 215);
 
 /// The window background for `theme`. [`Theme::System`] follows the desktop:
 /// dark when `desktop_dark`, light otherwise.
