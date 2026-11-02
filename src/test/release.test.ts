@@ -861,6 +861,55 @@ describe("changelog", () => {
     const missing = runNotes("0.1.0", "/nonexistent/CHANGELOG.md");
     expect(missing.status).toBe(2);
   });
+
+  it("prints a CRLF changelog with LF line endings", () => {
+    const r = runNotes(
+      "0.1.0",
+      fixture("## 0.1.0\r\n\r\n- One\r\n- Two\r\n\r\n## 0.0.9\r\n\r\n- old\r\n"),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("- One\n- Two\n");
+  });
+
+  it("treats a heading at end of file, or one followed only by blank lines, as empty", () => {
+    const eof = runNotes("0.1.0", fixture("## 0.0.9\n\n- old\n\n## 0.1.0"));
+    expect(eof.status).toBe(1);
+    expect(eof.stderr).toContain("is empty");
+    const blanks = runNotes("0.1.0", fixture("## 0.1.0\n\n   \n\n"));
+    expect(blanks.status).toBe(1);
+    expect(blanks.stderr).toContain("is empty");
+  });
+
+  it("ends the body with exactly one newline even when the file has none", () => {
+    const r = runNotes("0.1.0", fixture("## 0.1.0\n\n- last line, no newline"));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("- last line, no newline\n");
+  });
+
+  it("treats regex metacharacters in the version as literal characters", () => {
+    const path = fixture("## 0+2.0\n\n- plus\n\n## 0.2.0.*\n\n- star\n\n## 0.2.0\n\n- plain\n");
+    expect(runNotes("0.2.0", path).stdout).toBe("- plain\n");
+    expect(runNotes("0+2.0", path).stdout).toBe("- plus\n");
+    expect(runNotes("0.2.0.*", path).stdout).toBe("- star\n");
+    expect(runNotes("0.2.1", fixture("## 0.2.0\n\n- x\n")).status).toBe(1);
+  });
+
+  it("takes the first of two identical headings", () => {
+    const r = runNotes("0.1.0", fixture("## 0.1.0\n\n- first\n\n## 0.1.0\n\n- second\n"));
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("- first\n");
+  });
+
+  it("0.1.0 section keeps each paragraph and bullet on one line", () => {
+    // GitHub renders a newline inside a release body as a hard line break, so a
+    // wrapped paragraph would show mid-sentence breaks on the release page.
+    const body = runNotes("0.1.0", resolve(ROOT, "CHANGELOG.md")).stdout;
+    const lines = body.split("\n").filter((l) => l.trim().length > 0);
+    for (const line of lines) {
+      expect(line, `continuation line: ${line}`).toMatch(/^(- \*\*|[A-Z])/);
+    }
+    expect(body).toContain("https://github.com/harmonizationllc/git-real#install");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -967,7 +1016,7 @@ describe("README", () => {
 
   it("features list Azure DevOps among the hosting providers", () => {
     const features = section(readme, "Features");
-    expect(features).toMatch(/GitHub, GitLab, Bitbucket,? and Azure DevOps/);
+    expect(features).toMatch(/GitHub, GitLab, Bitbucket, and Azure DevOps/);
   });
 
   it("releasing section documents CHANGELOG.md and no generated notes", () => {
