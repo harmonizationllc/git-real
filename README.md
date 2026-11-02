@@ -23,10 +23,10 @@ packages.
 - **Stashes and tags**: create, apply, pop, and drop stashes; create and delete tags.
 - **Remotes**: fetch, pull, and push with SSH and HTTPS credential prompts; manage
   remotes.
-- **Hosting integration** (GitHub, GitLab, Bitbucket and Azure DevOps): connect accounts with personal
-  access tokens stored in the OS keychain, list and check out pull requests, create a
-  pull request from the current branch, browse open issues, and insert `#n` issue
-  references while committing.
+- **Hosting integration** (GitHub, GitLab, Bitbucket, and Azure DevOps): connect accounts
+  with personal access tokens stored in the OS keychain, list and check out pull
+  requests, create a pull request from the current branch, browse open issues, and
+  insert `#n` issue references while committing.
 
 ## Technology
 

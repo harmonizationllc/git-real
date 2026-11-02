@@ -8,6 +8,9 @@
 # blank lines, every other line verbatim. The heading is matched as a whole line
 # by string comparison, never by prefix or regex, so "0.1.0" does not match
 # "## 0.1.0-rc1" and the dots in a version are literal.
+# A body line beginning with "## " ends the section, fences included. With
+# duplicate headings the first wins. A heading with trailing whitespace does not
+# match (Prettier removes it before it reaches CI).
 #
 # Exit 1 when the section is missing or has no non-blank line. Exit 2 on a bad
 # call or an unreadable changelog.
@@ -42,11 +45,11 @@ out="$(
     inside && line ~ /^## / { inside = 0 }
     !inside && !found && line == want { inside = 1; found = 1; print "FOUND"; next }
     inside {
-      if (line ~ /^[ \t]*$/) { held = held $0 "\n"; next }
+      if (line ~ /^[ \t]*$/) { held = held line "\n"; next }
       if (started) { printf "%s", held }
       held = ""
       started = 1
-      print $0
+      print line
     }
   ' "$changelog"
 )"
