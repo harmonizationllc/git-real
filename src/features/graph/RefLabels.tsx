@@ -25,33 +25,54 @@ export function RefLabels({ refs }: RefLabelsProps) {
   // Re-measure when the candidates change, not on every new refs array.
   const candidateKey = candidates.map((l) => `${l.kind}:${l.name}`).join("\n");
 
-  // Measure on mount, when the candidates change and on every resize of the parent cell. React
-  // skips the re-render when the fitted count is unchanged. A changed fit measures once more, so
-  // a newly rendered +n pill's own width replaces the MORE_PILL_PX estimate; once the pill is
-  // drawn its width is fixed and the second pass returns the same count.
+  // The +n pill's width as last used by measure; null until a pill has been measured.
+  const moreWidthRef = useRef<number | null>(null);
+  // The +n pill's drawn width, or the MORE_PILL_PX estimate before it is laid out.
+  const moreWidth = () => moreRef.current?.offsetWidth || MORE_PILL_PX;
+  const measure = () => {
+    const parent = (rootRef.current as HTMLElement).parentElement as HTMLElement;
+    const widths = pillRefs.current
+      .slice(0, candidateCount)
+      .map((el) => (el as HTMLElement).offsetWidth);
+    if (parent.clientWidth === 0 || widths.some((w) => w === 0)) {
+      setFit(null);
+      return;
+    }
+    const budget = parent.clientWidth - SUBJECT_RESERVE_PX - MESSAGE_GAP_PX;
+    const more = moreWidth();
+    if (moreRef.current) moreWidthRef.current = more;
+    setFit(fitLabels(widths, LABEL_GAP_PX, budget, more, total));
+  };
+  // The observer outlives renders, so it calls the latest measure through this ref.
+  const measureRef = useRef(measure);
+  useLayoutEffect(() => {
+    measureRef.current = measure;
+  });
+
+  // One observer per label set: measure on mount and when the candidates or the total change,
+  // then on every resize of the parent cell. React skips the re-render when the fitted count is
+  // unchanged.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const parent = root.parentElement as HTMLElement;
-    const measure = () => {
-      const widths = pillRefs.current
-        .slice(0, candidateCount)
-        .map((el) => (el as HTMLElement).offsetWidth);
-      if (parent.clientWidth === 0 || widths.some((w) => w === 0)) {
-        setFit(null);
-        return;
-      }
-      const budget = parent.clientWidth - SUBJECT_RESERVE_PX - MESSAGE_GAP_PX;
-      const moreWidth = moreRef.current?.offsetWidth || MORE_PILL_PX;
-      setFit(fitLabels(widths, LABEL_GAP_PX, budget, moreWidth, total));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(parent);
+    measureRef.current();
+    const ro = new ResizeObserver(() => measureRef.current());
+    ro.observe(root.parentElement as HTMLElement);
     return () => ro.disconnect();
-    // candidateKey and fit are the triggers; candidateCount follows from candidateKey.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateKey, total, fit]);
+    // candidateKey and total are the triggers; measure reads the rest through refs.
+  }, [candidateKey, total]);
+
+  // A changed fit can draw a +n pill of a new width. When it differs from the width the last
+  // measure used, measure once more with the drawn width; once the pill's width is stable the
+  // fit is too, so this does not loop.
+  useLayoutEffect(() => {
+    if (!moreRef.current) return;
+    const drawn = moreWidth();
+    if (drawn === moreWidthRef.current) return;
+    moreWidthRef.current = drawn;
+    measureRef.current();
+    // fit is the trigger; the pill is read through refs.
+  }, [fit]);
 
   if (refs.length === 0) return null;
   const shown = Math.min(fit ?? candidateCount, candidateCount);
