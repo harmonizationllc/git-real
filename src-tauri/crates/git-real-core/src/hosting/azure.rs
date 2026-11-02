@@ -18,7 +18,7 @@ use super::model::{
     Account, CiState, HostedRepo, HostedRepoInfo, HostedRepoPage, Issue, NewPullRequest, PAGE_SIZE,
     PullRequest, UserInfo, clean_https_url,
 };
-use super::provider::{AuthScheme, Provider, RepoRef};
+use super::provider::{AuthScheme, Provider, RepoRef, account_origin_for};
 use crate::error::GitError;
 use crate::token::Token;
 
@@ -358,9 +358,15 @@ pub fn list_my_repos(
         };
         let updated_at =
             parse_timestamp(&project.last_update_time).ok_or_else(|| unexpected(host))?;
-        let web_url = r
-            .web_url
-            .unwrap_or_else(|| git_web_url(host, &project.name, &r.name));
+        let web_url = r.web_url.unwrap_or_else(|| {
+            RepoRef {
+                provider: Provider::AzureDevOps,
+                host: host.clone(),
+                namespace: project.name.clone(),
+                name: r.name.clone(),
+            }
+            .web_url()
+        });
         let row = HostedRepo {
             full_name: format!("{}/{}", project.name, r.name),
             name: r.name,
@@ -408,10 +414,7 @@ pub fn create_pull_request(
 
 /// `https://{host}/{project}/_git/{repo}/pullrequest/{id}`.
 pub fn pull_request_web_url(repo: &RepoRef, id: u64) -> String {
-    format!(
-        "{}/pullrequest/{id}",
-        git_web_url(&repo.host, &repo.namespace, &repo.name)
-    )
+    format!("{}/pullrequest/{id}", repo.web_url())
 }
 
 /// `https://{host}/{project}/_workitems/edit/{id}`.
@@ -420,15 +423,6 @@ pub fn work_item_web_url(repo: &RepoRef, id: u64) -> String {
         "https://{}/{}/_workitems/edit/{id}",
         repo.host,
         percent_encode(&repo.namespace)
-    )
-}
-
-/// `https://{host}/{project}/_git/{repo}`, the segments percent-encoded.
-fn git_web_url(host: &str, project: &str, name: &str) -> String {
-    format!(
-        "https://{host}/{}/_git/{}",
-        percent_encode(project),
-        percent_encode(name)
     )
 }
 
@@ -492,7 +486,7 @@ fn convert(p: WirePullRequest, repo: &RepoRef) -> Result<PullRequest, GitError> 
         .and_then(|f| f.repository)
         .and_then(|r| r.remote_url)
         .and_then(|u| clean_https_url(&u))
-        .filter(|u| in_organization(u, host));
+        .filter(|u| account_origin_for(host, u).is_some());
     Ok(PullRequest {
         number: p.pull_request_id,
         title: p.title,
@@ -509,13 +503,6 @@ fn convert(p: WirePullRequest, repo: &RepoRef) -> Result<PullRequest, GitError> 
         updated_at: parse_timestamp(&p.creation_date).ok_or_else(|| unexpected(host))?,
         web_url: pull_request_web_url(repo, p.pull_request_id),
     })
-}
-
-/// `url` is under `https://{host}/`, ASCII case-insensitively.
-fn in_organization(url: &str, host: &str) -> bool {
-    let prefix = format!("https://{host}/");
-    url.get(..prefix.len())
-        .is_some_and(|head| head.eq_ignore_ascii_case(&prefix))
 }
 
 fn convert_work_item(w: WireWorkItem, repo: &RepoRef) -> Result<Issue, GitError> {

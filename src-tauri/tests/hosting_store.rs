@@ -539,6 +539,58 @@ fn credentials_for_matches_a_custom_host_account() {
     assert_eq!(c.origin(), "https://ghe.corp");
 }
 
+/// The token `c` hands git, read from the env `auth::apply` sets.
+fn token_of(c: &git_real_core::Credentials) -> String {
+    let mut cmd = std::process::Command::new("true");
+    git_real_core::remote::auth::apply(&mut cmd, Some(c));
+    cmd.get_envs()
+        .find(|(k, _)| *k == "GR_TOKEN")
+        .and_then(|(_, v)| v)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn credentials_for_picks_the_account_of_the_urls_organization() {
+    let (_dir, store, _tokens) = hosting_store();
+    let (a, b) = (Token::new("pat-A").unwrap(), Token::new("pat-B").unwrap());
+    store
+        .connect(
+            account(Provider::AzureDevOps, "dev.azure.com/contoso", "j@x.com"),
+            &a,
+        )
+        .unwrap();
+    store
+        .connect(
+            account(Provider::AzureDevOps, "dev.azure.com/fabrikam", "j@x.com"),
+            &b,
+        )
+        .unwrap();
+    let c = store
+        .credentials_for(&["https://dev.azure.com/fabrikam/p/_git/r".to_owned()])
+        .unwrap();
+    assert_eq!(
+        (c.origin(), c.username(), c.approves()),
+        ("https://dev.azure.com", "git-real", false)
+    );
+    assert_eq!(token_of(&c), "pat-B");
+    assert!(
+        store
+            .credentials_for(&["https://dev.azure.com/nobody/p/_git/r".to_owned()])
+            .is_none()
+    );
+    let c = store
+        .credentials_for(&["https://contoso.visualstudio.com/p/_git/r".to_owned()])
+        .unwrap();
+    assert_eq!(c.origin(), "https://contoso.visualstudio.com");
+    assert_eq!(token_of(&c), "pat-A");
+    let c = store
+        .credentials_for(&["https://Contoso@dev.azure.com/CONTOSO/p/_git/r".to_owned()])
+        .unwrap();
+    assert_eq!(token_of(&c), "pat-A");
+}
+
 #[test]
 fn credentials_for_with_a_failing_keychain_is_none() {
     let (_dir, store, _tokens) = hosting_store_with(MemoryTokenStore {

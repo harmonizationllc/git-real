@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::{fs, io::ErrorKind};
 
-use git_real_core::hosting::provider::https_host;
+use git_real_core::hosting::provider::account_origin_for;
 use git_real_core::hosting::{Account, Provider, Token, UserInfo};
 use git_real_core::{Credentials, GitError};
 use serde::{Deserialize, Serialize};
@@ -207,18 +207,16 @@ impl HostingStore {
         }
     }
 
-    /// Account credentials for the first of `urls` that is `https://` on an account's host;
-    /// `None` when there is none, or its token is missing or unreadable.
+    /// Account credentials for the first of `urls` that is `https://` on an account's host (for
+    /// Azure DevOps, in the account's organization), scoped to that URL's origin; `None` when
+    /// there is none, or its token is missing or unreadable.
     pub fn credentials_for(&self, urls: &[String]) -> Option<Credentials> {
-        let account = urls.iter().find_map(|url| {
-            let host = https_host(url)?;
+        let (account, origin) = urls.iter().find_map(|url| {
             self.lock()
                 .iter()
-                .find(|a| a.host.eq_ignore_ascii_case(&host))
-                .cloned()
+                .find_map(|a| account_origin_for(&a.host, url).map(|o| (a.clone(), o)))
         })?;
         let token = self.token(&account).ok()??;
-        let origin = format!("https://{}", account.host);
         Credentials::account(&origin, account.provider.git_username(), &token).ok()
     }
 

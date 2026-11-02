@@ -493,6 +493,62 @@ fn repo_context_treats_a_connected_custom_host_as_its_provider() {
 }
 
 #[test]
+fn repo_context_finds_the_azure_account_by_organization() {
+    let (_d, path) = common::temp_repo_with_commit();
+    Repository::open(&path)
+        .unwrap()
+        .remote(
+            "origin",
+            "https://Contoso@dev.azure.com/Contoso/My%20Project/_git/my%20repo",
+        )
+        .unwrap();
+    let reg = RepoRegistry::default();
+    let id = reg.register(RepoSession::open(&path).unwrap());
+    let ado_account = |host: &str| {
+        git_real_core::hosting::Account::new(
+            Provider::AzureDevOps,
+            host,
+            git_real_core::hosting::UserInfo {
+                username: "j@x.com".to_owned(),
+                display_name: None,
+                avatar_url: None,
+            },
+        )
+    };
+
+    let (_sd, store, _tokens) = hosting_store();
+    let token = Token::new(SECRET).unwrap();
+    store
+        .connect(ado_account("dev.azure.com/contoso"), &token)
+        .unwrap();
+    let ctx = hosting_repo_context_inner(&reg, &store, id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        ctx.repo,
+        RepoRef {
+            provider: Provider::AzureDevOps,
+            host: "dev.azure.com/Contoso".to_owned(),
+            namespace: "My Project".to_owned(),
+            name: "my repo".to_owned(),
+        }
+    );
+    assert_eq!(
+        ctx.account.map(|a| a.id),
+        Some("azure:dev.azure.com/contoso:j@x.com".to_owned())
+    );
+
+    let (_sd2, other, _tokens2) = hosting_store();
+    other
+        .connect(ado_account("dev.azure.com/other"), &token)
+        .unwrap();
+    let ctx = hosting_repo_context_inner(&reg, &other, id)
+        .unwrap()
+        .unwrap();
+    assert!(ctx.account.is_none());
+}
+
+#[test]
 fn repo_context_of_an_unknown_repo_is_unknown_repo() {
     let (_sd, store, _tokens) = hosting_store();
     let err = hosting_repo_context_inner(&RepoRegistry::default(), &store, MISSING_ID).unwrap_err();

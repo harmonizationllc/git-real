@@ -1,8 +1,12 @@
 //! Which provider hosts a remote (spec §3.2): parsing remote URLs into a [`RepoRef`],
 //! validating a host typed by the user, and the `https://` host an account token may go to.
+//!
+//! An Azure DevOps account and repository are per organization, all on `dev.azure.com`, so
+//! their host is `dev.azure.com/<org>` and git credentials match on the organization too.
 
 use serde::{Deserialize, Serialize};
 
+use super::http::percent_encode;
 use crate::error::GitError;
 use crate::remote::auth::origin_of;
 use crate::remote::host::{is_drive_path, strip_user, valid};
@@ -98,16 +102,34 @@ pub struct RepoRef {
 }
 
 impl RepoRef {
+    /// For Azure DevOps `https://{host}/{project}/_git/{repo}`, the names percent-encoded.
     pub fn web_url(&self) -> String {
-        format!("https://{}/{}/{}", self.host, self.namespace, self.name)
+        match self.provider {
+            Provider::AzureDevOps => format!(
+                "https://{}/{}/_git/{}",
+                self.host,
+                percent_encode(&self.namespace),
+                percent_encode(&self.name)
+            ),
+            _ => format!("https://{}/{}/{}", self.host, self.namespace, self.name),
+        }
     }
 }
 
 /// The hosted repository behind a remote URL (`https://`, `http://`, `ssh://`, `git+ssh://` or
 /// scp-like), or `None` when no provider hosts it. A `custom_hosts` entry wins over the
-/// default hosts.
+/// default hosts; Azure DevOps hosts are recognised before either (spec §4.3).
 pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef> {
     let (host, path) = split_url(url)?;
+    if host == "dev.azure.com" || host == "ssh.dev.azure.com" || host.ends_with(".visualstudio.com")
+    {
+        // Azure DevOps is never reached on an explicit port.
+        return if has_port(url) {
+            None
+        } else {
+            detect_azure(&host, path)
+        };
+    }
     let host = match host.as_str() {
         "ssh.github.com" => "github.com".to_owned(),
         "altssh.gitlab.com" => "gitlab.com".to_owned(),
@@ -138,6 +160,152 @@ pub fn detect(url: &str, custom_hosts: &[(Provider, String)]) -> Option<RepoRef>
         namespace: namespace.join("/"),
         name: (*name).to_owned(),
     })
+}
+
+/// The authority of a `scheme://` URL names a port (`split_url` drops a default one).
+fn has_port(url: &str) -> bool {
+    url.split_once("://")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .and_then(|(authority, _)| host_port(strip_user(authority)))
+        .is_some_and(|(_, port)| port.is_some())
+}
+
+/// An Azure DevOps repository from its lower-cased `host` and the `path` after it:
+/// `v3/<org>/<project>/<repo>` over SSH, else `[<org>/]<project>/_git/<repo>` or the shorthand
+/// `_git/<repo>` (project = repo), the organization taken from a `<org>.visualstudio.com` host
+/// and a leading `DefaultCollection` dropped there.
+fn detect_azure(host: &str, path: &str) -> Option<RepoRef> {
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let segments: Vec<&str> = path.split('/').collect();
+    let (org, project, name) = match host {
+        "ssh.dev.azure.com" | "vs-ssh.visualstudio.com" => match segments.as_slice() {
+            ["v3", org, project, name] => (*org, *project, *name),
+            _ => return None,
+        },
+        "dev.azure.com" => {
+            // `split` yields at least one segment.
+            let (project, name) = git_marker(&segments[1..])?;
+            (segments[0], project, name)
+        }
+        _ => {
+            // `host` ends with `.visualstudio.com`; a dotted label fails `is_azure_org`.
+            let org = host.strip_suffix(".visualstudio.com").unwrap_or(host);
+            let rest = segments
+                .strip_prefix(&["DefaultCollection"][..])
+                .unwrap_or(&segments);
+            let (project, name) = git_marker(rest)?;
+            (org, project, name)
+        }
+    };
+    let decoded = |s: &str| percent_decode(s).filter(|d| azure_segment_ok(d));
+    let (project, name) = (decoded(project)?, decoded(name)?);
+    is_azure_org(org).then(|| RepoRef {
+        provider: Provider::AzureDevOps,
+        host: format!("dev.azure.com/{org}"),
+        namespace: project,
+        name,
+    })
+}
+
+/// `(project, repo)` from `<project>/_git/<repo>` or `_git/<repo>`.
+fn git_marker<'a>(rest: &[&'a str]) -> Option<(&'a str, &'a str)> {
+    match rest {
+        [project, "_git", name] => Some((project, name)),
+        ["_git", name] => Some((name, name)),
+        _ => None,
+    }
+}
+
+/// `s` with each `%XX` turned into its byte; `None` for a bare or malformed `%` or a result
+/// that is not UTF-8.
+pub(crate) fn percent_decode(s: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(s.len());
+    let mut rest = s.as_bytes();
+    while let Some((&b, tail)) = rest.split_first() {
+        if b == b'%' {
+            let (pair, after) = tail.split_at_checked(2)?;
+            let digit = |c: u8| char::from(c).to_digit(16);
+            // Two hex digits make at most 255.
+            bytes.push((digit(pair[0])? * 16 + digit(pair[1])?) as u8);
+            rest = after;
+        } else {
+            bytes.push(b);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// A decoded Azure DevOps project or repository name: non-empty, not `.` or `..`, with no `/`,
+/// `\`, `%`, NUL or other control character.
+pub(crate) fn azure_segment_ok(s: &str) -> bool {
+    !s.is_empty()
+        && s != "."
+        && s != ".."
+        && !s
+            .chars()
+            .any(|c| matches!(c, '/' | '\\' | '%') || c.is_control())
+}
+
+/// Azure DevOps' organization rule: `[A-Za-z0-9][A-Za-z0-9-]*`.
+fn is_azure_org(s: &str) -> bool {
+    s.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// The organization in `input`: an organization name, or one taken from
+/// `[https://]dev.azure.com/<org>[/…]` or `[https://][user@]<org>.visualstudio.com[/…]`. A
+/// typed name or a `dev.azure.com` path keeps its case, a host label is lower-cased; `None` for
+/// anything else.
+pub fn azure_org(input: &str) -> Option<String> {
+    let input = input.trim();
+    let (has_scheme, rest) = match input.get(..8) {
+        Some(s) if s.eq_ignore_ascii_case("https://") => (true, &input[8..]),
+        _ => (false, input),
+    };
+    let (authority, path) = match rest.split_once('/') {
+        Some((a, p)) => (a, Some(p)),
+        None => (rest, None),
+    };
+    let authority = strip_user(authority).to_ascii_lowercase();
+    let org = if authority == "dev.azure.com" {
+        path?.split('/').next().unwrap_or_default()
+    } else if let Some(label) = authority.strip_suffix(".visualstudio.com") {
+        label
+    } else if !has_scheme && path.is_none() {
+        rest
+    } else {
+        return None;
+    };
+    is_azure_org(org).then(|| org.to_owned())
+}
+
+/// The `https://` origin to scope an account's git credentials to when `url` belongs to the
+/// account on `account_host`; `None` otherwise. A plain host matches the URL's https host; an
+/// Azure DevOps `dev.azure.com/<org>` matches `https://dev.azure.com/<org>/…` (organization
+/// compared ASCII case-insensitively) or `https://<org>.visualstudio.com/…`.
+pub fn account_origin_for(account_host: &str, url: &str) -> Option<String> {
+    let host = https_host(url)?;
+    let Some((base, org)) = account_host.split_once('/') else {
+        return host
+            .eq_ignore_ascii_case(account_host)
+            .then(|| format!("https://{host}"));
+    };
+    if base != Provider::AzureDevOps.default_host() {
+        return None;
+    }
+    let first_segment = url
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .and_then(|(_, path)| path.split('/').next());
+    let matches = if host == "dev.azure.com" {
+        first_segment.is_some_and(|s| s.eq_ignore_ascii_case(org))
+    } else {
+        host.strip_suffix(".visualstudio.com")
+            .is_some_and(|label| label.eq_ignore_ascii_case(org))
+    };
+    matches.then(|| format!("https://{host}"))
 }
 
 /// `[A-Za-z0-9._-]+`, but not `.` or `..`.
@@ -198,6 +366,13 @@ pub(crate) fn host_port(host: &str) -> Option<(String, Option<&str>)> {
 /// the lower-cased `name[:port]`, `:443` dropped as [`detect`] and [`https_host`] drop it.
 /// Bitbucket accepts only `bitbucket.org`, without a port.
 pub fn validate_host(provider: Provider, host: Option<&str>) -> Result<String, GitError> {
+    // An Azure DevOps account is one organization, with no default: `dev.azure.com/<org>`.
+    if provider == Provider::AzureDevOps {
+        let input = host.unwrap_or_default();
+        return azure_org(input)
+            .map(|org| format!("dev.azure.com/{org}"))
+            .ok_or_else(|| GitError::InvalidHostingHost(input.to_owned()));
+    }
     let Some(input) = host.filter(|h| !h.trim().is_empty()) else {
         return Ok(provider.default_host().to_owned());
     };

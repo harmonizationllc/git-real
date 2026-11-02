@@ -353,6 +353,19 @@ fn a_fork_url_in_another_case_of_the_organization_is_kept() {
 }
 
 #[test]
+fn a_fork_url_on_the_organizations_visualstudio_host_is_kept() {
+    let body = element(fixture!("azure_pullrequests.json"), 2, |e| {
+        e["forkSource"]["repository"]["remoteUrl"] =
+            json!("https://contoso.visualstudio.com/My%20Project/_git/fork-repo");
+    });
+    let t = FakeTransport::new().reply(200, &wrap(vec![body]));
+    assert_eq!(
+        prs(&t).unwrap()[0].fork_clone_url.as_deref(),
+        Some("https://contoso.visualstudio.com/My%20Project/_git/fork-repo")
+    );
+}
+
+#[test]
 fn checkout_plan_fetches_the_fork_branch() {
     let t = FakeTransport::new().reply(200, fixture!("azure_pullrequests.json"));
     let list = prs(&t).unwrap();
