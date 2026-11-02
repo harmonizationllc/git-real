@@ -78,6 +78,14 @@ describe("fitSections", () => {
     expect(fitSections(460.6, [fixed(400, 250.4), auto(60), auto(150)])).toEqual([250, 60, 150]);
   });
 
+  it("should never push the rounding pixel's recipient below its floor", () => {
+    // sharers at 100.6 and 72.2, two whole sections at 100.6: the remainder is -1, and the
+    // 72.2 px sharer would drop to 71, so the 100.6 px sharer gives the pixel back instead
+    const heights = fitSections(374, [auto(14372), auto(100.6), auto(100.6), auto(172)]);
+    expect(heights).toEqual([100, 101, 101, 72]);
+    expect(heights[3]).toBeGreaterThanOrEqual(SECTION_MIN);
+  });
+
   it("should clamp a stored height on a small section to its content and show it whole", () => {
     expect(fitSections(1000, [auto(100), fixed(92, 500)])).toEqual([908, 92]);
   });

@@ -4,8 +4,8 @@
 // as if top-level, without their condition.
 
 /**
- * The concatenated declaration blocks of every top-level rule whose comma-separated selector
- * list contains a selector naming `className` as a class token. Comments are stripped first.
+ * The concatenated declaration blocks of every rule whose comma-separated selector list
+ * contains a selector naming `className` as a class token. Comments are stripped first.
  */
 export function declarationsOf(css: string, className: string): string {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
