@@ -35,7 +35,8 @@
 }
 
 .name {
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -43,6 +44,7 @@
 }
 
 .path {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
