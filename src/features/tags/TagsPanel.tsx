@@ -119,7 +119,15 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   if (!expanded) {
     body = null;
   } else if (listError !== null) {
-    body = <RepoError error={listError} path={null} onRetry={refetch} onDismiss={refetch} />;
+    body = (
+      <RepoError
+        error={listError}
+        path={null}
+        variant="panel"
+        onRetry={refetch}
+        onDismiss={refetch}
+      />
+    );
   } else if (list === undefined) {
     body = <p role="status">Loading tags…</p>;
   } else if (list.tags.length === 0) {
