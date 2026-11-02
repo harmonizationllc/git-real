@@ -385,6 +385,17 @@ describe("ConnectAccountDialog Azure DevOps", () => {
     );
   });
 
+  it("describes the Organization field by its hint", async () => {
+    const { user } = renderDialog();
+    await user.click(radio("Azure DevOps"));
+    expect(screen.getByLabelText("Organization")).toHaveAccessibleDescription(ORGANIZATION_HINT);
+  });
+
+  it("pre-fills the organization from a preset host in any case", () => {
+    renderDialog({ preset: { provider: "azure", host: "DEV.azure.com/contoso" } });
+    expect(screen.getByLabelText("Organization")).toHaveValue("contoso");
+  });
+
   it("pre-fills the organization from a preset host", () => {
     renderDialog({ preset: { provider: "azure", host: "dev.azure.com/contoso" } });
     expect(screen.getByLabelText("Organization")).toHaveValue("contoso");

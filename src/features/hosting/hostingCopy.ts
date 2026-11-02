@@ -78,10 +78,12 @@ export function hostingErrorText(error: AppError, provider: HostingProvider): st
   const label = PROVIDER_LABEL[provider];
   switch (error.kind) {
     case "hostingAuth":
-      if (provider === "azure") {
-        return `${label} rejected the token. ${error.message.replace(/^the provider rejected the token: /, "")}`;
-      }
-      return `${label} rejected the token. Check that it is current and has the scopes it needs.`;
+      // Azure DevOps names the missing scope in the backend's sentence; a blank one falls through.
+      return `${label} rejected the token. ${
+        (provider === "azure"
+          ? error.message.replace(/^the provider rejected the token:/, "").trim()
+          : "") || "Check that it is current and has the scopes it needs."
+      }`;
     case "hostingNotFound":
       return `This repository isn't visible to your ${label} account.`;
     case "hostingRateLimited":

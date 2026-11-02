@@ -51,7 +51,7 @@ export function ConnectAccountDialog({
   // An Azure DevOps account's host is dev.azure.com/<org>; the field holds only the organization.
   const [host, setHost] = useState(
     preset?.provider === "azure"
-      ? preset.host.replace(/^dev\.azure\.com\//, "")
+      ? preset.host.replace(/^dev\.azure\.com\//i, "")
       : (preset?.host ?? ""),
   );
   const [token, setToken] = useState("");

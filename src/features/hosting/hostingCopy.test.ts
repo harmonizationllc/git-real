@@ -136,6 +136,15 @@ describe("hostingErrorText", () => {
     );
   });
 
+  it.each(["the provider rejected the token: ", "the provider rejected the token:    ", "", "   "])(
+    "should fall back to the generic sentence for a blank Azure auth tail %j",
+    (message) => {
+      expect(hostingErrorText(hostingError("hostingAuth", message), "azure")).toBe(
+        "Azure DevOps rejected the token. Check that it is current and has the scopes it needs.",
+      );
+    },
+  );
+
   it("should keep an Azure hostingAuth message that lacks the backend prefix", () => {
     expect(hostingErrorText(hostingError("hostingAuth", "Nope."), "azure")).toBe(
       "Azure DevOps rejected the token. Nope.",
