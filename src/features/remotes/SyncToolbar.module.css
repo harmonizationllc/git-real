@@ -15,9 +15,7 @@
 /* The main button and its ▾ menu opener read as one control. */
 .split {
   display: inline-flex;
-}
-
-.split {
+  align-items: center;
   gap: 1px;
 }
 

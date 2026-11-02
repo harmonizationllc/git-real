@@ -404,7 +404,7 @@ describe("RepoPane repo-changed subscription", () => {
   });
 });
 
-const header = () => screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+const header = () => screen.getByRole("heading", { level: 1 }).closest("header") as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 const body = () => handle("Resize branches column").parentElement as HTMLElement;
 // The pane's own observer is the one watching the body; the refs column keeps its own.
@@ -2101,6 +2101,11 @@ describe("RepoPane styling", () => {
     expect(chip).toHaveClass("gr-pill");
     expect(chip).toHaveAttribute("data-kind", "head");
     await screen.findByRole("region", { name: "Changes" });
+  });
+
+  it("sizes the name at 18px and stacks it over the path", () => {
+    expect(declarationsOf(css, "name")).toMatch(/font-size:\s*var\(--text-lg\)/);
+    expect(declarationsOf(css, "titles")).toMatch(/flex-direction:\s*column/);
   });
 
   it("makes the three columns cards", () => {
