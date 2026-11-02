@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../../test/cssRules";
 import { ref } from "../../test/graphFixtures";
 import { RefLabels } from "./RefLabels";
 
@@ -123,9 +124,6 @@ describe("RefLabels overflow", () => {
 // Contract: pills never shrink, so a narrow centre column clips the strip instead of collapsing a pill.
 describe("RefLabels pill sizing", () => {
   const css = readFileSync("src/features/graph/RefLabels.module.css", "utf8");
-  const rule = (selector: string) =>
-    new RegExp(`(?:^|\\n)\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
-
   it("should give every pill, including +n, the shared pill class", () => {
     render(
       <RefLabels
@@ -139,15 +137,15 @@ describe("RefLabels pill sizing", () => {
   });
 
   it("should declare the pill rule non-shrinking", () => {
-    expect(rule(".pill")).toMatch(/flex:\s*none/);
+    expect(declarationsOf(css, "pill")).toMatch(/flex:\s*none/);
   });
 
   it("should cap a pill at 24ch", () => {
-    expect(rule(".pill")).toMatch(/max-width:\s*24ch/);
+    expect(declarationsOf(css, "pill")).toMatch(/max-width:\s*24ch/);
   });
 
   it("should not declare gap in CSS; the gaps are inline from layout constants", () => {
-    expect(rule(".root")).not.toMatch(/gap:/);
+    expect(declarationsOf(css, "root")).not.toMatch(/gap:/);
   });
 
   it("should give the root an inline 4px gap", () => {
@@ -156,19 +154,19 @@ describe("RefLabels pill sizing", () => {
   });
 
   it("should declare an sr-only rule for the +n suffix", () => {
-    expect(rule(".srOnly")).toMatch(/position:\s*absolute/);
-    expect(rule(".srOnly")).toMatch(/clip:/);
+    expect(declarationsOf(css, "srOnly")).toMatch(/position:\s*absolute/);
+    expect(declarationsOf(css, "srOnly")).toMatch(/clip-path:\s*inset\(50%\)/);
+    expect(declarationsOf(css, "srOnly")).not.toMatch(/\bclip:/);
   });
 
   it("should position the root so hidden pills cannot widen an ancestor", () => {
-    expect(rule(".root")).toMatch(/position:\s*relative/);
+    expect(declarationsOf(css, "root")).toMatch(/position:\s*relative/);
   });
 });
 
 // Contract: pills are measured against the parent cell; trailing pills that do not fit are hidden and counted into +N.
 // Measurement stub: the component must read `parentElement.clientWidth` and each pill's `offsetWidth`.
 describe("RefLabels fit", () => {
-  // Keyed on the element's first text node, so a nested sr-only span in the +N pill is ignored.
   const widths: Record<string, number> = { a: 40, b: 80, c: 40 };
   let cellWidth = 0;
   let observers: StubResizeObserver[] = [];
@@ -189,6 +187,7 @@ describe("RefLabels fit", () => {
     observers = [];
     cellWidth = 0;
     vi.stubGlobal("ResizeObserver", StubResizeObserver);
+    // Keyed on the element's first text node, so a nested sr-only span in the +N pill is ignored.
     Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
       configurable: true,
       get(this: HTMLElement) {
@@ -310,6 +309,40 @@ describe("RefLabels fit", () => {
       expect(screen.getByTitle(name)).not.toHaveAttribute("data-hidden");
     }
     expect(morePill()).toBeNull();
+  });
+
+  it("should keep one observer across a fit change", () => {
+    // budget 170: estimate fits two, the +2 pill measures 60 and the fit drops to one.
+    widths.d = 40;
+    widths["+2"] = 60;
+    widths["+3"] = 60;
+    cellWidth = 240;
+    renderInCell([...three, ref("tag", "d")]);
+    expect(morePill()).toHaveTextContent(/^\+3 more: b, c, d$/);
+    expect(observers).toHaveLength(1);
+  });
+
+  it("should keep one observer when the refs array changes but the candidates do not", () => {
+    cellWidth = 240;
+    const { rerender } = renderInCell();
+    rerender(
+      <span data-testid="cell">
+        <RefLabels refs={[...three]} />
+      </span>,
+    );
+    expect(observers).toHaveLength(1);
+  });
+
+  it("should create a new observer when the candidates change", () => {
+    cellWidth = 240;
+    const { rerender } = renderInCell();
+    rerender(
+      <span data-testid="cell">
+        <RefLabels refs={[ref("branch", "a"), ref("branch", "b")]} />
+      </span>,
+    );
+    expect(observers).toHaveLength(2);
+    expect(observers[0]!.disconnect).toHaveBeenCalled();
   });
 
   it("should disconnect on unmount", () => {

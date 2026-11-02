@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   REFS_SECTIONS,
   SECTION_MIN,
+  SECTION_WHOLE_MAX,
   fitSections,
   maxSectionHeight,
   sectionFloor,
@@ -24,17 +25,48 @@ describe("refsLayout constants", () => {
       "issues",
     ]);
   });
+
+  it("should pin SECTION_WHOLE_MAX", () => {
+    expect(SECTION_WHOLE_MAX).toBe(144);
+  });
 });
 
 // Contract: a floor never pads a section beyond its content.
 describe("sectionFloor", () => {
-  it("should never pad a short section", () => {
-    expect([sectionFloor(28), sectionFloor(72), sectionFloor(500)]).toEqual([28, 72, 72]);
+  it("should keep a section whole up to SECTION_WHOLE_MAX, then floor it at SECTION_MIN", () => {
+    expect([28, 72, 92, 144, 145, 500].map(sectionFloor)).toEqual([28, 72, 92, 144, 72, 72]);
   });
 });
 
 // Contract: fitSections shares the container by content (spec 3.1).
 describe("fitSections", () => {
+  it("should never clip a section that fits under SECTION_WHOLE_MAX", () => {
+    // the walk case: 92 px Worktrees held whole; Branches and Tags share the overflow
+    expect(fitSections(614, [auto(7608), auto(68), auto(1688), auto(92)])).toEqual([
+      327, 68, 127, 92,
+    ]);
+  });
+
+  it("should return whole pixels that sum to the container", () => {
+    // thirds: 333.33 x3 round to 999; the last automatic section takes the 1 px
+    const heights = fitSections(1000, [auto(1000), auto(1000), auto(1000)]);
+    expect(heights).toEqual([333, 333, 334]);
+    expect(heights.every(Number.isInteger)).toBe(true);
+  });
+
+  it("should give the rounding remainder to the last automatic section, not a fixed one", () => {
+    // 399.5 x2 round up to 800 + 201 = 1001; the last automatic section gives back the 1 px
+    expect(fitSections(1000, [auto(1000), auto(1000), fixed(1000, 201)])).toEqual([400, 399, 201]);
+  });
+
+  it("should leave a fixed-Branches leftover unassigned after rounding", () => {
+    expect(fitSections(600, [fixed(400, 250.4), auto(60), auto(150)])).toEqual([250, 60, 150]);
+  });
+
+  it("should clamp a stored height on a small section to its content and show it whole", () => {
+    expect(fitSections(1000, [auto(100), fixed(92, 500)])).toEqual([908, 92]);
+  });
+
   it("should give the leftover to an automatic Branches when everything fits", () => {
     expect(fitSections(600, [auto(200), auto(60), auto(150), auto(36), auto(36)])).toEqual([
       318, 60, 150, 36, 36,
