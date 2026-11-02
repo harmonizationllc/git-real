@@ -12,13 +12,19 @@ function walk(dir: string): string[] {
 const strip = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const radiusValues = (css: string): string[] =>
-  [...strip(css).matchAll(/border-radius:\s*([^;}]+)/g)].map((m) => m[1]!.trim());
+  [
+    ...strip(css).matchAll(
+      /border-(?:(?:top|bottom)-(?:left|right)|(?:start|end)-(?:start|end))-radius:\s*([^;}]+)|border-radius:\s*([^;}]+)/g,
+    ),
+  ].map((m) => (m[1] ?? m[2])!.trim());
 
 const hasLiteralColour = (css: string): boolean =>
   /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(strip(css));
 
+// A selection marker drawn as a side border or as an inset shadow strip, instead of the tint.
 const hasBorderLeftMarker = (css: string): boolean =>
-  /border-left(-color)?:\s*(2px|3px)/.test(strip(css));
+  /border-(?:left|inline-start)(-color)?:\s*(2px|3px)/.test(strip(css)) ||
+  /box-shadow:\s*inset\s+2px\s+0\s+0\b/.test(strip(css));
 
 const RADIUS_OK = /^(var\(--radius-(xs|s|m|pill)\)|50%|0)$/;
 
@@ -38,6 +44,24 @@ describe("css vocabulary gate helpers", () => {
     expect(hasBorderLeftMarker("a{border-left: 3px solid red}")).toBe(true);
     expect(hasBorderLeftMarker("a{border-left-color: 2px}")).toBe(true);
     expect(hasBorderLeftMarker("/* border-left: 3px */ a{}")).toBe(false);
+  });
+
+  it("flags longhand radii with non-token values", () => {
+    const ok = (css: string) => radiusValues(css).every((v) => RADIUS_OK.test(v));
+    expect(ok("a{border-top-left-radius: 4px}")).toBe(false);
+    expect(ok("a{border-bottom-right-radius: 3px}")).toBe(false);
+    expect(ok("a{border-start-start-radius: 4px}")).toBe(false);
+    expect(ok("a{border-top-left-radius: 0}")).toBe(true);
+    expect(ok("a{border-top-right-radius: var(--radius-s)}")).toBe(true);
+    expect(ok("a{border-radius: var(--radius-s) 0 0 var(--radius-s)}")).toBe(false);
+  });
+
+  it("flags logical-property and inset-shadow selection markers", () => {
+    expect(hasBorderLeftMarker("a{border-inline-start: 3px solid red}")).toBe(true);
+    expect(hasBorderLeftMarker("a{border-inline-start-color: 2px}")).toBe(true);
+    expect(hasBorderLeftMarker("a{box-shadow: inset 2px 0 0 var(--color-accent)}")).toBe(true);
+    expect(hasBorderLeftMarker("a{box-shadow: var(--shadow-card)}")).toBe(false);
+    expect(hasBorderLeftMarker("/* box-shadow: inset 2px 0 0 */ a{}")).toBe(false);
   });
 });
 

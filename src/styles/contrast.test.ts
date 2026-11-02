@@ -41,6 +41,8 @@ const PAIRS: [string, string][] = [
   ["danger", "surface"],
   ["warning", "surface"],
   ["accent", "surface"],
+  ["on-accent", "danger"], // danger primary fill
+  ["warning", "surface-2"], // OperationBanner
 ];
 
 describe("token contrast", () => {
