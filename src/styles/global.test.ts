@@ -55,3 +55,62 @@ describe("global font styles", () => {
     expect(css).toMatch(/strong,\s*b\s*\{[^}]*font-weight:\s*700;/);
   });
 });
+
+describe("control vocabulary", () => {
+  it("styles opt-in buttons as pills of control height", () => {
+    const b = block("button[data-variant]");
+    expect(b).toMatch(/height:\s*var\(--control-h\)/);
+    expect(b).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+    expect(b).toMatch(/padding:\s*0 14px/);
+    expect(b).toMatch(/font-weight:\s*600/);
+    expect(b).toMatch(/border:\s*0/);
+  });
+  it("fills primary with the accent and neutral with the 25% neutral", () => {
+    expect(block('button[data-variant="primary"]')).toMatch(/background:\s*var\(--color-accent\)/);
+    expect(block('button[data-variant="primary"]')).toMatch(/color:\s*var\(--color-on-accent\)/);
+    expect(block('button[data-variant="neutral"]')).toMatch(
+      /background:\s*rgba\(158, 158, 158, 0\.25\)/,
+    );
+    expect(block('button[data-variant="ghost"]')).toMatch(/background:\s*transparent/);
+    expect(block('button[data-variant="danger"]')).toMatch(/color:\s*var\(--color-danger\)/);
+  });
+  it("makes icon buttons square and small buttons 24px", () => {
+    expect(block('button[data-variant="icon"]')).toMatch(/width:\s*var\(--control-h\)/);
+    expect(block('button[data-size="sm"]')).toMatch(/height:\s*var\(--control-h-sm\)/);
+    expect(block('button[data-size="sm"]')).toMatch(/font-size:\s*var\(--text-xs\)/);
+  });
+  it("hovers neutral at 40% and ghost on the surface hover token", () => {
+    expect(block('button[data-variant="neutral"]:hover:not(:disabled)')).toMatch(
+      /background:\s*rgba\(158, 158, 158, 0\.4\)/,
+    );
+    expect(block('button[data-variant="ghost"]:hover:not(:disabled)')).toMatch(
+      /background:\s*var\(--color-surface-hover\)/,
+    );
+  });
+  it("dims disabled controls instead of recolouring them", () => {
+    expect(block("button[data-variant]:disabled")).toMatch(/opacity:\s*0\.45/);
+  });
+  it("draws one focus ring for every control, on primary too", () => {
+    const ring = block("button[data-variant]:focus-visible");
+    expect(ring).toMatch(/outline:\s*2px solid var\(--color-accent\)/);
+    expect(ring).toMatch(/box-shadow:\s*0 0 0 4px var\(--color-accent-tint\)/);
+    expect(css).toMatch(/input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible/);
+  });
+  it("styles text inputs on surface-2 with the border token", () => {
+    const i = block('input:not([type="checkbox"]):not([type="radio"])');
+    expect(i).toMatch(/background:\s*var\(--color-surface-2\)/);
+    expect(i).toMatch(/border:\s*1px solid var\(--color-border\)/);
+    expect(i).toMatch(/height:\s*var\(--control-h\)/);
+    expect(i).toMatch(/padding:\s*0 12px/);
+    expect(i).toMatch(/border-radius:\s*var\(--radius-s\)/);
+    expect(i).toMatch(/color:\s*var\(--color-text\)/);
+    expect(block('input[type="search"]')).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+  });
+  it("styles textareas with the same fill and border", () => {
+    // Standalone rule, not the `button, input, select, textarea` font group.
+    const t = /(?<!,\n)^textarea \{([^}]*)\}/m.exec(css)?.[1] ?? "";
+    expect(t).toMatch(/background:\s*var\(--color-surface-2\)/);
+    expect(t).toMatch(/border:\s*1px solid var\(--color-border\)/);
+    expect(t).toMatch(/border-radius:\s*var\(--radius-s\)/);
+  });
+});

@@ -49,6 +49,118 @@ textarea {
   font-size: var(--text-md);
 }
 
+/* Shared button vocabulary. Buttons opt in with data-variant; a button without the attribute keeps
+   its own module styles. */
+button[data-variant] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  color: var(--color-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+button[data-variant="primary"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+button[data-variant="neutral"] {
+  background: rgba(158, 158, 158, 0.25);
+  color: var(--color-text);
+}
+
+button[data-variant="ghost"] {
+  background: transparent;
+  color: var(--color-text);
+}
+
+button[data-variant="danger"] {
+  background: transparent;
+  color: var(--color-danger);
+}
+
+button[data-variant="icon"] {
+  width: var(--control-h);
+  padding: 0;
+  background: transparent;
+}
+
+button[data-size="sm"] {
+  height: var(--control-h-sm);
+  padding: 0 10px;
+  font-size: var(--text-xs);
+}
+
+button[data-variant="icon"][data-size="sm"] {
+  width: var(--control-h-sm);
+  padding: 0;
+}
+
+button[data-variant="primary"]:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button[data-variant="neutral"]:hover:not(:disabled) {
+  background: rgba(158, 158, 158, 0.4);
+}
+
+button[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+button[data-variant="icon"]:hover:not(:disabled),
+button[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+button[data-variant]:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* One focus ring for every control, drawn clear of the fill so it shows on primary too. */
+button[data-variant]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-accent-tint);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+  box-shadow: 0 0 0 4px var(--color-accent-tint);
+}
+
+input:not([type="checkbox"]):not([type="radio"]) {
+  height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+input[type="search"] {
+  border-radius: var(--radius-pill);
+}
+
+textarea {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
 /* Browser default font styles are reset so every size and weight comes from a token. Headings keep
    the browser's bold (700); module classes that set 600 still override it. */
 h1,
