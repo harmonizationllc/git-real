@@ -165,3 +165,17 @@ describe("TabBar styling", () => {
     expect(close).toHaveAttribute("data-size", "sm");
   });
 });
+
+describe("TabBar new-tab button", () => {
+  it("is the only filled icon button", () => {
+    setup();
+    expect(screen.getByRole("button", { name: "Start screen" })).toHaveAttribute(
+      "data-fill",
+      "neutral",
+    );
+    expect(screen.getByRole("button", { name: "Settings" })).not.toHaveAttribute("data-fill");
+    expect(screen.getByRole("button", { name: "Command palette" })).not.toHaveAttribute(
+      "data-fill",
+    );
+  });
+});

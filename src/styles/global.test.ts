@@ -87,6 +87,14 @@ describe("control vocabulary", () => {
       /background:\s*var\(--color-surface-hover\)/,
     );
   });
+  it("fills the icon button on request, circular via the pill radius", () => {
+    expect(block('button[data-variant="icon"][data-fill="neutral"]')).toMatch(
+      /background:\s*rgba\(158, 158, 158, 0\.25\)/,
+    );
+    expect(block('button[data-variant="icon"][data-fill="neutral"]:hover:not(:disabled)')).toMatch(
+      /background:\s*rgba\(158, 158, 158, 0\.4\)/,
+    );
+  });
   it("dims disabled controls instead of recolouring them", () => {
     expect(block("button[data-variant]:disabled")).toMatch(/opacity:\s*0\.45/);
   });

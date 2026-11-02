@@ -55,6 +55,7 @@ export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): Re
         type="button"
         aria-label="Start screen"
         data-variant="icon"
+        data-fill="neutral"
         onClick={() => onActivate(null)}
       >
         <span aria-hidden="true">+</span>

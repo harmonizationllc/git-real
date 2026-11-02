@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RecentEntry } from "../../lib/ipc";
@@ -59,5 +60,15 @@ describe("RecentList remove", () => {
     render(<RecentList recents={[entry("b")]} onOpen={onOpen} onRemove={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Remove b from recent repositories" }));
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("RecentList name styling", () => {
+  it("keeps a repository name on one line, ellipsised", () => {
+    const css = readFileSync("src/features/repo/RecentList.module.css", "utf8");
+    const name = /\.name\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(name).toMatch(/white-space:\s*nowrap/);
+    expect(name).toMatch(/overflow:\s*hidden/);
+    expect(name).toMatch(/text-overflow:\s*ellipsis/);
   });
 });

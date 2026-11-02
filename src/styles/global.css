@@ -126,6 +126,14 @@ button[data-variant="danger"]:hover:not(:disabled) {
   background: var(--color-surface-hover);
 }
 
+button[data-variant="icon"][data-fill="neutral"] {
+  background: rgba(158, 158, 158, 0.25);
+}
+
+button[data-variant="icon"][data-fill="neutral"]:hover:not(:disabled) {
+  background: rgba(158, 158, 158, 0.4);
+}
+
 button[data-variant]:disabled {
   opacity: 0.45;
   cursor: default;
