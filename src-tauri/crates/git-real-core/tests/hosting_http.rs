@@ -197,6 +197,18 @@ fn statuses_map_to_hosting_errors() {
 }
 
 #[test]
+fn status_203_is_hosting_auth() {
+    // Azure DevOps answers a bad or scope-short PAT with 203 and an HTML sign-in page.
+    let err = user(&FakeTransport::new().reply(203, "<html>")).unwrap_err();
+    assert!(
+        matches!(err, GitError::HostingAuth { ref message } if message == "HTTP 203"),
+        "{err:?}"
+    );
+    let ok = FakeTransport::new().reply(204, r#"{"login":"octo"}"#);
+    assert_eq!(user(&ok).unwrap().username, "octo");
+}
+
+#[test]
 fn an_error_body_that_echoes_the_token_is_redacted() {
     let echo = format!(r#"{{"message":"token {SECRET} lacks scope repo"}}"#);
     let err = user(&FakeTransport::new().reply(403, &echo)).unwrap_err();

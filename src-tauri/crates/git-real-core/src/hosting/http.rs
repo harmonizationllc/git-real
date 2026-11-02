@@ -7,9 +7,12 @@
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use super::provider::AuthScheme;
 use crate::error::GitError;
 use crate::token::Token;
 
@@ -148,7 +151,17 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 /// A GET with `Authorization: Bearer <token>` and `Accept: application/json`; `extra` headers
 /// are added after, and an `accept` among them replaces the default.
 pub(crate) fn get(url: String, token: &Token, extra: &[(&str, &str)]) -> Request {
-    let mut headers = vec![authorization(token)];
+    get_as(AuthScheme::Bearer, url, token, extra)
+}
+
+/// [`get`] with the token sent as `scheme` says.
+pub(crate) fn get_as(
+    scheme: AuthScheme,
+    url: String,
+    token: &Token,
+    extra: &[(&str, &str)],
+) -> Request {
+    let mut headers = vec![authorization(scheme, token)];
     if !extra.iter().any(|(k, _)| k.eq_ignore_ascii_case("accept")) {
         headers.push(("Accept".to_owned(), "application/json".to_owned()));
     }
@@ -168,11 +181,16 @@ pub(crate) fn get(url: String, token: &Token, extra: &[(&str, &str)]) -> Request
 /// A POST of `body` as JSON, with `Authorization: Bearer <token>`, `Accept: application/json`
 /// and `Content-Type: application/json`.
 pub fn post_json(url: String, token: &Token, body: &Value) -> Request {
+    post_json_as(AuthScheme::Bearer, url, token, body)
+}
+
+/// [`post_json`] with the token sent as `scheme` says.
+pub fn post_json_as(scheme: AuthScheme, url: String, token: &Token, body: &Value) -> Request {
     Request {
         method: Method::Post,
         url,
         headers: vec![
-            authorization(token),
+            authorization(scheme, token),
             ("Accept".to_owned(), "application/json".to_owned()),
             ("Content-Type".to_owned(), "application/json".to_owned()),
         ],
@@ -180,12 +198,19 @@ pub fn post_json(url: String, token: &Token, body: &Value) -> Request {
     }
 }
 
-/// The `Authorization: Bearer <token>` header.
-fn authorization(token: &Token) -> (String, String) {
-    (
-        "Authorization".to_owned(),
-        format!("Bearer {}", token.expose_secret()),
-    )
+/// The `Authorization` header: `Bearer <token>`, or `Basic base64(":" + token)` (standard
+/// alphabet, padded) for a PAT. The only place a token is put into a request.
+fn authorization(scheme: AuthScheme, token: &Token) -> (String, String) {
+    let value = match scheme {
+        AuthScheme::Bearer => format!("Bearer {}", token.expose_secret()),
+        AuthScheme::BasicPat => {
+            format!(
+                "Basic {}",
+                BASE64.encode(format!(":{}", token.expose_secret()))
+            )
+        }
+    };
+    ("Authorization".to_owned(), value)
 }
 
 /// Sends `req` and parses a 2xx body as `T`; any other status becomes the matching hosting
@@ -201,13 +226,14 @@ pub(crate) fn send_json<T: DeserializeOwned>(
     let rate_limited =
         status == 429 || (status == 403 && resp.header("x-ratelimit-remaining") == Some("0"));
     match status {
-        200..=299 => serde_json::from_str(&resp.body).map_err(|_| unexpected(host)),
         _ if rate_limited => Err(GitError::HostingRateLimited {
             reset_epoch: reset_epoch(&resp),
         }),
-        401 | 403 => Err(GitError::HostingAuth {
+        // Azure DevOps answers a bad or scope-short PAT with 203 and an HTML sign-in page.
+        203 | 401 | 403 => Err(GitError::HostingAuth {
             message: message(&resp, token),
         }),
+        200..=299 => serde_json::from_str(&resp.body).map_err(|_| unexpected(host)),
         404 => Err(GitError::HostingNotFound),
         500..=599 => Err(GitError::HostingUnreachable {
             message: format!("HTTP {status}"),

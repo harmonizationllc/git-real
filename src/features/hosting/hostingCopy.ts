@@ -6,12 +6,14 @@ export const PROVIDER_LABEL: Record<HostingProvider, string> = {
   github: "GitHub",
   gitlab: "GitLab",
   bitbucket: "Bitbucket",
+  azure: "Azure DevOps",
 };
 
 export const DEFAULT_HOST: Record<HostingProvider, string> = {
   github: "github.com",
   gitlab: "gitlab.com",
   bitbucket: "bitbucket.org",
+  azure: "dev.azure.com",
 };
 
 /** The token permissions each provider needs for browsing, checkout and push. */
@@ -21,7 +23,37 @@ export const SCOPE_HINT: Record<HostingProvider, string> = {
   gitlab: "Needs the api scope (read_api is enough to browse).",
   bitbucket:
     "Needs read:repository:bitbucket, write:repository:bitbucket, read:pullrequest:bitbucket, write:pullrequest:bitbucket, read:issue:bitbucket and read:user:bitbucket.",
+  azure: "Needs Code (Read & write), Work items (Read) and Project and team (Read).",
 };
+
+/** The Organization field's hint in the connect dialog. */
+export const ORGANIZATION_HINT =
+  "The name in dev.azure.com/<organization>; a pasted organization URL works too";
+
+/**
+ * The Azure DevOps organization in `input`: a name, or one taken from
+ * `[https://]dev.azure.com/<org>[/…]` or `[https://][user@]<org>.visualstudio.com[/…]`; null for
+ * anything else. Mirrors the backend's `azure_org`, which stays the authority.
+ */
+export function azureOrganization(input: string): string | null {
+  const typed = input.trim();
+  const hasScheme = typed.slice(0, 8).toLowerCase() === "https://";
+  const rest = hasScheme ? typed.slice(8) : typed;
+  const slash = rest.indexOf("/");
+  const host = slash < 0 ? rest : rest.slice(0, slash);
+  const authority = host.slice(host.lastIndexOf("@") + 1).toLowerCase();
+  let org: string;
+  if (authority === "dev.azure.com") {
+    org = slash < 0 ? "" : (rest.slice(slash + 1).split("/")[0] as string);
+  } else if (authority.endsWith(".visualstudio.com")) {
+    org = authority.slice(0, -".visualstudio.com".length);
+  } else if (!hasScheme && slash < 0) {
+    org = rest;
+  } else {
+    return null;
+  }
+  return /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(org) ? org : null;
+}
 
 export const RECONNECT_TEXT = "Token expired or revoked — reconnect";
 
@@ -34,6 +66,10 @@ export function tokenPageUrl(provider: HostingProvider, host: string): string {
       return `https://${host}/-/user_settings/personal_access_tokens`;
     case "bitbucket":
       return "https://id.atlassian.com/manage-profile/security/api-tokens";
+    case "azure":
+      return host.startsWith("dev.azure.com/")
+        ? `https://${host}/_usersSettings/tokens`
+        : "https://dev.azure.com/";
   }
 }
 
@@ -42,7 +78,12 @@ export function hostingErrorText(error: AppError, provider: HostingProvider): st
   const label = PROVIDER_LABEL[provider];
   switch (error.kind) {
     case "hostingAuth":
-      return `${label} rejected the token. Check that it is current and has the scopes it needs.`;
+      // Azure DevOps names the missing scope in the backend's sentence; a blank one falls through.
+      return `${label} rejected the token. ${
+        (provider === "azure"
+          ? error.message.replace(/^the provider rejected the token:/, "").trim()
+          : "") || "Check that it is current and has the scopes it needs."
+      }`;
     case "hostingNotFound":
       return `This repository isn't visible to your ${label} account.`;
     case "hostingRateLimited":
@@ -52,9 +93,16 @@ export function hostingErrorText(error: AppError, provider: HostingProvider): st
     case "keychainUnavailable":
       return "No system keychain is available, so Git Real can't store the token safely.";
     case "invalidHostingHost":
+      if (provider === "azure")
+        return "Enter your Azure DevOps organization name, such as contoso.";
       return "Enter a host name such as github.example.com, optionally with :port.";
     case "invalidToken":
       return `Paste the token exactly as ${label} showed it.`;
+    case "hostingRejected": {
+      // The backend prefixes the provider's sentence; the user should see only the sentence.
+      const refusal = error.message.replace(/^the provider refused the request:/, "").trim();
+      return refusal || `${label} refused the request.`;
+    }
     default:
       return error.message;
   }
@@ -84,9 +132,29 @@ export function prCountLabel(count: number | null, more: boolean): string {
   return count === null ? "Pull requests" : `Pull requests (${count}${more ? "+" : ""})`;
 }
 
-/** The Issues heading; `more` adds a plus while further pages exist. */
-export function issueCountLabel(count: number | null, more: boolean): string {
-  return count === null ? "Issues" : `Issues (${count}${more ? "+" : ""})`;
+/** What the provider calls its issues: Azure DevOps has work items. */
+export function issuesNoun(provider: HostingProvider): "issues" | "work items" {
+  return provider === "azure" ? "work items" : "issues";
+}
+
+/** The Issues heading (Work items on Azure DevOps); `more` adds a plus while further pages exist. */
+export function issueCountLabel(
+  count: number | null,
+  more: boolean,
+  provider: HostingProvider,
+): string {
+  const noun = provider === "azure" ? "Work items" : "Issues";
+  return count === null ? noun : `${noun} (${count}${more ? "+" : ""})`;
+}
+
+/** The Issues panel's empty state (work items on Azure DevOps). */
+export function noIssuesText(provider: HostingProvider): string {
+  return `No open ${issuesNoun(provider)}`;
+}
+
+/** The issue picker's empty state (work items on Azure DevOps). */
+export function noIssuesMatchText(provider: HostingProvider): string {
+  return `${noIssuesText(provider)} match`;
 }
 
 /** The Issues panel and the issue picker when the repository's tracker is switched off. */

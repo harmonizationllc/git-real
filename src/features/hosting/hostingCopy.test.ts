@@ -6,13 +6,18 @@ import { networkMessage } from "../remotes/networkMessage";
 import {
   DEFAULT_HOST,
   ISSUES_OFF_TEXT,
+  ORGANIZATION_HINT,
   PROVIDER_LABEL,
   PUBLISH_FIRST_TEXT,
   RECONNECT_TEXT,
   SCOPE_HINT,
+  azureOrganization,
   hostingErrorText,
   hostingMessage,
   issueCountLabel,
+  issuesNoun,
+  noIssuesMatchText,
+  noIssuesText,
   openedToastText,
   prCountLabel,
   pushFirstLabel,
@@ -23,19 +28,29 @@ const PROVIDERS: [HostingProvider, string][] = [
   ["github", "GitHub"],
   ["gitlab", "GitLab"],
   ["bitbucket", "Bitbucket"],
+  ["azure", "Azure DevOps"],
 ];
+
+// hostingAuth on Azure DevOps carries the backend's scope sentence, so it has its own test.
+const NON_AZURE = PROVIDERS.filter(([provider]) => provider !== "azure");
 
 // Contract: provider labels, default hosts and the reconnect line are the verbatim copy.
 describe("hostingCopy constants", () => {
-  it("should label the providers GitHub, GitLab and Bitbucket", () => {
-    expect(PROVIDER_LABEL).toEqual({ github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" });
+  it("should label the providers GitHub, GitLab, Bitbucket and Azure DevOps", () => {
+    expect(PROVIDER_LABEL).toEqual({
+      github: "GitHub",
+      gitlab: "GitLab",
+      bitbucket: "Bitbucket",
+      azure: "Azure DevOps",
+    });
   });
 
-  it("should default the hosts to github.com, gitlab.com and bitbucket.org", () => {
+  it("should default the hosts to github.com, gitlab.com, bitbucket.org and dev.azure.com", () => {
     expect(DEFAULT_HOST).toEqual({
       github: "github.com",
       gitlab: "gitlab.com",
       bitbucket: "bitbucket.org",
+      azure: "dev.azure.com",
     });
   });
 
@@ -53,6 +68,15 @@ describe("hostingCopy constants", () => {
     expect(SCOPE_HINT.gitlab).toBe("Needs the api scope (read_api is enough to browse).");
   });
 
+  it("should give the Azure DevOps scope hint and organization hint", () => {
+    expect(SCOPE_HINT.azure).toBe(
+      "Needs Code (Read & write), Work items (Read) and Project and team (Read).",
+    );
+    expect(ORGANIZATION_HINT).toBe(
+      "The name in dev.azure.com/<organization>; a pasted organization URL works too",
+    );
+  });
+
   it("should give the Bitbucket scope hint", () => {
     expect(SCOPE_HINT.bitbucket).toBe(
       "Needs read:repository:bitbucket, write:repository:bitbucket, read:pullrequest:bitbucket, write:pullrequest:bitbucket, read:issue:bitbucket and read:user:bitbucket.",
@@ -62,7 +86,7 @@ describe("hostingCopy constants", () => {
 
 // Contract: each hosting error kind has fixed text that names the provider.
 describe("hostingErrorText", () => {
-  it.each(PROVIDERS)("should explain a rejected token for %s", (provider, label) => {
+  it.each(NON_AZURE)("should explain a rejected token for %s", (provider, label) => {
     expect(hostingErrorText(hostingError("hostingAuth"), provider)).toBe(
       `${label} rejected the token. Check that it is current and has the scopes it needs.`,
     );
@@ -98,6 +122,38 @@ describe("hostingErrorText", () => {
     );
   });
 
+  it("should word the Azure host error and show the backend's scope sentence on hostingAuth", () => {
+    expect(hostingErrorText(hostingError("invalidHostingHost"), "azure")).toBe(
+      "Enter your Azure DevOps organization name, such as contoso.",
+    );
+    expect(
+      hostingErrorText(
+        hostingError(
+          "hostingAuth",
+          "the provider rejected the token: The token can't read work items. It needs the Work items (Read) scope.",
+        ),
+        "azure",
+      ),
+    ).toBe(
+      "Azure DevOps rejected the token. The token can't read work items. It needs the Work items (Read) scope.",
+    );
+  });
+
+  it.each(["the provider rejected the token: ", "the provider rejected the token:    ", "", "   "])(
+    "should fall back to the generic sentence for a blank Azure auth tail %j",
+    (message) => {
+      expect(hostingErrorText(hostingError("hostingAuth", message), "azure")).toBe(
+        "Azure DevOps rejected the token. Check that it is current and has the scopes it needs.",
+      );
+    },
+  );
+
+  it("should keep an Azure hostingAuth message that lacks the backend prefix", () => {
+    expect(hostingErrorText(hostingError("hostingAuth", "Nope."), "azure")).toBe(
+      "Azure DevOps rejected the token. Nope.",
+    );
+  });
+
   it.each(PROVIDERS)("should explain an invalid token for %s", (provider, label) => {
     expect(hostingErrorText(hostingError("invalidToken"), provider)).toBe(
       `Paste the token exactly as ${label} showed it.`,
@@ -110,6 +166,33 @@ describe("hostingErrorText", () => {
       expect(hostingErrorText(hostingError(kind, "the message"), "github")).toBe("the message");
     },
   );
+
+  it("should drop the Rust prefix from a provider refusal", () => {
+    expect(
+      hostingErrorText(
+        hostingError(
+          "hostingRejected",
+          "the provider refused the request: TF401179: An active pull request for the source and target branch already exists.",
+        ),
+        "azure",
+      ),
+    ).toBe("TF401179: An active pull request for the source and target branch already exists.");
+  });
+
+  it("should return a provider refusal without the prefix unchanged", () => {
+    expect(
+      hostingErrorText(
+        hostingError("hostingRejected", "A pull request already exists for feat."),
+        "github",
+      ),
+    ).toBe("A pull request already exists for feat.");
+  });
+
+  it("should say the provider refused the request when the refusal is blank", () => {
+    expect(hostingErrorText(hostingError("hostingRejected", ""), "github")).toBe(
+      "GitHub refused the request.",
+    );
+  });
 });
 
 // Contract: hosting kinds become a plain message; anything else goes through networkMessage.
@@ -175,6 +258,13 @@ describe("tokenPageUrl", () => {
     );
   });
 
+  it("should link Azure token creation to the organization's settings or the service root", () => {
+    expect(tokenPageUrl("azure", "dev.azure.com/contoso")).toBe(
+      "https://dev.azure.com/contoso/_usersSettings/tokens",
+    );
+    expect(tokenPageUrl("azure", "")).toBe("https://dev.azure.com/");
+  });
+
   it("should point Bitbucket at the Atlassian token page", () => {
     expect(tokenPageUrl("bitbucket", "bitbucket.org")).toBe(
       "https://id.atlassian.com/manage-profile/security/api-tokens",
@@ -225,19 +315,42 @@ describe("create pull request copy", () => {
 // Contract: the Issues heading counts the issues, with + while more pages exist.
 describe("issueCountLabel", () => {
   it("should be Issues while the count is unknown", () => {
-    expect(issueCountLabel(null, false)).toBe("Issues");
+    expect(issueCountLabel(null, false, "github")).toBe("Issues");
   });
 
   it("should show the count", () => {
-    expect(issueCountLabel(3, false)).toBe("Issues (3)");
+    expect(issueCountLabel(3, false, "github")).toBe("Issues (3)");
   });
 
   it("should show zero", () => {
-    expect(issueCountLabel(0, false)).toBe("Issues (0)");
+    expect(issueCountLabel(0, false, "github")).toBe("Issues (0)");
   });
 
   it("should add a plus while more pages exist", () => {
-    expect(issueCountLabel(50, true)).toBe("Issues (50+)");
+    expect(issueCountLabel(50, true, "github")).toBe("Issues (50+)");
+  });
+});
+
+// Contract: the empty states say work items on Azure DevOps and issues everywhere else.
+describe("issuesNoun", () => {
+  it("should be work items on Azure DevOps and issues elsewhere", () => {
+    expect(issuesNoun("azure")).toBe("work items");
+    for (const p of ["github", "gitlab", "bitbucket"] as const)
+      expect(issuesNoun(p)).toBe("issues");
+  });
+});
+
+describe("empty-state copy", () => {
+  it("should say issues for the issue-tracker providers", () => {
+    for (const p of ["github", "gitlab", "bitbucket"] as const) {
+      expect(noIssuesText(p)).toBe("No open issues");
+      expect(noIssuesMatchText(p)).toBe("No open issues match");
+    }
+  });
+
+  it("should say work items for Azure DevOps", () => {
+    expect(noIssuesText("azure")).toBe("No open work items");
+    expect(noIssuesMatchText("azure")).toBe("No open work items match");
   });
 });
 
@@ -245,5 +358,45 @@ describe("issueCountLabel", () => {
 describe("issues copy", () => {
   it("should say that issues are turned off for the repository", () => {
     expect(ISSUES_OFF_TEXT).toBe("Issues are turned off for this repository");
+  });
+});
+
+// Contract: mirrors the backend's azure_org so Connect can be gated before the round trip.
+describe("azureOrganization", () => {
+  it.each([
+    "contoso",
+    " contoso ",
+    "https://dev.azure.com/contoso/x/_git/y",
+    "contoso.visualstudio.com",
+    "HTTPS://user@Contoso.VisualStudio.com/proj",
+  ])("should parse %j as an organization", (input) => {
+    expect(azureOrganization(input)).toBe("contoso");
+  });
+
+  it("should keep the case of a typed name or a dev.azure.com path", () => {
+    expect(azureOrganization("Contoso")).toBe("Contoso");
+    expect(azureOrganization("https://DEV.azure.com/Contoso")).toBe("Contoso");
+  });
+
+  it.each([
+    "",
+    "-x",
+    "has space",
+    "https://github.com/c",
+    "https://contoso",
+    "dev.azure.com",
+    "a/b",
+    "https://dev.azure.com",
+  ])("should reject %j", (input) => {
+    expect(azureOrganization(input)).toBeNull();
+  });
+});
+
+// Contract: Azure DevOps calls its issues work items.
+describe("issueCountLabel for Azure", () => {
+  it("should head the section Work items for Azure", () => {
+    expect(issueCountLabel(null, false, "azure")).toBe("Work items");
+    expect(issueCountLabel(3, true, "azure")).toBe("Work items (3+)");
+    expect(issueCountLabel(null, false, "github")).toBe("Issues");
   });
 });

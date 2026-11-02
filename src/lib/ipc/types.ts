@@ -581,7 +581,7 @@ export type ConflictSide = "ours" | "theirs";
 
 export type FastForwardCheck = "possible" | "upToDate" | "diverged";
 
-export type HostingProvider = "github" | "gitlab" | "bitbucket";
+export type HostingProvider = "github" | "gitlab" | "bitbucket" | "azure";
 
 /** A connected account; its token stays in the system keychain and never reaches the webview. */
 export interface HostingAccount {

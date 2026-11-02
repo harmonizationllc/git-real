@@ -29,6 +29,29 @@ export const repoContext = (account: HostingAccount | null = hostingAccount()): 
   account,
 });
 
+/** A connected Azure DevOps account `jason@example.com` on the organization contoso. */
+export const azureAccount = (over: Partial<HostingAccount> = {}): HostingAccount => ({
+  id: "azure:dev.azure.com/contoso:jason@example.com",
+  provider: "azure",
+  host: "dev.azure.com/contoso",
+  username: "jason@example.com",
+  displayName: "Jason Harmon",
+  avatarUrl: null,
+  needsReconnect: false,
+  ...over,
+});
+
+/** The Azure DevOps repository "my repo" in project "My Project" with `account` connected (or none). */
+export const azureRepoContext = (account: HostingAccount | null = azureAccount()): RepoContext => ({
+  repo: {
+    provider: "azure",
+    host: "dev.azure.com/contoso",
+    namespace: "My Project",
+    name: "my repo",
+  },
+  account,
+});
+
 /** An open, non-draft, same-repo pull request `number` into main, updated at 1792497600. */
 export const pullRequest = (number: number, over: Partial<PullRequest> = {}): PullRequest => ({
   number,

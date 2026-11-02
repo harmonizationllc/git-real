@@ -15,6 +15,7 @@ import { queryKeys } from "../../lib/query/keys";
 import { useSettings } from "../../lib/store/settings";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
+  azureRepoContext,
   hostingAccount,
   hostingError,
   issue,
@@ -94,6 +95,44 @@ describe("IssuesPanel visibility", () => {
     const heading = screen.getByRole("heading", { name: /^Issues/ });
     expect(heading).toHaveAttribute("data-focus-target");
     expect(heading).toHaveAttribute("tabindex", "-1");
+  });
+});
+
+// Contract: Azure DevOps calls its issues work items.
+describe("IssuesPanel for Azure DevOps", () => {
+  it("heads the section Work items for an Azure repository", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Work items (2)" })).toBeInTheDocument();
+  });
+
+  it("says work items in the loading text and the refresh button", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    vi.mocked(hostingListIssues).mockReturnValue(new Promise(() => undefined));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("Loading work items…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh work items" })).toBeInTheDocument();
+  });
+
+  it("names the list Work item list on Azure DevOps", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("list", { name: "Work item list" })).toBeInTheDocument();
+  });
+
+  it("asks to connect to see work items without an Azure account", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext(null));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(
+      await screen.findByText("Connect your Azure DevOps account to see work items"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows No open work items for an empty list", async () => {
+    vi.mocked(hostingRepoContext).mockResolvedValue(azureRepoContext());
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("No open work items")).toBeInTheDocument();
   });
 });
 

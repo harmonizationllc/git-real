@@ -182,7 +182,7 @@ impl HostedRepoPage {
 
 /// `https://<host[:port]>/<path>` with any `user@` dropped; `None` for another scheme, a bad
 /// host, an empty path, or any whitespace or control character.
-fn clean_https_url(url: &str) -> Option<String> {
+pub(crate) fn clean_https_url(url: &str) -> Option<String> {
     let (authority, path) = url.strip_prefix("https://")?.split_once('/')?;
     let authority = strip_user(authority);
     host_port(authority)?;

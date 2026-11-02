@@ -12,6 +12,8 @@ import {
   RECONNECT_TEXT,
   hostingMessage,
   issueCountLabel,
+  issuesNoun,
+  noIssuesText,
 } from "./hostingCopy";
 import { IssueRow } from "./IssueRow";
 import styles from "./IssuesPanel.module.css";
@@ -79,7 +81,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     body = (
       <div className={styles.notice}>
         <p className={styles.empty}>
-          Connect your {PROVIDER_LABEL[provider]} account to see issues
+          Connect your {PROVIDER_LABEL[provider]} account to see {issuesNoun(provider)}
         </p>
         <button data-variant="ghost" data-size="sm" type="button" onClick={openAccounts}>
           Connect…
@@ -109,15 +111,18 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     // Nothing loaded yet: the error stands in for the list. A failed Show more keeps the list.
     body = <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />;
   } else if (issues === undefined) {
-    body = <p role="status">Loading issues…</p>;
+    body = <p role="status">Loading {issuesNoun(provider)}…</p>;
   } else if (issues.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>No open issues</p>;
+    body = <p className={styles.empty}>{noIssuesText(provider)}</p>;
   } else {
     listed = true;
     body = (
       <>
-        <ul aria-label="Issue list" className={styles.list}>
+        <ul
+          aria-label={provider === "azure" ? "Work item list" : "Issue list"}
+          className={styles.list}
+        >
           {issues.map((issue) => (
             <IssueRow
               key={issue.number}
@@ -166,7 +171,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
             aria-controls={bodyId}
             onClick={() => setIssuesCollapsed(!collapsed)}
           >
-            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore)}
+            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore, provider)}
           </button>
         </h2>
         <button
@@ -174,7 +179,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
           data-size="sm"
           type="button"
           className={styles.refresh}
-          aria-label="Refresh issues"
+          aria-label={`Refresh ${issuesNoun(provider)}`}
           disabled={collapsed || !usable || list.fetching}
           onClick={refresh}
         >

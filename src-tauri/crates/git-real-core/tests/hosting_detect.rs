@@ -2,7 +2,9 @@
 //! account tokens (GR-13 spec §3.2, §4.3).
 
 use git_real_core::GitError;
-use git_real_core::hosting::provider::{detect, https_host, validate_host};
+use git_real_core::hosting::provider::{
+    account_origin_for, azure_org, detect, https_host, validate_host,
+};
 use git_real_core::hosting::{Provider as P, RepoRef};
 
 fn r(provider: P, host: &str, namespace: &str, name: &str) -> Option<RepoRef> {
@@ -174,12 +176,22 @@ fn provider_constants() {
         "https://api.bitbucket.org/2.0"
     );
     assert_eq!(
+        P::AzureDevOps.api_base("dev.azure.com/contoso"),
+        "https://dev.azure.com/contoso"
+    );
+    assert_eq!(
         [
             P::GitHub.git_username(),
             P::GitLab.git_username(),
-            P::Bitbucket.git_username()
+            P::Bitbucket.git_username(),
+            P::AzureDevOps.git_username()
         ],
-        ["x-access-token", "oauth2", "x-bitbucket-api-token-auth"]
+        [
+            "x-access-token",
+            "oauth2",
+            "x-bitbucket-api-token-auth",
+            "git-real"
+        ]
     );
     assert_eq!(serde_json::to_value(P::GitLab).unwrap(), "gitlab");
     assert_eq!(
@@ -209,5 +221,279 @@ fn https_host_reads_only_https_urls() {
         "ssh://github.com/o/r",
     ] {
         assert_eq!(https_host(url), None, "{url}");
+    }
+}
+
+// --- Azure DevOps (GR-41 spec §3.2, §3.5, §4.3) ---
+
+#[test]
+fn detects_every_azure_url_form() {
+    let want = r(
+        P::AzureDevOps,
+        "dev.azure.com/contoso",
+        "My Project",
+        "my repo",
+    );
+    for url in [
+        "https://dev.azure.com/contoso/My%20Project/_git/my%20repo",
+        "https://contoso@dev.azure.com/contoso/My%20Project/_git/my%20repo.git",
+        "https://dev.azure.com/contoso/My%20Project/_git/my%20repo/",
+        "https://contoso.visualstudio.com/My%20Project/_git/my%20repo",
+        "https://contoso.visualstudio.com/DefaultCollection/My%20Project/_git/my%20repo",
+        "git@ssh.dev.azure.com:v3/contoso/My%20Project/my%20repo",
+        "ssh://git@ssh.dev.azure.com/v3/contoso/My%20Project/my%20repo",
+        "contoso@vs-ssh.visualstudio.com:v3/contoso/My%20Project/my%20repo",
+    ] {
+        assert_eq!(detect(url, &[]), want, "{url}");
+    }
+    assert_eq!(
+        detect("https://dev.azure.com/contoso/_git/shared", &[]),
+        r(P::AzureDevOps, "dev.azure.com/contoso", "shared", "shared")
+    );
+    assert_eq!(
+        detect("https://contoso.visualstudio.com/_git/shared", &[]),
+        r(P::AzureDevOps, "dev.azure.com/contoso", "shared", "shared")
+    );
+    assert_eq!(
+        detect("https://dev.azure.com/Contoso/p/_git/r", &[]),
+        r(P::AzureDevOps, "dev.azure.com/Contoso", "p", "r")
+    );
+    // Decoded names may hold the punctuation ADO allows.
+    assert_eq!(
+        detect(
+            "https://dev.azure.com/contoso/R%26D%20(2026)/_git/caf%C3%A9",
+            &[]
+        ),
+        r(
+            P::AzureDevOps,
+            "dev.azure.com/contoso",
+            "R&D (2026)",
+            "café"
+        )
+    );
+}
+
+#[test]
+fn rejects_azure_shapes_that_are_not_repositories() {
+    for url in [
+        "https://dev.azure.com/contoso/p/r",
+        "https://dev.azure.com/contoso/p/_git/r/extra",
+        "https://dev.azure.com/contoso/a/b/_git/r",
+        "https://dev.azure.com:8443/contoso/p/_git/r",
+        "https://dev.azure.com:443/contoso/p/_git/r",
+        "ssh://git@ssh.dev.azure.com:2222/v3/contoso/p/r",
+        "ssh://git@ssh.dev.azure.com:22/v3/contoso/p/r",
+        "https://contoso.visualstudio.com/p/r",
+        "https://contoso.visualstudio.com/DefaultCollection/p/r",
+        "https://dev.azure.com/contoso//_git/r",
+        "https://dev.azure.com/contoso/p/_git/%a\u{e9}",
+        "https://dev.azure.com/contoso/p/_git/%4",
+        "git@ssh.dev.azure.com:v3/contoso/r",
+        "git@ssh.dev.azure.com:v3/contoso/p/r/x",
+        "git@ssh.dev.azure.com:v2/contoso/p/r",
+        "https://dev.azure.com/contoso/p/_git/%2",
+        "https://dev.azure.com/contoso/p/_git/%zz",
+        "https://dev.azure.com/contoso/p/_git/%FF",
+        "https://dev.azure.com/contoso/p/_git/a%2Fb",
+        "https://dev.azure.com/contoso/p/_git/a%5Cb",
+        "https://dev.azure.com/contoso/p/_git/a%25b",
+        "https://dev.azure.com/contoso/p/_git/a%00b",
+        "https://dev.azure.com/contoso/p/_git/a%0Ab",
+        "https://dev.azure.com/contoso/../_git/r",
+        "https://dev.azure.com/contoso/./_git/r",
+        "https://dev.azure.com/contoso/p/_git/",
+        "https://dev.azure.com/-bad/p/_git/r",
+        "https://dev.azure.com/a.b/p/_git/r",
+        "https://dev.azure.com/",
+        "https://a.b.visualstudio.com/p/_git/r",
+        "https://visualstudio.com/p/_git/r",
+        "git@ssh.dev.azure.com:v3/con_toso/p/r",
+    ] {
+        assert_eq!(detect(url, &[]), None, "{url:?}");
+    }
+    // No custom host makes a generic-shaped URL an Azure DevOps repository.
+    assert_eq!(
+        detect(
+            "https://ado.corp/o/r",
+            &[(P::AzureDevOps, "ado.corp".into())]
+        ),
+        None
+    );
+}
+
+#[test]
+fn azure_web_url_uses_git_marker_and_encoding() {
+    let repo = r(
+        P::AzureDevOps,
+        "dev.azure.com/contoso",
+        "My Project",
+        "my repo",
+    )
+    .unwrap();
+    assert_eq!(
+        repo.web_url(),
+        "https://dev.azure.com/contoso/My%20Project/_git/my%20repo"
+    );
+}
+
+#[test]
+fn validate_host_for_azure_takes_a_name_or_an_organization_url() {
+    for input in [
+        "contoso",
+        " contoso ",
+        "https://dev.azure.com/contoso",
+        "HTTPS://Dev.Azure.com/contoso/",
+        "https://contoso@dev.azure.com/contoso/My%20Project/_git/r",
+        "https://dev.azure.com/contoso/My%20Project/_git/r",
+        "dev.azure.com/contoso",
+        "https://contoso.visualstudio.com/",
+        "https://contoso.visualstudio.com/DefaultCollection/p/_git/r",
+        "contoso.visualstudio.com",
+    ] {
+        assert_eq!(
+            validate_host(P::AzureDevOps, Some(input)).unwrap(),
+            "dev.azure.com/contoso",
+            "{input:?}"
+        );
+    }
+    assert_eq!(
+        validate_host(P::AzureDevOps, Some("Contoso-2")).unwrap(),
+        "dev.azure.com/Contoso-2"
+    );
+    assert!(matches!(
+        validate_host(P::AzureDevOps, None),
+        Err(GitError::InvalidHostingHost(s)) if s.is_empty()
+    ));
+    for input in [
+        "",
+        "  ",
+        "-bad",
+        "has space",
+        "https://github.com/contoso",
+        "dev.azure.com",
+        "https://dev.azure.com",
+        "https://dev.azure.com/",
+        "contoso/",
+        "a.b.visualstudio.com",
+        "http://dev.azure.com/contoso",
+        "con_toso",
+    ] {
+        assert!(
+            matches!(
+                validate_host(P::AzureDevOps, Some(input)),
+                Err(GitError::InvalidHostingHost(s)) if s == input
+            ),
+            "{input:?}"
+        );
+    }
+    assert_eq!(azure_org("contoso").as_deref(), Some("contoso"));
+    assert_eq!(azure_org("https://github.com/contoso"), None);
+}
+
+#[test]
+fn account_origin_for_matches_hosts_and_organizations() {
+    let cases: [(&str, &str, Option<&str>); 22] = [
+        (
+            "github.com",
+            "https://GitHub.com/o/r",
+            Some("https://github.com"),
+        ),
+        ("github.com", "git@github.com:o/r", None),
+        ("github.com", "https://gitlab.com/o/r", None),
+        (
+            "ghe.corp:8443",
+            "https://ghe.corp:8443/o/r",
+            Some("https://ghe.corp:8443"),
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://contoso@dev.azure.com/Contoso/p/_git/r",
+            Some("https://dev.azure.com"),
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/other/p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/contosox/p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://contoso.visualstudio.com/p/_git/r",
+            Some("https://contoso.visualstudio.com"),
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://other.visualstudio.com/p/_git/r",
+            None,
+        ),
+        ("dev.azure.com/contoso", "https://dev.azure.com", None),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com:8443/contoso/p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "git@ssh.dev.azure.com:v3/contoso/p/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://evil.example/contoso/p/_git/r",
+            None,
+        ),
+        ("example.com/contoso", "https://example.com/contoso/p", None),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/contoso/../other/p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/contoso/./p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://contoso.visualstudio.com/p/../../x/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/contoso/%2E%2e/other/p/_git/r",
+            None,
+        ),
+        (
+            "dev.azure.com/contoso",
+            "https://dev.azure.com/Contoso",
+            Some("https://dev.azure.com"),
+        ),
+        // A plain-host account on an Azure DevOps host is not an organization account.
+        (
+            "dev.azure.com",
+            "https://dev.azure.com/contoso/p/_git/r",
+            None,
+        ),
+        (
+            "contoso.visualstudio.com",
+            "https://contoso.visualstudio.com/p/_git/r",
+            None,
+        ),
+        (
+            "DEV.azure.com",
+            "https://dev.azure.com/contoso/p/_git/r",
+            None,
+        ),
+    ];
+    for (host, url, want) in cases {
+        assert_eq!(
+            account_origin_for(host, url).as_deref(),
+            want,
+            "{host} {url}"
+        );
     }
 }

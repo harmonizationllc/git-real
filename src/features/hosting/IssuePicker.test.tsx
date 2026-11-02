@@ -544,6 +544,24 @@ describe("IssuePicker states", () => {
     expect(await screen.findByText("No open issues match")).toBeInTheDocument();
   });
 
+  it("shows No open work items match for an empty answer on Azure DevOps", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue([]);
+    await renderPicker({ provider: "azure" }, false);
+    expect(await screen.findByText("No open work items match")).toBeInTheDocument();
+  });
+
+  it("names the search box and the listbox after work items on Azure DevOps", async () => {
+    await renderPicker({ provider: "azure" });
+    expect(screen.getByLabelText("Search work items")).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Work items" })).toBeInTheDocument();
+  });
+
+  it("names the search box and the listbox after issues elsewhere", async () => {
+    await renderPicker();
+    expect(screen.getByLabelText("Search issues")).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Issues" })).toBeInTheDocument();
+  });
+
   it("shows no options for an empty answer", async () => {
     vi.mocked(hostingListIssues).mockResolvedValue([]);
     await renderPicker({}, false);

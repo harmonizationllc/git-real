@@ -1,0 +1,67 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": "3411ebc1-0000-4000-8000-000000000001",
+      "name": "my repo",
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/3411ebc1-0000-4000-8000-000000000001",
+      "project": {
+        "id": "a7573007-0000-4000-8000-000000000001",
+        "name": "My Project",
+        "url": "https://dev.azure.com/contoso/_apis/projects/a7573007-0000-4000-8000-000000000001",
+        "state": "wellFormed",
+        "revision": 11,
+        "visibility": "private",
+        "lastUpdateTime": "2026-10-20T12:00:00.33Z"
+      },
+      "defaultBranch": "refs/heads/main",
+      "size": 482193,
+      "remoteUrl": "https://contoso@dev.azure.com/contoso/My%20Project/_git/my%20repo",
+      "sshUrl": "git@ssh.dev.azure.com:v3/contoso/My%20Project/my%20repo",
+      "webUrl": "https://dev.azure.com/contoso/My%20Project/_git/my%20repo",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    {
+      "id": "4522fcd2-0000-4000-8000-000000000002",
+      "name": "archive",
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/4522fcd2-0000-4000-8000-000000000002",
+      "project": {
+        "id": "a7573007-0000-4000-8000-000000000001",
+        "name": "My Project",
+        "url": "https://dev.azure.com/contoso/_apis/projects/a7573007-0000-4000-8000-000000000001",
+        "state": "wellFormed",
+        "revision": 11,
+        "visibility": "private",
+        "lastUpdateTime": "2026-10-20T12:00:00.33Z"
+      },
+      "size": 0,
+      "remoteUrl": "https://contoso@dev.azure.com/contoso/My%20Project/_git/archive",
+      "sshUrl": "git@ssh.dev.azure.com:v3/contoso/My%20Project/archive",
+      "webUrl": "https://dev.azure.com/contoso/My%20Project/_git/archive",
+      "isDisabled": true,
+      "isInMaintenance": false
+    },
+    {
+      "id": "5633ade3-0000-4000-8000-000000000003",
+      "name": "widgets",
+      "url": "https://dev.azure.com/contoso/_apis/git/repositories/5633ade3-0000-4000-8000-000000000003",
+      "project": {
+        "id": "b8684118-0000-4000-8000-000000000002",
+        "name": "Open Source",
+        "url": "https://dev.azure.com/contoso/_apis/projects/b8684118-0000-4000-8000-000000000002",
+        "state": "wellFormed",
+        "revision": 5,
+        "visibility": "public",
+        "lastUpdateTime": "2026-09-01T08:00:00Z"
+      },
+      "defaultBranch": "refs/heads/trunk",
+      "size": 10240,
+      "remoteUrl": "https://contoso@dev.azure.com/contoso/Open%20Source/_git/widgets",
+      "sshUrl": "git@ssh.dev.azure.com:v3/contoso/Open%20Source/widgets",
+      "webUrl": "https://dev.azure.com/contoso/Open%20Source/_git/widgets",
+      "isDisabled": false,
+      "isInMaintenance": false
+    }
+  ]
+}
