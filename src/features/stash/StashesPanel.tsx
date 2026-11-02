@@ -79,7 +79,15 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
 
   let body: React.ReactNode;
   if (listError !== null) {
-    body = <RepoError error={listError} path={null} onRetry={refetch} onDismiss={refetch} />;
+    body = (
+      <RepoError
+        error={listError}
+        path={null}
+        variant="panel"
+        onRetry={refetch}
+        onDismiss={refetch}
+      />
+    );
   } else if (stashes === undefined) {
     body = <p role="status">Loading stashes…</p>;
   } else if (stashes.length === 0) {

@@ -58,13 +58,21 @@ impl Pull {
     }
 }
 
+// Config reads go through `Config::snapshot()`. On a live config, libgit2 (1.9.7 `config.c`)
+// refreshes the files on every read; when that refresh fails with anything but not-found (an
+// EACCES on `.git/config`, say), `get_entry()` hands back an uninitialised entry that
+// `git_config__get_string_buf` (behind `Config::get_string`) then frees: a SIGSEGV. A snapshot
+// reads the files once, returning a clean error if it cannot, and never touches them again.
+
 /// `Some(mode)` when `key` is set: a boolean, or git's `merges` / `interactive` spellings.
+/// The string fallback runs only when the value fails to parse as a boolean (a `Config`-class
+/// error); any other error propagates instead of being read again as a string.
 fn rebase_setting(config: &Config, key: &str) -> Result<Option<PullMode>, GitError> {
     match config.get_bool(key) {
         Ok(true) => Ok(Some(PullMode::Rebase)),
         Ok(false) => Ok(Some(PullMode::Merge)),
         Err(e) if is_not_found(&e) => Ok(None),
-        Err(_) => {
+        Err(e) if e.class() == git2::ErrorClass::Config => {
             let value = config.get_string(key).unwrap_or_default();
             let rebase = matches!(value.as_str(), "merges" | "m" | "interactive" | "i");
             Ok(Some(if rebase {
@@ -73,13 +81,14 @@ fn rebase_setting(config: &Config, key: &str) -> Result<Option<PullMode>, GitErr
                 PullMode::Merge
             }))
         }
+        Err(e) => Err(e.into()),
     }
 }
 
 impl RepoSession {
     /// `branch.<head>.rebase`, else `pull.rebase`, else `Merge`.
     pub fn pull_default_mode(&self) -> Result<PullMode, GitError> {
-        let config = self.repo().config()?;
+        let config = self.repo().config()?.snapshot()?;
         if let Ok(branch) = self.head_branch()
             && let Some(mode) = rebase_setting(&config, &format!("branch.{branch}.rebase"))?
         {

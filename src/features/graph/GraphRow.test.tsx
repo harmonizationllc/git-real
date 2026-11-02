@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../../test/cssRules";
 import { makeRow, oidOf, ref } from "../../test/graphFixtures";
 import { GraphRow } from "./GraphRow";
 import { gutterWidth } from "./model/edges";
@@ -74,8 +75,7 @@ describe("GraphRow content", () => {
     const cell = screen.getByText("Subject 0").parentElement as HTMLElement;
     expect(cell.style.gap).toBe("6px");
     const css = readFileSync("src/features/graph/GraphRow.module.css", "utf8");
-    const message = /(?:^|\n)\.message\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(message).not.toMatch(/gap:/);
+    expect(declarationsOf(css, "message")).not.toMatch(/gap:/);
   });
 
   it("should render no ref labels for a row without refs", () => {

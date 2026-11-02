@@ -198,7 +198,15 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
 
   let body: React.ReactNode;
   if (summaryError !== null) {
-    body = <RepoError error={summaryError} path={null} onRetry={refetch} onDismiss={refetch} />;
+    body = (
+      <RepoError
+        error={summaryError}
+        path={null}
+        variant="panel"
+        onRetry={refetch}
+        onDismiss={refetch}
+      />
+    );
   } else if (summary === undefined || (summary.total === 0 && !summary.complete)) {
     body = <p role="status">Loading history…</p>;
   } else if (summary.total === 0) {
@@ -223,7 +231,7 @@ export function GraphPanel({ repoId }: GraphPanelProps) {
       className={styles.root}
     >
       {dialog === null && panelError !== null && (
-        <RepoError error={panelError} path={null} onDismiss={clearErrors} />
+        <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
       )}
       {body}
       <ContextMenu
@@ -575,6 +583,7 @@ function CommitList({ repoId, summary, onContextMenu }: CommitListProps) {
         <RepoError
           error={pages.error}
           path={null}
+          variant="panel"
           onRetry={pages.refetch}
           onDismiss={pages.refetch}
         />

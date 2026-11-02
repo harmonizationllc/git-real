@@ -101,7 +101,15 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   if (collapsed) {
     body = null;
   } else if (listError !== null) {
-    body = <RepoError error={listError} path={null} onRetry={refetch} onDismiss={refetch} />;
+    body = (
+      <RepoError
+        error={listError}
+        path={null}
+        variant="panel"
+        onRetry={refetch}
+        onDismiss={refetch}
+      />
+    );
   } else if (list === undefined) {
     body = <p role="status">Loading worktrees…</p>;
   } else if (bare) {

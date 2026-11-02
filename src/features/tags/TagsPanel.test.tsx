@@ -153,11 +153,11 @@ describe("TagsPanel list", () => {
     expect(screen.queryByText("Loading tags…")).toBeNull();
   });
 
-  it("should render the list error alert without a data-variant", async () => {
+  it("should render the list error alert in the panel variant", async () => {
     vi.mocked(listTags).mockRejectedValueOnce({ kind: "io", message: "list broke" });
     renderWithProviders(<TagsPanel repoId={1} />);
     await seedSettings({ layout: { tagsCollapsed: false } });
-    expect(await screen.findByRole("alert")).not.toHaveAttribute("data-variant");
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should show the list error with Retry while expanded", async () => {

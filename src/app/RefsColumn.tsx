@@ -86,7 +86,7 @@ export function RefsColumn({
     natural: measured.naturals[i] ?? 0,
     fixed: section === "issues" ? null : layout[`${section}Height`],
   }));
-  const heights = fitSections(container, inputs).map(Math.round);
+  const heights = fitSections(container, inputs);
 
   const panels: Record<RefsSection, ReactNode> = {
     branches: (

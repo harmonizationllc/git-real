@@ -474,7 +474,15 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
 
   let body: React.ReactNode;
   if (listError !== null) {
-    body = <RepoError error={listError} path={null} onRetry={refetch} onDismiss={refetch} />;
+    body = (
+      <RepoError
+        error={listError}
+        path={null}
+        variant="panel"
+        onRetry={refetch}
+        onDismiss={refetch}
+      />
+    );
   } else if (branches === undefined) {
     body = <p role="status">Loading branches…</p>;
   } else {

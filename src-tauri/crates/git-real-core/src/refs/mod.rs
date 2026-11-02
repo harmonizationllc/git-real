@@ -298,7 +298,12 @@ impl RepoSession {
         }
         // Before `branch_upstream_name`, which reports a missing remote as not found.
         self.ensure_remote(&remote)?;
-        let merge = match repo.config()?.get_string(&format!("branch.{branch}.merge")) {
+        // A snapshot: `get_string` on a live config can crash after a failed read (remote/pull.rs).
+        let merge = match repo
+            .config()?
+            .snapshot()?
+            .get_string(&format!("branch.{branch}.merge"))
+        {
             Ok(m) => m,
             Err(e) if is_not_found(&e) => return Ok(None),
             Err(e) => return Err(e.into()),

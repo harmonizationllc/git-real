@@ -144,6 +144,12 @@ describe("WorktreesPanel list", () => {
     expect(await screen.findByRole("list", { name: "Worktree list" })).toBeInTheDocument();
   });
 
+  it("should render the list error alert in the panel variant", async () => {
+    vi.mocked(listLinkedWorktrees).mockRejectedValueOnce({ kind: "git", message: "broken" });
+    renderWithProviders(<WorktreesPanel repoId={1} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should collapse and expand with the stored preference", async () => {
     const { user } = await renderPanel();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");

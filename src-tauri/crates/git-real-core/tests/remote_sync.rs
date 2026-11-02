@@ -1649,3 +1649,63 @@ fn integrate_pull_propagates_a_git2_error_when_head_is_corrupt() {
         .unwrap_err();
     assert!(matches!(err, GitError::Git2(_)), "{err:?}");
 }
+
+/// Makes `.git` unreadable and restores it on drop, so a failing assertion still cleans up.
+#[cfg(unix)]
+struct UnreadableGit(PathBuf);
+
+#[cfg(unix)]
+impl UnreadableGit {
+    fn new(root: &Path) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let git = root.join(".git");
+        std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o000)).unwrap();
+        Self(git)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for UnreadableGit {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+    }
+}
+
+// Core reads return a GitError for an unreadable repository, never crash the process.
+#[cfg(unix)]
+#[test]
+fn pull_default_mode_reports_an_unreadable_repository_instead_of_crashing() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let session = RepoSession::open(&path).unwrap();
+    let _guard = UnreadableGit::new(&path);
+    assert!(session.pull_default_mode().is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn list_remotes_reports_an_unreadable_repository_instead_of_crashing() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let session = RepoSession::open(&path).unwrap();
+    let _guard = UnreadableGit::new(&path);
+    assert!(session.list_remotes().is_err());
+}
+
+#[test]
+fn pull_default_mode_reads_the_merges_and_interactive_spellings_as_rebase() {
+    let (_d, path) = common::temp_repo_with_commit();
+    let session = RepoSession::open(&path).unwrap();
+    for (value, want) in [
+        ("merges", PullMode::Rebase),
+        ("interactive", PullMode::Rebase),
+        ("false", PullMode::Merge),
+    ] {
+        Repository::open(&path)
+            .unwrap()
+            .config()
+            .unwrap()
+            .set_str("pull.rebase", value)
+            .unwrap();
+        assert_eq!(session.pull_default_mode().unwrap(), want, "{value}");
+    }
+}

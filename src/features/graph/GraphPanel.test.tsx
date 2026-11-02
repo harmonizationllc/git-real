@@ -328,6 +328,12 @@ describe("GraphPanel summary states", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("summary boom");
   });
 
+  it("should render the summary failure alert in the panel variant", async () => {
+    vi.mocked(getLogSummary).mockRejectedValue({ kind: "git", message: "summary boom" });
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  });
+
   it("should fetch the summary again when Retry is clicked", async () => {
     vi.mocked(getLogSummary).mockRejectedValue({ kind: "git", message: "summary boom" });
     renderWithProviders(<GraphPanel repoId={REPO} />);
@@ -422,6 +428,12 @@ describe("GraphPanel rows", () => {
     renderWithProviders(<GraphPanel repoId={REPO} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("page boom");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("should render the page failure alert in the panel variant", async () => {
+    vi.mocked(getLogPage).mockRejectedValue({ kind: "git", message: "page boom" });
+    renderWithProviders(<GraphPanel repoId={REPO} />);
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should request the page again when Retry is clicked after a page failure", async () => {
@@ -1126,6 +1138,14 @@ describe("GraphPanel context menu", () => {
     rightClick(optionAt(1));
     await user.click(menuItem("Copy hash"));
     expect(copyText).toHaveBeenCalledExactlyOnceWith(oidOf(1));
+  });
+
+  it("should render a failed copy's alert in the panel variant", async () => {
+    vi.mocked(copyText).mockRejectedValue(new Error("clipboard denied"));
+    const { user } = await renderPanel();
+    rightClick(optionAt(1));
+    await user.click(menuItem("Copy hash"));
+    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
   it("should show a failed copy in an alert that Dismiss clears", async () => {

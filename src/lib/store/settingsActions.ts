@@ -45,9 +45,20 @@ export function setSidebarWidth(width: number): void {
   setPref({ layout: { sidebarWidth: Math.round(width) } });
 }
 
+/** The settings leaf that stores each resizable section's height. */
+type HeightLeaf = keyof Settings["layout"] & `${ResizableSection}Height`;
+
+const HEIGHT_LEAF: Record<ResizableSection, HeightLeaf> = {
+  branches: "branchesHeight",
+  stashes: "stashesHeight",
+  tags: "tagsHeight",
+  worktrees: "worktreesHeight",
+  pullRequests: "pullRequestsHeight",
+};
+
 /** Persists a refs section's dragged height; null returns it to automatic. */
 export function setSectionHeight(section: ResizableSection, height: number | null): void {
-  setPref({ layout: { [`${section}Height`]: height === null ? null : Math.round(height) } });
+  setPref({ layout: { [HEIGHT_LEAF[section]]: height === null ? null : Math.round(height) } });
 }
 
 export function resetWidth(column: LayoutColumn): void {

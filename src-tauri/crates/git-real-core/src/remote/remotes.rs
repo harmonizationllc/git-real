@@ -179,7 +179,8 @@ fn rename_remote(repo: &git2::Repository, old: &str, new: &str) -> Result<(), Gi
 impl RepoSession {
     /// Every remote, sorted by name, with the URLs as configured (not rewritten).
     pub fn list_remotes(&self) -> Result<Vec<RemoteInfo>, GitError> {
-        let config = self.repo().config()?;
+        // A snapshot: `get_string` on a live config can crash after a failed read (remote/pull.rs).
+        let config = self.repo().config()?.snapshot()?;
         Ok(self
             .remote_names()?
             .into_iter()
