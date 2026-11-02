@@ -54,7 +54,7 @@ describe("tokens.css structure", () => {
     expect(rootMap.get("--color-modified")).toBe("#624000");
     expect(rootMap.get("--color-removed")).toBe("#890418");
     expect(rootMap.get("--graph-lane-0")).toBe("var(--color-accent)");
-    expect(rootMap.get("--shadow-card")).toBe("0 1px 2px rgba(0, 0, 0, 0.12)");
+    expect(rootMap.get("--shadow-card")).toBe("0 0 0 1px rgba(0, 0, 0, 0.08)");
     expect(rootMap.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
   });
 
@@ -71,7 +71,7 @@ describe("tokens.css structure", () => {
       expect(map.get("--color-added")).toBe("#5edb8c");
       expect(map.get("--color-modified")).toBe("#ffad00");
       expect(map.get("--color-removed")).toBe("#ffa09a");
-      expect(map.get("--shadow-card")).toBe("0 1px 2px rgba(0, 0, 0, 0.35)");
+      expect(map.get("--shadow-card")).toBe("0 0 0 1px rgba(255, 255, 255, 0.08)");
       expect(map.get("--color-backdrop")).toBe("rgba(0, 0, 0, 0.4)");
     }
   });

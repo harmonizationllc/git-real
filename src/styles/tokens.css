@@ -34,7 +34,7 @@
   --color-removed-word-bg: rgba(137, 4, 24, 0.22);
   --color-hunk-bg: rgba(0, 82, 90, 0.08);
   --color-line-selected: rgba(98, 64, 0, 0.14);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.08);
   --syntax-keyword: #86043a;
   --syntax-string: #185529;
   --syntax-number: #2e496d;
@@ -94,7 +94,7 @@
     --color-removed-word-bg: rgba(255, 160, 154, 0.36);
     --color-hunk-bg: rgba(99, 208, 223, 0.1);
     --color-line-selected: rgba(255, 173, 0, 0.18);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08);
     --syntax-keyword: #ff9cb1;
     --syntax-string: #92cf9c;
     --syntax-number: #a1c0eb;
@@ -142,7 +142,7 @@
   --color-removed-word-bg: rgba(255, 160, 154, 0.36);
   --color-hunk-bg: rgba(99, 208, 223, 0.1);
   --color-line-selected: rgba(255, 173, 0, 0.18);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08);
   --syntax-keyword: #ff9cb1;
   --syntax-string: #92cf9c;
   --syntax-number: #a1c0eb;
