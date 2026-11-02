@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { DiffScope } from "../../lib/ipc";
+import { declarationsOf } from "../../test/cssRules";
 import { HunkHeader } from "./HunkHeader";
 
 function setup(
@@ -222,5 +224,22 @@ describe("HunkHeader commit scope regression", () => {
   it("should not render Unstage hunk for a commit scope", () => {
     setup({ scope: { commit: "abc" } });
     expect(screen.queryByRole("button", { name: "Unstage hunk" })).toBeNull();
+  });
+});
+
+describe("HunkHeader COSMIC look", () => {
+  it("sits on the hunk background token", () => {
+    const css = readFileSync("src/features/diff/HunkHeader.module.css", "utf8");
+    expect(declarationsOf(css, "root")).toMatch(/background:\s*var\(--color-hunk-bg\)/);
+  });
+
+  it("gives Stage and Discard the small ghost and danger variants", () => {
+    setup();
+    const stage = screen.getByRole("button", { name: "Stage hunk" });
+    expect(stage).toHaveAttribute("data-variant", "ghost");
+    expect(stage).toHaveAttribute("data-size", "sm");
+    const discard = screen.getByRole("button", { name: "Discard hunk…" });
+    expect(discard).toHaveAttribute("data-variant", "danger");
+    expect(discard).toHaveAttribute("data-size", "sm");
   });
 });

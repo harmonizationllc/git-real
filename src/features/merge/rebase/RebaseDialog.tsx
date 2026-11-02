@@ -78,7 +78,7 @@ export function RebaseDialog({
 
   const cancelOnly = (
     <div className={styles.actions}>
-      <button type="button" disabled={pending} onClick={onClose}>
+      <button type="button" data-variant="neutral" disabled={pending} onClick={onClose}>
         Cancel
       </button>
     </div>
@@ -201,10 +201,15 @@ function Plan({ commits, base, run, pending, onClose }: PlanProps) {
       <p className={styles.summary}>{summaryText(summary(steps))}</p>
       {runError && <RepoError error={runError} path={null} onDismiss={() => setRunError(null)} />}
       <div className={styles.actions}>
-        <button type="button" disabled={pending} onClick={onClose}>
+        <button type="button" data-variant="neutral" disabled={pending} onClick={onClose}>
           Cancel
         </button>
-        <button type="button" disabled={pending || !canStart(steps)} onClick={() => void start()}>
+        <button
+          type="button"
+          data-variant="primary"
+          disabled={pending || !canStart(steps)}
+          onClick={() => void start()}
+        >
           {pending ? "Working…" : "Start rebase"}
         </button>
       </div>

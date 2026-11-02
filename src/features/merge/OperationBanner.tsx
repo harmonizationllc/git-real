@@ -62,12 +62,20 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
     >
       <p className={styles.title}>{bannerTitle(state, head, conflicts)}</p>
       <div className={styles.actions}>
-        <button type="button" className={styles.danger} disabled={pending} onClick={openAbort}>
+        <button
+          type="button"
+          data-variant="danger"
+          data-size="sm"
+          disabled={pending}
+          onClick={openAbort}
+        >
           Abort…
         </button>
         {state.kind === "rebase" ? (
           <button
             type="button"
+            data-variant="primary"
+            data-size="sm"
             disabled={conflicts > 0 || pending}
             title={blockedTitle}
             onClick={() => void run({ action: "continue" })}
@@ -77,6 +85,8 @@ function ActiveBanner({ repoId, state }: ActiveBannerProps) {
         ) : (
           <button
             type="button"
+            data-variant="primary"
+            data-size="sm"
             disabled={conflicts > 0}
             title={blockedTitle}
             // "commit-subject" is the subject input's id, owned by features/commit MessageEditor.

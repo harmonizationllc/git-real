@@ -76,7 +76,7 @@ export function DiffToolbar({
         <div className={styles.notice}>
           {/* Only the text is live, so the button label is not announced as status. */}
           <span role="status">{`Showing the first ${totalLines(diff)} lines`}</span>
-          <button type="button" onClick={onLoadFull}>
+          <button type="button" data-variant="ghost" data-size="sm" onClick={onLoadFull}>
             Load full diff
           </button>
         </div>

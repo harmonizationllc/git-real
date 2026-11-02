@@ -50,12 +50,18 @@ export function ConflictToolbar({
   onClose,
 }: ConflictToolbarProps) {
   const close = (
-    <button type="button" onClick={onClose}>
+    <button type="button" data-variant="ghost" data-size="sm" onClick={onClose}>
       Close
     </button>
   );
   const mergeToolButton = onOpenMergeTool && (
-    <button type="button" disabled={mergeToolRunning} onClick={onOpenMergeTool}>
+    <button
+      type="button"
+      data-variant="neutral"
+      data-size="sm"
+      disabled={mergeToolRunning}
+      onClick={onOpenMergeTool}
+    >
       {mergeToolRunning ? "Merge tool open…" : "Open in merge tool"}
     </button>
   );
@@ -77,19 +83,44 @@ export function ConflictToolbar({
       <span className={styles.path}>{path}</span>
       <span className={styles.count}>{countCopy(remaining)}</span>
       <span className={styles.spacer} />
-      <button type="button" disabled={none} onClick={onPrevious}>
+      <button
+        type="button"
+        data-variant="ghost"
+        data-size="sm"
+        disabled={none}
+        onClick={onPrevious}
+      >
         Previous
       </button>
-      <button type="button" disabled={none} onClick={onNext}>
+      <button type="button" data-variant="ghost" data-size="sm" disabled={none} onClick={onNext}>
         Next
       </button>
-      <button type="button" disabled={pickDisabled} onClick={onKeepAll}>
+      <button
+        type="button"
+        data-variant="neutral"
+        data-size="sm"
+        disabled={pickDisabled}
+        onClick={onKeepAll}
+      >
         Keep all {labels.ours}
       </button>
-      <button type="button" disabled={pickDisabled} onClick={onTakeAll}>
+      <button
+        type="button"
+        data-variant="neutral"
+        data-size="sm"
+        disabled={pickDisabled}
+        onClick={onTakeAll}
+      >
         Take all {labels.theirs}
       </button>
-      <button type="button" disabled={reason !== undefined} title={reason} onClick={onMarkResolved}>
+      <button
+        type="button"
+        data-variant="primary"
+        data-size="sm"
+        disabled={reason !== undefined}
+        title={reason}
+        onClick={onMarkResolved}
+      >
         Mark resolved
       </button>
       {mergeToolButton}
