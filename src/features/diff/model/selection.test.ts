@@ -213,9 +213,11 @@ describe("selectionRequest edit units are lazy", () => {
   it("should not run it for a partial row whose pair is already whole", () => {
     // New side: deletion row 1 is whole, so its partner addition row 4 needs no units.
     vi.mocked(lineEdits).mockClear();
-    expect(selectionRequest(diff, unified, target(range("new", [1, 0], [4, 3])), "stage")).toEqual(
-      { hunkIndex: 0, lines: [1, 2, 3, 4, 5, 6], edits: [] },
-    );
+    expect(selectionRequest(diff, unified, target(range("new", [1, 0], [4, 3])), "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [1, 2, 3, 4, 5, 6],
+      edits: [],
+    });
     expect(lineEdits).not.toHaveBeenCalled();
   });
   it("should not run it for a row target", () => {
