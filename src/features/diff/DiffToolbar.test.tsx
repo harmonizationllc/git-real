@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { FileDiff } from "../../lib/ipc";
 import type { DiffMode } from "../../lib/ipc";
 import { formatKeys } from "../../lib/shortcuts";
+import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { DiffToolbar } from "./DiffToolbar";
 import type { ChangeNavigation } from "./useChangeNavigation";
@@ -289,6 +290,26 @@ describe("DiffToolbar change navigation", () => {
     expect(prevButton()).toHaveAttribute("title", `Previous change (${formatKeys("Shift+F7")})`);
     expect(nextButton()).toHaveAttribute("title", "Next change (F7)");
     expect(prevButton()).toHaveAttribute("title", "Previous change (Shift+F7)");
+  });
+
+  it("should drop the shortcut from the title when it is unbound", () => {
+    const original = useSettings.getState().settings;
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        shortcuts: {
+          ...DEFAULT_SETTINGS.shortcuts,
+          bindings: { nextChange: null, prevChange: null },
+        },
+      },
+    });
+    try {
+      setup();
+      expect(nextButton()).toHaveAttribute("title", "Next change");
+      expect(prevButton()).toHaveAttribute("title", "Previous change");
+    } finally {
+      useSettings.setState({ settings: original });
+    }
   });
 
   it("should count the changes while none is current", () => {

@@ -131,6 +131,20 @@ describe("matchesShortcut matrix", () => {
     expect(matchesShortcut(shifted, "nextChange")).toBe(false);
   });
 
+  it("a Ctrl or Meta press does not fire the modifier-free change shortcuts", () => {
+    expect(matchesShortcut(makeEvent({ ctrlKey: true, key: "F7", code: "F7" }), "nextChange")).toBe(
+      false,
+    );
+    expect(matchesShortcut(makeEvent({ metaKey: true, key: "F7", code: "F7" }), "nextChange")).toBe(
+      false,
+    );
+  });
+
+  it("an unbound change shortcut never matches", () => {
+    setActiveBindings(resolveBindings({ nextChange: null }));
+    expect(matchesShortcut(makeEvent({ key: "F7", code: "F7" }), "nextChange")).toBe(false);
+  });
+
   it("the change shortcuts sit in Navigation, need a repo, and follow prevTab", () => {
     expect(shortcut("nextChange")).toMatchObject({
       group: "Navigation",

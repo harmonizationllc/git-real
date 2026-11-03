@@ -144,3 +144,30 @@ describe("useChangeNavigation rows change", () => {
     expect(scrollToRow).not.toHaveBeenCalled();
   });
 });
+
+// Contract: with no viewer mounted, navigation still tracks the current change and never throws.
+describe("useChangeNavigation without a viewer", () => {
+  const detached = () => {
+    const viewer: RefObject<DiffViewerHandle | null> = { current: null };
+    const rows = buildRows(diff, "unified");
+    return renderHook(() => useChangeNavigation(diff, rows, viewer));
+  };
+
+  it("should treat the first visible row as 0 on next", () => {
+    const { result } = detached();
+    act(() => result.current.next());
+    expect(result.current.current).toBe(0);
+  });
+
+  it("should do nothing on prev", () => {
+    const { result } = detached();
+    act(() => result.current.prev());
+    expect(result.current.current).toBeNull();
+  });
+
+  it("should still set current on goTo", () => {
+    const { result } = detached();
+    act(() => result.current.goTo(2));
+    expect(result.current.current).toBe(2);
+  });
+});
