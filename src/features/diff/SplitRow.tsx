@@ -60,7 +60,7 @@ function Cell({
   tint: RowTint | null;
 }) {
   if (lineIndex === null) {
-    // A range row with no line on its side is acted on whole, so its empty cell is outlined too.
+    // A range row with no line on its side is acted on whole, so its empty cell is marked data-selected too.
     return (
       <div
         className={styles.cell}

@@ -276,14 +276,14 @@ describe("SplitRow tint", () => {
     expect(left.querySelector(`.${lineStyles.selected}`)).toBeNull();
   });
 
-  it("should outline the empty cell on the tint's side, as its row is acted on whole", () => {
+  it("should mark the empty cell on the tint's side data-selected, as its row is acted on whole", () => {
     const { left, right } = setup(5, null, { tint: { side: "new", from: null, to: null } });
     expect(right).toHaveAttribute("data-kind", "empty");
     expect(right).toHaveAttribute("data-selected", "true");
     expect(left).not.toHaveAttribute("data-selected");
   });
 
-  it("should not outline an empty cell off the tint's side", () => {
+  it("should not mark an empty cell off the tint's side data-selected", () => {
     const { left } = setup(null, 3, { tint: { side: "new", from: null, to: null } });
     expect(left).toHaveAttribute("data-kind", "empty");
     expect(left).not.toHaveAttribute("data-selected");
