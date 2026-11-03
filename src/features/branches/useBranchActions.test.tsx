@@ -210,6 +210,7 @@ describe("useBranchActions invalidation", () => {
     ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
+    ["setUpstream", { action: "setUpstream", name: "topic", upstream: "origin/topic" }],
   ];
 
   it.each(cases)("should invalidate the repo key when %s succeeds", async (_n, req) => {
@@ -225,6 +226,7 @@ describe("useBranchActions invalidation", () => {
     vi.mocked(deleteBranch).mockRejectedValue(exists);
     vi.mocked(checkoutBranch).mockRejectedValue(exists);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(exists);
+    vi.mocked(setBranchUpstream).mockRejectedValue(exists);
     const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => result.current, req);
@@ -324,7 +326,7 @@ describe("useBranchActions clearError after success", () => {
   });
 });
 
-// Contract: setUpstream forwards the branch and upstream (null clears) and refetches the repo.
+// Contract: setUpstream forwards the branch and upstream (null clears); invalidation is in the table above.
 describe("useBranchActions setUpstream", () => {
   it("should call setBranchUpstream with the branch and upstream", async () => {
     vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
@@ -345,17 +347,15 @@ describe("useBranchActions setUpstream", () => {
     expect(setBranchUpstream).toHaveBeenCalledExactlyOnceWith(4, "topic", null);
   });
 
-  it("should resolve with the error and invalidate the repo queries on failure", async () => {
+  it("should resolve with the error on failure", async () => {
     const missing: AppError = { kind: "branchNotFound", message: "no branch named origin/x" };
     vi.mocked(setBranchUpstream).mockRejectedValue(missing);
-    const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHookWithProviders(() => useBranchActions(4));
     const out = await run(() => result.current, {
       action: "setUpstream",
       name: "topic",
       upstream: "origin/x",
     });
     expect(out).toEqual(missing);
-    await waitFor(() => expect(spy).toHaveBeenCalled());
   });
 });

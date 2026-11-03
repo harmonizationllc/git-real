@@ -196,4 +196,16 @@ describe("UpstreamDialog cancel and focus", () => {
     rerender({ pending: false, error });
     expect(select()).toHaveFocus();
   });
+
+  it("should keep a selected name in the options after a refetch drops it", async () => {
+    const error: AppError = { kind: "branchNotFound", message: "no branch named origin/topic" };
+    const { user, rerender } = renderDialog({
+      current: null,
+      candidates: ["origin/main", "origin/topic"],
+    });
+    await user.selectOptions(select(), "origin/topic");
+    rerender({ candidates: ["origin/main"], error });
+    expect(select()).toHaveValue("origin/topic");
+    expect(screen.getByRole("option", { name: "origin/topic" })).toBeInTheDocument();
+  });
 });

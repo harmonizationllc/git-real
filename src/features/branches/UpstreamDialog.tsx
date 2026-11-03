@@ -9,7 +9,7 @@ export interface UpstreamDialogProps {
   branch: string;
   /** Its current upstream short name (`origin/main`), or null. */
   current: string | null;
-  /** Remote-tracking short names to offer, already sorted. */
+  /** Remote-tracking short names to offer, in display order. */
   candidates: string[];
   error: AppError | null;
   pending: boolean;
@@ -50,9 +50,12 @@ export function UpstreamDialog({
     else if (error !== null) (selectRef.current as HTMLSelectElement).focus();
   }, [pending, error]);
 
-  // An upstream whose remote branch is gone is not a candidate but must stay selectable.
-  const options =
-    current !== null && !candidates.includes(current) ? [...candidates, current] : candidates;
+  // The current upstream and the selection stay selectable even when no longer a candidate
+  // (gone remote branch, or one pruned after a failed save), so the select shows what Save sends.
+  const options = [...candidates];
+  for (const keep of [current, selected]) {
+    if (keep !== null && keep !== "" && !options.includes(keep)) options.push(keep);
+  }
   const unchanged = selected === (current ?? "");
 
   const onSubmit = (e: FormEvent) => {
