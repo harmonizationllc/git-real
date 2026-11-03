@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { buildRows, type DiffRow } from "./model/rows";
 import type { HighlightMap } from "./model/highlight";
 import { UnifiedRow } from "./UnifiedRow";
-import type { UseLineSelection } from "./useLineSelection";
+import type { RowTint } from "./useTextRange";
+import lineStyles from "./LineContent.module.css";
 
 // Line indices: 0 context, 1 deletion (partner 2), 2 addition (partner 1), 3 lone addition.
 const diff = fileDiff([
@@ -19,36 +20,28 @@ const rows = buildRows(diff, "unified");
 
 function setup(
   lineIndex: number,
-  over: {
-    highlight?: HighlightMap | null;
-    selection?: UseLineSelection;
-    onGutterClick?: ((hunk: number, line: number, shift: boolean) => void) | null;
-  } = {},
+  over: { highlight?: HighlightMap | null; tint?: RowTint | null } = {},
 ) {
   const row = rows.find(
     (r): r is Extract<DiffRow, { kind: "unified" }> =>
       r.kind === "unified" && r.lineIndex === lineIndex,
   )!;
-  const onGutterClick = over.onGutterClick === null ? undefined : (over.onGutterClick ?? vi.fn());
   const view = render(
     <UnifiedRow
       diff={diff}
       row={row}
       highlight={over.highlight ?? null}
-      selection={over.selection}
-      onGutterClick={onGutterClick}
+      tint={over.tint ?? null}
     />,
   );
   const root = view.container.firstElementChild as HTMLElement;
-  return { ...view, root, onGutterClick };
+  return { ...view, root };
 }
 
-const selecting = (hunkIndex: number | null, ...lines: number[]): UseLineSelection => ({
-  selected: new Set(lines),
-  hunkIndex,
-  click: vi.fn(),
-  clear: vi.fn(),
-});
+const selectedText = (el: HTMLElement) =>
+  Array.from(el.querySelectorAll(`.${lineStyles.selected}`))
+    .map((e) => e.textContent)
+    .join("");
 
 // Contract: gutters show the old and new line numbers that apply to the line.
 describe("UnifiedRow gutters", () => {
@@ -89,106 +82,6 @@ describe("UnifiedRow gutters", () => {
   it("should not use the row role", () => {
     setup(1);
     expect(screen.queryByRole("row")).toBeNull();
-  });
-});
-
-// Contract: only changed lines are selectable, one control per line, on the gutter showing its number.
-describe("UnifiedRow selection controls", () => {
-  it("should render a deletion gutter as an unpressed button named for the removed line", () => {
-    setup(1);
-    expect(screen.getByRole("button", { name: "Select removed line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-
-  it("should render an addition gutter as an unpressed button named for the added line", () => {
-    setup(2);
-    expect(screen.getByRole("button", { name: "Select added line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-
-  it("should put a deletion's button in the first gutter", () => {
-    const { root } = setup(1);
-    expect(within(root.children[0] as HTMLElement).getByRole("button")).toBeInTheDocument();
-  });
-
-  it("should put an addition's button in the second gutter", () => {
-    const { root } = setup(2);
-    expect(within(root.children[1] as HTMLElement).getByRole("button")).toBeInTheDocument();
-  });
-
-  it("should render exactly one button per changed line", () => {
-    setup(1);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-  });
-
-  it("should render no button for a context line", () => {
-    setup(0);
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("should render no button when onGutterClick is absent", () => {
-    setup(1, { onGutterClick: null });
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("should still show the line number when onGutterClick is absent", () => {
-    expect(setup(1, { onGutterClick: null }).root.children[0]).toHaveTextContent(/^2$/);
-  });
-});
-
-// Contract: clicking a gutter reports hunk index, line index and the shift state.
-describe("UnifiedRow gutter clicks", () => {
-  it("should call onGutterClick with the hunk, line and shift false when clicked", () => {
-    const { onGutterClick } = setup(1);
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    expect(onGutterClick).toHaveBeenCalledWith(0, 1, false);
-  });
-
-  it("should call onGutterClick with shift true when clicked with shift held", () => {
-    const { onGutterClick } = setup(2);
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }), {
-      shiftKey: true,
-    });
-    expect(onGutterClick).toHaveBeenCalledWith(0, 2, true);
-  });
-
-  it("should call onGutterClick once per click", () => {
-    const { onGutterClick } = setup(1);
-    fireEvent.click(screen.getByRole("button"));
-    expect(onGutterClick).toHaveBeenCalledTimes(1);
-  });
-});
-
-// Contract: a line in the selection of its own hunk is pressed and marked selected.
-describe("UnifiedRow selected state", () => {
-  it("should press the button when the line is selected in this hunk", () => {
-    setup(1, { selection: selecting(0, 1) });
-    expect(screen.getByRole("button")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("should mark the row data-selected when the line is selected", () => {
-    expect(setup(1, { selection: selecting(0, 1) }).root).toHaveAttribute("data-selected", "true");
-  });
-
-  it("should not press the button when another line is selected", () => {
-    setup(1, { selection: selecting(0, 2) });
-    expect(screen.getByRole("button")).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("should not mark the row selected when the selection is in another hunk", () => {
-    expect(setup(1, { selection: selecting(1, 1) }).root).not.toHaveAttribute("data-selected");
-  });
-
-  it("should not mark the row selected when nothing is selected", () => {
-    expect(setup(1, { selection: selecting(null) }).root).not.toHaveAttribute("data-selected");
-  });
-
-  it("should not mark the row selected when there is no selection prop", () => {
-    expect(setup(1).root).not.toHaveAttribute("data-selected");
   });
 });
 
@@ -260,40 +153,90 @@ describe("UnifiedRow content", () => {
   });
 });
 
-// Contract: a context line can never be selected through the row, even if the selection names it.
-describe("UnifiedRow selected context line", () => {
-  it("should render no button for a context line named by the selection", () => {
-    setup(0, { selection: selecting(0, 0) });
+// Contract: the gutters are plain cells; nothing in a row is a control.
+describe("UnifiedRow plain gutters", () => {
+  it.each([0, 1, 2, 3])("should render no button for line %i", (lineIndex) => {
+    setup(lineIndex);
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("should still show both numbers for a context line named by the selection", () => {
-    const { root } = setup(0, { selection: selecting(0, 0) });
-    expect(root.children[0]).toHaveTextContent(/^1$/);
-    expect(root.children[1]).toHaveTextContent(/^1$/);
-  });
-
-  it("should not call onGutterClick when a context line's gutter is clicked", () => {
-    const { onGutterClick, root } = setup(0);
-    fireEvent.click(root.children[0]);
-    fireEvent.click(root.children[1]);
-    expect(onGutterClick).not.toHaveBeenCalled();
+  it("should render both gutters as spans", () => {
+    const { root } = setup(1);
+    expect(root.children[0].tagName).toBe("SPAN");
+    expect(root.children[1].tagName).toBe("SPAN");
   });
 });
 
-// Contract: shift is reported from the click on either kind of gutter, and plain clicks stay false.
-describe("UnifiedRow shift-click", () => {
-  it("should report shift true for a shift-click on a deletion", () => {
-    const { onGutterClick } = setup(1);
-    fireEvent.click(screen.getByRole("button"), { shiftKey: true });
-    expect(onGutterClick).toHaveBeenCalledExactlyOnceWith(0, 1, true);
+// Contract: the row element carries data-side, old for a deletion and new for everything else.
+describe("UnifiedRow data-side", () => {
+  it("should mark a deletion row as the old side", () => {
+    expect(setup(1).root).toHaveAttribute("data-side", "old");
   });
 
-  it("should report shift false for a plain click that follows a shift-click", () => {
-    const { onGutterClick } = setup(2);
-    fireEvent.click(screen.getByRole("button"), { shiftKey: true });
-    fireEvent.click(screen.getByRole("button"));
-    expect(onGutterClick).toHaveBeenNthCalledWith(1, 0, 2, true);
-    expect(onGutterClick).toHaveBeenNthCalledWith(2, 0, 2, false);
+  it("should mark an addition row as the new side", () => {
+    expect(setup(2).root).toHaveAttribute("data-side", "new");
+  });
+
+  it("should mark a context row as the new side", () => {
+    expect(setup(0).root).toHaveAttribute("data-side", "new");
+  });
+});
+
+// Contract: the tint reaches LineContent as { start: from ?? 0, end: to ?? text.length }, and a
+// tinted row carries data-selected.
+describe("UnifiedRow tint", () => {
+  it("should select from the tint's from to the end of the line when to is null", () => {
+    const { root } = setup(2, { tint: { side: "new", from: 3, to: null } });
+    expect(selectedText(root)).toBe("st b = 1");
+  });
+
+  it("should select from the start of the line to the tint's to when from is null", () => {
+    const { root } = setup(2, { tint: { side: "new", from: null, to: 4 } });
+    expect(selectedText(root)).toBe("cons");
+  });
+
+  it("should select between from and to when both are set", () => {
+    const { root } = setup(2, { tint: { side: "new", from: 6, to: 7 } });
+    expect(selectedText(root)).toBe("b");
+  });
+
+  it("should select the whole line when from and to are both null", () => {
+    const { root } = setup(2, { tint: { side: "new", from: null, to: null } });
+    expect(selectedText(root)).toBe("const b = 1");
+  });
+
+  it("should apply the offsets on a deletion row tinted on the old side", () => {
+    const { root } = setup(1, { tint: { side: "old", from: 6, to: null } });
+    expect(selectedText(root)).toBe("a = 1");
+  });
+
+  it("should apply the offsets on a context row whatever the side", () => {
+    const { root } = setup(0, { tint: { side: "old", from: 1, to: null } });
+    expect(selectedText(root)).toBe("eep");
+  });
+
+  it("should tint a deletion row whole when the range is on the new side", () => {
+    const { root } = setup(1, { tint: { side: "new", from: 6, to: null } });
+    expect(selectedText(root)).toBe("const a = 1");
+  });
+
+  it("should tint an addition row whole when the range is on the old side", () => {
+    const { root } = setup(2, { tint: { side: "old", from: null, to: 4 } });
+    expect(selectedText(root)).toBe("const b = 1");
+  });
+
+  it("should mark a tinted row data-selected", () => {
+    expect(setup(2, { tint: { side: "new", from: 3, to: null } }).root).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
+
+  it("should not mark an untinted row data-selected", () => {
+    expect(setup(2).root).not.toHaveAttribute("data-selected");
+  });
+
+  it("should select nothing without a tint", () => {
+    expect(setup(2).root.querySelector(`.${lineStyles.selected}`)).toBeNull();
   });
 });

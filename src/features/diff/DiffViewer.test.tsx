@@ -1,13 +1,16 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { DiffScope } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/ipc";
-import { fileDiff, hunk, L } from "../../test/diffFixtures";
-import { DiffViewer } from "./DiffViewer";
+import { createRef } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DiffMode, FileDiff } from "../../lib/ipc";
+import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
+import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
+import type { CaretHit, CaretResolver } from "./caretResolver";
+import { DiffViewer, type DiffViewerHandle } from "./DiffViewer";
+import lineStyles from "./LineContent.module.css";
 import type { HighlightMap } from "./model/highlight";
-import { buildRows } from "./model/rows";
-import type { UseLineSelection } from "./useLineSelection";
+import { buildRows, type DiffRow } from "./model/rows";
+import type { MenuTarget } from "./model/selection";
 
 // Wrapped in a spy so tests can read the options DiffViewer hands the virtualizer.
 vi.mock("@tanstack/react-virtual", async () => {
@@ -16,79 +19,130 @@ vi.mock("@tanstack/react-virtual", async () => {
 });
 
 // Hunk 0: context, deletion, addition (an edited pair). Hunk 1: lone addition, context.
-const lines0 = [
-  L("context", "keep", 1, 1),
-  L("deletion", "old text", 2, null),
-  L("addition", "new text", null, 2),
-];
-const lines1 = [L("addition", "tail", null, 10), L("context", "end", 10, 11)];
-const diffOf = (scope: DiffScope = "unstaged") =>
-  fileDiff([hunk(lines0, "@@ -1,2 +1,2 @@"), hunk(lines1, "@@ -10,1 +10,2 @@")], { scope });
-const diff = diffOf();
+const twoHunks = fileDiff([
+  hunk(
+    [
+      L("context", "keep", 1, 1),
+      L("deletion", "old text", 2, null),
+      L("addition", "new text", null, 2),
+    ],
+    "@@ -1,2 +1,2 @@",
+  ),
+  hunk([L("addition", "tail", null, 10), L("context", "end", 10, 11)], "@@ -10,1 +10,2 @@"),
+]);
 
-const selecting = (hunkIndex: number | null, ...lines: number[]): UseLineSelection => ({
-  selected: new Set(lines),
-  hunkIndex,
-  click: vi.fn(),
-  clear: vi.fn(),
+// Unified rows: ctx0, del1 "one two three", del2 "four five six", del3 "seven eight nine",
+// add4 "one two THREE", add5 "FOUR FIVE SIX", add6 "SEVEN eight NINE", ctx7.
+// Split rows: ctx0, {1,4}, {2,5}, {3,6}, ctx4.
+const three = threePairDiff();
+
+// The scripted resolver answers by clientX only.
+const hits = new Map<number, CaretHit>();
+const resolveCaret = vi.fn<CaretResolver>((x) => hits.get(x) ?? null);
+
+const writeText = vi.fn<(text: string) => Promise<void>>();
+let clipboardDescriptor: PropertyDescriptor | undefined;
+
+beforeEach(() => {
+  hits.clear();
+  resolveCaret.mockClear();
+  scrollToIndex.mockClear();
+  mockWindow.size = Infinity;
+  mockWindow.start = 0;
+  mockWindow.visibleStart = null;
+  writeText.mockReset();
+  writeText.mockResolvedValue(undefined);
+  clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
 });
 
-function setup(
-  over: {
-    mode?: DiffMode;
-    highlight?: HighlightMap | null;
-    selection?: UseLineSelection;
-    hunkAction?: boolean;
-    reason?: string;
-    diff?: ReturnType<typeof diffOf>;
-  } = {},
-) {
-  const onHunkAction = vi.fn();
+afterEach(() => {
+  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+  else delete (navigator as unknown as Record<string, unknown>).clipboard;
+});
+
+interface Over {
+  diff?: FileDiff;
+  rows?: DiffRow[];
+  mode?: DiffMode;
+  highlight?: HighlightMap | null;
+  onContextMenu?: ((target: MenuTarget, x: number, y: number) => void) | null;
+  onMounted?: () => void;
+}
+
+function setup(over: Over = {}) {
+  const diff = over.diff ?? three;
+  const mode = over.mode ?? "unified";
+  const rows = over.rows ?? buildRows(diff, mode);
+  const onContextMenu = over.onContextMenu === null ? undefined : (over.onContextMenu ?? vi.fn());
+  const ref = createRef<DiffViewerHandle>();
   const view = render(
     <DiffViewer
-      diff={over.diff ?? diff}
-      mode={over.mode ?? "unified"}
+      ref={ref}
+      diff={diff}
+      rows={rows}
+      mode={mode}
       highlight={over.highlight ?? null}
-      selection={over.selection}
-      onHunkAction={over.hunkAction === false ? undefined : onHunkAction}
-      actionsDisabledReason={over.reason}
+      onContextMenu={onContextMenu}
+      onMounted={over.onMounted}
+      resolveCaret={resolveCaret}
     />,
   );
-  return { ...view, onHunkAction };
+  const scroll = screen.getByTestId("diff-scroll");
+  const rect = {
+    top: 0,
+    bottom: 1000,
+    left: 0,
+    right: 1000,
+    width: 1000,
+    height: 1000,
+    x: 0,
+    y: 0,
+  };
+  scroll.getBoundingClientRect = () => ({ ...rect, toJSON: () => rect }) as DOMRect;
+  scroll.setPointerCapture = vi.fn();
+  scroll.releasePointerCapture = vi.fn();
+  scroll.scrollBy = vi.fn() as unknown as typeof scroll.scrollBy;
+  return { ...view, ref, rows, scroll, onContextMenu };
+}
+
+/** The row element (unified row or split row) inside the virtual item for `index`. */
+const rowEl = (container: HTMLElement, index: number) =>
+  container.querySelector<HTMLElement>(`[data-index="${index}"]`)!.firstElementChild as HTMLElement;
+
+const pointer = (button = 0, x = 0) => ({ button, clientX: x, clientY: 50, pointerId: 1 });
+
+/** Drags from the hit scripted at x 10 to the hit scripted at x 20. */
+function drag(scroll: HTMLElement, from: CaretHit, to: CaretHit) {
+  hits.set(10, from);
+  hits.set(20, to);
+  fireEvent.pointerDown(scroll, pointer(0, 10));
+  fireEvent.pointerMove(scroll, pointer(0, 20));
+  fireEvent.pointerUp(scroll, pointer(0, 20));
 }
 
 const kinds = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("[data-kind]")).map((e) => e.getAttribute("data-kind"));
 
-// Contract: every row of buildRows is rendered in order, unified or split by mode.
+const selectedRows = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll("[data-index]"))
+    .filter((w) => w.querySelector("[data-selected]") !== null)
+    .map((w) => Number(w.getAttribute("data-index")));
+
+// Contract: the viewer renders exactly the rows it is given, in order, with no hunk headers.
 describe("DiffViewer rows", () => {
-  it("should render headers then lines in order in unified mode", () => {
-    const { container } = setup({ mode: "unified" });
-    expect(kinds(container)).toEqual([
-      "header",
-      "context",
-      "deletion",
-      "addition",
-      "header",
-      "addition",
-      "context",
-    ]);
+  it("should render lines in order with no header rows in unified mode", () => {
+    const { container } = setup({ diff: twoHunks });
+    expect(kinds(container)).toEqual(["context", "deletion", "addition", "addition", "context"]);
   });
 
-  it("should render one row element per buildRows row in unified mode", () => {
-    const { container } = setup({ mode: "unified" });
-    expect(kinds(container)).toHaveLength(buildRows(diff, "unified").length);
-  });
-
-  it("should render side by side cells in split mode", () => {
-    const { container } = setup({ mode: "split" });
+  it("should render side by side cells with no header rows in split mode", () => {
+    const { container } = setup({ diff: twoHunks, mode: "split" });
     expect(kinds(container)).toEqual([
-      "header",
       "context",
       "context",
       "deletion",
       "addition",
-      "header",
       "empty",
       "addition",
       "context",
@@ -96,25 +150,40 @@ describe("DiffViewer rows", () => {
     ]);
   });
 
-  it("should render an empty cell only in split mode", () => {
-    const { container } = setup({ mode: "unified" });
-    expect(container.querySelector('[data-kind="empty"]')).toBeNull();
+  it("should not render hunk header text", () => {
+    setup({ diff: twoHunks });
+    expect(screen.queryByText("@@ -1,2 +1,2 @@")).toBeNull();
+    expect(screen.queryByText("@@ -10,1 +10,2 @@")).toBeNull();
+  });
+
+  it("should render only the rows it is given", () => {
+    const rows = buildRows(twoHunks, "unified").slice(0, 2);
+    const { container } = setup({ diff: twoHunks, rows });
+    expect(kinds(container)).toEqual(["context", "deletion"]);
+  });
+
+  it("should give each virtual item its row index", () => {
+    const { container } = setup();
+    const indices = Array.from(container.querySelectorAll("[data-index]")).map((e) =>
+      e.getAttribute("data-index"),
+    );
+    expect(indices).toEqual(["0", "1", "2", "3", "4", "5", "6", "7"]);
+  });
+
+  it("should render no rows for an empty rows list", () => {
+    const { container } = setup({ diff: fileDiff([]), rows: [] });
+    expect(kinds(container)).toEqual([]);
   });
 
   it("should render every line's text", () => {
-    setup({ mode: "unified" });
+    setup({ diff: twoHunks });
+    // The edited pair's words are split by word marks, so only unpaired lines are whole text nodes.
     for (const text of ["keep", "tail", "end"]) expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it("should render the header text of every hunk", () => {
-    setup();
-    expect(screen.getByText("@@ -1,2 +1,2 @@")).toBeInTheDocument();
-    expect(screen.getByText("@@ -10,1 +10,2 @@")).toBeInTheDocument();
-  });
-
-  it("should render a diff without hunks as no rows", () => {
-    const { container } = setup({ diff: fileDiff([]) });
-    expect(kinds(container)).toEqual([]);
+  it("should render no buttons", () => {
+    setup({ diff: twoHunks });
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
   it("should not use the row role", () => {
@@ -123,7 +192,7 @@ describe("DiffViewer rows", () => {
   });
 });
 
-// Contract: the viewer is a named region with a scroll container.
+// Contract: the viewer is a named region with a focusable (tabIndex -1) scroll container.
 describe("DiffViewer landmarks", () => {
   it("should expose a region named Diff", () => {
     setup();
@@ -135,145 +204,262 @@ describe("DiffViewer landmarks", () => {
     const region = screen.getByRole("region", { name: "Diff" });
     expect(within(region).getByTestId("diff-scroll")).toBeInTheDocument();
   });
+
+  it("should give the scroll container tabIndex -1", () => {
+    const { scroll } = setup();
+    expect(scroll).toHaveAttribute("tabindex", "-1");
+  });
 });
 
-// Contract: gutter clicks route to selection.click and need a selection to be live.
-describe("DiffViewer gutters", () => {
-  it("should route a gutter click to selection.click", () => {
-    const selection = selecting(null);
-    setup({ selection });
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    expect(selection.click).toHaveBeenCalledWith(0, 1, false);
+// Contract: a primary-button drag on the scroll container focuses it, captures the pointer and
+// tints the rows of the range; Escape or new rows clear it.
+describe("DiffViewer text range", () => {
+  it("should focus the scroll container on pointerdown", () => {
+    const { scroll } = setup();
+    hits.set(10, { row: 1, side: "old", offset: 4 });
+    fireEvent.pointerDown(scroll, pointer(0, 10));
+    expect(document.activeElement).toBe(scroll);
   });
 
-  it("should pass shift through to selection.click", () => {
-    const selection = selecting(null);
-    setup({ selection });
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }), {
-      shiftKey: true,
-    });
-    expect(selection.click).toHaveBeenCalledWith(0, 2, true);
+  it("should capture the pointer on the scroll container", () => {
+    const { scroll } = setup();
+    hits.set(10, { row: 1, side: "old", offset: 4 });
+    fireEvent.pointerDown(scroll, pointer(0, 10));
+    expect(scroll.setPointerCapture).toHaveBeenCalledExactlyOnceWith(1);
   });
 
-  it("should route a click in a later hunk with that hunk's index", () => {
-    const selection = selecting(null);
-    setup({ selection });
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 10" }));
-    expect(selection.click).toHaveBeenCalledWith(1, 0, false);
+  it("should mark the rows of the range data-selected", () => {
+    const { container, scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    expect(selectedRows(container)).toEqual([1, 2, 3]);
   });
 
-  it("should route split gutter clicks to selection.click", () => {
-    const selection = selecting(null);
-    setup({ selection, mode: "split" });
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    expect(selection.click).toHaveBeenCalledWith(0, 1, false);
+  it("should tint the first row from its offset, the interior whole and the last to its offset", () => {
+    const { container, scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    const tinted = (i: number) =>
+      Array.from(rowEl(container, i).querySelectorAll(`.${lineStyles.selected}`))
+        .map((e) => e.textContent)
+        .join("");
+    expect(tinted(1)).toBe("two three");
+    expect(tinted(2)).toBe("four five six");
+    expect(tinted(3)).toBe("seven");
+    expect(tinted(0)).toBe("");
+    expect(tinted(4)).toBe("");
   });
 
-  it("should press the gutter of a selected line", () => {
-    setup({ selection: selecting(0, 1) });
-    expect(screen.getByRole("button", { name: "Select removed line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+  it("should tint only the cells on the range's side in split mode", () => {
+    const { container, scroll } = setup({ mode: "split" });
+    drag(scroll, { row: 1, side: "new", offset: 4 }, { row: 2, side: "new", offset: 4 });
+    const cells = container.querySelectorAll("[data-selected]");
+    expect(Array.from(cells).map((c) => c.getAttribute("data-side"))).toEqual(["new", "new"]);
+  });
+
+  it("should clear the range on Escape", () => {
+    const { container, scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "Escape" });
+    expect(selectedRows(container)).toEqual([]);
+  });
+
+  it("should clear the range when new rows arrive", () => {
+    const { container, scroll, rerender } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    rerender(
+      <DiffViewer
+        diff={three}
+        rows={buildRows(three, "unified")}
+        mode="unified"
+        highlight={null}
+        resolveCaret={resolveCaret}
+      />,
     );
+    expect(selectedRows(container)).toEqual([]);
   });
 
-  it("should render no gutter buttons without a selection", () => {
-    setup({ hunkAction: false });
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-});
-
-// Contract: hunk buttons send the hunk index and the sorted selected lines of that hunk only.
-describe("DiffViewer hunk actions", () => {
-  it("should send the whole first hunk when Stage hunk is clicked there", () => {
-    const { onHunkAction } = setup();
-    fireEvent.click(screen.getAllByRole("button", { name: "Stage hunk" })[0]);
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: null });
-  });
-
-  it("should send the second hunk's index from its own header", () => {
-    const { onHunkAction } = setup();
-    fireEvent.click(screen.getAllByRole("button", { name: "Stage hunk" })[1]);
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 1, lines: null });
-  });
-
-  it("should send the selected lines sorted ascending", () => {
-    const { onHunkAction } = setup({ selection: selecting(0, 2, 1) });
-    fireEvent.click(screen.getByRole("button", { name: "Stage 2 lines" }));
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: [1, 2] });
-  });
-
-  it("should send discard with the selected lines", () => {
-    const { onHunkAction } = setup({ selection: selecting(0, 1) });
-    fireEvent.click(screen.getByRole("button", { name: "Discard 1 line…" }));
-    expect(onHunkAction).toHaveBeenCalledWith("discard", { hunkIndex: 0, lines: [1] });
-  });
-
-  it("should send unstage for a staged diff", () => {
-    const { onHunkAction } = setup({ diff: diffOf("staged") });
-    fireEvent.click(screen.getAllByRole("button", { name: "Unstage hunk" })[0]);
-    expect(onHunkAction).toHaveBeenCalledWith("unstage", { hunkIndex: 0, lines: null });
-  });
-
-  it("should keep the whole-hunk labels on hunks without the selection", () => {
-    setup({ selection: selecting(0, 1, 2) });
-    expect(screen.getAllByRole("button", { name: "Stage hunk" })).toHaveLength(1);
-  });
-
-  it("should not apply a selection in another hunk to this hunk's buttons", () => {
-    const { onHunkAction } = setup({ selection: selecting(1, 0) });
-    fireEvent.click(screen.getAllByRole("button", { name: "Stage hunk" })[0]);
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: null });
-  });
-
-  it("should treat an empty selection in the hunk as the whole hunk", () => {
-    const { onHunkAction } = setup({ selection: selecting(0) });
-    fireEvent.click(screen.getAllByRole("button", { name: "Stage hunk" })[0]);
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: null });
-  });
-
-  it("should send the whole hunk when no selection is given", () => {
-    const { onHunkAction } = setup({ selection: undefined });
-    fireEvent.click(screen.getAllByRole("button", { name: "Discard hunk…" })[1]);
-    expect(onHunkAction).toHaveBeenCalledWith("discard", { hunkIndex: 1, lines: null });
+  it("should leave no range after a click without a drag", () => {
+    const { container, scroll } = setup();
+    hits.set(10, { row: 1, side: "old", offset: 4 });
+    fireEvent.pointerDown(scroll, pointer(0, 10));
+    fireEvent.pointerUp(scroll, pointer(0, 10));
+    expect(selectedRows(container)).toEqual([]);
   });
 });
 
-// Contract: actionsDisabledReason reaches every header's buttons.
-describe("DiffViewer disabled actions", () => {
-  it("should disable every hunk button when a reason is given", () => {
-    setup({ reason: "Not now" });
-    const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(4);
-    for (const b of buttons) expect(b).toBeDisabled();
+// Contract: Ctrl+C or Cmd+C with a range copies exactly the covered text and prevents the
+// default; with no range the key is left alone.
+describe("DiffViewer copy", () => {
+  it("should copy a unified range that crosses from an addition row into a deletion row", () => {
+    const { scroll } = setup();
+    // side new, anchor row 4 offset 8, focus row 2 offset 4:
+    // "four five six".slice(4) + "seven eight nine" + "one two THREE".slice(0, 8).
+    drag(scroll, { row: 4, side: "new", offset: 8 }, { row: 2, side: "new", offset: 4 });
+    const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(" five six\nseven eight nine\none two ");
+    expect(notPrevented).toBe(false);
   });
 
-  it("should set the reason as the title of every hunk button", () => {
-    setup({ reason: "Not now" });
-    for (const b of screen.getAllByRole("button")) expect(b).toHaveAttribute("title", "Not now");
+  it("should copy with Cmd+C", () => {
+    const { scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    const notPrevented = fireEvent.keyDown(scroll, { key: "c", metaKey: true });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
+    expect(notPrevented).toBe(false);
   });
 
-  it("should leave the buttons enabled without a reason", () => {
-    setup();
-    for (const b of screen.getAllByRole("button")) expect(b).toBeEnabled();
+  it("should copy the old side of a split range", () => {
+    const { scroll } = setup({ mode: "split" });
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
+  });
+
+  it("should copy the new side of a split range", () => {
+    const { scroll } = setup({ mode: "split" });
+    drag(scroll, { row: 2, side: "new", offset: 5 }, { row: 1, side: "new", offset: 8 });
+    fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("THREE\nFOUR ");
+  });
+
+  it("should neither copy nor prevent the default without a range", () => {
+    const { scroll } = setup();
+    const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
+
+  it("should not copy after Escape cleared the range", () => {
+    const { scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "Escape" });
+    const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
+
+  it("should not copy on a plain c", () => {
+    const { scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    const notPrevented = fireEvent.keyDown(scroll, { key: "c" });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
   });
 });
 
-// Contract: without onHunkAction the viewer is read-only for hunks.
-describe("DiffViewer read-only", () => {
-  it("should render no hunk buttons without onHunkAction", () => {
-    setup({ hunkAction: false });
-    expect(screen.queryByRole("button", { name: /hunk/ })).toBeNull();
+// Contract: a right-click reports the range when one exists, else the row under the pointer, with
+// the pointer coordinates, and prevents the default; without onContextMenu it does nothing.
+describe("DiffViewer context menu", () => {
+  it("should report the row under the pointer when there is no range", () => {
+    const { container, onContextMenu } = setup();
+    const notPrevented = fireEvent.contextMenu(rowEl(container, 2), { clientX: 30, clientY: 40 });
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith({ kind: "row", row: 2 }, 30, 40);
+    expect(notPrevented).toBe(false);
   });
 
-  it("should still render gutter buttons when a selection is given", () => {
-    setup({ hunkAction: false, selection: selecting(null) });
-    expect(screen.getByRole("button", { name: "Select removed line 2" })).toBeInTheDocument();
+  it("should report the row when the right-click lands on the line text", () => {
+    const { container, onContextMenu } = setup();
+    const code = rowEl(container, 5).querySelector("code")!;
+    fireEvent.contextMenu(code, { clientX: 31, clientY: 41 });
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith({ kind: "row", row: 5 }, 31, 41);
   });
 
-  it("should render the rows without onHunkAction", () => {
-    setup({ hunkAction: false });
-    expect(screen.getByText("keep")).toBeInTheDocument();
+  it("should report a split row by its index", () => {
+    const { container, onContextMenu } = setup({ mode: "split" });
+    fireEvent.contextMenu(rowEl(container, 3), { clientX: 5, clientY: 6 });
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith({ kind: "row", row: 3 }, 5, 6);
+  });
+
+  it("should report the range when one exists, after the right button's pointerdown", () => {
+    const { container, scroll, onContextMenu } = setup();
+    drag(scroll, { row: 4, side: "new", offset: 8 }, { row: 2, side: "new", offset: 4 });
+    hits.set(30, { row: 6, side: "new", offset: 1 });
+    fireEvent.pointerDown(scroll, pointer(2, 30));
+    const notPrevented = fireEvent.contextMenu(rowEl(container, 6), { clientX: 30, clientY: 50 });
+    expect(onContextMenu).toHaveBeenCalledExactlyOnceWith(
+      {
+        kind: "range",
+        range: { side: "new", anchor: { row: 4, offset: 8 }, focus: { row: 2, offset: 4 } },
+      },
+      30,
+      50,
+    );
+    expect(notPrevented).toBe(false);
+  });
+
+  it("should not report anything for a right-click outside every row without a range", () => {
+    const { scroll, onContextMenu } = setup();
+    fireEvent.contextMenu(scroll, { clientX: 1, clientY: 2 });
+    expect(onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("should not prevent the default without onContextMenu", () => {
+    const { container } = setup({ onContextMenu: null });
+    const notPrevented = fireEvent.contextMenu(rowEl(container, 2), { clientX: 30, clientY: 40 });
+    expect(notPrevented).toBe(true);
+  });
+
+  it("should not prevent the default without onContextMenu even with a range", () => {
+    const { container, scroll } = setup({ onContextMenu: null });
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    const notPrevented = fireEvent.contextMenu(rowEl(container, 2), { clientX: 30, clientY: 40 });
+    expect(notPrevented).toBe(true);
+  });
+});
+
+// Contract: the ref handle scrolls a row to the top and reports the first visible row.
+describe("DiffViewer handle", () => {
+  it("should scroll a row to the start on scrollToRow", () => {
+    const { ref } = setup();
+    ref.current!.scrollToRow(7);
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(7, { align: "start" });
+  });
+
+  it("should report the virtualizer's first visible row", () => {
+    mockWindow.visibleStart = 5;
+    const { ref } = setup();
+    expect(ref.current!.firstVisibleRow()).toBe(5);
+  });
+
+  it("should report row 0 when the list is at the top", () => {
+    const { ref } = setup();
+    expect(ref.current!.firstVisibleRow()).toBe(0);
+  });
+
+  it("should report row 0 when nothing is rendered", () => {
+    const { ref } = setup({ diff: fileDiff([]), rows: [] });
+    expect(ref.current!.firstVisibleRow()).toBe(0);
+  });
+});
+
+// Contract: onMounted fires exactly once per mount, not on re-renders.
+describe("DiffViewer onMounted", () => {
+  it("should call onMounted once after the first render", () => {
+    const onMounted = vi.fn();
+    setup({ onMounted });
+    expect(onMounted).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not call onMounted again on a re-render", () => {
+    const onMounted = vi.fn();
+    const { rows, rerender } = setup({ onMounted });
+    rerender(
+      <DiffViewer
+        diff={three}
+        rows={rows}
+        mode="unified"
+        highlight={new Map()}
+        onMounted={onMounted}
+        resolveCaret={resolveCaret}
+      />,
+    );
+    expect(onMounted).toHaveBeenCalledTimes(1);
+  });
+
+  it("should call onMounted again for a new mount", () => {
+    const onMounted = vi.fn();
+    setup({ onMounted }).unmount();
+    setup({ onMounted });
+    expect(onMounted).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -283,17 +469,18 @@ describe("DiffViewer highlighting", () => {
     const highlight: HighlightMap = new Map([
       [1, [[{ text: "tail", className: "tok-number" }], null]],
     ]);
-    setup({ highlight });
+    setup({ diff: twoHunks, highlight });
     expect(screen.getByText("tail")).toHaveClass("tok-number");
   });
 
   it("should render plain text when the highlight map is null", () => {
-    const { container } = setup({ highlight: null });
+    const { container } = setup({ diff: twoHunks, highlight: null });
     expect(container.querySelector("[class*='tok-']")).toBeNull();
   });
 });
 
-// Contract: the virtualizer keys rows by buildRows' own key, so measured heights follow rows.
+// Contract: the virtualizer counts the given rows and keys them by their own key, so measured
+// heights follow rows.
 describe("DiffViewer virtualizer options", () => {
   const lastOptions = () => {
     const calls = vi.mocked(useVirtualizer).mock.calls;
@@ -306,155 +493,19 @@ describe("DiffViewer virtualizer options", () => {
   it.each<DiffMode>(["unified", "split"])(
     "should key every %s row by the key buildRows gave it",
     (mode) => {
-      setup({ mode });
-      const rows = buildRows(diff, mode);
+      const { rows } = setup({ diff: twoHunks, mode });
       const { getItemKey, count } = lastOptions();
       expect(count).toBe(rows.length);
       rows.forEach((row, i) => expect(getItemKey(i)).toBe(row.key));
     },
   );
 
-  it("should give every row a distinct key", () => {
-    setup({ mode: "split" });
+  it("should key the new rows after the rows change", () => {
+    const { rerender } = setup({ diff: twoHunks, mode: "unified" });
+    const split = buildRows(twoHunks, "split");
+    rerender(<DiffViewer diff={twoHunks} rows={split} mode="split" highlight={null} />);
     const { getItemKey, count } = lastOptions();
-    const keys = Array.from({ length: count }, (_, i) => getItemKey(i));
-    expect(new Set(keys).size).toBe(count);
-  });
-
-  it("should key the rows of the new mode after the mode changes", () => {
-    const { rerender } = setup({ mode: "unified" });
-    rerender(<DiffViewer diff={diff} mode="split" highlight={null} />);
-    const { getItemKey, count } = lastOptions();
-    expect(count).toBe(buildRows(diff, "split").length);
-    expect(getItemKey(1)).toBe(buildRows(diff, "split")[1].key);
-  });
-});
-
-// Contract: a selection belongs to one hunk and never relabels another hunk's buttons.
-describe("DiffViewer selection scoping", () => {
-  const labels = () => screen.getAllByRole("button", { name: /hunk|line…|lines…|\d+ lines?$/ });
-
-  it("should relabel only the hunk that holds the selection", () => {
-    setup({ selection: selecting(1, 0) });
-    const text = labels()
-      .map((b) => b.textContent)
-      .filter((t) => /^(Stage|Discard)/.test(t ?? ""));
-    expect(text).toEqual(["Stage hunk", "Discard hunk…", "Stage 1 line", "Discard 1 line…"]);
-  });
-
-  it("should relabel the first hunk and leave the second alone for a selection in hunk 0", () => {
-    setup({ selection: selecting(0, 1, 2) });
-    const text = labels()
-      .map((b) => b.textContent)
-      .filter((t) => /^(Stage|Discard)/.test(t ?? ""));
-    expect(text).toEqual(["Stage 2 lines", "Discard 2 lines…", "Stage hunk", "Discard hunk…"]);
-  });
-
-  it("should send the second hunk's selected lines, sorted, from its own header", () => {
-    const { onHunkAction } = setup({ selection: selecting(1, 1, 0) });
-    fireEvent.click(screen.getByRole("button", { name: "Stage 2 lines" }));
-    expect(onHunkAction).toHaveBeenCalledExactlyOnceWith("stage", { hunkIndex: 1, lines: [0, 1] });
-  });
-
-  it("should sort a descending three-line selection ascending", () => {
-    const wide = fileDiff([
-      hunk([
-        L("addition", "a", null, 1),
-        L("addition", "b", null, 2),
-        L("addition", "c", null, 3),
-        L("addition", "d", null, 4),
-      ]),
-    ]);
-    const { onHunkAction } = setup({ diff: wide, selection: selecting(0, 3, 0, 2) });
-    fireEvent.click(screen.getByRole("button", { name: "Stage 3 lines" }));
-    expect(onHunkAction).toHaveBeenCalledWith("stage", { hunkIndex: 0, lines: [0, 2, 3] });
-  });
-});
-
-// Contract: with neither a selection nor an action handler the viewer offers no controls at all.
-describe("DiffViewer fully read-only", () => {
-  it("should render no buttons in unified mode", () => {
-    setup({ hunkAction: false, mode: "unified" });
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
-  });
-
-  it("should render no buttons in split mode", () => {
-    setup({ hunkAction: false, mode: "split" });
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
-  });
-
-  it("should render no buttons even when a disabled reason is given", () => {
-    setup({ hunkAction: false, reason: "Not now" });
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
-  });
-
-  it("should still show line numbers as plain text", () => {
-    const { container } = setup({ hunkAction: false, mode: "unified" });
-    expect(container.textContent).toContain("10");
-  });
-});
-
-// Contract: the reason reaches every header in both modes and a staged scope.
-describe("DiffViewer reason in every header", () => {
-  it.each<DiffMode>(["unified", "split"])(
-    "should disable all unstaged buttons in %s mode",
-    (mode) => {
-      setup({ mode, reason: "Why not" });
-      const buttons = screen.getAllByRole("button");
-      expect(buttons).toHaveLength(4);
-      for (const b of buttons) expect(b).toHaveAttribute("title", "Why not");
-    },
-  );
-
-  it("should disable every unstage button of a staged diff", () => {
-    setup({ diff: diffOf("staged"), reason: "Why not" });
-    const buttons = screen.getAllByRole("button", { name: "Unstage hunk" });
-    expect(buttons).toHaveLength(2);
-    for (const b of buttons) expect(b).toBeDisabled();
-  });
-});
-
-// Contract: the last hunk of a truncated diff is partial, so only its selected-line actions are safe.
-describe("DiffViewer truncated last hunk", () => {
-  const LOAD = "Load the full diff to stage, unstage or discard this hunk";
-  const truncated = { ...diffOf(), truncated: true };
-
-  it("should disable the last hunk's whole-hunk buttons with the load-full-diff reason", () => {
-    setup({ diff: truncated });
-    for (const name of ["Stage hunk", "Discard hunk…"]) {
-      const last = screen.getAllByRole("button", { name }).at(-1)!;
-      expect(last).toBeDisabled();
-      expect(last).toHaveAttribute("title", LOAD);
-    }
-  });
-
-  it("should disable the unstage button of the last hunk of a staged truncated diff", () => {
-    setup({ diff: { ...diffOf("staged"), truncated: true } });
-    const last = screen.getAllByRole("button", { name: "Unstage hunk" }).at(-1)!;
-    expect(last).toBeDisabled();
-    expect(last).toHaveAttribute("title", LOAD);
-  });
-
-  it("should keep earlier hunks' buttons enabled", () => {
-    setup({ diff: truncated });
-    for (const name of ["Stage hunk", "Discard hunk…"]) {
-      expect(screen.getAllByRole("button", { name })[0]).toBeEnabled();
-    }
-  });
-
-  it("should keep selected-line buttons enabled in the last hunk", () => {
-    setup({ diff: truncated, selection: selecting(1, 0) });
-    expect(screen.getByRole("button", { name: "Stage 1 line" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Discard 1 line…" })).toBeEnabled();
-  });
-
-  it("should enable the last hunk's buttons when the diff is not truncated", () => {
-    setup({ diff: { ...diffOf(), truncated: false } });
-    for (const b of screen.getAllByRole("button")) expect(b).toBeEnabled();
-  });
-
-  it("should let a global reason win over the truncation reason", () => {
-    setup({ diff: truncated, reason: "Not now" });
-    for (const b of screen.getAllByRole("button")) expect(b).toHaveAttribute("title", "Not now");
+    expect(count).toBe(split.length);
+    expect(getItemKey(1)).toBe(split[1].key);
   });
 });

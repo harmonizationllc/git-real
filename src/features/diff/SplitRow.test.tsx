@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import type { HighlightMap } from "./model/highlight";
 import { buildRows, type DiffRow } from "./model/rows";
 import { SplitRow } from "./SplitRow";
-import type { UseLineSelection } from "./useLineSelection";
+import type { RowTint } from "./useTextRange";
+import lineStyles from "./LineContent.module.css";
 
 // Line indices: 0 context, 1 deletion, 2 addition, 3 lone addition, 4 context, 5 lone deletion.
 // Split rows: (0,0) (1,2) (null,3) (4,4) (5,null).
@@ -23,44 +24,31 @@ const rows = buildRows(diff, "split");
 function setup(
   oldIndex: number | null,
   newIndex: number | null,
-  over: {
-    highlight?: HighlightMap | null;
-    selection?: UseLineSelection;
-    onGutterClick?: ((hunk: number, line: number, shift: boolean) => void) | null;
-  } = {},
+  over: { highlight?: HighlightMap | null; tint?: RowTint | null } = {},
 ) {
   const row = rows.find(
     (r): r is Extract<DiffRow, { kind: "split" }> =>
       r.kind === "split" && r.old === oldIndex && r.new === newIndex,
   )!;
-  const onGutterClick = over.onGutterClick === null ? undefined : (over.onGutterClick ?? vi.fn());
   const view = render(
-    <SplitRow
-      diff={diff}
-      row={row}
-      highlight={over.highlight ?? null}
-      selection={over.selection}
-      onGutterClick={onGutterClick}
-    />,
+    <SplitRow diff={diff} row={row} highlight={over.highlight ?? null} tint={over.tint ?? null} />,
   );
   const cells = Array.from(
     view.container.querySelectorAll<HTMLElement>(
       '[data-kind="context"], [data-kind="deletion"], [data-kind="addition"], [data-kind="empty"]',
     ),
   );
-  return { ...view, cells, left: cells[0], right: cells[1], onGutterClick };
+  return { ...view, cells, left: cells[0], right: cells[1] };
 }
-
-const selecting = (hunkIndex: number | null, ...lines: number[]): UseLineSelection => ({
-  selected: new Set(lines),
-  hunkIndex,
-  click: vi.fn(),
-  clear: vi.fn(),
-});
 
 const marked = (el: HTMLElement) =>
   Array.from(el.querySelectorAll("mark"))
     .map((m) => m.textContent)
+    .join("");
+
+const selectedText = (el: HTMLElement) =>
+  Array.from(el.querySelectorAll(`.${lineStyles.selected}`))
+    .map((e) => e.textContent)
     .join("");
 
 // Contract: each side is its own cell, with its own line number and kind.
@@ -112,100 +100,6 @@ describe("SplitRow cells", () => {
   it("should not use the row role", () => {
     setup(1, 2);
     expect(screen.queryByRole("row")).toBeNull();
-  });
-});
-
-// Contract: only changed lines get a button, labelled by side, never on the empty or context side.
-describe("SplitRow selection controls", () => {
-  it("should render a button named for the removed line in the left cell", () => {
-    const { left } = setup(1, 2);
-    expect(within(left).getByRole("button", { name: "Select removed line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-
-  it("should render a button named for the added line in the right cell", () => {
-    const { right } = setup(1, 2);
-    expect(within(right).getByRole("button", { name: "Select added line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-
-  it("should render only one button for a lone addition", () => {
-    setup(null, 3);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-  });
-
-  it("should render only one button for a lone deletion", () => {
-    setup(5, null);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-  });
-
-  it("should render no button for a context pair", () => {
-    setup(0, 0);
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("should render no button when onGutterClick is absent", () => {
-    setup(1, 2, { onGutterClick: null });
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-});
-
-// Contract: clicking a gutter reports hunk index, the line index on that side and the shift state.
-describe("SplitRow gutter clicks", () => {
-  it("should report the old line index when the left gutter is clicked", () => {
-    const { onGutterClick } = setup(1, 2);
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    expect(onGutterClick).toHaveBeenCalledWith(0, 1, false);
-  });
-
-  it("should report the new line index when the right gutter is clicked", () => {
-    const { onGutterClick } = setup(1, 2);
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    expect(onGutterClick).toHaveBeenCalledWith(0, 2, false);
-  });
-
-  it("should report shift true when clicked with shift held", () => {
-    const { onGutterClick } = setup(null, 3);
-    fireEvent.click(screen.getByRole("button"), { shiftKey: true });
-    expect(onGutterClick).toHaveBeenCalledWith(0, 3, true);
-  });
-});
-
-// Contract: each cell is pressed and selected on its own line index, in its own hunk.
-describe("SplitRow selected state", () => {
-  it("should press only the left button when the old line is selected", () => {
-    const { left, right } = setup(1, 2, { selection: selecting(0, 1) });
-    expect(within(left).getByRole("button")).toHaveAttribute("aria-pressed", "true");
-    expect(within(right).getByRole("button")).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("should press only the right button when the new line is selected", () => {
-    const { left, right } = setup(1, 2, { selection: selecting(0, 2) });
-    expect(within(left).getByRole("button")).toHaveAttribute("aria-pressed", "false");
-    expect(within(right).getByRole("button")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("should mark the selected cell data-selected", () => {
-    const { left } = setup(1, 2, { selection: selecting(0, 1) });
-    expect(left).toHaveAttribute("data-selected", "true");
-  });
-
-  it("should not mark the other cell data-selected", () => {
-    const { right } = setup(1, 2, { selection: selecting(0, 1) });
-    expect(right).not.toHaveAttribute("data-selected");
-  });
-
-  it("should not mark a cell selected when the selection is in another hunk", () => {
-    const { left } = setup(1, 2, { selection: selecting(1, 1) });
-    expect(left).not.toHaveAttribute("data-selected");
-  });
-
-  it("should not mark a cell selected without a selection prop", () => {
-    expect(setup(1, 2).left).not.toHaveAttribute("data-selected");
   });
 });
 
@@ -277,32 +171,6 @@ describe("SplitRow highlighting", () => {
   });
 });
 
-// Contract: a context pair is never selectable and never word-marked, even when selected.
-describe("SplitRow context pair", () => {
-  it("should render no button on either side when the selection names the context line", () => {
-    setup(0, 0, { selection: selecting(0, 0) });
-    expect(screen.queryByRole("button")).toBeNull();
-  });
-
-  it("should show no marks on either side of a context pair", () => {
-    const { left, right } = setup(4, 4);
-    expect(marked(left)).toBe("");
-    expect(marked(right)).toBe("");
-  });
-
-  it("should not call onGutterClick for a context pair", () => {
-    const { onGutterClick, left, right } = setup(0, 0);
-    fireEvent.click(left);
-    fireEvent.click(right);
-    expect(onGutterClick).not.toHaveBeenCalled();
-  });
-
-  it("should render no button on the empty side or the context side of a lone deletion", () => {
-    const { right } = setup(5, null);
-    expect(within(right).queryByRole("button")).toBeNull();
-  });
-});
-
 // Contract: tokens are per side; a side without tokens renders plain while the other is highlighted.
 describe("SplitRow asymmetric highlighting", () => {
   it("should highlight the left cell only when only the old index has tokens", () => {
@@ -327,5 +195,94 @@ describe("SplitRow asymmetric highlighting", () => {
       [0, [null, [{ text: "const a = 1", className: "tok-keyword" }], null]],
     ]);
     expect(setup(1, 2, { highlight }).right).toHaveTextContent(/const b = 1/);
+  });
+});
+
+// Contract: the gutters are plain cells; nothing in a split row is a control.
+describe("SplitRow plain gutters", () => {
+  it.each<[number | null, number | null]>([
+    [0, 0],
+    [1, 2],
+    [null, 3],
+    [5, null],
+  ])("should render no button for the row (%s, %s)", (oldIndex, newIndex) => {
+    setup(oldIndex, newIndex);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("should render each cell's gutter as a span", () => {
+    const { left, right } = setup(1, 2);
+    expect(left.children[0].tagName).toBe("SPAN");
+    expect(right.children[0].tagName).toBe("SPAN");
+  });
+});
+
+// Contract: every cell carries data-side, old on the left and new on the right, empty or not.
+describe("SplitRow data-side", () => {
+  it("should mark the left cell old and the right cell new", () => {
+    const { left, right } = setup(1, 2);
+    expect(left).toHaveAttribute("data-side", "old");
+    expect(right).toHaveAttribute("data-side", "new");
+  });
+
+  it("should mark an empty left cell old", () => {
+    expect(setup(null, 3).left).toHaveAttribute("data-side", "old");
+  });
+
+  it("should mark an empty right cell new", () => {
+    expect(setup(5, null).right).toHaveAttribute("data-side", "new");
+  });
+});
+
+// Contract: only the cell on tint.side is tinted, as { start: from ?? 0, end: to ?? text.length },
+// and only that cell carries data-selected.
+describe("SplitRow tint", () => {
+  it("should select the new cell from the tint's from to the end", () => {
+    const { right } = setup(1, 2, { tint: { side: "new", from: 6, to: null } });
+    expect(selectedText(right)).toBe("b = 1");
+  });
+
+  it("should leave the old cell unselected when the tint is on the new side", () => {
+    const { left } = setup(1, 2, { tint: { side: "new", from: 6, to: null } });
+    expect(left.querySelector(`.${lineStyles.selected}`)).toBeNull();
+    expect(left).not.toHaveAttribute("data-selected");
+  });
+
+  it("should mark only the new cell data-selected for a new-side tint", () => {
+    const { right } = setup(1, 2, { tint: { side: "new", from: 6, to: null } });
+    expect(right).toHaveAttribute("data-selected", "true");
+  });
+
+  it("should select the old cell from the start to the tint's to", () => {
+    const { left, right } = setup(1, 2, { tint: { side: "old", from: null, to: 5 } });
+    expect(selectedText(left)).toBe("const");
+    expect(right.querySelector(`.${lineStyles.selected}`)).toBeNull();
+  });
+
+  it("should mark only the old cell data-selected for an old-side tint", () => {
+    const { left, right } = setup(1, 2, { tint: { side: "old", from: null, to: 5 } });
+    expect(left).toHaveAttribute("data-selected", "true");
+    expect(right).not.toHaveAttribute("data-selected");
+  });
+
+  it("should select the whole line when from and to are both null", () => {
+    const { left } = setup(4, 4, { tint: { side: "old", from: null, to: null } });
+    expect(selectedText(left)).toBe("more");
+  });
+
+  it("should select between from and to on a context cell", () => {
+    const { left, right } = setup(0, 0, { tint: { side: "new", from: 1, to: 3 } });
+    expect(selectedText(right)).toBe("ee");
+    expect(left.querySelector(`.${lineStyles.selected}`)).toBeNull();
+  });
+
+  it("should not mark either cell data-selected without a tint", () => {
+    const { left, right } = setup(1, 2);
+    expect(left).not.toHaveAttribute("data-selected");
+    expect(right).not.toHaveAttribute("data-selected");
+  });
+
+  it("should select nothing without a tint", () => {
+    expect(setup(1, 2).container.querySelector(`.${lineStyles.selected}`)).toBeNull();
   });
 });
