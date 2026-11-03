@@ -248,6 +248,13 @@ export interface HunkSelection {
   hunkIndex: number;
   /** Line indices within the hunk; null selects the whole hunk. */
   lines: number[] | null;
+  /** Partial-line replacements: the full text the line takes in the patch. */
+  edits?: LineEdit[];
+}
+
+export interface LineEdit {
+  index: number;
+  text: string;
 }
 
 export type HunkAction = "stage" | "unstage" | "discard";

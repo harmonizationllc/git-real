@@ -3,7 +3,6 @@ import type { DiffMode } from "../../../lib/ipc";
 import { pairLines } from "./pairing";
 
 export type DiffRow =
-  | { kind: "header"; key: string; hunkIndex: number; header: string }
   | { kind: "unified"; key: string; hunkIndex: number; lineIndex: number; partner: number | null }
   | { kind: "split"; key: string; hunkIndex: number; old: number | null; new: number | null };
 
@@ -14,7 +13,6 @@ const side = (index: number | null): string => (index === null ? "-" : String(in
 export function buildRows(diff: FileDiff, mode: DiffMode): DiffRow[] {
   const rows: DiffRow[] = [];
   diff.hunks.forEach((hunk, hunkIndex) => {
-    rows.push({ kind: "header", key: `h${hunkIndex}`, hunkIndex, header: hunk.header });
     const pairs = pairLines(hunk.lines);
     if (mode === "split") {
       for (const p of pairs) {
