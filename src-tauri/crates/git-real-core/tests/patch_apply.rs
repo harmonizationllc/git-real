@@ -1477,3 +1477,44 @@ fn apply_hunk_partial_discard_keeps_line_order_without_a_final_newline() {
         "one two three\nfour five six\nseven eight NINE"
     );
 }
+
+// --- GR-52 walk: one whole pair of a change run selected ---
+
+#[test]
+fn apply_hunk_stage_middle_pair_keeps_its_slot() {
+    let (_dir, path) = repo_with_owner_example();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &picked(&[1, 4]))
+        .expect("stage pair 1");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "one two three\nFOUR FIVE SIX\nseven eight nine\n"
+    );
+    assert_eq!(read(&path, "f.txt"), WORDS_EDITED);
+}
+
+#[test]
+fn apply_hunk_discard_middle_pair_keeps_its_slot() {
+    let (_dir, path) = repo_with_owner_example();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &picked(&[1, 4]))
+        .expect("discard pair 1");
+    assert_eq!(
+        read(&path, "f.txt"),
+        "one two THREE\nfour five six\nSEVEN eight NINE\n"
+    );
+}
+
+#[test]
+fn apply_hunk_unstage_middle_pair_keeps_its_slot() {
+    let (_dir, path) = repo_with_owner_example();
+    common::stage(&path, "f.txt");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Unstage, &picked(&[1, 4]))
+        .expect("unstage pair 1");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "one two THREE\nfour five six\nSEVEN eight NINE\n"
+    );
+    assert_eq!(read(&path, "f.txt"), WORDS_EDITED);
+}

@@ -512,11 +512,41 @@ mod tests {
     // --- partial line selection: unselected deletions become context, unselected additions are dropped ---
 
     #[test]
-    fn build_patch_partial_lines_keeps_unselected_deletions_as_context() {
+    fn build_patch_partial_lines_keeps_unselected_deletions_in_their_slot() {
+        // Pair 0 (a→c) selected, b kept: c takes slot 0 and b stays in slot 1.
         let patch = build_patch(&two_for_two(), &lines(0, &[0, 2]), false, MODE).expect("patch");
         assert_eq!(
             patch,
-            format!("{}@@ -1,2 +1,2 @@\n-a\n b\n+c\n", modify_head("f.txt"))
+            format!("{}@@ -1,2 +1,2 @@\n-a\n-b\n+c\n+b\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn build_patch_middle_pair_of_a_run_is_written_in_pair_slot_order() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(
+                1,
+                1,
+                vec![del("a"), del("b"), del("c"), add("A"), add("B"), add("C")],
+            )],
+        );
+        let patch = build_patch(&diff, &lines(0, &[1, 4]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!(
+                "{}@@ -1,3 +1,3 @@\n-a\n-b\n-c\n+a\n+B\n+c\n",
+                modify_head("f.txt")
+            )
+        );
+        let reverse = build_patch(&diff, &lines(0, &[1, 4]), true, MODE).expect("reverse");
+        assert_eq!(
+            reverse,
+            format!(
+                "{}@@ -1,3 +1,3 @@\n-A\n-B\n-C\n+A\n+b\n+C\n",
+                modify_head("f.txt")
+            )
         );
     }
 
