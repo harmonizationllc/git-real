@@ -34,6 +34,7 @@ export function useChangeNavigation(
 
   const goTo = useCallback(
     (i: number) => {
+      if (blocks.length === 0) return;
       const index = Math.min(Math.max(i, 0), blocks.length - 1);
       setState({ rows, current: index });
       viewer.current?.scrollToRow(Math.max(0, blocks[index].firstRow - 3));
@@ -48,7 +49,7 @@ export function useChangeNavigation(
       return;
     }
     const top = viewer.current?.firstVisibleRow() ?? 0;
-    const i = blocks.findIndex((b) => b.firstRow > top);
+    const i = blocks.findIndex((b) => b.firstRow >= top);
     if (i !== -1) goTo(i);
   }, [blocks, current, goTo, viewer]);
 

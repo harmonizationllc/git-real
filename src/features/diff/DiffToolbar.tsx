@@ -94,7 +94,7 @@ export function DiffToolbar({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M4 10l6-6 6 6" />
+              <path d="M4 12l6-6 6 6" />
             </svg>
           </button>
           <button
@@ -117,7 +117,7 @@ export function DiffToolbar({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M4 6l6 6 6-6" />
+              <path d="M4 8l6 6 6-6" />
             </svg>
           </button>
           <span aria-live="polite" className={styles.counter}>
