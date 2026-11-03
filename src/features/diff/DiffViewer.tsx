@@ -29,7 +29,7 @@ export interface DiffViewerProps {
   rows: DiffRow[];
   mode: DiffMode;
   highlight: HighlightMap | null;
-  /** Absent: a right-click does nothing and the browser's own menu opens. */
+  /** Absent: a right-click does nothing and no menu opens. */
   onContextMenu?(target: MenuTarget, x: number, y: number): void;
   /** Fired once after the first render. */
   onMounted?(): void;
@@ -117,7 +117,11 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   };
 
   const onMenu = (e: React.MouseEvent) => {
-    if (!onContextMenu) return;
+    // The viewer owns right-click on its rows: with no handler nothing opens, not even the browser's.
+    if (!onContextMenu) {
+      e.preventDefault();
+      return;
+    }
     const wrapper = (e.target as Element).closest("[data-index]");
     const target: MenuTarget | null =
       range !== null

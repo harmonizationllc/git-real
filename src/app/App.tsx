@@ -18,6 +18,7 @@ import { startFontWarmup } from "./fontWarmup";
 import { RepoPane } from "./RepoPane";
 import { TabBar } from "./TabBar";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
+import { useNativeContextMenuGuard } from "./useNativeContextMenuGuard";
 import { useUpdateCheck } from "./useUpdateCheck";
 
 export default function App(): React.JSX.Element {
@@ -52,6 +53,7 @@ function AppShell(): React.JSX.Element {
     },
   };
   useGlobalShortcuts(actions);
+  useNativeContextMenuGuard();
   useUpdateCheck();
   // Pays the cold font lookups while the start screen idles, so the first repo paint does not.
   useEffect(() => startFontWarmup(), []);
