@@ -412,7 +412,7 @@ describe("DiffViewer copy", () => {
 });
 
 // Contract: a right-click reports the range when one exists, else the row under the pointer, with
-// the pointer coordinates, and prevents the default; without onContextMenu it does nothing.
+// the pointer coordinates, and prevents the default; without onContextMenu it opens nothing but still prevents the default.
 describe("DiffViewer context menu", () => {
   it("should report the row under the pointer when there is no range", () => {
     const { container, onContextMenu } = setup();
@@ -457,17 +457,17 @@ describe("DiffViewer context menu", () => {
     expect(onContextMenu).not.toHaveBeenCalled();
   });
 
-  it("should not prevent the default without onContextMenu", () => {
+  it("should prevent the default without onContextMenu, opening nothing", () => {
     const { container } = setup({ onContextMenu: null });
     const notPrevented = fireEvent.contextMenu(rowEl(container, 2), { clientX: 30, clientY: 40 });
-    expect(notPrevented).toBe(true);
+    expect(notPrevented).toBe(false);
   });
 
-  it("should not prevent the default without onContextMenu even with a range", () => {
+  it("should prevent the default without onContextMenu even with a range", () => {
     const { container, scroll } = setup({ onContextMenu: null });
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
     const notPrevented = fireEvent.contextMenu(rowEl(container, 2), { clientX: 30, clientY: 40 });
-    expect(notPrevented).toBe(true);
+    expect(notPrevented).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useShell } from "../lib/store/shell";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,6 +116,12 @@ describe("App start screen", () => {
     expect(screen.getByRole("heading", startHeading)).toBeInTheDocument();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     await screen.findByText("No recent repositories");
+  });
+
+  it("prevents the browser's own context menu on the app root (GR-53)", async () => {
+    const { container } = renderApp();
+    await screen.findByText("No recent repositories");
+    expect(fireEvent.contextMenu(container.firstElementChild!)).toBe(false);
   });
 
   it("starts the font warm-up once and cancels it on unmount", async () => {

@@ -1980,12 +1980,12 @@ describe("DetailPane commit scope", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("should leave the browser's own menu alone on a right-click", async () => {
+  it("should prevent the browser's own menu on a right-click", async () => {
     commitSetup();
     await diffRegion();
     const event = createEvent.contextMenu(rowAt(1), { clientX: 30, clientY: 40 });
     fireEvent(rowAt(1), event);
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("should still render the line text", async () => {
@@ -2185,14 +2185,14 @@ describe("DetailPane stash files", () => {
     expect(screen.getByRole("radio", { name: "Blame" })).toBeEnabled();
   });
 
-  it("a stash file opens no menu and leaves the browser's own menu alone on a right-click", async () => {
+  it("a stash file opens no menu and prevents the browser's own menu on a right-click", async () => {
     selectStashFile();
     renderWithProviders(<DetailPane repoId={REPO} />);
     await diffRegion();
     const event = createEvent.contextMenu(rowAt(1), { clientX: 30, clientY: 40 });
     fireEvent(rowAt(1), event);
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("a commit file without a source keeps Blame enabled with no title", async () => {
