@@ -97,11 +97,23 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
       } else if (matchesShortcut(e, "push")) {
         e.preventDefault();
         syncRef.current.push();
+      } else if (matchesShortcut(e, "nextChange")) {
+        const n = useShell.getState().diffNavigation;
+        if (n?.repoId === tab.id) {
+          e.preventDefault();
+          n.next();
+        }
+      } else if (matchesShortcut(e, "prevChange")) {
+        const n = useShell.getState().diffNavigation;
+        if (n?.repoId === tab.id) {
+          e.preventDefault();
+          n.prev();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [tab.id]);
 
   // Publish the active pane's repository actions for the command palette, with stable callbacks
   // backed by syncRef so only a gate or the path re-publishes. Cleared when the pane unmounts.

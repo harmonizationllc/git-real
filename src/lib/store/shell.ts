@@ -21,6 +21,13 @@ export interface RepoActions {
   fileHistory(): void;
 }
 
+/** The open diff's change navigation, published for the window shortcuts and the palette. */
+export interface DiffNavigation {
+  repoId: RepoId;
+  next(): void;
+  prev(): void;
+}
+
 /** App-level open/clone handlers, shared by the shortcuts hook and the palette. */
 export interface ShellActions {
   openRepo(): void;
@@ -31,16 +38,20 @@ export interface ShellActions {
 interface ShellState {
   dialog: ShellDialog;
   repoActions: RepoActions | null;
+  diffNavigation: DiffNavigation | null;
   open(d: Exclude<ShellDialog, null>): void;
   close(): void;
   publishRepoActions(a: RepoActions | null): void;
+  publishDiffNavigation(n: DiffNavigation | null): void;
 }
 
 /** The shell's single dialog slot and the active pane's action registry; not persisted. */
 export const useShell = create<ShellState>()((set) => ({
   dialog: null,
   repoActions: null,
+  diffNavigation: null,
   open: (dialog) => set({ dialog }),
   close: () => set({ dialog: null }),
   publishRepoActions: (repoActions) => set({ repoActions }),
+  publishDiffNavigation: (diffNavigation) => set({ diffNavigation }),
 }));
