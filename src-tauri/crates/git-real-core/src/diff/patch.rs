@@ -6,6 +6,8 @@
 //! from the emitted lines, and the new-side start is derived from the old
 //! side because libgit2 places a hunk at `new_start` without offset search.
 
+use std::collections::HashMap;
+
 use crate::error::GitError;
 use crate::model::{ChangeKind, DiffLine, DiffLineKind, FileDiff, HunkSelection, LineEdit};
 
@@ -170,6 +172,9 @@ fn select_ops<'a>(
     for &i in picked.unwrap_or_default() {
         selected[i] = true;
     }
+    // Indices are unique (duplicates are rejected before this).
+    let replacements: HashMap<usize, &str> =
+        edits.iter().map(|e| (e.index, e.text.as_str())).collect();
     let plain = |op, line| PatchLine {
         op,
         line,
@@ -180,7 +185,7 @@ fn select_ops<'a>(
         .enumerate()
         .zip(selected)
         .map(|((i, line), selected)| {
-            let replacement = edits.iter().find(|e| e.index == i).map(|e| e.text.as_str());
+            let replacement = replacements.get(&i).copied();
             match line.kind {
                 DiffLineKind::Context => Some(plain(Op::Context, line)),
                 k if k == post_only => selected.then_some(PatchLine {
