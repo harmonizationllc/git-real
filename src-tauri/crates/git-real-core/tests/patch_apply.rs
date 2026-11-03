@@ -1057,9 +1057,9 @@ fn build_patch_picked_index_in_later_hunk_does_not_leak_across_hunks() {
 
 #[test]
 fn build_patch_reverse_marker_only_after_last_line_of_its_side() {
-    // Reverse with only the deletion picked: the pair is written in slot order,
-    // `+x` then the kept `y`, so the restored x ends in a newline and carries no
-    // marker; `y` keeps its own on both sides.
+    // Reverse with only the deletion picked, a one-sided pick that keeps hunk
+    // order: `+x` is followed by context `y`, so the restored x ends in a newline
+    // and must carry no marker; `y` keeps its own.
     let diff = hand_diff(
         ChangeKind::Modified,
         vec![
@@ -1073,7 +1073,7 @@ fn build_patch_reverse_marker_only_after_last_line_of_its_side() {
     let patch = build_patch(&diff, &picked(&[1]), true, 0o100644).expect("patch");
     assert_eq!(
         patch,
-        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,3 @@\n a\n-y\n\\ No newline at end of file\n+x\n+y\n\\ No newline at end of file\n"
+        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,3 @@\n a\n+x\n y\n\\ No newline at end of file\n"
     );
 }
 
@@ -1518,4 +1518,20 @@ fn apply_hunk_unstage_middle_pair_keeps_its_slot() {
         "one two THREE\nfour five six\nSEVEN eight NINE\n"
     );
     assert_eq!(read(&path, "f.txt"), WORDS_EDITED);
+}
+
+#[test]
+fn apply_hunk_stage_only_the_additions_of_a_run_keeps_hunk_order() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "a\nb\n");
+    common::commit_all(&path, "add ab");
+    common::write_file(&path, "f.txt", "A\nB\n");
+    // Hunk 0 is `[-a, -b, +A, +B]`; pick the additions only.
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &picked(&[2, 3]))
+        .expect("stage additions");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "a\nb\nA\nB\n"
+    );
 }

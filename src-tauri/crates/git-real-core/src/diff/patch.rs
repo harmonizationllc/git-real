@@ -527,6 +527,24 @@ mod tests {
     }
 
     #[test]
+    fn build_patch_only_the_additions_of_a_run_keep_hunk_order() {
+        let patch = build_patch(&two_for_two(), &lines(0, &[2, 3]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,2 +1,4 @@\n a\n b\n+c\n+d\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn build_patch_reverse_only_the_deletions_of_a_run_keep_hunk_order() {
+        let patch = build_patch(&two_for_two(), &lines(0, &[0, 1]), true, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,2 +1,4 @@\n+a\n+b\n c\n d\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
     fn build_patch_middle_pair_of_a_run_is_written_in_pair_slot_order() {
         let diff = file_diff(
             "f.txt",
