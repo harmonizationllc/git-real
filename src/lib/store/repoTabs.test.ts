@@ -175,3 +175,63 @@ describe("activate", () => {
     expect(useRepoTabs.getState().activeId).toBeNull();
   });
 });
+
+// Contract: moveTab splices the tab out and back in at toIndex; bad inputs leave state untouched.
+describe("moveTab", () => {
+  const ids = () => useRepoTabs.getState().tabs.map((t) => t.id);
+
+  it("moveTab moves a tab right", () => {
+    openAll(1, 2, 3);
+    useRepoTabs.getState().moveTab(1, 2);
+    expect(ids()).toEqual([2, 3, 1]);
+  });
+
+  it("moveTab moves a tab left", () => {
+    openAll(1, 2, 3);
+    useRepoTabs.getState().moveTab(3, 0);
+    expect(ids()).toEqual([3, 1, 2]);
+  });
+
+  it("moveTab keeps the active tab active", () => {
+    openAll(1, 2, 3);
+    useRepoTabs.getState().activate(2);
+    useRepoTabs.getState().moveTab(2, 0);
+    expect(useRepoTabs.getState().activeId).toBe(2);
+  });
+
+  it("moveTab keeps each tab object", () => {
+    openAll(1, 2, 3);
+    const before = useRepoTabs.getState().tabs;
+    useRepoTabs.getState().moveTab(1, 2);
+    for (const t of before) expect(useRepoTabs.getState().tabs).toContain(t);
+  });
+
+  it("moveTab replaces the tabs array instead of mutating it", () => {
+    openAll(1, 2, 3);
+    const before = useRepoTabs.getState().tabs;
+    useRepoTabs.getState().moveTab(1, 2);
+    expect(before.map((t) => t.id)).toEqual([1, 2, 3]);
+  });
+
+  it("moveTab of an unknown id changes nothing", () => {
+    openAll(1, 2, 3);
+    const before = useRepoTabs.getState();
+    useRepoTabs.getState().moveTab(99, 0);
+    expect(useRepoTabs.getState()).toBe(before);
+  });
+
+  it("moveTab to an out-of-range index changes nothing", () => {
+    openAll(1, 2, 3);
+    const before = useRepoTabs.getState();
+    useRepoTabs.getState().moveTab(1, -1);
+    useRepoTabs.getState().moveTab(1, 3);
+    expect(useRepoTabs.getState()).toBe(before);
+  });
+
+  it("moveTab to its own index changes nothing", () => {
+    openAll(1, 2, 3);
+    const before = useRepoTabs.getState();
+    useRepoTabs.getState().moveTab(2, 1);
+    expect(useRepoTabs.getState()).toBe(before);
+  });
+});
