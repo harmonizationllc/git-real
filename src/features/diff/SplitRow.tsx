@@ -60,7 +60,15 @@ function Cell({
   tint: RowTint | null;
 }) {
   if (lineIndex === null) {
-    return <div className={styles.cell} data-kind="empty" data-side={side} />;
+    // A range row with no line on its side is acted on whole, so its empty cell is outlined too.
+    return (
+      <div
+        className={styles.cell}
+        data-kind="empty"
+        data-side={side}
+        data-selected={tint !== null || undefined}
+      />
+    );
   }
   const line = hunk.lines[lineIndex];
   const lineno = side === "old" ? line.oldLineno : line.newLineno;
