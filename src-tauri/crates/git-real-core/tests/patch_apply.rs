@@ -1345,3 +1345,135 @@ fn apply_hunk_partial_stage_keeps_crlf() {
         .expect("partial stage");
     assert_eq!(blob(&path, DiffScope::Staged), b"a\r\nbB\r\nc\r\n");
 }
+
+// --- GR-52 walk: the owner's example, three changed lines of three words ---
+
+const WORDS_BASE: &str = "one two three\nfour five six\nseven eight nine\n";
+const WORDS_EDITED: &str = "one two THREE\nFOUR FIVE SIX\nSEVEN eight NINE\n";
+
+/// Commits the owner's three lines and edits them. Hunk 0 is
+/// `[-one.., -four.., -seven.., +one.., +FOUR.., +SEVEN..]` (indices 0..=5).
+fn repo_with_owner_example() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", WORDS_BASE);
+    common::commit_all(&path, "add words");
+    common::write_file(&path, "f.txt", WORDS_EDITED);
+    (dir, path)
+}
+
+#[test]
+fn apply_hunk_partial_stage_keeps_line_order_across_a_run() {
+    let (_dir, path) = repo_with_owner_example();
+    // The highlight covers "THREE", line 2 and "SEVEN": pairs 0 and 1 whole, pair 2 partly.
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Stage,
+            &edited(&[0, 1, 2, 3, 4], &[(2, "SEVEN eight nine")]),
+        )
+        .expect("partial stage");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "one two THREE\nFOUR FIVE SIX\nSEVEN eight nine\n"
+    );
+    assert_eq!(read(&path, "f.txt"), WORDS_EDITED);
+}
+
+#[test]
+fn apply_hunk_partial_discard_keeps_line_order_across_a_run() {
+    let (_dir, path) = repo_with_owner_example();
+    // Pair 1 whole; pairs 0 and 2 reverted in part on their added lines.
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Discard,
+            &edited(
+                &[1, 3, 4, 5],
+                &[(3, "one two three"), (5, "seven eight NINE")],
+            ),
+        )
+        .expect("partial discard");
+    assert_eq!(
+        read(&path, "f.txt"),
+        "one two three\nfour five six\nseven eight NINE\n"
+    );
+}
+
+#[test]
+fn apply_hunk_partial_unstage_keeps_line_order_across_a_run() {
+    let (_dir, path) = repo_with_owner_example();
+    common::stage(&path, "f.txt");
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Unstage,
+            &edited(
+                &[1, 3, 4, 5],
+                &[(3, "one two three"), (5, "seven eight NINE")],
+            ),
+        )
+        .expect("partial unstage");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "one two three\nfour five six\nseven eight NINE\n"
+    );
+    assert_eq!(read(&path, "f.txt"), WORDS_EDITED);
+}
+
+#[test]
+fn apply_hunk_partial_discard_of_a_first_pair_keeps_it_above_a_whole_pair() {
+    let (_dir, path) = repo_with_owner_example();
+    // Pair 0 reverted in part ("THREE"), pair 1 whole, pair 2 untouched.
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Discard,
+            &edited(&[1, 3, 4], &[(3, "one two three")]),
+        )
+        .expect("partial discard");
+    assert_eq!(
+        read(&path, "f.txt"),
+        "one two three\nfour five six\nSEVEN eight NINE\n"
+    );
+}
+
+#[test]
+fn apply_hunk_partial_stage_keeps_line_order_without_a_final_newline() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", WORDS_BASE.trim_end());
+    common::commit_all(&path, "add words");
+    common::write_file(&path, "f.txt", WORDS_EDITED.trim_end());
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Stage,
+            &edited(&[0, 1, 2, 3, 4], &[(2, "SEVEN eight nine")]),
+        )
+        .expect("partial stage");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "one two THREE\nFOUR FIVE SIX\nSEVEN eight nine"
+    );
+}
+
+#[test]
+fn apply_hunk_partial_discard_keeps_line_order_without_a_final_newline() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", WORDS_BASE.trim_end());
+    common::commit_all(&path, "add words");
+    common::write_file(&path, "f.txt", WORDS_EDITED.trim_end());
+    session(&path)
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Discard,
+            &edited(
+                &[1, 3, 4, 5],
+                &[(3, "one two three"), (5, "seven eight NINE")],
+            ),
+        )
+        .expect("partial discard");
+    assert_eq!(
+        read(&path, "f.txt"),
+        "one two three\nfour five six\nseven eight NINE"
+    );
+}
