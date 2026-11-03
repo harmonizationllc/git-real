@@ -319,6 +319,7 @@ fn apply_hunk_inner_stages_hunk() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Stage, &selection).unwrap();
@@ -337,6 +338,7 @@ fn apply_hunk_inner_bad_selection_errors() {
     let selection = HunkSelection {
         hunk_index: 99,
         lines: None,
+        edits: vec![],
     };
 
     let err = apply_hunk_inner(&reg, id, "README.md", HunkAction::Stage, &selection)
@@ -387,6 +389,7 @@ fn unknown_repo_id_errors_for_every_command() {
     let sel = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
     let p = paths(&["README.md"]);
     let results: Vec<(&str, Result<(), AppError>)> = vec![
@@ -473,6 +476,7 @@ fn apply_hunk_inner_unstage_clears_staged_hunk() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Unstage, &selection).unwrap();
@@ -491,6 +495,7 @@ fn apply_hunk_inner_discard_restores_worktree_and_keeps_index_untouched() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Discard, &selection).unwrap();
@@ -511,6 +516,7 @@ fn apply_hunk_inner_unstage_bad_selection_errors() {
     let selection = HunkSelection {
         hunk_index: 99,
         lines: None,
+        edits: vec![],
     };
 
     let err = apply_hunk_inner(&reg, id, "README.md", HunkAction::Unstage, &selection)

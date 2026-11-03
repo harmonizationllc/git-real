@@ -175,7 +175,7 @@ mod tests {
     use super::*;
     use crate::error::GitError;
     use crate::model::{
-        ChangeKind, DiffLine, DiffLineKind, DiffScope, FileDiff, Hunk, HunkSelection,
+        ChangeKind, DiffLine, DiffLineKind, DiffScope, FileDiff, Hunk, HunkSelection, LineEdit,
     };
 
     // --- helpers ---
@@ -258,6 +258,7 @@ mod tests {
         HunkSelection {
             hunk_index,
             lines: None,
+            edits: vec![],
         }
     }
 
@@ -265,6 +266,21 @@ mod tests {
         HunkSelection {
             hunk_index,
             lines: Some(picked.to_vec()),
+            edits: vec![],
+        }
+    }
+
+    fn sel(picked: &[usize], edits: &[(usize, &str)]) -> HunkSelection {
+        HunkSelection {
+            hunk_index: 0,
+            lines: Some(picked.to_vec()),
+            edits: edits
+                .iter()
+                .map(|(index, text)| LineEdit {
+                    index: *index,
+                    text: (*text).to_owned(),
+                })
+                .collect(),
         }
     }
 
@@ -498,6 +514,121 @@ mod tests {
                 modify_head("f.txt")
             )
         );
+    }
+
+    // --- GR-52: partial-line edits ---
+
+    fn del_add_diff() -> FileDiff {
+        file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B"), ctx("z")])],
+        )
+    }
+
+    #[test]
+    fn edit_on_remove_replaces_the_line_forward() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C")]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,3 +1,3 @@\n a\n-A\n+C\n z\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn edit_on_remove_replaces_the_line_reverse() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[2], &[(2, "C'")]), true, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n-B\n+C'\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_on_add_writes_replacement_text() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), add("B"), ctx("z")])],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "P")]), false, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n+P\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_on_add_reverse_of_pure_deletion() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), ctx("z")])],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "P")]), true, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n+P\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_keeps_no_newline_marker_on_last_line() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(
+                1,
+                1,
+                vec![
+                    ctx("a"),
+                    dl(DiffLineKind::Deletion, "A", true),
+                    dl(DiffLineKind::Addition, "B", true),
+                ],
+            )],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "C")]), false, MODE).expect("patch");
+        assert!(
+            patch.ends_with(
+                " a\n-A\n\\ No newline at end of file\n+C\n\\ No newline at end of file\n"
+            ),
+            "got {patch:?}"
+        );
+    }
+
+    #[test]
+    fn edit_on_unselected_line_is_bad_selection() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B")])],
+        );
+        let err = build_patch(&diff, &sel(&[1], &[(2, "x")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_on_context_line_is_bad_selection() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B")])],
+        );
+        let err = build_patch(&diff, &sel(&[0, 1], &[(0, "x")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn serde_round_trips_edits_and_defaults_to_empty() {
+        let without: HunkSelection =
+            serde_json::from_str(r#"{"hunkIndex":0,"lines":[1]}"#).expect("parse");
+        assert_eq!(without.edits, vec![]);
+        let with: HunkSelection =
+            serde_json::from_str(r#"{"hunkIndex":0,"lines":[1],"edits":[{"index":1,"text":"C"}]}"#)
+                .expect("parse");
+        assert_eq!(
+            with.edits,
+            vec![LineEdit {
+                index: 1,
+                text: "C".to_owned()
+            }]
+        );
+        let back: HunkSelection =
+            serde_json::from_str(&serde_json::to_string(&with).expect("ser")).expect("parse");
+        assert_eq!(back, with);
     }
 
     // --- invalid selections ---

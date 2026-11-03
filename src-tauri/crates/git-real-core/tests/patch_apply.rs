@@ -2,8 +2,8 @@ mod common;
 
 use git_real_core::diff::build_patch;
 use git_real_core::{
-    ChangeKind, DiffLineKind, DiffOptions, DiffScope, GitError, HunkAction, HunkSelection,
-    RepoSession, StatusEntry, WorkingTreeStatus,
+    ChangeKind, DiffLineKind, DiffOptions, DiffScope, DiffSide, GitError, HunkAction,
+    HunkSelection, LineEdit, RepoSession, StatusEntry, WorkingTreeStatus,
 };
 
 const BASE: &str = "a\nb\nc\nd\ne\n";
@@ -17,6 +17,7 @@ fn whole() -> HunkSelection {
     HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     }
 }
 
@@ -24,7 +25,28 @@ fn picked(indices: &[usize]) -> HunkSelection {
     HunkSelection {
         hunk_index: 0,
         lines: Some(indices.to_vec()),
+        edits: vec![],
     }
+}
+
+fn edited(indices: &[usize], edits: &[(usize, &str)]) -> HunkSelection {
+    HunkSelection {
+        hunk_index: 0,
+        lines: Some(indices.to_vec()),
+        edits: edits
+            .iter()
+            .map(|(index, text)| LineEdit {
+                index: *index,
+                text: (*text).to_owned(),
+            })
+            .collect(),
+    }
+}
+
+fn blob(path: &std::path::Path, scope: DiffScope) -> Vec<u8> {
+    session(path)
+        .file_content("f.txt", scope, DiffSide::New, 1 << 20)
+        .expect("content")
 }
 
 fn status_entry(status: &WorkingTreeStatus, path: &str) -> StatusEntry {
@@ -225,6 +247,7 @@ fn apply_hunk_bad_hunk_index_errors() {
     let selection = HunkSelection {
         hunk_index: 5,
         lines: None,
+        edits: vec![],
     };
     let err = session(&path)
         .apply_hunk("README.md", HunkAction::Stage, &selection)
@@ -527,6 +550,7 @@ fn apply_hunk_untracked_whole_stage_with_bad_hunk_index_errors() {
     let selection = HunkSelection {
         hunk_index: 1,
         lines: None,
+        edits: vec![],
     };
     let err = session(&path)
         .apply_hunk("new.txt", HunkAction::Stage, &selection)
@@ -1025,6 +1049,7 @@ fn build_patch_picked_index_in_later_hunk_does_not_leak_across_hunks() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: Some(vec![2]),
+        edits: vec![],
     };
     let err = build_patch(&diff, &selection, false, 0o100644).expect_err("out of range");
     assert!(matches!(err, GitError::BadSelection), "got {err:?}");
@@ -1074,6 +1099,7 @@ fn apply_hunk_stage_whole_untracked_non_utf8_file_adds_it() {
     let whole = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
     session
         .apply_hunk("latin1.txt", HunkAction::Stage, &whole)
@@ -1266,4 +1292,56 @@ fn apply_hunk_whole_file_hunk_indices_shift_with_leading_context() {
             (DiffLineKind::Addition, "D".to_string())
         ]
     );
+}
+
+// --- GR-52: partial-line edits ---
+
+#[test]
+fn apply_hunk_partial_stage_writes_intermediate_line() {
+    let (_dir, path) = repo_with_two_edits();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &edited(&[1], &[(1, "bB")]))
+        .expect("partial stage");
+    assert_eq!(blob(&path, DiffScope::Staged), b"a\nbB\nc\nd\ne\n");
+    assert_eq!(read(&path, "f.txt"), BOTH_EDITED);
+    assert_eq!(
+        changed(&path, DiffScope::Unstaged),
+        vec![
+            (DiffLineKind::Deletion, "bB".to_owned()),
+            (DiffLineKind::Addition, "B".to_owned()),
+            (DiffLineKind::Deletion, "d".to_owned()),
+            (DiffLineKind::Addition, "D".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn apply_hunk_partial_discard_writes_intermediate_line() {
+    let (_dir, path) = repo_with_two_edits();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &edited(&[2], &[(2, "Bb")]))
+        .expect("partial discard");
+    assert_eq!(read(&path, "f.txt"), "a\nBb\nc\nD\ne\n");
+}
+
+#[test]
+fn apply_hunk_partial_unstage_writes_intermediate_line() {
+    let (_dir, path) = repo_with_two_edits();
+    common::stage(&path, "f.txt");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Unstage, &edited(&[2], &[(2, "Bb")]))
+        .expect("partial unstage");
+    assert_eq!(blob(&path, DiffScope::Staged), b"a\nBb\nc\nD\ne\n");
+    assert_eq!(read(&path, "f.txt"), BOTH_EDITED);
+}
+
+#[test]
+fn apply_hunk_partial_stage_keeps_crlf() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::commit_crlf(&path, "f.txt", "a\nb\nc\n", "add crlf");
+    std::fs::write(path.join("f.txt"), b"a\r\nB\r\nc\r\n").expect("write");
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &edited(&[1], &[(1, "bB")]))
+        .expect("partial stage");
+    assert_eq!(blob(&path, DiffScope::Staged), b"a\r\nbB\r\nc\r\n");
 }

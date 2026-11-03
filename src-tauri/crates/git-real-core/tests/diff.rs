@@ -1171,6 +1171,7 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
     let whole = HunkSelection {
         hunk_index: 2,
         lines: None,
+        edits: vec![],
     };
     let value = serde_json::to_value(&whole).unwrap();
     assert_eq!(value, serde_json::json!({ "hunkIndex": 2, "lines": null }));
@@ -1182,6 +1183,7 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
     let subset = HunkSelection {
         hunk_index: 0,
         lines: Some(vec![1, 3]),
+        edits: vec![],
     };
     let value = serde_json::to_value(&subset).unwrap();
     assert_eq!(

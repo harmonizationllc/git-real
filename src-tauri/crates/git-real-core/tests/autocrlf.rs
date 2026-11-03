@@ -151,6 +151,7 @@ fn lines(index: usize, picked: &[usize]) -> HunkSelection {
     HunkSelection {
         hunk_index: index,
         lines: Some(picked.to_vec()),
+        edits: vec![],
     }
 }
 
