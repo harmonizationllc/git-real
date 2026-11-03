@@ -169,6 +169,30 @@ impl RepoSession {
         Ok(())
     }
 
+    /// Points a local branch at a remote-tracking branch, or clears its
+    /// upstream. `upstream` is the short remote-tracking name (`origin/main`);
+    /// `None` clears it. A name that is not a remote-tracking branch is
+    /// refused with `BranchNotFound` before anything is written.
+    pub fn set_branch_upstream(
+        &self,
+        branch: &str,
+        upstream: Option<&str>,
+    ) -> Result<(), GitError> {
+        let repo = self.repo();
+        let mut local = find_local(repo, branch)?;
+        if let Some(name) = upstream
+            && let Err(e) = repo.find_branch(name, BranchType::Remote)
+        {
+            return Err(if is_not_found(&e) {
+                GitError::BranchNotFound(name.to_owned())
+            } else {
+                e.into()
+            });
+        }
+        local.set_upstream(upstream)?;
+        Ok(())
+    }
+
     /// Creates `name` and switches to it, all or nothing: when git refuses the
     /// switch (a dirty tree, a hook) the new branch is deleted again and the
     /// `CheckoutFailed` error is returned.

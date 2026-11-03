@@ -92,6 +92,7 @@ pub fn run() {
             commands::refs::create_branch,
             commands::refs::rename_branch,
             commands::refs::delete_branch,
+            commands::refs::set_branch_upstream,
             commands::refs::checkout_branch,
             commands::refs::checkout_remote_branch,
             commands::refs::delete_remote_branch,
