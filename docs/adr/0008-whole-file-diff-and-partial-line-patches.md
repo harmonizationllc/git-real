@@ -36,9 +36,14 @@ line for line, which the old matching three-line context guaranteed.
   diff" still asks for 1,000,000 lines.
 - **D4 — Partial-line edits.** `HunkSelection` gains `edits: Vec<LineEdit>`, each an index
   into the hunk's lines and the text that line should read after the action. The field has a
-  serde default and is skipped when empty, so the wire shape is backward compatible. A
-  selected `Remove` with an edit is written `-<original>` then `+<replacement>`; a selected
-  `Add` with an edit writes `+<replacement>` instead of the diff's line. Hunk counts are
+  serde default and is skipped when empty, so the wire shape is backward compatible. A group of
+  changed lines is a deletion run and the addition run after it, paired by position as the
+  viewer pairs them. A group that holds an edit is written in two parts. First come all of its
+  old-side lines as removals, `-<original>`. Then come its new-side lines in pair-slot order
+  (deletion k, then addition k) as additions: an edited line as `+<replacement>`, a selected
+  addition as itself, and a kept line (an unselected old-side line, context in the patch)
+  re-added as `+<original>`. The replacement so lands where its pair sits among the group's
+  other lines, not ahead of them. A group without an edit keeps hunk order. Hunk counts are
   recomputed from the emitted ops as before. An edit whose index is not a selected changed
   line, a duplicate index, or text holding `\n` or an interior `\r` is `BadSelection`, so a
   request that would add patch lines is refused rather than guessed.
@@ -49,7 +54,9 @@ line for line, which the old matching three-line context guaranteed.
   its own character-precise range (`useTextRange`). A pointer position becomes a row, side and
   UTF-16 offset through `caretResolver`, which uses `caretRangeFromPoint` and falls back to
   `caretPositionFromPoint`. The tint comes from state, so rows that the virtualizer unmounts
-  and remounts during a long drag still show selected. Double-click selects a word. In unified
+  and remounts during a long drag still show selected. A touch swipe pans the list
+  (`touch-action: pan-y`); only a mouse or pen drag makes a range. Double-click selects a word,
+  using the same Unicode word class as the edit tokens. In unified
   mode an end row of the other kind is treated as whole for tint, copy and action. Ctrl+C
   copies the highlighted text in every scope.
 - **D7 — Edit units shared with the word diff.** `model/edits.ts` pairs the edit units of a
@@ -62,6 +69,12 @@ line for line, which the old matching three-line context guaranteed.
   has previous and next change buttons with a counter, bound to F7 and Shift+F7 through a
   `diffNavigation` slot in the shell store that the active diff publishes. The right-click menu
   exists only for unstaged and staged diffs.
+- **D9 — A row target acts on its line pair.** With no range, the menu targets the row under
+  the pointer, "whole row, both sides" in the spec's words. A split row acts on both of its
+  cells. A unified row acts on its line and that line's partner: "Revert this line" on a `+`
+  line restores the old text, and "Stage this line" on a `-` line stages the replacement with
+  it. A unified line with no partner acts alone. The plan had read a unified row as its single
+  line; the spec wins.
 
 ## Consequences
 

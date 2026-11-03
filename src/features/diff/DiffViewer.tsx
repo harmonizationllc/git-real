@@ -33,7 +33,11 @@ export interface DiffViewerProps {
   onContextMenu?(target: MenuTarget, x: number, y: number): void;
   /** Fired once after the first render. */
   onMounted?(): void;
-  /** A scroll the user made: any scroll event not caused by `scrollToRow`. */
+  /**
+   * A scroll the user made: a scroll event after a wheel, pointer or key gesture on the container
+   * and since the last `scrollToRow`. Bare scroll events, such as virtualizer corrections, never
+   * count.
+   */
   onUserScroll?(): void;
   /** Test seam; defaults to resolving carets from the rendered rows. */
   resolveCaret?: CaretResolver;
