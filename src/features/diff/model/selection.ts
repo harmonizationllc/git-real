@@ -138,6 +138,7 @@ function rangeSelection(
       return;
     }
     if (p.whole) return;
+    // A pair with identical content has zero units, so a partial highlight on it selects nothing.
     p.units ??= lineEdits(lines[p.del].content, lines[p.add].content);
     p.units.forEach((u, k) => {
       const r = isDel ? u.old : u.new;
@@ -177,13 +178,7 @@ function rangeSelection(
     } else if (p.chosen.size > 0) {
       const index = forward ? p.del : p.add;
       selected.add(index);
-      const text = applyUnits(
-        lines[p.del].content,
-        lines[p.add].content,
-        units,
-        p.chosen,
-        forward,
-      );
+      const text = applyUnits(lines[p.del].content, lines[p.add].content, units, p.chosen, forward);
       edits.push({ index, text });
     }
   }
