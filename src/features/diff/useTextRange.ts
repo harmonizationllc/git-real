@@ -161,15 +161,15 @@ export function useTextRange(
     if (hit === null) return;
     // The word containing the offset, else the word ending at it; none strictly inside spaces.
     const text = lineText(hit.row, hit.side);
-    let start = hit.offset;
-    let end = hit.offset;
-    while (start > 0 && WORD.test(text[start - 1])) start--;
-    while (end < text.length && WORD.test(text[end])) end++;
-    if (start === end) return;
+    let wordStart = hit.offset;
+    let wordEnd = hit.offset;
+    while (wordStart > 0 && WORD.test(text[wordStart - 1])) wordStart--;
+    while (wordEnd < text.length && WORD.test(text[wordEnd])) wordEnd++;
+    if (wordStart === wordEnd) return;
     setState({
       side: hit.side,
-      anchor: { row: hit.row, offset: start },
-      focus: { row: hit.row, offset: end },
+      anchor: { row: hit.row, offset: wordStart },
+      focus: { row: hit.row, offset: wordEnd },
     });
   };
 

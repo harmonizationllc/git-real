@@ -225,7 +225,6 @@ describe("useTextRange ending a drag", () => {
   });
 });
 
-// Contract: only the primary button drags, so a right-click keeps the range for the context menu.
 // Contract: a touch pointer pans the list instead of dragging a range; mouse and pen still drag.
 describe("useTextRange touch", () => {
   const touch = (el: HTMLElement, kind: "pointerDown" | "pointerMove", x: number) =>
@@ -261,6 +260,7 @@ describe("useTextRange touch", () => {
   });
 });
 
+// Contract: only the primary button drags, so a right-click keeps the range for the context menu.
 describe("useTextRange other buttons", () => {
   it("should keep the range on a secondary-button pointerdown", () => {
     const { el } = setup();
