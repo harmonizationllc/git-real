@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyUnits, lineEdits } from "./edits";
+import { applyUnits, lineEdits, pickTokens, tokenRanges } from "./edits";
 import { WORD_DIFF_MAX_TOKENS } from "./limits";
 import { wordDiff } from "./wordDiff";
 
@@ -56,6 +56,30 @@ describe("applyUnits", () => {
   });
   it("should reverse every unit going backward to reach the old line", () => {
     expect(applyUnits(a, b, units(), new Set([0, 1]), false)).toBe("a b c d");
+  });
+});
+
+// Contract: tokenRanges lists one range per token; pickTokens keeps or drops the chosen tokens.
+describe("tokenRanges and pickTokens", () => {
+  const text = "foo bar baz";
+  it("should list one range per token in order", () => {
+    expect(tokenRanges(text)).toEqual([
+      { start: 0, end: 3 },
+      { start: 3, end: 4 },
+      { start: 4, end: 7 },
+      { start: 7, end: 8 },
+      { start: 8, end: 11 },
+    ]);
+  });
+  it("should list no ranges for an empty line", () => {
+    expect(tokenRanges("")).toEqual([]);
+  });
+  it("should keep only the chosen tokens", () => {
+    expect(pickTokens(text, tokenRanges(text), new Set([2]), true)).toBe("bar");
+  });
+  it("should drop the chosen tokens", () => {
+    expect(pickTokens(text, tokenRanges(text), new Set([2]), false)).toBe("foo  baz");
+    expect(pickTokens(text, tokenRanges(text), new Set([2, 3]), false)).toBe("foo baz");
   });
 });
 

@@ -1535,3 +1535,35 @@ fn apply_hunk_stage_only_the_additions_of_a_run_keeps_hunk_order() {
         "a\nb\nA\nB\n"
     );
 }
+
+/// Commits `f.txt` = "a\nb\n", then adds the line `foo bar baz` between them in the worktree.
+/// Hunk 0 is `[a, +foo bar baz, b]`: index 1 is the pure addition.
+fn repo_with_pure_addition() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "a\nb\n");
+    common::commit_all(&path, "add ab");
+    common::write_file(&path, "f.txt", "a\nfoo bar baz\nb\n");
+    (dir, path)
+}
+
+#[test]
+fn apply_hunk_stage_part_of_a_pure_addition_stages_only_the_chosen_text() {
+    let (_dir, path) = repo_with_pure_addition();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &edited(&[1], &[(1, "bar")]))
+        .expect("stage part of the addition");
+    assert_eq!(
+        String::from_utf8(blob(&path, DiffScope::Staged)).expect("utf8"),
+        "a\nbar\nb\n"
+    );
+    assert_eq!(read(&path, "f.txt"), "a\nfoo bar baz\nb\n");
+}
+
+#[test]
+fn apply_hunk_discard_part_of_a_pure_addition_keeps_the_rest_of_the_line() {
+    let (_dir, path) = repo_with_pure_addition();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Discard, &edited(&[1], &[(1, "foo  baz")]))
+        .expect("discard part of the addition");
+    assert_eq!(read(&path, "f.txt"), "a\nfoo  baz\nb\n");
+}

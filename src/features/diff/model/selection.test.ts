@@ -280,28 +280,70 @@ describe("selectionRequest from a row", () => {
   });
 });
 
-// Contract: a line with no partner is chosen whole by any non-empty highlight, never partially.
+// Contract: a line with no partner acts per token: every token the highlight touches is chosen.
 describe("selectionRequest with unpaired lines", () => {
   const solo = fileDiff([
     hunk([
       L("context", "c", 1, 1),
       L("deletion", "gone line", 2, null),
       L("context", "m", 3, 2),
-      L("addition", "new line", null, 3),
+      L("addition", "foo bar baz", null, 3),
     ]),
   ]);
   const uRows = buildRows(solo, "unified");
   const sRows = buildRows(solo, "split");
-  it("should select a whole unpaired deletion for a partial highlight in unified mode", () => {
-    const r = range("old", [1, 2], [1, 4]);
+  it("should stage the rest of a partly chosen unpaired deletion", () => {
+    const r = range("old", [1, 0], [1, 4]);
+    expect(selectionRequest(solo, uRows, target(r), "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [1],
+      edits: [{ index: 1, text: " line" }],
+    });
+  });
+  it("should discard only the chosen part of an unpaired deletion", () => {
+    const r = range("old", [1, 0], [1, 4]);
     expect(selectionRequest(solo, uRows, target(r), "discard")).toEqual({
       hunkIndex: 0,
       lines: [1],
-      edits: [],
+      edits: [{ index: 1, text: "gone" }],
     });
   });
-  it("should select a whole unpaired addition for a partial highlight in split mode", () => {
-    const r = range("new", [3, 1], [3, 3]);
+  it("should stage only the chosen part of an unpaired addition", () => {
+    const r = range("new", [3, 4], [3, 7]);
+    expect(selectionRequest(solo, sRows, target(r), "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [3],
+      edits: [{ index: 3, text: "bar" }],
+    });
+  });
+  it("should discard or unstage the line minus the chosen part of an unpaired addition", () => {
+    const r = range("new", [3, 4], [3, 7]);
+    for (const action of ["discard", "unstage"] as const) {
+      expect(selectionRequest(solo, sRows, target(r), action)).toEqual({
+        hunkIndex: 0,
+        lines: [3],
+        edits: [{ index: 3, text: "foo  baz" }],
+      });
+    }
+  });
+  it("should choose a whole word when the highlight touches one character of it", () => {
+    const r = range("new", [3, 5], [3, 6]);
+    expect(selectionRequest(solo, sRows, target(r), "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [3],
+      edits: [{ index: 3, text: "bar" }],
+    });
+  });
+  it("should choose the whitespace token a highlight covers", () => {
+    const r = range("new", [3, 4], [3, 8]);
+    expect(selectionRequest(solo, sRows, target(r), "discard")).toEqual({
+      hunkIndex: 0,
+      lines: [3],
+      edits: [{ index: 3, text: "foo baz" }],
+    });
+  });
+  it("should act on the plain line when every token is chosen", () => {
+    const r = range("new", [3, 0], [3, 11]);
     expect(selectionRequest(solo, sRows, target(r), "stage")).toEqual({
       hunkIndex: 0,
       lines: [3],
@@ -322,13 +364,13 @@ describe("selectionRequest with unpaired lines", () => {
     });
   });
   it("should ignore context rows inside a range", () => {
-    const r = range("new", [0, 0], [3, 3]);
+    const r = range("new", [0, 0], [3, 11]);
     expect(selectionRequest(solo, sRows, target(r), "discard")).toEqual({
       hunkIndex: 0,
       lines: [1, 3],
       edits: [],
     });
-    expect(coveredText(solo, sRows, r)).toBe("c\nm\nnew");
+    expect(coveredText(solo, sRows, r)).toBe("c\nm\nfoo bar baz");
   });
   it("should clamp an end offset beyond the line length", () => {
     const r = range("new", [3, 0], [3, 99]);
