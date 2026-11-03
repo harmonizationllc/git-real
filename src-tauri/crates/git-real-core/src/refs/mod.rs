@@ -180,14 +180,14 @@ impl RepoSession {
     ) -> Result<(), GitError> {
         let repo = self.repo();
         let mut local = find_local(repo, branch)?;
-        if let Some(name) = upstream
-            && let Err(e) = repo.find_branch(name, BranchType::Remote)
-        {
-            return Err(if is_not_found(&e) {
-                GitError::BranchNotFound(name.to_owned())
-            } else {
-                e.into()
-            });
+        match upstream {
+            Some(name) => {
+                find_branch_exact(repo, name, BranchType::Remote)?;
+            }
+            // libgit2 errors when there is no upstream to unset; that is
+            // already the requested state.
+            None if local.upstream().is_err() => return Ok(()),
+            None => {}
         }
         local.set_upstream(upstream)?;
         Ok(())
@@ -452,12 +452,22 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
     Ok(head == tip || repo.graph_descendant_of(head, tip)?)
 }
 
-/// Finds the local branch called exactly `name`. With `core.ignorecase` set
-/// libgit2's `find_branch` matches case-insensitively, so the branches are
-/// compared by name instead and `alpha` never resolves to `Alpha`.
+/// Finds the local branch called exactly `name`. See `find_branch_exact`.
 pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
+    find_branch_exact(repo, name, BranchType::Local)
+}
+
+/// Finds the branch of `kind` called exactly `name` (`origin/main` for a
+/// remote-tracking branch). With `core.ignorecase` set libgit2's
+/// `find_branch` matches case-insensitively, so the branches are compared by
+/// name instead and `alpha` never resolves to `Alpha`.
+fn find_branch_exact<'r>(
+    repo: &'r Repository,
+    name: &str,
+    kind: BranchType,
+) -> Result<Branch<'r>, GitError> {
     if ignores_case(repo) {
-        for branch in repo.branches(Some(BranchType::Local))? {
+        for branch in repo.branches(Some(kind))? {
             let (branch, _) = branch?;
             if lossy_name(&branch) == name {
                 return Ok(branch);
@@ -465,7 +475,7 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
         }
         return Err(GitError::BranchNotFound(name.to_owned()));
     }
-    match repo.find_branch(name, BranchType::Local) {
+    match repo.find_branch(name, kind) {
         Ok(branch) => Ok(branch),
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),
         Err(e) => Err(e.into()),

@@ -1441,6 +1441,39 @@ fn set_branch_upstream_none_clears_tracking() {
 }
 
 #[test]
+fn set_branch_upstream_none_on_an_untracked_branch_is_a_no_op() {
+    let (_d, _b, path, _bare, _head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    session.set_branch_upstream("topic", None).unwrap();
+    let list = session.list_branches().unwrap();
+    let topic = list.local.iter().find(|b| b.name == "topic").unwrap();
+    assert_eq!(topic.tracking, None);
+}
+
+#[test]
+fn set_branch_upstream_is_case_exact_when_ignorecase() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    let wrong = format!("origin/{}", head.to_uppercase());
+    let err = session
+        .set_branch_upstream(&head, Some(&wrong))
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == wrong));
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("still tracking");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+}
+
+#[test]
 fn set_branch_upstream_refuses_an_unknown_remote_branch() {
     let (_d, _b, path, _bare, head) = remote_fixture();
     let session = RepoSession::open(&path).unwrap();
