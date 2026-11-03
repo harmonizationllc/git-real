@@ -48,7 +48,7 @@ function TrackingBadge({ tracking }: { tracking: Tracking }) {
     label.push(`${behind} behind`);
   }
   return (
-    <span className={styles.badge} aria-label={label.join(", ")}>
+    <span className={styles.badge} role="img" aria-label={label.join(", ")}>
       {text.join(" ")}
     </span>
   );

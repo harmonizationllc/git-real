@@ -115,6 +115,11 @@ describe("BranchRow tracking badge", () => {
     expect(screen.getByLabelText("2 ahead, 1 behind")).toHaveTextContent("↑2 ↓1");
   });
 
+  it("should expose the count badge as an image with its accessible name", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: 2, behind: 1 }) }) });
+    expect(screen.getByRole("img", { name: "2 ahead, 1 behind" })).toHaveTextContent("↑2 ↓1");
+  });
+
   it("should show gone when both counts are null", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: null, behind: null }) }) });
     expect(screen.getByText("gone")).toBeInTheDocument();
@@ -259,6 +264,7 @@ describe("BranchRow tracking badge counts", () => {
   it("should show no badge for an in-sync branch", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: 0, behind: 0 }) }) });
     expect(screen.queryByText(/[↑↓]/)).toBeNull();
+    expect(screen.queryByLabelText(/ahead|behind/)).toBeNull();
     expect(screen.queryByText("gone")).toBeNull();
     expect(rowButton()).toHaveTextContent(/^main$/);
   });
