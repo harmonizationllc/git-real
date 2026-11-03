@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fileDiff, hunk, L, threePairDiff } from "../../../test/diffFixtures";
+import { lineEdits } from "./edits";
 import { buildRows } from "./rows";
 import {
   coveredText,
@@ -10,6 +11,12 @@ import {
   type Side,
   type TextRange,
 } from "./selection";
+
+// A pass-through spy, so a test can count the token diffs a request runs.
+vi.mock("./edits", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./edits")>();
+  return { ...real, lineEdits: vi.fn(real.lineEdits) };
+});
 
 const diff = threePairDiff();
 const split = buildRows(diff, "split");
@@ -186,6 +193,27 @@ describe("selectionRequest from a text range", () => {
       lines: [0, 1],
       edits: [],
     });
+  });
+});
+
+// Contract: a pair acted on whole never runs the token diff; only a partially covered row does.
+describe("selectionRequest edit units are lazy", () => {
+  it("should run the token diff only for the partial end rows of a split range", () => {
+    vi.mocked(lineEdits).mockClear();
+    selectionRequest(diff, split, target(range("new", [1, 8], [3, 5])), "discard");
+    expect(lineEdits).toHaveBeenCalledTimes(2);
+    expect(lineEdits).toHaveBeenCalledWith("one two three", "one two THREE");
+    expect(lineEdits).toHaveBeenCalledWith("seven eight nine", "SEVEN eight NINE");
+  });
+  it("should run it only for the partial addition row of a unified range", () => {
+    vi.mocked(lineEdits).mockClear();
+    selectionRequest(diff, unified, target(range("new", [2, 4], [4, 8])), "discard");
+    expect(lineEdits).toHaveBeenCalledExactlyOnceWith("one two three", "one two THREE");
+  });
+  it("should not run it for a row target", () => {
+    vi.mocked(lineEdits).mockClear();
+    selectionRequest(diff, split, { kind: "row", row: 2 }, "stage");
+    expect(lineEdits).not.toHaveBeenCalled();
   });
 });
 
