@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiffMode, FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
+import { useToasts } from "../../lib/store/toasts";
 import { declarationsOf } from "../../test/cssRules";
 import type { CaretHit, CaretResolver } from "./caretResolver";
 import { DiffViewer, type DiffViewerHandle } from "./DiffViewer";
@@ -393,6 +394,22 @@ describe("DiffViewer copy", () => {
     await vi.waitFor(() => expect(consoleError).toHaveBeenCalledOnce());
     expect(consoleError.mock.calls[0]).toContain(error);
     consoleError.mockRestore();
+  });
+
+  it("should show an error toast when the clipboard write is rejected", async () => {
+    useToasts.setState({ toasts: [] });
+    writeText.mockRejectedValue(new Error("denied"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    await vi.waitFor(() => expect(useToasts.getState().toasts).toHaveLength(1));
+    expect(useToasts.getState().toasts[0]).toMatchObject({
+      text: "Couldn't copy the diff text",
+      variant: "error",
+    });
+    consoleError.mockRestore();
+    useToasts.setState({ toasts: [] });
   });
 });
 
