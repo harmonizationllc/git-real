@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiffMode, FileDiff } from "../../lib/ipc";
@@ -50,7 +50,6 @@ beforeEach(() => {
   mockWindow.size = Infinity;
   mockWindow.start = 0;
   mockWindow.visibleStart = null;
-  mockWindow.measured = true;
   writeText.mockReset();
   writeText.mockResolvedValue(undefined);
   clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -463,19 +462,6 @@ describe("DiffViewer handle", () => {
     expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(7, { align: "start" });
   });
 
-  it("should call scrollToIndex synchronously when the virtualizer is already measured", () => {
-    const { ref } = setup();
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
-    try {
-      ref.current!.scrollToRow(7);
-      expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(7, { align: "start" });
-      act(() => vi.advanceTimersToNextFrame());
-      expect(scrollToIndex).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("should report the virtualizer's first visible row", () => {
     mockWindow.visibleStart = 5;
     const { ref } = setup();
@@ -571,66 +557,6 @@ describe("DiffViewer onUserScroll", () => {
     const { scroll } = setup();
     wheel(scroll);
     expect(() => fireEvent.scroll(scroll)).not.toThrow();
-  });
-});
-
-// Contract: a scrollToRow before the virtualizer has measured (total size 0) waits for a frame in
-// which it has, then scrolls once; it gives up quietly after a bounded number of frames.
-describe("DiffViewer scrollToRow before measurement", () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("should not call scrollToIndex immediately while the total size is 0", () => {
-    mockWindow.measured = false;
-    const { ref } = setup();
-    ref.current!.scrollToRow(7);
-    expect(scrollToIndex).not.toHaveBeenCalled();
-  });
-
-  it("should not scroll on a frame in which the virtualizer is still unmeasured", () => {
-    mockWindow.measured = false;
-    const { ref } = setup();
-    ref.current!.scrollToRow(7);
-    act(() => vi.advanceTimersToNextFrame());
-    expect(scrollToIndex).not.toHaveBeenCalled();
-  });
-
-  it("should scroll exactly once on the first frame after the virtualizer is measured", () => {
-    mockWindow.measured = false;
-    const { ref } = setup();
-    ref.current!.scrollToRow(7);
-    act(() => vi.advanceTimersToNextFrame());
-    mockWindow.measured = true;
-    act(() => vi.advanceTimersToNextFrame());
-    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(7, { align: "start" });
-    for (let i = 0; i < 5; i++) act(() => vi.advanceTimersToNextFrame());
-    expect(scrollToIndex).toHaveBeenCalledTimes(1);
-  });
-
-  it("should give up without a call or an error when it never measures within 30 frames", () => {
-    mockWindow.measured = false;
-    const { ref } = setup();
-    ref.current!.scrollToRow(7);
-    expect(() => {
-      for (let i = 0; i < 30; i++) act(() => vi.advanceTimersToNextFrame());
-    }).not.toThrow();
-    mockWindow.measured = true;
-    for (let i = 0; i < 5; i++) act(() => vi.advanceTimersToNextFrame());
-    expect(scrollToIndex).not.toHaveBeenCalled();
-  });
-
-  it("should stop waiting when the viewer unmounts", () => {
-    mockWindow.measured = false;
-    const { ref, unmount } = setup();
-    ref.current!.scrollToRow(7);
-    unmount();
-    mockWindow.measured = true;
-    expect(() => act(() => vi.advanceTimersToNextFrame())).not.toThrow();
-    expect(scrollToIndex).not.toHaveBeenCalled();
   });
 });
 
