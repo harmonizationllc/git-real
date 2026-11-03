@@ -172,7 +172,7 @@ beforeEach(async () => {
     refsFilter: {},
   });
   vi.mocked(listStashes).mockResolvedValue([]);
-  useShell.setState({ dialog: null, repoActions: null });
+  useShell.setState({ dialog: null, repoActions: null, diffNavigation: null });
   vi.mocked(hostingRepoContext).mockResolvedValue(null);
   vi.mocked(hostingListPullRequests).mockResolvedValue([]);
   vi.mocked(hostingListIssues).mockResolvedValue([]);
@@ -2122,6 +2122,70 @@ describe("RepoPane styling", () => {
       expect(declarationsOf(css, cls)).toMatch(/background:\s*var\(--color-surface\)/);
       expect(declarationsOf(css, cls)).toMatch(/border-radius:\s*var\(--radius-s\)/);
       expect(declarationsOf(css, cls)).toMatch(/box-shadow:\s*var\(--shadow-card\)/);
+    }
+  });
+});
+
+// Contract: F7 and Shift+F7 step through the diff changes via the published slot, only for this
+// pane's repository and never on top of a dialog.
+describe("RepoPane change navigation shortcuts", () => {
+  const publish = (repoId: number) => {
+    const nav = { repoId, next: vi.fn(), prev: vi.fn() };
+    act(() => useShell.getState().publishDiffNavigation(nav));
+    return nav;
+  };
+
+  it("should call next and preventDefault on F7", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const nav = publish(1);
+    const notPrevented = fireEvent.keyDown(window, { key: "F7", code: "F7" });
+    expect(nav.next).toHaveBeenCalledTimes(1);
+    expect(nav.prev).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(false);
+  });
+
+  it("should call prev and preventDefault on Shift+F7", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const nav = publish(1);
+    const notPrevented = fireEvent.keyDown(window, { key: "F7", code: "F7", shiftKey: true });
+    expect(nav.prev).toHaveBeenCalledTimes(1);
+    expect(nav.next).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(false);
+  });
+
+  it("should ignore F7 when the slot belongs to another repository", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const nav = publish(2);
+    const notPrevented = fireEvent.keyDown(window, { key: "F7", code: "F7" });
+    fireEvent.keyDown(window, { key: "F7", code: "F7", shiftKey: true });
+    expect(nav.next).not.toHaveBeenCalled();
+    expect(nav.prev).not.toHaveBeenCalled();
+    expect(notPrevented).toBe(true);
+  });
+
+  it("should ignore F7 when no slot is published", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(fireEvent.keyDown(window, { key: "F7", code: "F7" })).toBe(true);
+  });
+
+  it("should ignore F7 and Shift+F7 while a dialog is open", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    const nav = publish(1);
+    const other = document.createElement("div");
+    other.setAttribute("role", "dialog");
+    document.body.append(other);
+    try {
+      fireEvent.keyDown(window, { key: "F7", code: "F7" });
+      fireEvent.keyDown(window, { key: "F7", code: "F7", shiftKey: true });
+      expect(nav.next).not.toHaveBeenCalled();
+      expect(nav.prev).not.toHaveBeenCalled();
+    } finally {
+      other.remove();
     }
   });
 });
