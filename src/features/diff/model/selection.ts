@@ -67,10 +67,11 @@ interface Pair {
   whole: boolean;
 }
 
+/** A row's lines: both cells of a split row; a unified row's line and its partner, if any. */
 function rowSelection(diff: FileDiff, rows: DiffRow[], row: number): HunkSelection | null {
   const r = rows[row];
   const lines = diff.hunks[r.hunkIndex].lines;
-  const indices = r.kind === "unified" ? [r.lineIndex] : [r.old, r.new];
+  const indices = r.kind === "unified" ? [r.lineIndex, r.partner] : [r.old, r.new];
   const picked = [...new Set(indices.filter((i) => i !== null))].sort((x, y) => x - y);
   if (picked.every((i) => lines[i].kind === "context")) return null;
   return { hunkIndex: r.hunkIndex, lines: picked, edits: [] };
