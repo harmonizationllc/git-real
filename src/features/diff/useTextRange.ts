@@ -36,7 +36,8 @@ interface Drag {
 
 /** Pixels scrolled per animation frame while a drag is past the container's top or bottom. */
 const EDGE_STEP = 16;
-const WORD = /[A-Za-z0-9_]/;
+/** A word character, as in the edit tokens (edits.ts). */
+const WORD = /[\p{L}\p{N}_]/u;
 const NO_HIT: CaretResolver = () => null;
 
 /**
