@@ -38,12 +38,15 @@ line for line, which the old matching three-line context guaranteed.
   into the hunk's lines and the text that line should read after the action. The field has a
   serde default and is skipped when empty, so the wire shape is backward compatible. A group of
   changed lines is a deletion run and the addition run after it, paired by position as the
-  viewer pairs them. A group that holds an edit is written in two parts. First come all of its
+  viewer pairs them. A group that holds an edit, or that has both deletions and additions and
+  that the selection takes only in part, is written in two parts. First come all of its
   old-side lines as removals, `-<original>`. Then come its new-side lines in pair-slot order
   (deletion k, then addition k) as additions: an edited line as `+<replacement>`, a selected
   addition as itself, and a kept line (an unselected old-side line, context in the patch)
-  re-added as `+<original>`. The replacement so lands where its pair sits among the group's
-  other lines, not ahead of them. A group without an edit keeps hunk order. Hunk counts are
+  re-added as `+<original>`. A replacement, or a whole pair picked from the middle of a run,
+  so lands where its pair sits among the group's other lines, not ahead of or behind them. A
+  group taken whole or not at all, and a pure deletion or addition run, keeps hunk order, which
+  yields the same file either way. Hunk counts are
   recomputed from the emitted ops as before. An edit whose index is not a selected changed
   line, a duplicate index, or text holding `\n` or an interior `\r` is `BadSelection`, so a
   request that would add patch lines is refused rather than guessed.
