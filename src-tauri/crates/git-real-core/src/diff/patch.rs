@@ -269,7 +269,9 @@ fn order_flagged_runs(ops: &mut [PatchLine]) {
 
 /// Writes the hunk body. A marker follows a flagged line only when it is the
 /// last line of its side; a flagged context line that ends the old side but
-/// is followed by additions is written as a remove/add pair.
+/// is followed by additions is written as a remove/add pair. Only additions
+/// carry a replacement here: `order_edited_groups` has already written each
+/// replaced removal as a plain removal plus an addition of its new text.
 fn render_lines(out: &mut String, ops: &[PatchLine]) {
     let last_old = ops.iter().rposition(PatchLine::on_old);
     let last_new = ops.iter().rposition(PatchLine::on_new);
@@ -291,19 +293,6 @@ fn render_lines(out: &mut String, ops: &[PatchLine]) {
             Op::Add => ('+', ends_new),
             Op::Remove => ('-', ends_old),
         };
-        if op == Op::Remove
-            && let Some(text) = replacement
-        {
-            out.push_str(&format!("-{content}\n"));
-            if marker && line.no_newline_at_eof {
-                out.push_str(NO_NEWLINE_MARKER);
-            }
-            out.push_str(&format!("+{text}\n"));
-            if ends_new && line.no_newline_at_eof {
-                out.push_str(NO_NEWLINE_MARKER);
-            }
-            continue;
-        }
         let content = replacement.unwrap_or(content);
         out.push_str(&format!("{sign}{content}\n"));
         if marker && line.no_newline_at_eof {
