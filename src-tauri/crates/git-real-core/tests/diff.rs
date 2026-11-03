@@ -1644,14 +1644,14 @@ fn diff_whole_file_context_yields_one_hunk_with_every_line() {
     // Two edits 14 lines apart: default context splits them into two hunks.
     let (_dir, path) = common::temp_repo_with_commit();
     let original: String = (1..=20).map(|i| format!("l{i}\n")).collect();
-    common::write_file(&path, "ten.txt", &original);
+    common::write_file(&path, "twenty.txt", &original);
     common::commit_all(&path, "add file");
     let edited = original.replace("l3\n", "L3\n").replace("l18\n", "L18\n");
-    common::write_file(&path, "ten.txt", &edited);
+    common::write_file(&path, "twenty.txt", &edited);
     assert_eq!(
         diff_of(
             &path,
-            "ten.txt",
+            "twenty.txt",
             DiffScope::Unstaged,
             DiffOptions::default()
         )
@@ -1662,7 +1662,7 @@ fn diff_whole_file_context_yields_one_hunk_with_every_line() {
     );
     let diff = diff_of(
         &path,
-        "ten.txt",
+        "twenty.txt",
         DiffScope::Unstaged,
         DiffOptions::whole_file(),
     )

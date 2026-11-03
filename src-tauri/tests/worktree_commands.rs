@@ -827,5 +827,5 @@ fn get_file_diff_inner_uses_whole_file_context() {
         get_file_diff_inner(&reg, id, "twenty.txt", DiffScope::Unstaged, false, None).unwrap();
 
     assert_eq!(diff.hunks.len(), 1);
-    assert!(diff.hunks[0].lines.len() >= 20);
+    assert_eq!(diff.hunks[0].lines.len(), 21); // 19 context + 1 deletion + 1 addition
 }

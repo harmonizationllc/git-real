@@ -234,16 +234,21 @@ fn discard_change_keeps_crlf_and_other_change() {
 }
 
 #[test]
-fn discard_lines_keeps_crlf() {
+fn discard_whole_hunk_keeps_crlf() {
     let (_d, path) = crlf_repo("true");
     write_work(&path, &crlf(&edited()));
-    // The whole-file hunk is [l1, -l2, +L2, ...]; 1 and 2 are the l2 change.
+    // `lines: None` discards the whole-file hunk: both changes go.
+    let whole = HunkSelection {
+        hunk_index: 0,
+        lines: None,
+        edits: vec![],
+    };
     session(&path)
-        .apply_hunk(F, HunkAction::Discard, &lines(0, &[1, 2]))
-        .expect("discard lines");
-    assert_eq!(work(&path), crlf(&text(&[(10, "L10")])));
+        .apply_hunk(F, HunkAction::Discard, &whole)
+        .expect("discard hunk");
+    assert_eq!(work(&path), crlf(&base()));
     assert_eq!(index_blob(&path), lf(&base()));
-    assert_status(&path, row(None, Some(ChangeKind::Modified)), " M f.txt\n");
+    assert_status(&path, vec![], "");
 }
 
 // --- autocrlf=true: whole files ---
