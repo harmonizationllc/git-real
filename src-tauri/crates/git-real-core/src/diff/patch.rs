@@ -78,7 +78,10 @@ pub fn build_patch(
         }
     }
 
-    let edit_invalid = selection.edits.iter().any(|e| {
+    let edit_invalid = selection.edits.iter().enumerate().any(|(n, e)| {
+        let duplicate = selection.edits[..n]
+            .iter()
+            .any(|prev| prev.index == e.index);
         let changed = hunk
             .lines
             .get(e.index)
@@ -90,7 +93,7 @@ pub fn build_patch(
         // Only a final `\r` is allowed; anything else would add patch lines.
         let body = e.text.strip_suffix('\r').unwrap_or(&e.text);
         let single_line = !body.contains(['\n', '\r']);
-        !(changed && picked && single_line)
+        !(changed && picked && single_line) || duplicate
     });
     if edit_invalid {
         return Err(GitError::BadSelection);
@@ -688,6 +691,48 @@ mod tests {
         );
         let err = build_patch(&diff, &sel(&[0, 1], &[(0, "x")]), false, MODE).expect_err("bad");
         assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_text_with_newline_is_bad_selection() {
+        let err =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\nD")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_text_with_interior_carriage_return_is_bad_selection() {
+        let err =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\rD")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+        let patch = build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\r")]), false, MODE)
+            .expect("trailing CR is accepted");
+        assert!(patch.ends_with(" a\n-A\n+C\r\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn duplicate_edit_index_is_bad_selection() {
+        let err = build_patch(
+            &del_add_diff(),
+            &sel(&[1], &[(1, "C"), (1, "D")]),
+            false,
+            MODE,
+        )
+        .expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edited_remove_with_selected_partner_add_stages_both_texts() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[1, 2], &[(1, "C")]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!(
+                "{}@@ -1,3 +1,4 @@\n a\n-A\n+C\n+B\n z\n",
+                modify_head("f.txt")
+            )
+        );
     }
 
     #[test]
