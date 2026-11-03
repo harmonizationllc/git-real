@@ -68,6 +68,7 @@ interface Over {
   highlight?: HighlightMap | null;
   onContextMenu?: ((target: MenuTarget, x: number, y: number) => void) | null;
   onMounted?: () => void;
+  onUserScroll?: () => void;
 }
 
 function setup(over: Over = {}) {
@@ -85,6 +86,7 @@ function setup(over: Over = {}) {
       highlight={over.highlight ?? null}
       onContextMenu={onContextMenu}
       onMounted={over.onMounted}
+      onUserScroll={over.onUserScroll}
       resolveCaret={resolveCaret}
     />,
   );
@@ -474,6 +476,51 @@ describe("DiffViewer handle", () => {
   it("should report row 0 when nothing is rendered", () => {
     const { ref } = setup({ diff: fileDiff([]), rows: [] });
     expect(ref.current!.firstVisibleRow()).toBe(0);
+  });
+});
+
+// Contract: onUserScroll reports scrolls the user made; the scroll event a scrollToRow causes is
+// not one of them, and the next scroll event after a scrollToRow is the one it covers.
+describe("DiffViewer onUserScroll", () => {
+  it("should not report the scroll event that follows scrollToRow", () => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    ref.current!.scrollToRow(7);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).not.toHaveBeenCalled();
+  });
+
+  it("should report a further scroll event with no scrollToRow in between once", () => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    ref.current!.scrollToRow(7);
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("should report a wheel-initiated scroll with no prior scrollToRow", () => {
+    const onUserScroll = vi.fn();
+    const { scroll } = setup({ onUserScroll });
+    fireEvent.wheel(scroll, { deltaY: 100 });
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("should ignore the scroll after a second scrollToRow too", () => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    ref.current!.scrollToRow(7);
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
+    ref.current!.scrollToRow(2);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("should not throw on a scroll without the prop", () => {
+    const { scroll } = setup();
+    expect(() => fireEvent.scroll(scroll)).not.toThrow();
   });
 });
 

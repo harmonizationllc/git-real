@@ -15,7 +15,7 @@ import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
 import type { DiffScope } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
-import { scrollToIndex } from "../../test/mockVirtualizer";
+import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { BlameView } from "../history/BlameView";
 import { DECODED_REASON, DetailPane, PENDING_REASON, WHITESPACE_REASON } from "./DetailPane";
@@ -91,6 +91,7 @@ beforeEach(async () => {
   useWorkspace.setState({ selected: {}, centreView: {}, historyPath: {} });
   useShell.setState({ diffNavigation: null });
   scrollToIndex.mockReset();
+  mockWindow.visibleStart = null;
   await seedSettings({ diff: { mode: "split", ignoreWhitespace: false } });
   vi.mocked(getFileDiff).mockImplementation((_id, path) => Promise.resolve(textDiff({ path })));
   vi.mocked(getFileContent).mockResolvedValue(new ArrayBuffer(2));
@@ -414,7 +415,10 @@ function locate({ row, side, offset }: Point): { node: Node; offset: number } {
 function stubCarets() {
   stubDocument("elementFromPoint", (x: number) => {
     const p = points.get(x);
-    return p ? locate(p).node.parentElement : null;
+    if (!p) return null;
+    // A blank split cell has no code: the point lands on the cell itself.
+    const cell = document.querySelector(`[data-index="${p.row}"] [data-side="${p.side}"]`)!;
+    return cell.querySelector("code[data-line-text]") ? locate(p).node.parentElement : cell;
   });
   stubDocument("caretRangeFromPoint", (x: number) => {
     const p = points.get(x);
@@ -850,6 +854,70 @@ describe("DetailPane stale revert", () => {
   });
 });
 
+// Contract: an open menu belongs to the diff it was opened on; a changed refetch drops it.
+describe("DetailPane stale menu", () => {
+  it("should drop an open menu when a refetch returns a changed diff", async () => {
+    serveThree();
+    const { queryClient } = setup();
+    await diffRegion();
+    rowMenu(1);
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([hunk([L("deletion", "other", 2, null), L("addition", "else", null, 2)])]),
+    );
+    await act(() => queryClient.invalidateQueries());
+    await screen.findByText("else");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Stage this line" })).toBeNull();
+    expect(applyHunk).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the revert count counts a row whose highlighted-side cell is blank when its other
+// line is reverted (either-side ruling).
+describe("DetailPane revert count with a blank cell", () => {
+  // Split rows: 0 ctx, 1 {"a","A"}, 2 {"b", blank new cell}, 3 ctx.
+  const lonely = () =>
+    fileDiff([
+      hunk([
+        L("context", "c", 1, 1),
+        L("deletion", "a", 2, null),
+        L("deletion", "b", 3, null),
+        L("addition", "A", null, 2),
+        L("context", "d", 4, 3),
+      ]),
+    ]);
+
+  beforeEach(() => {
+    vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(lonely()));
+    stubCarets();
+  });
+
+  it("should count the blank-cell row whose deletion is reverted", async () => {
+    setup();
+    await diffRegion();
+    dragRange({ row: 1, side: "new", offset: 0 }, { row: 2, side: "new", offset: 0 });
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this section"));
+    expect(revertDialog()).toHaveTextContent("Revert 2 lines in a.ts? This cannot be undone.");
+  });
+
+  it("should discard both deletions and the addition when confirmed", async () => {
+    setup();
+    await diffRegion();
+    dragRange({ row: 1, side: "new", offset: 0 }, { row: 2, side: "new", offset: 0 });
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this section"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Revert" }));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "discard", {
+        hunkIndex: 0,
+        lines: [1, 2, 3],
+        edits: [],
+      }),
+    );
+  });
+});
+
 // Contract: a staged file's menu only unstages.
 describe("DetailPane staged menu", () => {
   beforeEach(() => {
@@ -1173,6 +1241,18 @@ describe("DetailPane first-change scroll", () => {
     expect(scrollToIndex).toHaveBeenCalledTimes(1);
   });
 
+  it("should not scroll again when the same key refetches a changed diff", async () => {
+    const { queryClient } = setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([hunk([L("deletion", "other", 2, null), L("addition", "else", null, 2)])]),
+    );
+    await act(() => queryClient.invalidateQueries());
+    await screen.findByText("else");
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
   it("should scroll again after Load full diff fetches a new key", async () => {
     serveThree({ truncated: true });
     setup();
@@ -1202,6 +1282,68 @@ describe("DetailPane first-change scroll", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Side by side" }));
     await waitFor(() => expect(document.querySelector('[data-index="7"]')).toBeNull());
     expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Contract: a manual scroll forgets the current change, so F7 continues from the viewport.
+describe("DetailPane user scroll and navigation", () => {
+  // Split rows: 0 ctx, 1 {a,A}, 2..4 ctx, 5 {b,B}, 6..8 ctx, 9 {d,D}, 10 ctx; blocks at 1, 5, 9.
+  const threeBlocks = () =>
+    fileDiff([
+      hunk(
+        [
+          L("context", "c1", 1, 1),
+          L("deletion", "a", 2, null),
+          L("addition", "A", null, 2),
+          ...[3, 4, 5].map((n) => L("context", `c${n}`, n, n)),
+          L("deletion", "b", 6, null),
+          L("addition", "B", null, 6),
+          ...[7, 8, 9].map((n) => L("context", `c${n}`, n, n)),
+          L("deletion", "d", 10, null),
+          L("addition", "D", null, 10),
+          L("context", "c11", 11, 11),
+        ],
+        "@@ -1,11 +1,11 @@",
+      ),
+    ]);
+
+  beforeEach(() => {
+    vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(threeBlocks()));
+  });
+
+  /** The scroll event the mount's own scrollToRow causes, then a user wheel scroll to `row`. */
+  const userScrollTo = (row: number) => {
+    const scroll = screen.getByTestId("diff-scroll");
+    fireEvent.scroll(scroll);
+    mockWindow.visibleStart = row;
+    fireEvent.wheel(scroll, { deltaY: 100 });
+    fireEvent.scroll(scroll);
+  };
+
+  it("should show the first change as current after mount", async () => {
+    setup();
+    await diffRegion();
+    expect(await screen.findByText("1 of 3")).toBeInTheDocument();
+  });
+
+  it("should drop the current change from the counter right after a user scroll", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    userScrollTo(6);
+    expect(await screen.findByText("3 changes")).toBeInTheDocument();
+  });
+
+  it("should step from the viewport, not from the old current change, on the next F7", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    userScrollTo(6);
+    await screen.findByText("3 changes");
+    scrollToIndex.mockClear();
+    act(() => useShell.getState().diffNavigation!.next());
+    // The first block below row 6 starts at row 9; stepping from block 0 would give row 5 - 3.
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(6, { align: "start" });
   });
 });
 
@@ -1288,6 +1430,22 @@ describe("DetailPane navigation publishing", () => {
     expect(published()).toBeNull();
   });
 
+  it("should never publish null while the viewer stays mounted and next() steps", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    const seen: unknown[] = [];
+    const unsubscribe = useShell.subscribe((s) => seen.push(s.diffNavigation));
+    try {
+      act(() => published()!.next());
+      act(() => published()!.prev());
+    } finally {
+      unsubscribe();
+    }
+    expect(seen).not.toContain(null);
+    expect(published()).toEqual(shape);
+  });
+
   it("should publish nothing for a diff without rows", async () => {
     vi.mocked(getFileDiff).mockResolvedValue(fileDiff([]));
     setup();
@@ -1354,6 +1512,13 @@ describe("DetailPane truncated diffs", () => {
         truncated: true,
       },
     );
+
+  it("should publish no navigation in the unchanged-lines empty state", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(unchangedHead());
+    setup();
+    await screen.findByText("The first 4 lines are unchanged");
+    expect(useShell.getState().diffNavigation).toBeNull();
+  });
 
   it("should say the loaded lines are unchanged when a truncated diff has no change in them", async () => {
     vi.mocked(getFileDiff).mockResolvedValue(unchangedHead());
