@@ -2,6 +2,12 @@
 
 Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of the GitHub release with the same tag; the Release workflow refuses a tag whose section is missing or empty. Keep each paragraph and bullet on one line: GitHub renders a newline inside a release body as a line break.
 
+## Unreleased
+
+- **Whole-file diff**: the diff pane shows the entire file with changes in place, with previous and next change buttons (F7 / Shift+F7).
+- **Right-click staging**: stage, unstage and revert the line under the pointer or the highlighted text, down to the word.
+- **Removed**: hunk headers and line-number selection in the diff pane.
+
 ## 0.1.0
 
 The first release of Git Real, a free, lightweight desktop Git client for Linux, Windows and macOS.
