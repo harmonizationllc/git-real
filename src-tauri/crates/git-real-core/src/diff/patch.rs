@@ -101,7 +101,7 @@ pub fn build_patch(
         return Err(GitError::BadSelection);
     }
 
-    let mut ops = order_edited_groups(
+    let mut ops = order_partial_groups(
         &hunk.lines,
         select_ops(
             &hunk.lines,
@@ -205,12 +205,13 @@ fn select_ops<'a>(
 }
 
 /// Lays out each group of changed lines (a deletion run and the addition run
-/// after it, paired by position as the viewer pairs them) in hunk order,
-/// except a group holding an edit: its old lines are written first as
+/// after it, paired by position as the viewer pairs them) in hunk order when
+/// the selection takes all of it or none of it. A group the selection takes
+/// in part, or that holds an edit, is written as its old lines first as
 /// removals, then its new lines in pair order as additions, a kept line as a
-/// removal and an addition of itself. A replacement then lands where its pair
-/// sits among the group's other lines instead of ahead of them.
-fn order_edited_groups<'a>(
+/// removal and an addition of itself. A selected pair or a replacement then
+/// lands in its own slot among the group's other lines.
+fn order_partial_groups<'a>(
     lines: &'a [DiffLine],
     ops: Vec<Option<PatchLine<'a>>>,
 ) -> Vec<PatchLine<'a>> {
@@ -233,7 +234,11 @@ fn order_edited_groups<'a>(
             .count();
         let group: Vec<_> = ops.by_ref().take(dels + adds).collect();
         start += dels + adds;
-        if !group.iter().flatten().any(|o| o.replacement.is_some()) {
+        let taken = |o: &Option<PatchLine>| o.as_ref().is_some_and(|o| o.op != Op::Context);
+        // Only a group with both sides has pairs whose slots the layout can move.
+        let partial = dels > 0 && adds > 0 && group.iter().any(taken) && !group.iter().all(taken);
+        let edited = group.iter().flatten().any(|o| o.replacement.is_some());
+        if !partial && !edited {
             out.extend(group.into_iter().flatten());
             continue;
         }
