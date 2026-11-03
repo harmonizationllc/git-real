@@ -54,6 +54,9 @@ describe("changeBlocks", () => {
       hunk([L("deletion", "a", 1, null)]),
       hunk([L("addition", "n", null, 9)]),
     ]);
-    expect(changeBlocks(two, buildRows(two, "split"))).toHaveLength(2);
+    expect(changeBlocks(two, buildRows(two, "split"))).toEqual([
+      { hunkIndex: 0, firstRow: 0, lastRow: 0 },
+      { hunkIndex: 1, firstRow: 1, lastRow: 1 },
+    ]);
   });
 });

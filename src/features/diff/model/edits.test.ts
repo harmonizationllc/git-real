@@ -16,11 +16,10 @@ describe("lineEdits", () => {
       { old: { start: 7, end: 7 }, new: { start: 7, end: 9 } },
     ]);
   });
-  it("should yield one unit with an empty new range for a pure deletion", () => {
-    const units = lineEdits("a b c", "a c");
-    expect(units).toHaveLength(1);
-    expect(units[0].new.start).toBe(units[0].new.end);
-    expect(units[0].old.end - units[0].old.start).toBe(2);
+  it('should yield one unit with an empty new range for a pure deletion ("b " removed)', () => {
+    expect(lineEdits("a b c", "a c")).toEqual([
+      { old: { start: 2, end: 4 }, new: { start: 2, end: 2 } },
+    ]);
   });
   it("should yield no units for identical lines", () => {
     expect(lineEdits("same line", "same line")).toEqual([]);
