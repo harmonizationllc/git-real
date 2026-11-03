@@ -87,7 +87,10 @@ pub fn build_patch(
             .lines
             .as_ref()
             .is_none_or(|lines| lines.contains(&e.index));
-        !(changed && picked)
+        // Only a final `\r` is allowed; anything else would add patch lines.
+        let body = e.text.strip_suffix('\r').unwrap_or(&e.text);
+        let single_line = !body.contains(['\n', '\r']);
+        !(changed && picked && single_line)
     });
     if edit_invalid {
         return Err(GitError::BadSelection);

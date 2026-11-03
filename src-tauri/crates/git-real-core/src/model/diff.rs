@@ -95,7 +95,7 @@ pub struct HunkSelection {
     /// Indices into `Hunk::lines` of Addition/Deletion lines; `None` = whole hunk.
     pub lines: Option<Vec<usize>>,
     /// Replacement text for selected lines, so a line can be staged partway.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edits: Vec<LineEdit>,
 }
 

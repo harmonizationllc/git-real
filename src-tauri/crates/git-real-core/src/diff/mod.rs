@@ -340,8 +340,6 @@ pub(crate) fn change_kind(status: git2::Delta) -> Option<ChangeKind> {
     }
 }
 
-/// Collects hunks until `max_lines` lines are gathered; the flag reports
-/// whether any line was dropped. Exact mode fails on non-UTF-8 lines of `path`.
 /// Copies `selection`, appending `\r` to each edit whose original line ends
 /// in `\r` so an edited CRLF line keeps its line ending.
 fn keep_carriage_returns(diff: &FileDiff, selection: &HunkSelection) -> HunkSelection {
@@ -360,6 +358,8 @@ fn keep_carriage_returns(diff: &FileDiff, selection: &HunkSelection) -> HunkSele
     selection
 }
 
+/// Collects hunks until `max_lines` lines are gathered; the flag reports
+/// whether any line was dropped. Exact mode fails on non-UTF-8 lines of `path`.
 fn collect_hunks(
     patch: &git2::Patch<'_>,
     max_lines: usize,
