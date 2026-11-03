@@ -59,9 +59,7 @@ impl RepoSession {
         };
         let opts = DiffOptions {
             ignore_whitespace: false,
-            context_lines: 3,
-            max_lines: usize::MAX,
-            ..DiffOptions::default()
+            ..DiffOptions::whole_file()
         };
         // Decided before the exact load so any encoding stages whole.
         let whole_untracked =

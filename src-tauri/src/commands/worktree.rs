@@ -18,8 +18,12 @@ pub fn get_status_inner(reg: &RepoRegistry, id: RepoId) -> Result<WorkingTreeSta
     with_session(reg, id, |s| s.status())
 }
 
-/// Diff of one file. `max_lines` caps the collected lines; `None` means the
-/// core default, and `Some(0)` yields an empty, truncated diff.
+/// Line cap for the viewer diff when the caller passes none.
+pub const DEFAULT_VIEW_LINES: usize = 50_000;
+
+/// Diff of one file with whole-file context. `max_lines` caps the collected
+/// lines; `None` means `DEFAULT_VIEW_LINES`, and `Some(0)` yields an empty,
+/// truncated diff.
 pub fn get_file_diff_inner(
     reg: &RepoRegistry,
     id: RepoId,
@@ -28,11 +32,10 @@ pub fn get_file_diff_inner(
     ignore_whitespace: bool,
     max_lines: Option<usize>,
 ) -> Result<FileDiff, AppError> {
-    let defaults = DiffOptions::default();
     let opts = DiffOptions {
         ignore_whitespace,
-        max_lines: max_lines.unwrap_or(defaults.max_lines),
-        ..defaults
+        max_lines: max_lines.unwrap_or(DEFAULT_VIEW_LINES),
+        ..DiffOptions::whole_file()
     };
     with_session(reg, id, |s| s.file_diff(path, scope, opts))
 }
