@@ -33,7 +33,9 @@ export function TabBar({
   const paletteKeys = useShortcutKeys("palette");
   const settingsKeys = useShortcutKeys("settings");
   const keycaps = useKeycaps();
-  const [drag, setDrag] = useState<{ id: RepoId; over: RepoId | null } | null>(null);
+  const [dragState, setDrag] = useState<{ id: RepoId; over: RepoId | null } | null>(null);
+  // A drag whose tab has closed is over (its dragend fires on a detached node), so ignore it.
+  const drag = dragState !== null && tabs.some((t) => t.id === dragState.id) ? dragState : null;
   return (
     <nav className={styles.root} aria-label="Repositories">
       <div
@@ -60,7 +62,12 @@ export function TabBar({
                 if (drag === null) return;
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
-                setDrag({ id: drag.id, over: tab.id });
+                if (drag.over !== tab.id) setDrag({ id: drag.id, over: tab.id });
+              }}
+              onDragLeave={(e) => {
+                if (drag === null || drag.over !== tab.id) return;
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                setDrag({ id: drag.id, over: null });
               }}
               onDrop={(e) => {
                 if (drag === null) return;

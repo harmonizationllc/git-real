@@ -11,7 +11,10 @@ interface RepoTabsState {
   activeId: RepoId | null;
   openTab(repo: OpenedRepo): void;
   closeTab(id: RepoId): void;
-  /** Move the tab with `id` so it ends up at `toIndex`; out-of-range or no-op moves change nothing. */
+  /**
+   * Move the tab with `id` so it ends up at `toIndex`; out-of-range or no-op moves change
+   * nothing.
+   */
   moveTab(id: RepoId, toIndex: number): void;
   activate(id: RepoId | null): void;
 }

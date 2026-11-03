@@ -188,24 +188,27 @@ describe("App changes panel", () => {
   });
 });
 
-// Contract: dropping a dragged tab on another reorders the tabs; the active repo stays active.
+// Contract: dropping a dragged tab on another reorders the tabs; the active repo stays active and
+// its pane is not remounted.
 describe("App reordering tabs", () => {
-  it("dropping a tab on another reorders the tabs and keeps the active one", async () => {
+  it("dragging the active tab onto another reorders without remounting the pane", async () => {
     renderApp(repo(1, "alpha"), repo(2, "beta"), repo(3, "gamma"));
     const wrapper = (name: string) =>
       screen.getByRole("tab", { name }).parentElement as HTMLElement;
+    const headingBefore = screen.getByRole("heading", heading("gamma"));
     const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
-    fireEvent.dragStart(wrapper("alpha"), { dataTransfer });
-    fireEvent.dragOver(wrapper("gamma"), { dataTransfer });
-    fireEvent.drop(wrapper("gamma"));
+    fireEvent.dragStart(wrapper("gamma"), { dataTransfer });
+    fireEvent.dragOver(wrapper("alpha"), { dataTransfer });
+    fireEvent.drop(wrapper("alpha"));
     await waitFor(() =>
       expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
-        "beta",
         "gamma",
         "alpha",
+        "beta",
       ]),
     );
     expect(screen.getByRole("tab", { name: "gamma" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", heading("gamma"))).toBe(headingBefore);
   });
 });
 
