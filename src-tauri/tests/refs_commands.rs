@@ -8,6 +8,7 @@ use git_real_core::{HeadState, RepoSession};
 use git_real_lib::commands::refs::{
     checkout_branch_inner, checkout_remote_branch_inner, create_branch_inner, delete_branch_inner,
     delete_remote_branch_inner, list_branches_inner, rename_branch_inner,
+    set_branch_upstream_inner,
 };
 use git_real_lib::commands::remote::NetworkAuth;
 use git_real_lib::error::AppErrorKind;
@@ -670,4 +671,38 @@ fn remote_branch_commands_reject_a_remote_whose_name_starts_with_a_dash() {
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
     let err = checkout_remote_branch_inner(&reg, id, "-x", &head).unwrap_err();
     assert_eq!(err.kind, AppErrorKind::RemoteNotFound);
+}
+
+// --- set_branch_upstream_inner ---
+
+/// `open_fixture()` plus a fetched bare `origin` holding the head branch.
+fn upstream_fixture() -> (TempDir, TempDir, PathBuf, RepoRegistry, RepoId, String) {
+    let (dir, path, reg, id, head) = open_fixture();
+    let (bare_dir, bare) = common::temp_bare_clone(&path);
+    common::add_remote_and_fetch(&path, &bare);
+    (dir, bare_dir, path, reg, id, head)
+}
+
+#[test]
+fn set_branch_upstream_inner_sets_then_clears_the_upstream() {
+    let (_d, _b, _p, reg, id, head) = upstream_fixture();
+    let upstream = format!("origin/{head}");
+    set_branch_upstream_inner(&reg, id, &head, Some(&upstream)).unwrap();
+    let list = list_branches_inner(&reg, id).unwrap();
+    let branch = list.local.iter().find(|b| b.name == head).unwrap();
+    assert_eq!(
+        branch.tracking.as_ref().map(|t| t.upstream.clone()),
+        Some(upstream)
+    );
+    set_branch_upstream_inner(&reg, id, &head, None).unwrap();
+    let list = list_branches_inner(&reg, id).unwrap();
+    let branch = list.local.iter().find(|b| b.name == head).unwrap();
+    assert_eq!(branch.tracking, None);
+}
+
+#[test]
+fn set_branch_upstream_inner_maps_unknown_remote_branch() {
+    let (_d, _b, _p, reg, id, head) = upstream_fixture();
+    let err = set_branch_upstream_inner(&reg, id, &head, Some("origin/nope")).unwrap_err();
+    assert_eq!(err.kind, AppErrorKind::BranchNotFound);
 }

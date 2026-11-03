@@ -5,6 +5,7 @@ import {
   createBranch,
   deleteBranch,
   renameBranch,
+  setBranchUpstream,
   toAppError,
 } from "../../lib/ipc";
 import type { AppError, RepoId } from "../../lib/ipc";
@@ -15,7 +16,8 @@ export type BranchRequest =
   | { action: "rename"; oldName: string; newName: string }
   | { action: "delete"; name: string; force: boolean }
   | { action: "checkout"; name: string }
-  | { action: "checkoutRemote"; remote: string; name: string };
+  | { action: "checkoutRemote"; remote: string; name: string }
+  | { action: "setUpstream"; name: string; upstream: string | null };
 
 /** `run` never rejects: it resolves with the AppError or null, and `error` mirrors the last result. */
 export interface UseBranchActions {
@@ -37,6 +39,8 @@ function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
       return checkoutBranch(repoId, req.name);
     case "checkoutRemote":
       return checkoutRemoteBranch(repoId, req.remote, req.name);
+    case "setUpstream":
+      return setBranchUpstream(repoId, req.name, req.upstream);
   }
 }
 

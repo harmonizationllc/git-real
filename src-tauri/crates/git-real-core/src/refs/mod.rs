@@ -169,6 +169,47 @@ impl RepoSession {
         Ok(())
     }
 
+    /// Points a local branch at a remote-tracking branch, or clears its
+    /// upstream. `upstream` is the short remote-tracking name (`origin/main`);
+    /// `None` clears it. A name that is not a remote-tracking branch is
+    /// refused with `BranchNotFound` before anything is written.
+    pub fn set_branch_upstream(
+        &self,
+        branch: &str,
+        upstream: Option<&str>,
+    ) -> Result<(), GitError> {
+        let repo = self.repo();
+        find_local(repo, branch)?;
+        // Both keys are read and written at repository level only: libgit2's
+        // set-upstream would prefer a local branch of the same name, and
+        // removal can only ever reach repository config.
+        let mut config = repo.config()?.open_level(git2::ConfigLevel::Local)?;
+        match upstream {
+            Some(name) => {
+                let found = find_branch_exact(repo, name, BranchType::Remote)?;
+                let refname = found
+                    .get()
+                    .name()
+                    .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?
+                    .to_owned();
+                let (remote, merge) = upstream_mapping(repo, &refname)
+                    .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?;
+                config.set_str(&format!("branch.{branch}.remote"), &remote)?;
+                config.set_str(&format!("branch.{branch}.merge"), &merge)?;
+            }
+            None => {
+                // A gone upstream still has its keys, so remove what exists.
+                for key in ["remote", "merge"] {
+                    let key = format!("branch.{branch}.{key}");
+                    if config.get_entry(&key).is_ok() {
+                        config.remove(&key)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Creates `name` and switches to it, all or nothing: when git refuses the
     /// switch (a dirty tree, a hook) the new branch is deleted again and the
     /// `CheckoutFailed` error is returned.
@@ -428,12 +469,38 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
     Ok(head == tip || repo.graph_descendant_of(head, tip)?)
 }
 
-/// Finds the local branch called exactly `name`. With `core.ignorecase` set
-/// libgit2's `find_branch` matches case-insensitively, so the branches are
-/// compared by name instead and `alpha` never resolves to `Alpha`.
+/// Finds the local branch called exactly `name`. See `find_branch_exact`.
 pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
+    find_branch_exact(repo, name, BranchType::Local)
+}
+
+/// The remote name and `refs/heads/...` merge ref a remote-tracking ref maps
+/// back to through its remote's fetch refspec, or `None` without such a
+/// mapping.
+fn upstream_mapping(repo: &Repository, refname: &str) -> Option<(String, String)> {
+    let remote_name = repo.branch_remote_name(refname).ok()?;
+    let remote_name = remote_name.as_str()?.to_owned();
+    let remote = repo.find_remote(&remote_name).ok()?;
+    for spec in remote.refspecs() {
+        if spec.direction() == git2::Direction::Fetch && spec.dst_matches(refname) {
+            let merge = spec.rtransform(refname).ok()?;
+            return Some((remote_name, merge.as_str()?.to_owned()));
+        }
+    }
+    None
+}
+
+/// Finds the branch of `kind` called exactly `name` (`origin/main` for a
+/// remote-tracking branch). With `core.ignorecase` set libgit2's
+/// `find_branch` matches case-insensitively, so the branches are compared by
+/// name instead and `alpha` never resolves to `Alpha`.
+fn find_branch_exact<'r>(
+    repo: &'r Repository,
+    name: &str,
+    kind: BranchType,
+) -> Result<Branch<'r>, GitError> {
     if ignores_case(repo) {
-        for branch in repo.branches(Some(BranchType::Local))? {
+        for branch in repo.branches(Some(kind))? {
             let (branch, _) = branch?;
             if lossy_name(&branch) == name {
                 return Ok(branch);
@@ -441,7 +508,7 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
         }
         return Err(GitError::BranchNotFound(name.to_owned()));
     }
-    match repo.find_branch(name, BranchType::Local) {
+    match repo.find_branch(name, kind) {
         Ok(branch) => Ok(branch),
         Err(e) if is_not_found(&e) => Err(GitError::BranchNotFound(name.to_owned())),
         Err(e) => Err(e.into()),

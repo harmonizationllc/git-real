@@ -1,4 +1,4 @@
-//! Branch commands: list, create, rename, delete, checkout, remote delete.
+//! Branch commands: list, create, rename, delete, set upstream, checkout, remote delete.
 
 use std::sync::Arc;
 
@@ -49,6 +49,15 @@ pub fn delete_branch_inner(
     force: bool,
 ) -> Result<(), AppError> {
     with_session(reg, id, |s| s.delete_branch(name, force))
+}
+
+pub fn set_branch_upstream_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    branch: &str,
+    upstream: Option<&str>,
+) -> Result<(), AppError> {
+    with_session(reg, id, |s| s.set_branch_upstream(branch, upstream))
 }
 
 pub fn checkout_branch_inner(reg: &RepoRegistry, id: RepoId, name: &str) -> Result<(), AppError> {
@@ -120,6 +129,17 @@ pub async fn delete_branch(
 ) -> Result<(), AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || delete_branch_inner(&reg, id, &name, force)).await
+}
+
+#[tauri::command]
+pub async fn set_branch_upstream(
+    reg: State<'_, Arc<RepoRegistry>>,
+    id: RepoId,
+    branch: String,
+    upstream: Option<String>,
+) -> Result<(), AppError> {
+    let reg = Arc::clone(reg.inner());
+    run_blocking(move || set_branch_upstream_inner(&reg, id, &branch, upstream.as_deref())).await
 }
 
 /// Runs `git switch` (hooks included) while holding the session lock.

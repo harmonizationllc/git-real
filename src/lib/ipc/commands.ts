@@ -181,6 +181,15 @@ export function deleteBranch(id: RepoId, name: string, force: boolean): Promise<
   return invoke<void>("delete_branch", { id, name, force });
 }
 
+/** `upstream` is a short remote-tracking name such as `origin/main`; null clears it. */
+export function setBranchUpstream(
+  id: RepoId,
+  branch: string,
+  upstream: string | null,
+): Promise<void> {
+  return invoke<void>("set_branch_upstream", { id, branch, upstream });
+}
+
 export function checkoutBranch(id: RepoId, name: string): Promise<void> {
   return invoke<void>("checkout_branch", { id, name });
 }

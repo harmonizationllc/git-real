@@ -6,6 +6,7 @@ import {
   createBranch,
   deleteBranch,
   renameBranch,
+  setBranchUpstream,
 } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
@@ -19,6 +20,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   deleteBranch: vi.fn(),
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
+  setBranchUpstream: vi.fn(),
 }));
 
 type Request = Parameters<UseBranchActions["run"]>[0];
@@ -208,6 +210,7 @@ describe("useBranchActions invalidation", () => {
     ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
+    ["setUpstream", { action: "setUpstream", name: "topic", upstream: "origin/topic" }],
   ];
 
   it.each(cases)("should invalidate the repo key when %s succeeds", async (_n, req) => {
@@ -223,6 +226,7 @@ describe("useBranchActions invalidation", () => {
     vi.mocked(deleteBranch).mockRejectedValue(exists);
     vi.mocked(checkoutBranch).mockRejectedValue(exists);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(exists);
+    vi.mocked(setBranchUpstream).mockRejectedValue(exists);
     const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => result.current, req);
@@ -319,5 +323,39 @@ describe("useBranchActions clearError after success", () => {
     act(() => result.current.clearError());
     expect(result.current.error).toBeNull();
     expect(result.current.pending).toBe(false);
+  });
+});
+
+// Contract: setUpstream forwards the branch and upstream (null clears); invalidation is in the table above.
+describe("useBranchActions setUpstream", () => {
+  it("should call setBranchUpstream with the branch and upstream", async () => {
+    vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
+    const { result } = renderHookWithProviders(() => useBranchActions(4));
+    const out = await run(() => result.current, {
+      action: "setUpstream",
+      name: "topic",
+      upstream: "origin/topic",
+    });
+    expect(out).toBeNull();
+    expect(setBranchUpstream).toHaveBeenCalledExactlyOnceWith(4, "topic", "origin/topic");
+  });
+
+  it("should pass null to clear the upstream", async () => {
+    vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
+    const { result } = renderHookWithProviders(() => useBranchActions(4));
+    await run(() => result.current, { action: "setUpstream", name: "topic", upstream: null });
+    expect(setBranchUpstream).toHaveBeenCalledExactlyOnceWith(4, "topic", null);
+  });
+
+  it("should resolve with the error on failure", async () => {
+    const missing: AppError = { kind: "branchNotFound", message: "no branch named origin/x" };
+    vi.mocked(setBranchUpstream).mockRejectedValue(missing);
+    const { result } = renderHookWithProviders(() => useBranchActions(4));
+    const out = await run(() => result.current, {
+      action: "setUpstream",
+      name: "topic",
+      upstream: "origin/x",
+    });
+    expect(out).toEqual(missing);
   });
 });

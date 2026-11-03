@@ -1387,3 +1387,200 @@ fn fresh_repo_on_windows_does_not_resolve_case_variant_lookups() {
     );
     assert!(local_names(&session.list_branches().unwrap()).contains(&"Alpha".to_owned()));
 }
+
+// --- set_branch_upstream ---
+
+#[test]
+fn set_branch_upstream_tracks_a_remote_branch() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    session
+        .set_branch_upstream("topic", Some(&format!("origin/{head}")))
+        .unwrap();
+    let list = session.list_branches().unwrap();
+    let topic = list.local.iter().find(|b| b.name == "topic").unwrap();
+    let tracking = topic.tracking.as_ref().expect("tracking set");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+    assert_eq!((tracking.ahead, tracking.behind), (Some(0), Some(0)));
+}
+
+#[test]
+fn set_branch_upstream_replaces_an_existing_upstream() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    common::branch_with_commit(&path, "other", "other.txt", "o");
+    common::push_branch(&path, "other");
+    common::fetch_remote(&path, "origin");
+    let session = RepoSession::open(&path).unwrap();
+    session
+        .set_branch_upstream(&head, Some("origin/other"))
+        .unwrap();
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("tracking set");
+    assert_eq!(tracking.upstream, "origin/other");
+    assert_eq!((tracking.ahead, tracking.behind), (Some(0), Some(1)));
+}
+
+#[test]
+fn set_branch_upstream_none_clears_tracking() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.set_branch_upstream(&head, None).unwrap();
+    let list = session.list_branches().unwrap();
+    assert_eq!(
+        list.local.iter().find(|b| b.name == head).unwrap().tracking,
+        None
+    );
+}
+
+#[test]
+fn set_branch_upstream_ignores_a_local_branch_named_like_the_remote_one() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let repo = Repository::open(&path).unwrap();
+    let commit = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.branch(&format!("origin/{head}"), &commit, false)
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    session
+        .set_branch_upstream("topic", Some(&format!("origin/{head}")))
+        .unwrap();
+    let config = Repository::open(&path).unwrap().config().unwrap();
+    assert_eq!(config.get_string("branch.topic.remote").unwrap(), "origin");
+    assert_eq!(
+        config.get_string("branch.topic.merge").unwrap(),
+        format!("refs/heads/{head}")
+    );
+}
+
+// Only the repository-level config is touched: clearing removes both keys
+// there and never reaches into global or system levels.
+#[test]
+fn set_branch_upstream_none_clears_only_repository_config() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.set_branch_upstream(&head, None).unwrap();
+    let local = Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .open_level(git2::ConfigLevel::Local)
+        .unwrap();
+    assert!(local.get_entry(&format!("branch.{head}.remote")).is_err());
+    assert!(local.get_entry(&format!("branch.{head}.merge")).is_err());
+}
+
+#[test]
+fn set_branch_upstream_none_on_an_untracked_branch_is_a_no_op() {
+    let (_d, _b, path, _bare, _head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    session.set_branch_upstream("topic", None).unwrap();
+    let list = session.list_branches().unwrap();
+    let topic = list.local.iter().find(|b| b.name == "topic").unwrap();
+    assert_eq!(topic.tracking, None);
+}
+
+#[test]
+fn set_branch_upstream_none_clears_a_gone_upstream() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .find_reference(&format!("refs/remotes/origin/{head}"))
+        .unwrap()
+        .delete()
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("gone upstream is still reported");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+    assert_eq!((tracking.ahead, tracking.behind), (None, None));
+
+    session.set_branch_upstream(&head, None).unwrap();
+
+    let config = Repository::open(&path).unwrap().config().unwrap();
+    assert!(config.get_string(&format!("branch.{head}.remote")).is_err());
+    assert!(config.get_string(&format!("branch.{head}.merge")).is_err());
+    let list = session.list_branches().unwrap();
+    assert_eq!(
+        list.local.iter().find(|b| b.name == head).unwrap().tracking,
+        None
+    );
+}
+
+#[test]
+fn set_branch_upstream_is_case_exact_when_ignorecase() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    common::set_ignorecase(&path, true);
+    let session = RepoSession::open(&path).unwrap();
+    let wrong = format!("origin/{}", head.to_uppercase());
+    let err = session
+        .set_branch_upstream(&head, Some(&wrong))
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == wrong));
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("still tracking");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+}
+
+#[test]
+fn set_branch_upstream_refuses_an_unknown_remote_branch() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    let err = session
+        .set_branch_upstream(&head, Some("origin/nope"))
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == "origin/nope"));
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("still tracking");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+}
+
+#[test]
+fn set_branch_upstream_refuses_a_local_branch_as_upstream() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    let err = session
+        .set_branch_upstream("topic", Some(&head))
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == head));
+}
+
+#[test]
+fn set_branch_upstream_refuses_an_unknown_branch() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    let err = session
+        .set_branch_upstream("ghost", Some(&format!("origin/{head}")))
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == "ghost"));
+}
