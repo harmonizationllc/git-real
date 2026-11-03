@@ -1311,7 +1311,10 @@ describe("DetailPane user scroll and navigation", () => {
     vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(threeBlocks()));
   });
 
-  /** The scroll event the mount's own scrollToRow causes, then a user wheel scroll to `row`. */
+  /**
+   * A bare scroll (a virtualizer correction after the mount's jump, never reported), then a
+   * user wheel and the scroll it causes, with the viewport now at `row`.
+   */
   const userScrollTo = (row: number) => {
     const scroll = screen.getByTestId("diff-scroll");
     fireEvent.scroll(scroll);
@@ -1324,6 +1327,22 @@ describe("DetailPane user scroll and navigation", () => {
     setup();
     await diffRegion();
     expect(await screen.findByText("1 of 3")).toBeInTheDocument();
+  });
+
+  it("should keep the current change through bare scroll events with no gesture", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const scroll = screen.getByTestId("diff-scroll");
+    mockWindow.visibleStart = 6;
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
+    expect(screen.getByText("1 of 3")).toBeInTheDocument();
+    scrollToIndex.mockClear();
+    act(() => useShell.getState().diffNavigation!.next());
+    // Stepping from block 0 to block 1 at row 5.
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(2, { align: "start" });
   });
 
   it("should drop the current change from the counter right after a user scroll", async () => {

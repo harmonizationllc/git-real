@@ -493,65 +493,83 @@ describe("DiffViewer handle", () => {
   });
 });
 
-// Contract: onUserScroll reports scrolls the user made; the scroll event a scrollToRow causes is
-// not one of them, and the next scroll event after a scrollToRow is the one it covers.
+// Contract: a scroll event is reported through onUserScroll only while a user gesture (wheel,
+// pointerdown or keydown on the container) has happened since the last programmatic scroll.
+// A gesture arms the intent, scrollToRow disarms it; the virtualizer's own position corrections
+// after a jump are bare scroll events and are never reported.
 describe("DiffViewer onUserScroll", () => {
-  it("should not report the scroll event that follows scrollToRow", () => {
+  const wheel = (el: HTMLElement) => fireEvent.wheel(el, { deltaY: 100 });
+
+  it("should not report bare scroll events after scrollToRow", () => {
     const onUserScroll = vi.fn();
     const { ref, scroll } = setup({ onUserScroll });
     ref.current!.scrollToRow(7);
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
     fireEvent.scroll(scroll);
     expect(onUserScroll).not.toHaveBeenCalled();
   });
 
-  it("should report a further scroll event with no scrollToRow in between once", () => {
-    const onUserScroll = vi.fn();
-    const { ref, scroll } = setup({ onUserScroll });
-    ref.current!.scrollToRow(7);
-    fireEvent.scroll(scroll);
-    fireEvent.scroll(scroll);
-    expect(onUserScroll).toHaveBeenCalledTimes(1);
-  });
-
-  it("should report a wheel-initiated scroll with no prior scrollToRow", () => {
+  it("should not report a bare scroll when no gesture ever happened", () => {
     const onUserScroll = vi.fn();
     const { scroll } = setup({ onUserScroll });
-    fireEvent.wheel(scroll, { deltaY: 100 });
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).not.toHaveBeenCalled();
+  });
+
+  it("should report a scroll after a wheel once", () => {
+    const onUserScroll = vi.fn();
+    const { scroll } = setup({ onUserScroll });
+    wheel(scroll);
     fireEvent.scroll(scroll);
     expect(onUserScroll).toHaveBeenCalledTimes(1);
   });
 
-  it("should ignore the scroll after a second scrollToRow too", () => {
+  it("should keep reporting scrolls after the same gesture until the next programmatic scroll", () => {
+    const onUserScroll = vi.fn();
+    const { scroll } = setup({ onUserScroll });
+    wheel(scroll);
+    fireEvent.scroll(scroll);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(2);
+  });
+
+  it("should stop reporting once scrollToRow disarms the intent", () => {
     const onUserScroll = vi.fn();
     const { ref, scroll } = setup({ onUserScroll });
-    ref.current!.scrollToRow(7);
-    fireEvent.scroll(scroll);
+    wheel(scroll);
     fireEvent.scroll(scroll);
     ref.current!.scrollToRow(2);
     fireEvent.scroll(scroll);
     expect(onUserScroll).toHaveBeenCalledTimes(1);
   });
 
-  // Ruling: the flag is cleared by the next scroll event or by a user gesture on the container,
-  // whichever comes first, so a scrollToRow that moved nothing never swallows a user scroll.
+  it("should report again after a new gesture following scrollToRow", () => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    ref.current!.scrollToRow(7);
+    fireEvent.scroll(scroll);
+    wheel(scroll);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(1);
+  });
+
   it.each<[string, (el: HTMLElement) => void]>([
-    ["wheel", (el) => fireEvent.wheel(el, { deltaY: 100 })],
+    ["wheel", wheel],
     ["pointerdown", (el) => fireEvent.pointerDown(el, pointer(0, 0))],
     ["keydown", (el) => fireEvent.keyDown(el, { key: "PageDown" })],
-  ])(
-    "should report the scroll after a %s when scrollToRow caused no scroll event",
-    (_name, gesture) => {
-      const onUserScroll = vi.fn();
-      const { ref, scroll } = setup({ onUserScroll });
-      ref.current!.scrollToRow(7);
-      gesture(scroll);
-      fireEvent.scroll(scroll);
-      expect(onUserScroll).toHaveBeenCalledTimes(1);
-    },
-  );
+  ])("should arm the user intent with a %s after scrollToRow", (_name, gesture) => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    ref.current!.scrollToRow(7);
+    gesture(scroll);
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).toHaveBeenCalledTimes(1);
+  });
 
   it("should not throw on a scroll without the prop", () => {
     const { scroll } = setup();
+    wheel(scroll);
     expect(() => fireEvent.scroll(scroll)).not.toThrow();
   });
 });
