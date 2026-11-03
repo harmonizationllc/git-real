@@ -86,12 +86,13 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
     ref,
     () => ({
       scrollToRow: (index) => {
-        programmatic.current = true;
         // A newer call replaces one still waiting for measurement.
         cancelAnimationFrame(frame.current.id);
         // Before the virtualizer has measured, a scroll is a no-op: retry on later frames.
         const attempt = (framesLeft: number) => {
           if (virtualizer.getTotalSize() > 0) {
+            // Armed only when the scroll is issued, so input while waiting is still the user's.
+            programmatic.current = true;
             virtualizer.scrollToIndex(index, { align: "start" });
           } else if (framesLeft > 0) {
             frame.current.id = requestAnimationFrame(() => attempt(framesLeft - 1));
