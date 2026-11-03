@@ -8,6 +8,8 @@
 .scroll {
   flex: 1;
   overflow: auto;
+  /* A touch drag selects text (the viewer's own range) instead of panning the list. */
+  touch-action: none;
 }
 
 .inner {

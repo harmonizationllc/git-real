@@ -65,7 +65,7 @@ function pieces(
 export function LineContent({ text, tokens, ranges, noNewlineAtEof, selected = null }: Props) {
   const parts = text.length === 0 ? [] : pieces(text, tokens, ranges, selected);
   return (
-    <code className={styles.code} data-line-text="">
+    <code className={styles.code} data-line-text="" data-line-length={text.length}>
       {/* A non-breaking space keeps an empty line at full height. */}
       {parts.length === 0 ? NBSP : null}
       {parts.map((p, i) => {

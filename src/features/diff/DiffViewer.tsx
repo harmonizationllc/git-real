@@ -72,7 +72,9 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
       text.clear();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && range !== null) {
       e.preventDefault();
-      void navigator.clipboard.writeText(coveredText(diff, rows, range));
+      navigator.clipboard
+        .writeText(coveredText(diff, rows, range))
+        .catch((err: unknown) => console.error("Copying the diff text failed", err));
     }
   };
 
@@ -108,6 +110,8 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
         onPointerDown={text.onPointerDown}
         onPointerMove={text.onPointerMove}
         onPointerUp={text.onPointerUp}
+        onPointerCancel={text.onPointerCancel}
+        onLostPointerCapture={text.onLostPointerCapture}
         onDoubleClick={text.onDoubleClick}
         onKeyDown={onKeyDown}
         onContextMenu={onMenu}

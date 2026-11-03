@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { FileDiff } from "../../lib/ipc";
 import type { CaretResolver } from "./caretResolver";
 import type { DiffRow } from "./model/rows";
@@ -23,6 +23,8 @@ export interface UseTextRange {
   onPointerDown(e: React.PointerEvent): void;
   onPointerMove(e: React.PointerEvent): void;
   onPointerUp(e: React.PointerEvent): void;
+  onPointerCancel(e: React.PointerEvent): void;
+  onLostPointerCapture(e: React.PointerEvent): void;
   onDoubleClick(e: React.MouseEvent): void;
   clear(): void;
 }
@@ -69,15 +71,32 @@ export function useTextRange(
     cancelAnimationFrame(frame.current);
     drag.current = null;
   }, []);
-  // Unmounting or new rows end a drag that was still going.
-  useEffect(() => stop, [rows, stop]);
+  // Unmounting or new rows end a drag that was still going. A layout effect, so its cleanup runs
+  // inside the commit that brings the new rows: no move or frame can rebuild a stale range after.
+  useLayoutEffect(() => stop, [rows, stop]);
 
-  /** Moves the focus to the hit at the point, with y clamped into the container. */
+  /** The text a row shows on a side; "" for an empty split cell. */
+  const lineText = (row: number, side: Side) => {
+    const line = rowLine(diff, rows, row, side);
+    return line === null ? "" : diff.hunks[line.hunkIndex].lines[line.lineIndex].content;
+  };
+
+  /** Moves the focus to the hit at the point, with the point clamped into the container. */
   const extend = (from: Drag, x: number, y: number) => {
     const rect = scrollEl()!.getBoundingClientRect();
-    const hit = hitAt(x, Math.min(Math.max(y, rect.top + 1), rect.bottom - 1));
+    const hit = hitAt(
+      Math.min(Math.max(x, rect.left + 1), rect.right - 1),
+      Math.min(Math.max(y, rect.top + 1), rect.bottom - 1),
+    );
     if (hit === null) return;
-    setState({ ...from, focus: { row: hit.row, offset: hit.offset } });
+    const r = rows[hit.row];
+    // A split hit on the other cell, or on an empty cell, snaps to the row's line on the drag
+    // side: its end at or below the anchor row, its start above; the other cell's offset is
+    // never applied.
+    const snap = r.kind === "split" && (hit.side !== from.side || r[from.side] === null);
+    const below = hit.row >= from.anchor.row;
+    const offset = !snap ? hit.offset : below ? lineText(hit.row, from.side).length : 0;
+    setState({ ...from, focus: { row: hit.row, offset } });
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -106,6 +125,11 @@ export function useTextRange(
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (drag.current === null) return;
+    // The button was released where no pointerup reached us: the drag is over.
+    if (e.buttons === 0) {
+      stop();
+      return;
+    }
     extend(drag.current, e.clientX, e.clientY);
     const rect = scrollEl()!.getBoundingClientRect();
     const dir = e.clientY < rect.top ? -1 : e.clientY > rect.bottom ? 1 : 0;
@@ -123,17 +147,19 @@ export function useTextRange(
     if (collapsed) setState(null);
   };
 
+  /** A cancelled pointer or a lost capture ends the drag and keeps the range. */
+  const onPointerCancel = () => stop();
+
   const onDoubleClick = (e: React.MouseEvent) => {
     const hit = hitAt(e.clientX, e.clientY);
     if (hit === null) return;
-    // A hit is always on a cell that shows a line (the resolver gives null on an empty cell).
-    const line = rowLine(diff, rows, hit.row, hit.side)!;
-    const text = diff.hunks[line.hunkIndex].lines[line.lineIndex].content;
-    if (!WORD.test(text.charAt(hit.offset))) return;
+    // The word containing the offset, else the word ending at it; none strictly inside spaces.
+    const text = lineText(hit.row, hit.side);
     let start = hit.offset;
     let end = hit.offset;
     while (start > 0 && WORD.test(text[start - 1])) start--;
     while (end < text.length && WORD.test(text[end])) end++;
+    if (start === end) return;
     setState({
       side: hit.side,
       anchor: { row: hit.row, offset: start },
@@ -154,5 +180,15 @@ export function useTextRange(
     };
   };
 
-  return { range, tint, onPointerDown, onPointerMove, onPointerUp, onDoubleClick, clear };
+  return {
+    range,
+    tint,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture: onPointerCancel,
+    onDoubleClick,
+    clear,
+  };
 }
