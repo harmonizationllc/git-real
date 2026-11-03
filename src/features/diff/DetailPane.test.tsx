@@ -500,7 +500,9 @@ describe("DetailPane gate reason copy", () => {
 
 // Contract: an unstaged row's menu offers Revert and Stage for that line.
 describe("DetailPane row menu (unstaged)", () => {
-  beforeEach(() => serveThree());
+  beforeEach(() => {
+    serveThree();
+  });
 
   it("should list Revert this line then Stage this line on a changed row", async () => {
     setup();
@@ -738,6 +740,16 @@ describe("DetailPane revert dialog", () => {
     );
   });
 
+  it("should count only the changed rows when the range also covers a context row", async () => {
+    setup();
+    await diffRegion();
+    // Context row 0 plus split rows 1 and 2 whole on the new side: no partial line, so no edits.
+    dragRange({ row: 0, side: "new", offset: 0 }, { row: 2, side: "new", offset: 13 });
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this section"));
+    expect(revertDialog()).toHaveTextContent("Revert 2 lines in a.ts? This cannot be undone.");
+  });
+
   it("should count the lines for a range of whole rows", async () => {
     setup();
     await diffRegion();
@@ -892,7 +904,9 @@ describe("DetailPane staged menu", () => {
 
 // Contract: the menu items are disabled, with a reason, when the diff cannot be applied safely.
 describe("DetailPane menu gates", () => {
-  beforeEach(() => serveThree());
+  beforeEach(() => {
+    serveThree();
+  });
 
   const expectRowItems = (title: string) => {
     for (const name of ["Revert this line", "Stage this line"]) {
@@ -1034,7 +1048,9 @@ describe("DetailPane menu gates", () => {
 describe("DetailPane action errors", () => {
   const badSelection: AppError = { kind: "badSelection", message: "The diff changed" };
 
-  beforeEach(() => serveThree());
+  beforeEach(() => {
+    serveThree();
+  });
 
   const stageRow = () => {
     rowMenu(1);
@@ -1115,7 +1131,9 @@ describe("DetailPane action errors", () => {
 // Contract: the viewer opens on the first change once per diff key; refetches and mode switches
 // keep the scroll position.
 describe("DetailPane first-change scroll", () => {
-  beforeEach(() => serveThree());
+  beforeEach(() => {
+    serveThree();
+  });
 
   it("should scroll to three rows above the first change once on mount", async () => {
     setup();
@@ -1209,7 +1227,9 @@ describe("DetailPane navigation publishing", () => {
   const published = () => useShell.getState().diffNavigation;
   const shape = { repoId: REPO, next: expect.any(Function), prev: expect.any(Function) };
 
-  beforeEach(() => vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(twoBlocks())));
+  beforeEach(() => {
+    vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(twoBlocks()));
+  });
 
   it("should publish the navigation while the diff shows", async () => {
     setup();
