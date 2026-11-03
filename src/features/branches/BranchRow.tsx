@@ -36,9 +36,20 @@ export interface BranchRowProps {
 function TrackingBadge({ tracking }: { tracking: Tracking }) {
   const { ahead, behind } = tracking;
   if (ahead === null || behind === null) return <span className={styles.badge}>gone</span>;
+  if (ahead === 0 && behind === 0) return null;
+  const text: string[] = [];
+  const label: string[] = [];
+  if (ahead > 0) {
+    text.push(`↑${ahead}`);
+    label.push(`${ahead} ahead`);
+  }
+  if (behind > 0) {
+    text.push(`↓${behind}`);
+    label.push(`${behind} behind`);
+  }
   return (
-    <span className={styles.badge} aria-label={`${ahead} ahead, ${behind} behind`}>
-      {`↑${ahead} ↓${behind}`}
+    <span className={styles.badge} aria-label={label.join(", ")}>
+      {text.join(" ")}
     </span>
   );
 }
