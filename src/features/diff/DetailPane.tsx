@@ -21,14 +21,9 @@ import type { HighlightMap } from "./model/highlight";
 import { isImagePath } from "./model/images";
 import { FULL_DIFF_LINES, totalLines } from "./model/limits";
 import { buildRows, type DiffRow } from "./model/rows";
+import { LABELS, NOTHING_REASON, revertBody } from "./model/menu";
 import { commitOf, isReadOnly, scopeId } from "./model/scope";
-import {
-  orderedRange,
-  rowLine,
-  selectionRequest,
-  type MenuTarget,
-  type TextRange,
-} from "./model/selection";
+import { selectionRequest, type MenuTarget } from "./model/selection";
 import { useChangeNavigation } from "./useChangeNavigation";
 import { useFileDiff } from "./useFileDiff";
 import { useHighlight } from "./useHighlight";
@@ -163,7 +158,7 @@ function FileDetail({ repoId, file }: { repoId: RepoId; file: SelectedFile }) {
       mode={mode}
       highlight={highlight}
       ignoreWhitespace={ignoreWhitespace}
-      editable={isReadOnly(file.scope) ? null : file.scope}
+      editable={readOnly ? null : (file.scope as "staged" | "unstaged")}
       actions={actions}
       onLoadFull={() => setMaxLines(FULL_DIFF_LINES)}
     />
@@ -182,16 +177,6 @@ interface PendingRevert {
   selection: HunkSelection;
   body: string;
 }
-
-const LABELS: Record<HunkAction, Record<MenuTarget["kind"], string>> = {
-  discard: { row: "Revert this line", range: "Revert this section" },
-  stage: { row: "Stage this line", range: "Stage selection" },
-  unstage: { row: "Unstage this line", range: "Unstage selection" },
-};
-const NOTHING_REASON: Record<MenuTarget["kind"], string> = {
-  row: "Not a changed line",
-  range: "No changed text in the selection",
-};
 
 interface TextDiffProps {
   repoId: RepoId;
@@ -235,13 +220,22 @@ function TextDiff({
     setUi({ rows, menu, pending });
   }
   const viewerShown = rows.length > 0 && !(diff.truncated && nav.count === 0);
-  const { next, prev } = nav;
+  // The published slot stays the same object while the viewer shows and calls the latest
+  // closures, so stepping never republishes (and never passes through null).
+  const navRef = useRef(nav);
+  useEffect(() => {
+    navRef.current = nav;
+  });
   useEffect(() => {
     if (!viewerShown) return;
     const { publishDiffNavigation } = useShell.getState();
-    publishDiffNavigation({ repoId, next, prev });
+    publishDiffNavigation({
+      repoId,
+      next: () => navRef.current.next(),
+      prev: () => navRef.current.prev(),
+    });
     return () => publishDiffNavigation(null);
-  }, [viewerShown, repoId, next, prev]);
+  }, [viewerShown, repoId]);
 
   const reason = ignoreWhitespace
     ? WHITESPACE_REASON
@@ -301,6 +295,7 @@ function TextDiff({
         mode={mode}
         highlight={highlight}
         onMounted={() => nav.goTo(0)}
+        onUserScroll={nav.onUserScroll}
         {...(editable && {
           // A second right-click replaces the open menu.
           onContextMenu: (target: MenuTarget, x: number, y: number) =>
@@ -353,37 +348,6 @@ function TextDiff({
       )}
     </div>
   );
-}
-
-/** The dialog copy: highlighted text, one line, or the number of rows the range reverts. */
-function revertBody(
-  diff: FileDiff,
-  rows: DiffRow[],
-  target: MenuTarget,
-  selection: HunkSelection,
-): string {
-  const tail = `in ${diff.path}? This cannot be undone.`;
-  if (selection.edits!.length > 0) return `Revert the highlighted text ${tail}`;
-  const n = target.kind === "row" ? 1 : revertedRows(diff, rows, target.range, selection);
-  return n === 1 ? `Revert this line ${tail}` : `Revert ${n} lines ${tail}`;
-}
-
-/** Rows in the range that show a selected line on either side: a split pair counts once. */
-function revertedRows(
-  diff: FileDiff,
-  rows: DiffRow[],
-  range: TextRange,
-  selection: HunkSelection,
-): number {
-  const { start, end } = orderedRange(range);
-  const picked = new Set(selection.lines);
-  const covered = Array.from({ length: end.row - start.row + 1 }, (_, i) => start.row + i);
-  return covered.filter((row) =>
-    (["old", "new"] as const).some((side) => {
-      const line = rowLine(diff, rows, row, side);
-      return line !== null && line.hunkIndex === selection.hunkIndex && picked.has(line.lineIndex);
-    }),
-  ).length;
 }
 
 /** Both sides were decoded, from different encodings; anything else changed no lines. */
