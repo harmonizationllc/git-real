@@ -179,16 +179,26 @@ impl RepoSession {
         upstream: Option<&str>,
     ) -> Result<(), GitError> {
         let repo = self.repo();
-        let mut local = find_local(repo, branch)?;
-        if let Some(name) = upstream {
-            find_branch_exact(repo, name, BranchType::Remote)?;
-        }
+        find_local(repo, branch)?;
+        // Both keys are read and written at repository level only: libgit2's
+        // set-upstream would prefer a local branch of the same name, and
+        // removal can only ever reach repository config.
+        let mut config = repo.config()?.open_level(git2::ConfigLevel::Local)?;
         match upstream {
-            Some(_) => local.set_upstream(upstream)?,
+            Some(name) => {
+                let found = find_branch_exact(repo, name, BranchType::Remote)?;
+                let refname = found
+                    .get()
+                    .name()
+                    .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?
+                    .to_owned();
+                let (remote, merge) = upstream_mapping(repo, &refname)
+                    .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?;
+                config.set_str(&format!("branch.{branch}.remote"), &remote)?;
+                config.set_str(&format!("branch.{branch}.merge"), &merge)?;
+            }
             None => {
-                // `set_upstream(None)` fails when either key is missing, and a
-                // gone upstream still has its keys, so remove what exists.
-                let mut config = repo.config()?;
+                // A gone upstream still has its keys, so remove what exists.
                 for key in ["remote", "merge"] {
                     let key = format!("branch.{branch}.{key}");
                     if config.get_entry(&key).is_ok() {
@@ -462,6 +472,22 @@ fn is_merged_into_head(repo: &Repository, branch: &Branch) -> Result<bool, GitEr
 /// Finds the local branch called exactly `name`. See `find_branch_exact`.
 pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<'r>, GitError> {
     find_branch_exact(repo, name, BranchType::Local)
+}
+
+/// The remote name and `refs/heads/...` merge ref a remote-tracking ref maps
+/// back to through its remote's fetch refspec, or `None` without such a
+/// mapping.
+fn upstream_mapping(repo: &Repository, refname: &str) -> Option<(String, String)> {
+    let remote_name = repo.branch_remote_name(refname).ok()?;
+    let remote_name = remote_name.as_str()?.to_owned();
+    let remote = repo.find_remote(&remote_name).ok()?;
+    for spec in remote.refspecs() {
+        if spec.direction() == git2::Direction::Fetch && spec.dst_matches(refname) {
+            let merge = spec.rtransform(refname).ok()?;
+            return Some((remote_name, merge.as_str()?.to_owned()));
+        }
+    }
+    None
 }
 
 /// Finds the branch of `kind` called exactly `name` (`origin/main` for a

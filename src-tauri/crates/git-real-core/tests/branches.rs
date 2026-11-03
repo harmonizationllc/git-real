@@ -1441,6 +1441,43 @@ fn set_branch_upstream_none_clears_tracking() {
 }
 
 #[test]
+fn set_branch_upstream_ignores_a_local_branch_named_like_the_remote_one() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let repo = Repository::open(&path).unwrap();
+    let commit = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.branch(&format!("origin/{head}"), &commit, false)
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    session
+        .set_branch_upstream("topic", Some(&format!("origin/{head}")))
+        .unwrap();
+    let config = Repository::open(&path).unwrap().config().unwrap();
+    assert_eq!(config.get_string("branch.topic.remote").unwrap(), "origin");
+    assert_eq!(
+        config.get_string("branch.topic.merge").unwrap(),
+        format!("refs/heads/{head}")
+    );
+}
+
+// Only the repository-level config is touched: clearing removes both keys
+// there and never reaches into global or system levels.
+#[test]
+fn set_branch_upstream_none_clears_only_repository_config() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    let session = RepoSession::open(&path).unwrap();
+    session.set_branch_upstream(&head, None).unwrap();
+    let local = Repository::open(&path)
+        .unwrap()
+        .config()
+        .unwrap()
+        .open_level(git2::ConfigLevel::Local)
+        .unwrap();
+    assert!(local.get_entry(&format!("branch.{head}.remote")).is_err());
+    assert!(local.get_entry(&format!("branch.{head}.merge")).is_err());
+}
+
+#[test]
 fn set_branch_upstream_none_on_an_untracked_branch_is_a_no_op() {
     let (_d, _b, path, _bare, _head) = remote_fixture();
     let session = RepoSession::open(&path).unwrap();
