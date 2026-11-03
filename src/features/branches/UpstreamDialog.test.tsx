@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AppError } from "../../lib/ipc";
@@ -16,11 +16,17 @@ function renderDialog(over: Partial<UpstreamDialogProps> = {}) {
     onCancel: vi.fn(),
     ...over,
   };
-  render(<UpstreamDialog {...props} />);
-  return { ...props, user: userEvent.setup() };
+  const { rerender } = render(<UpstreamDialog {...props} />);
+  return {
+    ...props,
+    user: userEvent.setup(),
+    rerender: (next: Partial<UpstreamDialogProps>) =>
+      rerender(<UpstreamDialog {...props} {...next} />),
+  };
 }
 
 const select = () => screen.getByRole("combobox", { name: "Upstream" });
+const form = () => screen.getByRole("dialog").querySelector("form") as HTMLFormElement;
 const save = () => screen.getByRole("button", { name: "Save" });
 
 // Contract: the dialog names the branch, lists None plus every candidate, preselects the current upstream.
@@ -99,6 +105,26 @@ describe("UpstreamDialog save", () => {
     await user.click(save());
     expect(onConfirm).toHaveBeenCalledWith(null);
   });
+
+  it("should list only None and the gone upstream when there are no candidates", () => {
+    renderDialog({ current: "origin/gone", candidates: [] });
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "None",
+      "origin/gone",
+    ]);
+  });
+
+  it("should not confirm on a form submit while the selection is unchanged", () => {
+    const { onConfirm } = renderDialog();
+    fireEvent.submit(form());
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("should not confirm on a form submit while pending", () => {
+    const { onConfirm } = renderDialog({ current: null, pending: true });
+    fireEvent.submit(form());
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
 
 // Contract: pending disables everything and shows Working…; errors show inline; Escape and backdrop cancel.
@@ -132,5 +158,40 @@ describe("UpstreamDialog states", () => {
     const { user, onCancel } = renderDialog();
     await user.click(screen.getByRole("dialog").parentElement as HTMLElement);
     expect(onCancel).toHaveBeenCalled();
+  });
+});
+
+// Contract: Cancel and in-dialog clicks behave; focus follows pending and error.
+describe("UpstreamDialog cancel and focus", () => {
+  it("should cancel when Cancel is clicked", async () => {
+    const { user, onCancel } = renderDialog();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("should not cancel on a click inside the dialog", async () => {
+    const { user, onCancel } = renderDialog();
+    await user.click(screen.getByRole("dialog"));
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should not cancel on a backdrop click while pending", () => {
+    const { onCancel } = renderDialog({ pending: true });
+    fireEvent.click(screen.getByRole("dialog").parentElement as HTMLElement);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("should hold focus on the dialog while pending", () => {
+    const { rerender } = renderDialog();
+    rerender({ pending: true });
+    expect(screen.getByRole("dialog")).toHaveFocus();
+  });
+
+  it("should return focus to the select when pending ends with an error", () => {
+    const error: AppError = { kind: "branchNotFound", message: "no branch named origin/x" };
+    const { rerender } = renderDialog();
+    rerender({ pending: true });
+    rerender({ pending: false, error });
+    expect(select()).toHaveFocus();
   });
 });
