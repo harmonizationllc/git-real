@@ -206,8 +206,9 @@ fn select_ops<'a>(
 
 /// Lays out each group of changed lines (a deletion run and the addition run
 /// after it, paired by position as the viewer pairs them) in hunk order when
-/// the selection takes all of it or none of it. A group the selection takes
-/// in part, or that holds an edit, is written as its old lines first as
+/// the selection takes all of it, none of it, or lines of one side only. A
+/// group the selection takes in part on both sides, or that holds an edit, is
+/// written as its old lines first as
 /// removals, then its new lines in pair order as additions, a kept line as a
 /// removal and an addition of itself. A selected pair or a replacement then
 /// lands in its own slot among the group's other lines.
@@ -235,8 +236,11 @@ fn order_partial_groups<'a>(
         let group: Vec<_> = ops.by_ref().take(dels + adds).collect();
         start += dels + adds;
         let taken = |o: &Option<PatchLine>| o.as_ref().is_some_and(|o| o.op != Op::Context);
-        // Only a group with both sides has pairs whose slots the layout can move.
-        let partial = dels > 0 && adds > 0 && group.iter().any(taken) && !group.iter().all(taken);
+        // Partial means some deletion and some addition are taken, but not every
+        // line: a one-sided pick keeps git's hunk order.
+        let (old_side, new_side) = group.split_at(dels);
+        let partial =
+            old_side.iter().any(taken) && new_side.iter().any(taken) && !group.iter().all(taken);
         let edited = group.iter().flatten().any(|o| o.replacement.is_some());
         if !partial && !edited {
             out.extend(group.into_iter().flatten());
@@ -280,7 +284,7 @@ fn order_flagged_runs(ops: &mut [PatchLine]) {
 /// Writes the hunk body. A marker follows a flagged line only when it is the
 /// last line of its side; a flagged context line that ends the old side but
 /// is followed by additions is written as a remove/add pair. Only additions
-/// carry a replacement here: `order_edited_groups` has already written each
+/// carry a replacement here: `order_partial_groups` has already written each
 /// replaced removal as a plain removal plus an addition of its new text.
 fn render_lines(out: &mut String, ops: &[PatchLine]) {
     let last_old = ops.iter().rposition(PatchLine::on_old);
