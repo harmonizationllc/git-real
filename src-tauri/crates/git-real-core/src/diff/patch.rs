@@ -99,11 +99,14 @@ pub fn build_patch(
         return Err(GitError::BadSelection);
     }
 
-    let mut ops = select_ops(
+    let mut ops = order_edited_groups(
         &hunk.lines,
-        selection.lines.as_deref(),
-        &selection.edits,
-        reverse,
+        select_ops(
+            &hunk.lines,
+            selection.lines.as_deref(),
+            &selection.edits,
+            reverse,
+        ),
     );
     if ops.iter().all(|o| o.op == Op::Context) {
         return Err(GitError::BadSelection);
@@ -149,15 +152,15 @@ pub fn build_patch(
     Ok(out)
 }
 
-/// Maps each line to its patch op in original order, dropping unselected
-/// post-side lines and turning unselected pre-side lines into context.
+/// Maps each line to its patch op, aligned with `lines`: `None` drops an
+/// unselected post-side line, and an unselected pre-side line becomes context.
 /// Indices in `picked` are already validated against `lines`.
 fn select_ops<'a>(
     lines: &'a [DiffLine],
     picked: Option<&[usize]>,
     edits: &'a [LineEdit],
     reverse: bool,
-) -> Vec<PatchLine<'a>> {
+) -> Vec<Option<PatchLine<'a>>> {
     let (post_only, pre_only) = if reverse {
         (DiffLineKind::Deletion, DiffLineKind::Addition)
     } else {
@@ -176,7 +179,7 @@ fn select_ops<'a>(
         .iter()
         .enumerate()
         .zip(selected)
-        .filter_map(|((i, line), selected)| {
+        .map(|((i, line), selected)| {
             let replacement = edits.iter().find(|e| e.index == i).map(|e| e.text.as_str());
             match line.kind {
                 DiffLineKind::Context => Some(plain(Op::Context, line)),
@@ -194,6 +197,63 @@ fn select_ops<'a>(
             }
         })
         .collect()
+}
+
+/// Lays out each group of changed lines (a deletion run and the addition run
+/// after it, paired by position as the viewer pairs them) in hunk order,
+/// except a group holding an edit: its old lines are written first as
+/// removals, then its new lines in pair order as additions, a kept line as a
+/// removal and an addition of itself. A replacement then lands where its pair
+/// sits among the group's other lines instead of ahead of them.
+fn order_edited_groups<'a>(
+    lines: &'a [DiffLine],
+    ops: Vec<Option<PatchLine<'a>>>,
+) -> Vec<PatchLine<'a>> {
+    let mut out = Vec::with_capacity(ops.len());
+    let mut ops = ops.into_iter();
+    let mut start = 0;
+    while start < lines.len() {
+        if lines[start].kind == DiffLineKind::Context {
+            out.extend(ops.next().flatten());
+            start += 1;
+            continue;
+        }
+        let dels = lines[start..]
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Deletion)
+            .count();
+        let adds = lines[start + dels..]
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Addition)
+            .count();
+        let group: Vec<_> = ops.by_ref().take(dels + adds).collect();
+        start += dels + adds;
+        if !group.iter().flatten().any(|o| o.replacement.is_some()) {
+            out.extend(group.into_iter().flatten());
+            continue;
+        }
+        let as_op = |op, o: &PatchLine<'a>, replacement| PatchLine {
+            op,
+            line: o.line,
+            replacement,
+        };
+        out.extend(
+            group
+                .iter()
+                .flatten()
+                .filter(|o| o.on_old())
+                .map(|o| as_op(Op::Remove, o, None)),
+        );
+        for k in 0..dels.max(adds) {
+            let slot = [(k < dels).then_some(k), (k < adds).then_some(dels + k)];
+            for o in slot.into_iter().flatten().filter_map(|i| group[i].as_ref()) {
+                if o.on_new() {
+                    out.push(as_op(Op::Add, o, o.replacement));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Within each run of changed lines that carries a no-newline flag, moves
