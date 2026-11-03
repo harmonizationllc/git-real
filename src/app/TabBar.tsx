@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RepoId, ShortcutKeycaps } from "../lib/ipc";
 import { useShell } from "../lib/store/shell";
 import type { RepoTab } from "../lib/store/repoTabs";
@@ -10,24 +11,71 @@ export interface TabBarProps {
   activeId: RepoId | null;
   onActivate(id: RepoId | null): void;
   onClose(id: RepoId): void;
+  /** Move the tab with `id` so it ends up at `toIndex`. */
+  onMove(id: RepoId, toIndex: number): void;
 }
+
+/** Drag data type for a tab: never text/plain, so dropping on a text field pastes nothing. */
+const TAB_MIME = "application/x-git-real-tab";
 
 /** A shell button's tooltip: the label, with its chord when bound. */
 function titleFor(label: string, keys: string | null, keycaps: ShortcutKeycaps): string {
   return keys === null ? label : `${label} (${formatKeys(keys, keycaps)})`;
 }
 
-export function TabBar({ tabs, activeId, onActivate, onClose }: TabBarProps): React.JSX.Element {
+export function TabBar({
+  tabs,
+  activeId,
+  onActivate,
+  onClose,
+  onMove,
+}: TabBarProps): React.JSX.Element {
   const paletteKeys = useShortcutKeys("palette");
   const settingsKeys = useShortcutKeys("settings");
   const keycaps = useKeycaps();
+  const [dragState, setDrag] = useState<{ id: RepoId; over: RepoId | null } | null>(null);
+  // A drag whose tab has closed is over (its dragend fires on a detached node), so ignore it.
+  const drag = dragState !== null && tabs.some((t) => t.id === dragState.id) ? dragState : null;
   return (
     <nav className={styles.root} aria-label="Repositories">
-      <div role="tablist" aria-label="Open repositories" className={styles.list}>
+      <div
+        role="tablist"
+        aria-label="Open repositories"
+        className={styles.list}
+        onDragEnd={() => setDrag(null)}
+      >
         {tabs.map((tab) => {
           const active = tab.id === activeId;
           return (
-            <div key={tab.id} className={active ? `${styles.tab} ${styles.active}` : styles.tab}>
+            <div
+              key={tab.id}
+              className={active ? `${styles.tab} ${styles.active}` : styles.tab}
+              draggable
+              data-dragging={drag?.id === tab.id ? "true" : undefined}
+              data-drop-target={drag?.over === tab.id && drag.id !== tab.id ? "true" : undefined}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TAB_MIME, String(tab.id));
+                setDrag({ id: tab.id, over: null });
+              }}
+              onDragOver={(e) => {
+                if (drag === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (drag.over !== tab.id) setDrag({ id: drag.id, over: tab.id });
+              }}
+              onDragLeave={(e) => {
+                if (drag === null || drag.over !== tab.id) return;
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                setDrag({ id: drag.id, over: null });
+              }}
+              onDrop={(e) => {
+                if (drag === null) return;
+                e.preventDefault();
+                if (drag.id !== tab.id) onMove(drag.id, tabs.indexOf(tab));
+                setDrag(null);
+              }}
+            >
               <button
                 type="button"
                 role="tab"

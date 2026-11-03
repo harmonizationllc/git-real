@@ -11,6 +11,11 @@ interface RepoTabsState {
   activeId: RepoId | null;
   openTab(repo: OpenedRepo): void;
   closeTab(id: RepoId): void;
+  /**
+   * Move the tab with `id` so it ends up at `toIndex`; out-of-range or no-op moves change
+   * nothing.
+   */
+  moveTab(id: RepoId, toIndex: number): void;
   activate(id: RepoId | null): void;
 }
 
@@ -41,6 +46,16 @@ export const useRepoTabs = create<RepoTabsState>()((set) => ({
       if (state.activeId !== id) return { tabs };
       const neighbour = state.tabs[index - 1] ?? state.tabs[index + 1];
       return { tabs, activeId: neighbour?.id ?? null };
+    }),
+  moveTab: (id, toIndex) =>
+    set((state) => {
+      const from = state.tabs.findIndex((t) => t.id === id);
+      if (from === -1 || from === toIndex || toIndex < 0 || toIndex >= state.tabs.length) {
+        return state;
+      }
+      const tabs = state.tabs.filter((t) => t.id !== id);
+      tabs.splice(toIndex, 0, state.tabs[from]!);
+      return { tabs };
     }),
   activate: (id) =>
     set((state) => (id === null || state.tabs.some((t) => t.id === id) ? { activeId: id } : state)),

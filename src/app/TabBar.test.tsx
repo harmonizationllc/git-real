@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +20,7 @@ const tab = (id: number, name: string): RepoTab => ({
   summary: { path: `/r/${name}`, name, headBranch: "main", isBare: false },
 });
 const tabs = [tab(1, "alpha"), tab(2, "beta")];
+const threeTabs = [...tabs, tab(3, "gamma")];
 
 beforeEach(async () => {
   useShell.setState({ dialog: null, repoActions: null });
@@ -30,9 +31,19 @@ beforeEach(async () => {
 function setup(activeId: number | null = 1, list: RepoTab[] = tabs) {
   const onActivate = vi.fn();
   const onClose = vi.fn();
+  const onMove = vi.fn();
   const user = userEvent.setup();
-  render(<TabBar tabs={list} activeId={activeId} onActivate={onActivate} onClose={onClose} />);
-  return { user, onActivate, onClose };
+  const bar = (tabList: RepoTab[]) => (
+    <TabBar
+      tabs={tabList}
+      activeId={activeId}
+      onActivate={onActivate}
+      onClose={onClose}
+      onMove={onMove}
+    />
+  );
+  const { rerender } = render(bar(list));
+  return { user, onActivate, onClose, onMove, rerender: (l: RepoTab[]) => rerender(bar(l)) };
 }
 
 // Contract: one tab per repo, in order, named by the repo name.
@@ -183,5 +194,155 @@ describe("TabBar new-tab button", () => {
     expect(screen.getByRole("button", { name: "Command palette" })).not.toHaveAttribute(
       "data-fill",
     );
+  });
+});
+
+const fakeTransfer = () => ({ setData: vi.fn(), effectAllowed: "", dropEffect: "" });
+const MIME = "application/x-git-real-tab";
+
+// Contract: tabs reorder by native drag and drop; only a drag that started on a tab counts.
+describe("TabBar drag and drop", () => {
+  const wrapper = (name: string) => screen.getByRole("tab", { name }).parentElement as HTMLElement;
+
+  it("should make every tab draggable", () => {
+    setup(1, threeTabs);
+    for (const name of ["alpha", "beta", "gamma"]) {
+      expect(wrapper(name)).toHaveAttribute("draggable", "true");
+    }
+  });
+
+  it("should put the tab id on the transfer under the tab MIME type", () => {
+    setup(1, threeTabs);
+    const dataTransfer = fakeTransfer();
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer });
+    expect(dataTransfer.setData).toHaveBeenCalledWith(MIME, "1");
+  });
+
+  it("should move a dragged tab right to the drop position", () => {
+    const { onMove } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.drop(wrapper("gamma"));
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(1, 2);
+  });
+
+  it("should move a dragged tab left to the drop position", () => {
+    const { onMove } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.drop(wrapper("alpha"));
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(3, 0);
+  });
+
+  it("should mark the dragged tab and the tab under the pointer", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    expect(wrapper("alpha")).toHaveAttribute("data-dragging", "true");
+    expect(wrapper("gamma")).toHaveAttribute("data-drop-target", "true");
+  });
+
+  it("should not activate or move when a tab is dropped on itself", () => {
+    const { onMove, onActivate } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    expect(wrapper("alpha")).not.toHaveAttribute("data-drop-target");
+    fireEvent.drop(wrapper("alpha"));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("should clear the markers when the drag ends without a drop", () => {
+    const { onMove } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragEnd(wrapper("alpha"));
+    expect(document.querySelector("[data-dragging]")).toBeNull();
+    expect(document.querySelector("[data-drop-target]")).toBeNull();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("should ignore a drag that did not start on a tab", () => {
+    const { onMove } = setup(1, threeTabs);
+    expect(fireEvent.dragOver(wrapper("beta"), { dataTransfer: fakeTransfer() })).toBe(true);
+    fireEvent.drop(wrapper("beta"));
+    expect(document.querySelector("[data-drop-target]")).toBeNull();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it("should not activate a tab during a drag and drop", () => {
+    const { onActivate } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.drop(wrapper("gamma"));
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("should style the dragged tab and the drop target", () => {
+    const css = readFileSync("src/app/TabBar.module.css", "utf8");
+    expect(css).toMatch(/\.tab\[data-dragging\]\s*\{[^}]*opacity:\s*0\.5/);
+    expect(css).toMatch(
+      /\.tab\[data-drop-target\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--color-accent\)/,
+    );
+  });
+
+  it("should cancel dragover and drop after a tab drag starts", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    expect(fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() })).toBe(false);
+    expect(fireEvent.drop(wrapper("gamma"))).toBe(false);
+  });
+
+  it("should keep the drop marker through repeated dragover on the same tab", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    expect(wrapper("gamma")).toHaveAttribute("data-drop-target", "true");
+  });
+
+  it("should clear the drop marker when the pointer leaves the tab", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragLeave(wrapper("gamma"), { relatedTarget: document.body });
+    expect(document.querySelector("[data-drop-target]")).toBeNull();
+    expect(wrapper("alpha")).toHaveAttribute("data-dragging", "true");
+  });
+
+  it("should keep the drop marker when the pointer moves between a tab's own children", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    // jsdom has no DragEvent, so the event init drops relatedTarget: set it by hand.
+    const leave = createEvent.dragLeave(wrapper("gamma"));
+    Object.defineProperty(leave, "relatedTarget", {
+      value: screen.getByRole("tab", { name: "gamma" }),
+    });
+    fireEvent(wrapper("gamma"), leave);
+    expect(wrapper("gamma")).toHaveAttribute("data-drop-target", "true");
+  });
+
+  it("should ignore a dragleave from a tab that is not the drop target", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragLeave(wrapper("beta"), { relatedTarget: document.body });
+    expect(wrapper("gamma")).toHaveAttribute("data-drop-target", "true");
+  });
+
+  it("should ignore a dragleave when no tab drag is in progress", () => {
+    setup(1, threeTabs);
+    fireEvent.dragLeave(wrapper("beta"), { relatedTarget: document.body });
+    expect(document.querySelector("[data-drop-target]")).toBeNull();
+  });
+
+  it("should drop the drag when the dragged tab closes mid-drag", () => {
+    const { rerender, onMove } = setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    rerender(threeTabs.slice(1));
+    expect(fireEvent.dragOver(wrapper("beta"), { dataTransfer: fakeTransfer() })).toBe(true);
+    fireEvent.drop(wrapper("beta"));
+    expect(document.querySelector("[data-drop-target]")).toBeNull();
+    expect(onMove).not.toHaveBeenCalled();
   });
 });
