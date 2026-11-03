@@ -1216,3 +1216,59 @@ fn apply_patch_text_stage_keeps_index_entry_added_through_another_handle() {
         (Some(ChangeKind::Modified), Some(ChangeKind::Added))
     );
 }
+
+// --- line selection inside a whole-file hunk (GR-51) ---
+
+#[test]
+fn apply_hunk_line_selection_inside_whole_file_hunk() {
+    let (_dir, path) = repo_with_two_edits();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &picked(&[1, 2]))
+        .expect("stage b->B");
+    assert_eq!(
+        changed(&path, DiffScope::Staged),
+        vec![
+            (DiffLineKind::Deletion, "b".to_string()),
+            (DiffLineKind::Addition, "B".to_string())
+        ]
+    );
+    assert_eq!(
+        changed(&path, DiffScope::Unstaged),
+        vec![
+            (DiffLineKind::Deletion, "d".to_string()),
+            (DiffLineKind::Addition, "D".to_string())
+        ]
+    );
+}
+
+/// Commits `c1..c5, a..e` then edits b and d. The whole-file unstaged hunk is
+/// `[c1,c2,c3,c4,c5,a,-b,+B,c,-d,+D,e]`, so b->B is at indices 6 and 7.
+fn repo_with_leading_context() -> (tempfile::TempDir, std::path::PathBuf) {
+    let (dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "f.txt", "c1\nc2\nc3\nc4\nc5\na\nb\nc\nd\ne\n");
+    common::commit_all(&path, "add f");
+    common::write_file(&path, "f.txt", "c1\nc2\nc3\nc4\nc5\na\nB\nc\nD\ne\n");
+    (dir, path)
+}
+
+#[test]
+fn apply_hunk_whole_file_hunk_indices_shift_with_leading_context() {
+    let (_dir, path) = repo_with_leading_context();
+    session(&path)
+        .apply_hunk("f.txt", HunkAction::Stage, &picked(&[6, 7]))
+        .expect("stage b->B");
+    assert_eq!(
+        changed(&path, DiffScope::Staged),
+        vec![
+            (DiffLineKind::Deletion, "b".to_string()),
+            (DiffLineKind::Addition, "B".to_string())
+        ]
+    );
+    assert_eq!(
+        changed(&path, DiffScope::Unstaged),
+        vec![
+            (DiffLineKind::Deletion, "d".to_string()),
+            (DiffLineKind::Addition, "D".to_string())
+        ]
+    );
+}

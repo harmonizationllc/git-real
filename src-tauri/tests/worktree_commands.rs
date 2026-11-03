@@ -8,9 +8,9 @@ use git_real_core::{
     ChangeKind, DiffScope, DiffSide, HunkAction, HunkSelection, RepoSession, WorkingTreeStatus,
 };
 use git_real_lib::commands::worktree::{
-    MAX_PREVIEW_BYTES, add_to_gitignore_inner, apply_hunk_inner, discard_paths_inner,
-    get_file_content_inner, get_file_diff_inner, get_status_inner, stage_all_inner,
-    stage_paths_inner, unstage_all_inner, unstage_paths_inner,
+    DEFAULT_VIEW_LINES, MAX_PREVIEW_BYTES, add_to_gitignore_inner, apply_hunk_inner,
+    discard_paths_inner, get_file_content_inner, get_file_diff_inner, get_status_inner,
+    stage_all_inner, stage_paths_inner, unstage_all_inner, unstage_paths_inner,
 };
 use git_real_lib::error::{AppError, AppErrorKind};
 use git_real_lib::state::{RepoId, RepoRegistry};
@@ -795,4 +795,60 @@ fn get_file_diff_inner_with_commit_scope_echoes_the_scope_as_tagged_json() {
         serde_json::to_value(&diff.scope).unwrap(),
         serde_json::json!({ "commit": hex })
     );
+}
+
+// GR-51: the viewer asks for whole-file context and a larger default cap.
+fn numbered_lines(n: usize) -> String {
+    (1..=n).map(|i| format!("line {i}\n")).collect()
+}
+
+fn total_lines(diff: &git_real_core::FileDiff) -> usize {
+    diff.hunks.iter().map(|h| h.lines.len()).sum()
+}
+
+#[test]
+fn get_file_diff_inner_default_cap_is_default_view_lines() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("big.txt"), numbered_lines(60_000)).unwrap();
+
+    let diff = get_file_diff_inner(&reg, id, "big.txt", DiffScope::Unstaged, false, None).unwrap();
+
+    assert!(diff.truncated);
+    assert_eq!(total_lines(&diff), DEFAULT_VIEW_LINES);
+}
+
+#[test]
+fn get_file_diff_inner_explicit_cap_above_file_is_not_truncated() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("big.txt"), numbered_lines(60_000)).unwrap();
+
+    let diff = get_file_diff_inner(
+        &reg,
+        id,
+        "big.txt",
+        DiffScope::Unstaged,
+        false,
+        Some(70_000),
+    )
+    .unwrap();
+
+    assert!(!diff.truncated);
+    assert_eq!(total_lines(&diff), 60_000);
+}
+
+#[test]
+fn get_file_diff_inner_uses_whole_file_context() {
+    let (_dir, path, reg, id) = open_fixture();
+    common::commit_file(&path, "twenty.txt", &numbered_lines(20), "add twenty");
+    std::fs::write(
+        path.join("twenty.txt"),
+        numbered_lines(20).replace("line 10\n", "LINE 10\n"),
+    )
+    .unwrap();
+
+    let diff =
+        get_file_diff_inner(&reg, id, "twenty.txt", DiffScope::Unstaged, false, None).unwrap();
+
+    assert_eq!(diff.hunks.len(), 1);
+    assert!(diff.hunks[0].lines.len() >= 20);
 }

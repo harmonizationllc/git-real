@@ -2,7 +2,7 @@ mod common;
 
 use git_real_core::{
     ChangeKind, DiffLine, DiffLineKind, DiffOptions, DiffScope, FileDiff, GitError, Hunk,
-    RepoSession,
+    RepoSession, WHOLE_FILE_CONTEXT,
 };
 
 fn diff_of(
@@ -1596,4 +1596,48 @@ fn commit_scope_deleted_file_is_all_deletions() {
             vec![DiffLineKind::Deletion, DiffLineKind::Deletion]
         )
     );
+}
+
+// --- whole-file context ---
+
+#[test]
+fn diff_options_whole_file_values() {
+    let o = DiffOptions::whole_file();
+    assert_eq!(
+        (o.context_lines, o.max_lines, o.ignore_whitespace),
+        (WHOLE_FILE_CONTEXT, usize::MAX, false)
+    );
+    assert!(i32::try_from(WHOLE_FILE_CONTEXT).is_ok());
+}
+
+#[test]
+fn diff_whole_file_context_yields_one_hunk_with_every_line() {
+    // ten_line_fixture() has l5 -> L5; also edit l9 -> L9 so default options give two hunks.
+    let (_dir, path) = ten_line_fixture();
+    let edited = std::fs::read_to_string(path.join("ten.txt"))
+        .unwrap()
+        .replace("l9\n", "L9\n");
+    common::write_file(&path, "ten.txt", &edited);
+    assert_eq!(
+        diff_of(
+            &path,
+            "ten.txt",
+            DiffScope::Unstaged,
+            DiffOptions::default()
+        )
+        .unwrap()
+        .hunks
+        .len(),
+        2
+    );
+    let diff = diff_of(
+        &path,
+        "ten.txt",
+        DiffScope::Unstaged,
+        DiffOptions::whole_file(),
+    )
+    .unwrap();
+    assert_eq!(diff.hunks.len(), 1);
+    assert_eq!(diff.hunks[0].lines.len(), 12); // 8 context + 2 deletions + 2 additions
+    assert_eq!((diff.hunks[0].old_start, diff.hunks[0].new_start), (1, 1));
 }
