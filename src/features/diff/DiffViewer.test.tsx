@@ -663,3 +663,16 @@ describe("DiffViewer touch-action", () => {
     expect(declarationsOf(css, "scroll")).toMatch(/touch-action:\s*pan-y;/);
   });
 });
+
+// Contract: a text range is shown by the text tint alone; its rows carry no outline box.
+describe("DiffRows range styling", () => {
+  it("should draw a range as a text tint with no outline on rows or cells", () => {
+    const rowCss = readFileSync("src/features/diff/DiffRows.module.css", "utf8");
+    const lineCss = readFileSync("src/features/diff/LineContent.module.css", "utf8");
+    expect(declarationsOf(rowCss, "row")).not.toMatch(/outline/);
+    expect(declarationsOf(rowCss, "cell")).not.toMatch(/outline/);
+    expect(declarationsOf(lineCss, "selected")).toMatch(
+      /background:\s*var\(--color-line-selected\)/,
+    );
+  });
+});
