@@ -29,3 +29,24 @@ export const fileDiff = (hunks: Hunk[], extra: Partial<FileDiff> = {}): FileDiff
   newEncoding: null,
   ...extra,
 });
+
+/**
+ * One hunk of three edited line pairs: unified rows ctx0, del1..3, add4..6, ctx7 (partners 1<->4,
+ * 2<->5, 3<->6); split rows ctx, {1,4}, {2,5}, {3,6}, ctx.
+ */
+export const threePairDiff = (): FileDiff =>
+  fileDiff([
+    hunk(
+      [
+        L("context", "c", 1, 1),
+        L("deletion", "one two three", 2, null),
+        L("deletion", "four five six", 3, null),
+        L("deletion", "seven eight nine", 4, null),
+        L("addition", "one two THREE", null, 2),
+        L("addition", "FOUR FIVE SIX", null, 3),
+        L("addition", "SEVEN eight NINE", null, 4),
+        L("context", "d", 5, 5),
+      ],
+      "@@ -1,5 +1,5 @@",
+    ),
+  ]);
