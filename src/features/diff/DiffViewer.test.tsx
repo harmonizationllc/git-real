@@ -277,6 +277,17 @@ describe("DiffViewer text range", () => {
     expect(selectedRows(container)).toEqual([]);
   });
 
+  it("should select the word under a double-click", () => {
+    const { container, scroll } = setup();
+    hits.set(10, { row: 4, side: "new", offset: 9 });
+    fireEvent.doubleClick(scroll, { button: 0, clientX: 10, clientY: 50 });
+    expect(selectedRows(container)).toEqual([4]);
+    const tinted = Array.from(rowEl(container, 4).querySelectorAll(`.${lineStyles.selected}`))
+      .map((e) => e.textContent)
+      .join("");
+    expect(tinted).toBe("THREE");
+  });
+
   it("should leave no range after a click without a drag", () => {
     const { container, scroll } = setup();
     hits.set(10, { row: 1, side: "old", offset: 4 });
@@ -291,11 +302,12 @@ describe("DiffViewer text range", () => {
 describe("DiffViewer copy", () => {
   it("should copy a unified range that crosses from an addition row into a deletion row", () => {
     const { scroll } = setup();
-    // side new, anchor row 4 offset 8, focus row 2 offset 4:
-    // "four five six".slice(4) + "seven eight nine" + "one two THREE".slice(0, 8).
+    // side new, anchor row 4 offset 8, focus row 2 offset 4: row 2 is a deletion, so on the new
+    // side it is whole like row 3; row 4 is cut at 8.
+    // "four five six" + "seven eight nine" + "one two THREE".slice(0, 8).
     drag(scroll, { row: 4, side: "new", offset: 8 }, { row: 2, side: "new", offset: 4 });
     const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(" five six\nseven eight nine\none two ");
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("four five six\nseven eight nine\none two ");
     expect(notPrevented).toBe(false);
   });
 

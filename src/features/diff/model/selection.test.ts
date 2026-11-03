@@ -86,6 +86,39 @@ describe("coveredText", () => {
   });
 });
 
+// Contract: in unified mode an end row whose line is on the other side (a deletion on the new
+// side, an addition on the old side) is covered whole, as it is tinted and acted on whole.
+describe("coveredText with other-kind unified end rows", () => {
+  it("should cover a new-side range's deletion start row whole", () => {
+    // Row 2 "four five six" (deletion) whole, row 3 whole, row 4 "one two THREE" to offset 8.
+    expect(coveredText(diff, unified, range("new", [2, 4], [4, 8]))).toBe(
+      "four five six\nseven eight nine\none two ",
+    );
+  });
+
+  it("should cover the same text for the backward range", () => {
+    expect(coveredText(diff, unified, range("new", [4, 8], [2, 4]))).toBe(
+      "four five six\nseven eight nine\none two ",
+    );
+  });
+
+  it("should cover an old-side range's addition end row whole", () => {
+    // Row 1 "one two three" from offset 4, rows 2..4 whole, row 5 "FOUR FIVE SIX" (addition) whole.
+    expect(coveredText(diff, unified, range("old", [1, 4], [5, 3]))).toBe(
+      "two three\nfour five six\nseven eight nine\none two THREE\nFOUR FIVE SIX",
+    );
+  });
+
+  it("should cover a one-row range on an other-kind row whole", () => {
+    expect(coveredText(diff, unified, range("new", [2, 4], [2, 9]))).toBe("four five six");
+  });
+
+  it("should still cut a context end row at its offset", () => {
+    // Row 0 "c" (context) from offset 1 is empty, row 1 is a deletion on the old side, cut at 3.
+    expect(coveredText(diff, unified, range("old", [0, 1], [1, 3]))).toBe("\none");
+  });
+});
+
 // Contract: selectionRequest maps a highlight to whole lines plus partial-line edits.
 describe("selectionRequest from a text range", () => {
   it("should select partial pairs for discard (split, new side)", () => {

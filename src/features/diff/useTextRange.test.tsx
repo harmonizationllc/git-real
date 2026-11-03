@@ -7,7 +7,10 @@ import { buildRows, type DiffRow } from "./model/rows";
 import { useTextRange, type UseTextRange } from "./useTextRange";
 
 // Unified rows of the three-pair fixture: ctx0, del1, del2, del3, add4, add5, add6, ctx7.
-const rows = buildRows(threePairDiff(), "unified");
+// Split rows: ctx0, {1,4}, {2,5}, {3,6}, ctx4 (row 1's new text is "one two THREE").
+const diff = threePairDiff();
+const rows = buildRows(diff, "unified");
+const splitRows = buildRows(diff, "split");
 
 // The scripted resolver answers by clientX only, so a clamped clientY never changes the hit.
 const hits = new Map<number, CaretHit>();
@@ -20,9 +23,10 @@ const INSIDE_Y = 150;
 // The probe publishes the hook's latest result after every render (in an effect, not in render).
 let latest: UseTextRange;
 
+// The fourth argument gives the hook the line text it needs to find a double-clicked word.
 function Probe({ rows, resolve }: { rows: DiffRow[]; resolve: CaretResolver | null }) {
   const ref = useRef<HTMLDivElement>(null);
-  const result = useTextRange(rows, resolve, () => ref.current);
+  const result = useTextRange(rows, resolve, () => ref.current, diff);
   useLayoutEffect(() => {
     latest = result;
   });
@@ -34,12 +38,13 @@ function Probe({ rows, resolve }: { rows: DiffRow[]; resolve: CaretResolver | nu
       onPointerDown={result.onPointerDown}
       onPointerMove={result.onPointerMove}
       onPointerUp={result.onPointerUp}
+      onDoubleClick={result.onDoubleClick}
     />
   );
 }
 
-function setup(resolve: CaretResolver | null = resolver) {
-  const view = render(<Probe rows={rows} resolve={resolve} />);
+function setup(resolve: CaretResolver | null = resolver, probeRows: DiffRow[] = rows) {
+  const view = render(<Probe rows={probeRows} resolve={resolve} />);
   const el = screen.getByTestId("probe");
   el.getBoundingClientRect = () => ({ ...RECT, toJSON: () => RECT }) as DOMRect;
   el.setPointerCapture = vi.fn();
@@ -266,6 +271,75 @@ describe("useTextRange reset", () => {
     down(el, 10);
     move(el, 30);
     up(el, 30);
+    expect(latest.range).toBeNull();
+  });
+});
+
+// Contract: a double-click selects the maximal run of word characters [A-Za-z0-9_] around the
+// resolved offset on the hit's row and side; on whitespace or with no hit nothing changes.
+describe("useTextRange double-click", () => {
+  const dbl = (el: HTMLElement, x: number) =>
+    fireEvent.doubleClick(el, { button: 0, clientX: x, clientY: INSIDE_Y });
+
+  it("should select the word around the offset", () => {
+    const { el } = setup(resolver, splitRows);
+    hitAt(60, { row: 1, side: "new", offset: 9 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 1, offset: 8 },
+      focus: { row: 1, offset: 13 },
+    });
+    expect(latest.tint(1)).toEqual({ side: "new", from: 8, to: 13 });
+  });
+
+  it("should select the word on the old side of the same split row", () => {
+    const { el } = setup(resolver, splitRows);
+    hitAt(60, { row: 1, side: "old", offset: 5 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "old",
+      anchor: { row: 1, offset: 4 },
+      focus: { row: 1, offset: 7 },
+    });
+  });
+
+  it("should select the word on a unified row", () => {
+    const { el } = setup();
+    hitAt(60, { row: 5, side: "new", offset: 6 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 5, offset: 5 },
+      focus: { row: 5, offset: 9 },
+    });
+  });
+
+  it("should keep the word after the click events that precede a real double-click", () => {
+    const { el } = setup(resolver, splitRows);
+    hitAt(60, { row: 1, side: "new", offset: 9 });
+    down(el, 60);
+    up(el, 60);
+    down(el, 60);
+    up(el, 60);
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 1, offset: 8 },
+      focus: { row: 1, offset: 13 },
+    });
+  });
+
+  it("should leave the range null on a double-click on whitespace", () => {
+    const { el } = setup(resolver, splitRows);
+    hitAt(60, { row: 1, side: "new", offset: 3 });
+    dbl(el, 60);
+    expect(latest.range).toBeNull();
+  });
+
+  it("should leave the range null when the resolver finds nothing", () => {
+    const { el } = setup(resolver, splitRows);
+    dbl(el, 999);
     expect(latest.range).toBeNull();
   });
 });
