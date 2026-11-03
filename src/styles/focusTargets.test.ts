@@ -10,6 +10,7 @@ const ALLOWED_WITHOUT_ATTRIBUTE: Record<string, number> = {
   "src/components/ContextMenu.tsx": 2,
   "src/components/ConfirmDialog.tsx": 1,
   "src/components/PromptDialog.tsx": 1,
+  "src/features/branches/UpstreamDialog.tsx": 1,
   "src/features/stash/StashDialog.tsx": 1,
   "src/features/hosting/AccountsDialog.tsx": 1,
   "src/features/hosting/ConnectAccountDialog.tsx": 1,
