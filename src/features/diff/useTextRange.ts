@@ -100,7 +100,8 @@ export function useTextRange(
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
+    // A touch pans the list (touch-action: pan-y); only mouse and pen drag a range.
+    if (e.button !== 0 || e.pointerType === "touch") return;
     stop();
     const hit = hitAt(e.clientX, e.clientY);
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -136,10 +137,9 @@ export function useTextRange(
     edge.current = { dir, x: e.clientX, y: e.clientY };
   };
 
-  const onPointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  /** Ends the drag; one that ended back on its anchor leaves no range. */
+  const end = () => {
     stop();
-    // A drag back onto its anchor leaves no range.
     const collapsed =
       range !== null &&
       range.anchor.row === range.focus.row &&
@@ -147,8 +147,13 @@ export function useTextRange(
     if (collapsed) setState(null);
   };
 
-  /** A cancelled pointer or a lost capture ends the drag and keeps the range. */
-  const onPointerCancel = () => stop();
+  const onPointerUp = (e: React.PointerEvent) => {
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    end();
+  };
+
+  /** A cancelled pointer or a lost capture ends the drag like a pointerup. */
+  const onPointerCancel = () => end();
 
   const onDoubleClick = (e: React.MouseEvent) => {
     const hit = hitAt(e.clientX, e.clientY);
