@@ -1,5 +1,5 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyHunk,
   getFileContent,
@@ -10,13 +10,15 @@ import {
 } from "../../lib/ipc";
 import type { AppError, FileDiff, StatusEntry } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
+import { useShell } from "../../lib/store/shell";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useWorkspace } from "../../lib/store/workspace";
 import type { DiffScope } from "../../lib/ipc";
-import { fileDiff, hunk, L } from "../../test/diffFixtures";
+import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
+import { scrollToIndex } from "../../test/mockVirtualizer";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { BlameView } from "../history/BlameView";
-import { DetailPane } from "./DetailPane";
+import { DECODED_REASON, DetailPane, PENDING_REASON, WHITESPACE_REASON } from "./DetailPane";
 import { FULL_DIFF_LINES } from "./model/limits";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -87,6 +89,8 @@ beforeEach(async () => {
     writable: true,
   });
   useWorkspace.setState({ selected: {}, centreView: {}, historyPath: {} });
+  useShell.setState({ diffNavigation: null });
+  scrollToIndex.mockReset();
   await seedSettings({ diff: { mode: "split", ignoreWhitespace: false } });
   vi.mocked(getFileDiff).mockImplementation((_id, path) => Promise.resolve(textDiff({ path })));
   vi.mocked(getFileContent).mockResolvedValue(new ArrayBuffer(2));
@@ -321,13 +325,13 @@ describe("DetailPane zero-hunk diffs", () => {
     expect(await screen.findByTestId("encoding-notice")).toBeInTheDocument();
   });
 
-  it("should offer no hunk buttons for a decoded diff without hunks", async () => {
+  it("should render no viewer for a decoded diff without hunks", async () => {
     vi.mocked(getFileDiff).mockResolvedValue(
       fileDiff([], { oldEncoding: "utf16Le", newEncoding: "utf8" }),
     );
     setup();
     await screen.findByText("Only the encoding changed");
-    expect(screen.queryByRole("button", { name: /hunk/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Diff" })).toBeNull();
   });
 
   it("should say there are no line changes for an ordinary diff without hunks", async () => {
@@ -351,202 +355,420 @@ describe("DetailPane zero-hunk diffs", () => {
   });
 });
 
-// Contract: hunk actions are disabled, with a reason, when the diff cannot be applied safely.
-describe("DetailPane disabled hunk actions", () => {
-  it("should disable every hunk button with the UTF-16 reason for a decoded diff", async () => {
-    vi.mocked(getFileDiff).mockResolvedValue(
-      textDiff({ oldEncoding: "utf16Le", newEncoding: "utf16Le" }),
+// --- Right-click actions (GR-52) ------------------------------------------------------------
+//
+// threePairDiff in split mode: rows 0 ctx, 1 {1,4}, 2 {2,5}, 3 {3,6}, 4 ctx. Old lines
+// "one two three" / "four five six" / "seven eight nine", new lines "one two THREE" /
+// "FOUR FIVE SIX" / "SEVEN eight NINE".
+
+const threeDiff = (extra: Partial<FileDiff> = {}): FileDiff => ({ ...threePairDiff(), ...extra });
+const serveThree = (extra: Partial<FileDiff> = {}) =>
+  vi
+    .mocked(getFileDiff)
+    .mockImplementation((_id, path) => Promise.resolve(threeDiff({ path, ...extra })));
+
+/** The virtual item wrapper of a row. */
+const rowAt = (i: number) => document.querySelector<HTMLElement>(`[data-index="${i}"]`)!;
+const rightClick = (el: Element) => fireEvent.contextMenu(el, { clientX: 30, clientY: 40 });
+const menu = () => screen.getByRole("menu");
+const menuLabels = () =>
+  within(menu())
+    .getAllByRole("menuitem")
+    .map((b) => b.textContent);
+const menuItem = (name: string) => within(menu()).getByRole("menuitem", { name });
+const revertDialog = () => screen.getByRole("dialog", { name: "Revert changes" });
+
+/** Opens the row menu on row `i` and returns its items. */
+const rowMenu = (i: number) => {
+  rightClick(rowAt(i));
+  return menu();
+};
+
+// The real caret resolver runs against the rendered rows: a point (by clientX) is scripted to a
+// row, side and line offset, and the document's elementFromPoint/caretRangeFromPoint stubs answer
+// with the text node holding that offset in the DOM as it is at the moment of the call.
+interface Point {
+  row: number;
+  side: "old" | "new";
+  offset: number;
+}
+const points = new Map<number, Point>();
+const docProps = document as unknown as Record<string, unknown>;
+const stubDocument = (name: string, value: unknown) =>
+  Object.defineProperty(document, name, { value, configurable: true, writable: true });
+
+function locate({ row, side, offset }: Point): { node: Node; offset: number } {
+  const code = document.querySelector(
+    `[data-index="${row}"] [data-side="${side}"] code[data-line-text]`,
+  )!;
+  const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+  let left = offset;
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const length = node.textContent!.length;
+    if (left <= length) return { node, offset: left };
+    left -= length;
+  }
+  throw new Error(`no text at ${row}/${side}/${offset}`);
+}
+
+function stubCarets() {
+  stubDocument("elementFromPoint", (x: number) => {
+    const p = points.get(x);
+    return p ? locate(p).node.parentElement : null;
+  });
+  stubDocument("caretRangeFromPoint", (x: number) => {
+    const p = points.get(x);
+    if (!p) return null;
+    const { node, offset } = locate(p);
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    return range;
+  });
+}
+
+const SCROLL_RECT = { top: 0, bottom: 1000, left: 0, right: 1000, width: 1000, height: 1000 };
+
+/** Drags a text range from `from` to `to` with the primary button. */
+function dragRange(from: Point, to: Point) {
+  const scroll = screen.getByTestId("diff-scroll");
+  scroll.getBoundingClientRect = () =>
+    ({ ...SCROLL_RECT, x: 0, y: 0, toJSON: () => SCROLL_RECT }) as DOMRect;
+  scroll.setPointerCapture = vi.fn();
+  scroll.releasePointerCapture = vi.fn();
+  points.set(10, from);
+  points.set(20, to);
+  const at = (x: number, button: number, buttons: number) => ({
+    button,
+    buttons,
+    clientX: x,
+    clientY: 50,
+    pointerId: 1,
+  });
+  fireEvent.pointerDown(scroll, at(10, 0, 1));
+  fireEvent.pointerMove(scroll, at(20, -1, 1));
+  fireEvent.pointerUp(scroll, at(20, 0, 0));
+}
+
+/** The owner's example: new side, from row 1 offset 8 ("THREE") to row 3 offset 5 ("SEVEN"). */
+const ownerRange = () =>
+  dragRange({ row: 1, side: "new", offset: 8 }, { row: 3, side: "new", offset: 5 });
+/** Split rows 1 and 2 whole on the new side: pairs 1<->4 and 2<->5, no partial line. */
+const wholeRowsRange = () =>
+  dragRange({ row: 1, side: "new", offset: 0 }, { row: 2, side: "new", offset: 13 });
+/** Only the context row 0 ("c"). */
+const contextRange = () =>
+  dragRange({ row: 0, side: "new", offset: 0 }, { row: 0, side: "new", offset: 1 });
+
+const OWNER_STAGE = {
+  hunkIndex: 0,
+  lines: [1, 2, 3, 4, 5],
+  edits: [{ index: 3, text: "SEVEN eight nine" }],
+};
+const OWNER_REVERT = {
+  hunkIndex: 0,
+  lines: [1, 2, 4, 5, 6],
+  edits: [{ index: 6, text: "seven eight NINE" }],
+};
+const ROW_1 = { hunkIndex: 0, lines: [1, 4], edits: [] };
+
+afterEach(() => {
+  points.clear();
+  for (const name of ["elementFromPoint", "caretRangeFromPoint", "caretPositionFromPoint"]) {
+    delete docProps[name];
+  }
+});
+
+// Contract: the exported gate reasons keep their exact copy.
+describe("DetailPane gate reason copy", () => {
+  it("should keep the exact whitespace reason", () => {
+    expect(WHITESPACE_REASON).toBe(
+      "Turn off “Hide whitespace changes” to stage, unstage or discard hunks",
     );
-    setup();
-    await diffRegion();
-    const buttons = screen.getAllByRole("button", { name: /hunk/ });
-    expect(buttons).toHaveLength(2);
-    for (const b of buttons) {
-      expect(b).toBeDisabled();
-      expect(b.getAttribute("title")).toMatch(/UTF-16/);
-    }
   });
 
-  it("should disable every hunk button with the whitespace reason when whitespace is hidden", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    setup();
-    await diffRegion();
-    const buttons = screen.getAllByRole("button", { name: /hunk/ });
-    expect(buttons).toHaveLength(2);
-    for (const b of buttons) {
-      expect(b).toBeDisabled();
-      expect(b.getAttribute("title")).toMatch(/Hide whitespace changes/);
-    }
-  });
-
-  it("should fetch with ignoreWhitespace true when the whitespace preference is on", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    setup();
-    await diffRegion();
-    expect(getFileDiff).toHaveBeenCalledWith(REPO, "a.ts", "unstaged", true, undefined);
-  });
-
-  it("should refetch with ignoreWhitespace true when the checkbox is ticked", async () => {
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
-    await waitFor(() =>
-      expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", true, undefined),
+  it("should keep the exact decoded reason", () => {
+    expect(DECODED_REASON).toBe(
+      "Hunk actions are unavailable for files decoded from UTF-16 or UTF-32; stage or discard the whole file from the Changes panel",
     );
   });
 
-  it("should enable the hunk buttons for an ordinary diff", async () => {
-    setup();
-    await diffRegion();
-    expect(screen.getByRole("button", { name: "Stage hunk" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Discard hunk…" })).toBeEnabled();
-  });
-
-  it("should disable every hunk button while an action is pending", async () => {
-    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stage hunk" })).toBeDisabled());
-    expect(screen.getByRole("button", { name: "Discard hunk…" })).toBeDisabled();
-  });
-
-  it("should apply a repeated hunk click only once while the action is pending", async () => {
-    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
-    setup();
-    await diffRegion();
-    const stage = screen.getByRole("button", { name: "Stage hunk" });
-    fireEvent.click(stage);
-    await waitFor(() => expect(stage).toBeDisabled());
-    fireEvent.click(stage);
-    expect(applyHunk).toHaveBeenCalledTimes(1);
+  it("should keep the exact pending reason", () => {
+    expect(PENDING_REASON).toBe("Applying changes…");
   });
 });
 
-// Contract: stage and unstage send the hunk or the selected lines.
-describe("DetailPane staging", () => {
-  it("should stage the whole hunk", async () => {
+// Contract: an unstaged row's menu offers Revert and Stage for that line.
+describe("DetailPane row menu (unstaged)", () => {
+  beforeEach(() => serveThree());
+
+  it("should list Revert this line then Stage this line on a changed row", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    rowMenu(1);
+    expect(menuLabels()).toEqual(["Revert this line", "Stage this line"]);
+  });
+
+  it("should prevent the browser's own menu on a row", async () => {
+    setup();
+    await diffRegion();
+    const event = createEvent.contextMenu(rowAt(1), { clientX: 30, clientY: 40 });
+    fireEvent(rowAt(1), event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("should enable both items on a changed row", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expect(menuItem("Revert this line")).toBeEnabled();
+    expect(menuItem("Stage this line")).toBeEnabled();
+  });
+
+  it("should stage the split row's line pair", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
     await waitFor(() =>
-      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", { hunkIndex: 0, lines: null }),
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "stage", ROW_1),
     );
   });
 
-  it("should unstage the whole hunk of a staged file", async () => {
-    vi.mocked(getFileDiff).mockResolvedValue(textDiff({ scope: "staged" }));
-    setup("a.ts", "staged");
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Unstage hunk" }));
-    await waitFor(() =>
-      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "unstage", {
-        hunkIndex: 0,
-        lines: null,
-      }),
-    );
-  });
-
-  it("should stage the two selected lines", async () => {
+  it("should refetch the diff after staging a line", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Stage 2 lines" }));
-    await waitFor(() =>
-      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "stage", {
-        hunkIndex: 0,
-        lines: [1, 2],
-      }),
-    );
-  });
-});
-
-// Contract: discard asks first, and the copy follows the selection.
-describe("DetailPane discard", () => {
-  const dialog = () => screen.getByRole("dialog", { name: "Discard changes" });
-
-  it("should open the confirm dialog with the hunk copy", async () => {
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    expect(dialog()).toHaveTextContent("Discard this hunk in a.ts? This cannot be undone.");
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
   });
 
-  it("should not apply anything until the user confirms", async () => {
+  it("should close the menu once an item is chosen", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    expect(applyHunk).not.toHaveBeenCalled();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("should call nothing and close the dialog when Cancel is clicked", async () => {
+  it("should disable both items on a context row with the not-a-changed-line title", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    rowMenu(0);
+    expect(menuLabels()).toEqual(["Revert this line", "Stage this line"]);
+    for (const name of ["Revert this line", "Stage this line"]) {
+      expect(menuItem(name)).toBeDisabled();
+      expect(menuItem(name)).toHaveAttribute("title", "Not a changed line");
+    }
+  });
+
+  it("should send nothing when a disabled context-row item is clicked", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(0);
+    fireEvent.click(menuItem("Stage this line"));
+    fireEvent.click(menuItem("Revert this line"));
     expect(applyHunk).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("should discard the whole hunk when Discard is confirmed", async () => {
+  it("should close the menu when another file is selected", async () => {
+    setup("a.ts");
+    await diffRegion();
+    rowMenu(1);
+    select("b.ts");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+});
+
+// Contract: with a text range, the menu acts on the range instead of the row under the pointer.
+describe("DetailPane range menu (unstaged)", () => {
+  beforeEach(() => {
+    serveThree();
+    stubCarets();
+  });
+
+  it("should list Revert this section then Stage selection for a range", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Discard" }));
+    ownerRange();
+    rightClick(rowAt(2));
+    expect(menuLabels()).toEqual(["Revert this section", "Stage selection"]);
+  });
+
+  it("should use the range even when the right-click lands on a row outside it", async () => {
+    setup();
+    await diffRegion();
+    ownerRange();
+    rightClick(rowAt(4));
+    expect(menuLabels()).toEqual(["Revert this section", "Stage selection"]);
+  });
+
+  it("should stage the owner's example selection with its partial-line edit", async () => {
+    setup();
+    await diffRegion();
+    ownerRange();
+    rightClick(rowAt(2));
+    fireEvent.click(menuItem("Stage selection"));
     await waitFor(() =>
-      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", {
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "stage", OWNER_STAGE),
+    );
+  });
+
+  it("should stage two whole split rows as their line pairs with no edits", async () => {
+    setup();
+    await diffRegion();
+    wholeRowsRange();
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Stage selection"));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "stage", {
         hunkIndex: 0,
-        lines: null,
+        lines: [1, 2, 4, 5],
+        edits: [],
       }),
     );
   });
 
-  it("should close the dialog once Discard is confirmed", async () => {
+  it("should disable both items for a range over context only", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Discard" }));
+    contextRange();
+    rightClick(rowAt(0));
+    expect(menuLabels()).toEqual(["Revert this section", "Stage selection"]);
+    for (const name of ["Revert this section", "Stage selection"]) {
+      expect(menuItem(name)).toBeDisabled();
+      expect(menuItem(name)).toHaveAttribute("title", "No changed text in the selection");
+    }
+  });
+
+  it("should not carry a range to another file", async () => {
+    setup("a.ts");
+    await diffRegion();
+    ownerRange();
+    select("b.ts");
+    await screen.findByText("b.ts");
+    await diffRegion();
+    rowMenu(1);
+    expect(menuLabels()).toEqual(["Revert this line", "Stage this line"]);
+  });
+});
+
+// Contract: Revert always asks first; the copy follows the target and confirming discards.
+describe("DetailPane revert dialog", () => {
+  beforeEach(() => {
+    serveThree();
+    stubCarets();
+  });
+
+  it("should open the dialog with the single-line copy from Revert this line", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    expect(revertDialog()).toHaveTextContent("Revert this line in a.ts? This cannot be undone.");
+  });
+
+  it("should label the confirm button Revert", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    expect(within(revertDialog()).getByRole("button", { name: "Revert" })).toBeInTheDocument();
+  });
+
+  it("should apply nothing until the user confirms", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    expect(applyHunk).not.toHaveBeenCalled();
+  });
+
+  it("should discard the split row's line pair when confirmed", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Revert" }));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "discard", ROW_1),
+    );
+  });
+
+  it("should close the dialog once Revert is confirmed", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Revert" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("should use the selected-lines copy for two selected lines", async () => {
+  it("should send nothing and close the dialog when Cancel is clicked", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Discard 2 lines…" }));
-    expect(dialog()).toHaveTextContent("Discard 2 selected lines in a.ts? This cannot be undone.");
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(applyHunk).not.toHaveBeenCalled();
   });
 
-  it("should use the singular copy for one selected line", async () => {
+  it("should use the highlighted-text copy for a range with a partial-line edit", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Discard 1 line…" }));
-    expect(dialog()).toHaveTextContent("Discard 1 selected line in a.ts? This cannot be undone.");
+    ownerRange();
+    rightClick(rowAt(2));
+    fireEvent.click(menuItem("Revert this section"));
+    expect(revertDialog()).toHaveTextContent(
+      "Revert the highlighted text in a.ts? This cannot be undone.",
+    );
   });
 
-  it("should discard the selected lines when confirmed", async () => {
+  it("should discard the owner's example range with its revert edit when confirmed", async () => {
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select removed line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "Discard 2 lines…" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Discard" }));
+    ownerRange();
+    rightClick(rowAt(2));
+    fireEvent.click(menuItem("Revert this section"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Revert" }));
     await waitFor(() =>
-      expect(applyHunk).toHaveBeenCalledWith(REPO, "a.ts", "discard", {
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "discard", OWNER_REVERT),
+    );
+  });
+
+  it("should count the lines for a range of whole rows", async () => {
+    setup();
+    await diffRegion();
+    wholeRowsRange();
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this section"));
+    expect(revertDialog()).toHaveTextContent("Revert 2 lines in a.ts? This cannot be undone.");
+  });
+
+  it("should discard the whole rows' line pairs when confirmed", async () => {
+    setup();
+    await diffRegion();
+    wholeRowsRange();
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this section"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Revert" }));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "discard", {
         hunkIndex: 0,
-        lines: [1, 2],
+        lines: [1, 2, 4, 5],
+        edits: [],
       }),
     );
   });
 
-  it("should focus the file detail when the discard dialog is cancelled and its opener never had focus", async () => {
+  it("should focus the file detail when the dialog is cancelled and its opener is gone", async () => {
     setup();
     const region = await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    fireEvent.click(within(revertDialog()).getByRole("button", { name: "Cancel" }));
     // The fallback is FileDetail's root, the Diff region's parent.
     expect(region.parentElement).toHaveFocus();
   });
@@ -559,16 +781,18 @@ describe("DetailPane discard", () => {
   });
 });
 
-// Contract: a discard confirmation never applies to a diff other than the one it was opened on.
-describe("DetailPane stale discard", () => {
+// Contract: a revert confirmation never applies to a diff other than the one it was opened on.
+describe("DetailPane stale revert", () => {
   const changed = fileDiff([
     hunk([L("deletion", "other", 2, null), L("addition", "else", null, 2)]),
   ]);
 
   async function openDialog() {
+    serveThree();
     const view = setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     return view;
   }
@@ -585,13 +809,13 @@ describe("DetailPane stale discard", () => {
     vi.mocked(getFileDiff).mockResolvedValue(changed);
     await act(() => queryClient.invalidateQueries());
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revert" })).toBeNull();
     expect(applyHunk).not.toHaveBeenCalled();
   });
 
   it("should keep the dialog open when a refetch returns an identical diff", async () => {
     const { queryClient } = await openDialog();
-    vi.mocked(getFileDiff).mockResolvedValue(textDiff());
+    vi.mocked(getFileDiff).mockResolvedValue(threeDiff());
     await act(() => queryClient.invalidateQueries());
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -602,17 +826,226 @@ describe("DetailPane stale discard", () => {
     select("b.ts");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  it("should not reopen the dialog when returning to the file it was opened on", async () => {
+    await openDialog();
+    select("b.ts");
+    await screen.findByText("b.ts");
+    select("a.ts");
+    await screen.findByText("a.ts");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(applyHunk).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a staged file's menu only unstages.
+describe("DetailPane staged menu", () => {
+  beforeEach(() => {
+    serveThree({ scope: "staged" });
+    stubCarets();
+  });
+
+  it("should offer only Unstage this line on a row", async () => {
+    setup("a.ts", "staged");
+    await diffRegion();
+    rowMenu(1);
+    expect(menuLabels()).toEqual(["Unstage this line"]);
+  });
+
+  it("should unstage the split row's line pair", async () => {
+    setup("a.ts", "staged");
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Unstage this line"));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "unstage", ROW_1),
+    );
+  });
+
+  it("should offer only Unstage selection for a range", async () => {
+    setup("a.ts", "staged");
+    await diffRegion();
+    ownerRange();
+    rightClick(rowAt(2));
+    expect(menuLabels()).toEqual(["Unstage selection"]);
+  });
+
+  it("should unstage the owner's example range", async () => {
+    setup("a.ts", "staged");
+    await diffRegion();
+    ownerRange();
+    rightClick(rowAt(2));
+    fireEvent.click(menuItem("Unstage selection"));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "unstage", OWNER_REVERT),
+    );
+  });
+
+  it("should disable Unstage this line on a context row", async () => {
+    setup("a.ts", "staged");
+    await diffRegion();
+    rowMenu(0);
+    expect(menuItem("Unstage this line")).toBeDisabled();
+    expect(menuItem("Unstage this line")).toHaveAttribute("title", "Not a changed line");
+  });
+});
+
+// Contract: the menu items are disabled, with a reason, when the diff cannot be applied safely.
+describe("DetailPane menu gates", () => {
+  beforeEach(() => serveThree());
+
+  const expectRowItems = (title: string) => {
+    for (const name of ["Revert this line", "Stage this line"]) {
+      expect(menuItem(name)).toBeDisabled();
+      expect(menuItem(name)).toHaveAttribute("title", title);
+    }
+  };
+
+  it("should disable the items with the whitespace reason when whitespace is hidden", async () => {
+    await seedSettings({ diff: { ignoreWhitespace: true } });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expectRowItems(WHITESPACE_REASON);
+  });
+
+  it("should disable the items with the decoded reason for a decoded diff", async () => {
+    serveThree({ oldEncoding: "utf16Le", newEncoding: "utf16Le" });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expectRowItems(DECODED_REASON);
+  });
+
+  it("should prefer the whitespace reason over the decoded reason", async () => {
+    await seedSettings({ diff: { ignoreWhitespace: true } });
+    serveThree({ oldEncoding: "utf16Le", newEncoding: "utf16Le" });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expectRowItems(WHITESPACE_REASON);
+  });
+
+  it("should disable the items with the pending reason while an action runs", async () => {
+    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      rightClick(rowAt(1));
+      expect(menuItem("Stage this line")).toBeDisabled();
+    });
+    expectRowItems(PENDING_REASON);
+  });
+
+  it("should apply nothing more while an action is pending", async () => {
+    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      rightClick(rowAt(1));
+      expect(menuItem("Stage this line")).toBeDisabled();
+    });
+    fireEvent.click(menuItem("Stage this line"));
+    expect(applyHunk).toHaveBeenCalledTimes(1);
+  });
+
+  it("should apply nothing through items disabled for whitespace", async () => {
+    await seedSettings({ diff: { ignoreWhitespace: true } });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    rightClick(rowAt(1));
+    fireEvent.click(menuItem("Revert this line"));
+    expect(applyHunk).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("should disable the items once the whitespace box is ticked", async () => {
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    await waitFor(() =>
+      expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", true, undefined),
+    );
+    await diffRegion();
+    await waitFor(() => {
+      rightClick(rowAt(1));
+      expect(menuItem("Stage this line")).toBeDisabled();
+    });
+    expectRowItems(WHITESPACE_REASON);
+  });
+
+  it("should re-enable the items with no title once the whitespace box is unticked", async () => {
+    await seedSettings({ diff: { ignoreWhitespace: true } });
+    setup();
+    await diffRegion();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    await waitFor(() =>
+      expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", false, undefined),
+    );
+    await waitFor(() => {
+      rightClick(rowAt(1));
+      expect(menuItem("Stage this line")).toBeEnabled();
+    });
+    expect(menuItem("Stage this line")).not.toHaveAttribute("title");
+    expect(menuItem("Revert this line")).not.toHaveAttribute("title");
+  });
+
+  it("should not disable the items for a truncated diff", async () => {
+    serveThree({ truncated: true });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expect(menuItem("Stage this line")).toBeEnabled();
+    expect(menuItem("Revert this line")).toBeEnabled();
+    expect(menuItem("Stage this line")).not.toHaveAttribute("title");
+  });
+
+  it("should stage from a truncated diff", async () => {
+    serveThree({ truncated: true });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    await waitFor(() =>
+      expect(applyHunk).toHaveBeenCalledExactlyOnceWith(REPO, "a.ts", "stage", ROW_1),
+    );
+  });
+
+  it("should no longer show the load-the-full-diff title anywhere", async () => {
+    serveThree({ truncated: true });
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    expect(
+      document.querySelector('[title="Load the full diff to stage, unstage or discard this hunk"]'),
+    ).toBeNull();
+  });
 });
 
 // Contract: an action failure shows above the viewer and can be dismissed.
 describe("DetailPane action errors", () => {
   const badSelection: AppError = { kind: "badSelection", message: "The diff changed" };
 
+  beforeEach(() => serveThree());
+
+  const stageRow = () => {
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+  };
+
   it("should show the failure in an alert", async () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    stageRow();
     expect(await screen.findByRole("alert")).toHaveTextContent("The diff changed");
   });
 
@@ -620,7 +1053,7 @@ describe("DetailPane action errors", () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    stageRow();
     await screen.findByRole("alert");
     expect(screen.getByRole("region", { name: "Diff" })).toBeInTheDocument();
   });
@@ -629,28 +1062,26 @@ describe("DetailPane action errors", () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    stageRow();
     const alert = await screen.findByRole("alert");
     const region = screen.getByRole("region", { name: "Diff" });
     expect(alert.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("should remove the alert when Dismiss is clicked", async () => {
+  it("should show only the action error, with no Retry", async () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    fireEvent.click(
-      await within(await screen.findByRole("alert")).findByRole("button", { name: "Dismiss" }),
-    );
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    stageRow();
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
-  it("should keep the viewer after the alert is dismissed", async () => {
+  it("should remove the alert when Dismiss is clicked and keep the viewer", async () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    stageRow();
     fireEvent.click(
       await within(await screen.findByRole("alert")).findByRole("button", { name: "Dismiss" }),
     );
@@ -658,15 +1089,190 @@ describe("DetailPane action errors", () => {
     expect(screen.getByRole("region", { name: "Diff" })).toBeInTheDocument();
   });
 
+  it("should clear a stale action error when a later action succeeds", async () => {
+    vi.mocked(applyHunk).mockRejectedValueOnce(badSelection);
+    setup();
+    await diffRegion();
+    stageRow();
+    await screen.findByRole("alert");
+    stageRow();
+    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
   it("should clear the action error when another file is selected", async () => {
     vi.mocked(applyHunk).mockRejectedValue(badSelection);
     setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
+    stageRow();
     await screen.findByRole("alert");
     select("b.ts");
     await diffRegion();
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+// Contract: the viewer opens on the first change once per diff key; refetches and mode switches
+// keep the scroll position.
+describe("DetailPane first-change scroll", () => {
+  beforeEach(() => serveThree());
+
+  it("should scroll to three rows above the first change once on mount", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalled());
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(0, { align: "start" });
+  });
+
+  it("should scroll to the first change's row less three when it starts further down", async () => {
+    // Split rows 0..5 context, 6 the edited pair, 7 context.
+    const late = fileDiff([
+      hunk(
+        [
+          ...[1, 2, 3, 4, 5, 6].map((n) => L("context", `c${n}`, n, n)),
+          L("deletion", "x", 7, null),
+          L("addition", "y", null, 7),
+          L("context", "c8", 8, 8),
+        ],
+        "@@ -1,8 +1,8 @@",
+      ),
+    ]);
+    vi.mocked(getFileDiff).mockResolvedValue(late);
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalled());
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(3, { align: "start" });
+  });
+
+  it("should not scroll again when the same diff key refetches after an action", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+    rowMenu(1);
+    fireEvent.click(menuItem("Stage this line"));
+    await waitFor(() => expect(getFileDiff).toHaveBeenCalledTimes(2));
+    await diffRegion();
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("should scroll again after Load full diff fetches a new key", async () => {
+    serveThree({ truncated: true });
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Load full diff" }));
+    await waitFor(() =>
+      expect(getFileDiff).toHaveBeenLastCalledWith(
+        REPO,
+        "a.ts",
+        "unstaged",
+        false,
+        FULL_DIFF_LINES,
+      ),
+    );
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(2));
+    expect(scrollToIndex).toHaveBeenLastCalledWith(0, { align: "start" });
+  });
+
+  it("should not scroll again when switching between side by side and unified", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+    // Unified has eight rows where split has five.
+    await waitFor(() => expect(document.querySelector('[data-index="7"]')).not.toBeNull());
+    fireEvent.click(screen.getByRole("radio", { name: "Side by side" }));
+    await waitFor(() => expect(document.querySelector('[data-index="7"]')).toBeNull());
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Contract: the open diff publishes its change navigation for F7/Shift+F7 and the palette, and
+// withdraws it whenever no diff is shown.
+describe("DetailPane navigation publishing", () => {
+  // Split rows: 0 ctx, 1 {a,A}, 2..6 ctx, 7 {b,B}, 8 ctx; blocks start at rows 1 and 7.
+  const twoBlocks = () =>
+    fileDiff([
+      hunk(
+        [
+          L("context", "c1", 1, 1),
+          L("deletion", "a", 2, null),
+          L("addition", "A", null, 2),
+          ...[3, 4, 5, 6, 7].map((n) => L("context", `c${n}`, n, n)),
+          L("deletion", "b", 8, null),
+          L("addition", "B", null, 8),
+          L("context", "c9", 9, 9),
+        ],
+        "@@ -1,9 +1,9 @@",
+      ),
+    ]);
+  const published = () => useShell.getState().diffNavigation;
+  const shape = { repoId: REPO, next: expect.any(Function), prev: expect.any(Function) };
+
+  beforeEach(() => vi.mocked(getFileDiff).mockImplementation(() => Promise.resolve(twoBlocks())));
+
+  it("should publish the navigation while the diff shows", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+  });
+
+  it("should publish a next that steps to the following change", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    act(() => published()!.next());
+    expect(scrollToIndex).toHaveBeenLastCalledWith(4, { align: "start" });
+  });
+
+  it("should publish a prev that steps back to the earlier change", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    act(() => published()!.next());
+    act(() => published()!.prev());
+    expect(scrollToIndex).toHaveBeenLastCalledWith(0, { align: "start" });
+  });
+
+  it("should withdraw the navigation on unmount", async () => {
+    const { unmount } = setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    unmount();
+    expect(published()).toBeNull();
+  });
+
+  it("should withdraw the navigation when the view switches to blame", async () => {
+    setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    act(() => useWorkspace.getState().setCentreView(REPO, "blame"));
+    await screen.findByRole("table", { name: "Blame" });
+    expect(published()).toBeNull();
+  });
+
+  it("should withdraw the navigation when a refetch fails", async () => {
+    const { queryClient } = setup();
+    await diffRegion();
+    await waitFor(() => expect(published()).toEqual(shape));
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    await act(() => queryClient.invalidateQueries());
+    await screen.findByRole("alert");
+    expect(published()).toBeNull();
+  });
+
+  it("should publish nothing for a load error", async () => {
+    vi.mocked(getFileDiff).mockRejectedValue(gitError);
+    setup();
+    await screen.findByRole("alert");
+    expect(published()).toBeNull();
+  });
+
+  it("should publish nothing for a diff without rows", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(fileDiff([]));
+    setup();
+    await screen.findByText("No line changes in this file");
+    expect(published()).toBeNull();
   });
 });
 
@@ -714,30 +1320,58 @@ describe("DetailPane truncated diffs", () => {
     expect(forB.length).toBeGreaterThan(0);
     for (const call of forB) expect(call[4]).toBeUndefined();
   });
-});
 
-// Contract: line selection belongs to one diff and never carries to another file.
-describe("DetailPane selection reset", () => {
-  it("should press the gutter that was clicked", async () => {
+  // Four context lines, truncated: no change block is within the loaded part.
+  const unchangedHead = () =>
+    fileDiff(
+      [
+        hunk(
+          [1, 2, 3, 4].map((n) => L("context", `c${n}`, n, n)),
+          "@@ -1,4 +1,4 @@",
+        ),
+      ],
+      {
+        truncated: true,
+      },
+    );
+
+  it("should say the loaded lines are unchanged when a truncated diff has no change in them", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(unchangedHead());
     setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    expect(screen.getByRole("button", { name: "Select added line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(await screen.findByText("The first 4 lines are unchanged")).toBeInTheDocument();
+  });
+
+  it("should offer Load full diff next to the unchanged-lines message", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(unchangedHead());
+    setup();
+    const message = await screen.findByText("The first 4 lines are unchanged");
+    const empty = message.closest("div")!;
+    expect(within(empty).getByRole("button", { name: "Load full diff" })).toBeInTheDocument();
+  });
+
+  it("should refetch with the full line limit from the unchanged-lines message", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(unchangedHead());
+    setup();
+    const message = await screen.findByText("The first 4 lines are unchanged");
+    fireEvent.click(
+      within(message.closest("div")!).getByRole("button", { name: "Load full diff" }),
+    );
+    await waitFor(() =>
+      expect(getFileDiff).toHaveBeenLastCalledWith(
+        REPO,
+        "a.ts",
+        "unstaged",
+        false,
+        FULL_DIFF_LINES,
+      ),
     );
   });
 
-  it("should not press the same gutter after another file is selected", async () => {
-    setup("a.ts");
+  it("should not show the unchanged-lines message for a truncated diff with changes", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(textDiff({ truncated: true }));
+    setup();
     await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Select added line 2" }));
-    select("b.ts");
-    await screen.findByText("b.ts");
-    expect(await screen.findByRole("button", { name: "Select added line 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expect(screen.queryByText(/lines are unchanged/)).toBeNull();
   });
 });
 
@@ -765,15 +1399,6 @@ describe("DetailPane view mode", () => {
     await diffRegion();
     fireEvent.click(screen.getByRole("radio", { name: "Side by side" }));
     await waitFor(() => expect(count(container, "empty")).toBeGreaterThan(0));
-  });
-
-  it("should keep the number of hunk headers when the mode changes", async () => {
-    const { container } = setup();
-    await diffRegion();
-    const before = count(container, "header");
-    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
-    await waitFor(() => expect(count(container, "empty")).toBe(0));
-    expect(count(container, "header")).toBe(before);
   });
 
   it("should store the chosen mode in the preferences", async () => {
@@ -804,156 +1429,6 @@ describe("DetailPane view mode", () => {
   });
 });
 
-// Contract: the disabled-reason text is exact, follows the preference live and wins in order.
-describe("DetailPane disabled reason text", () => {
-  const WHITESPACE = "Turn off “Hide whitespace changes” to stage, unstage or discard hunks";
-  const DECODED =
-    "Hunk actions are unavailable for files decoded from UTF-16 or UTF-32; stage or discard the whole file from the Changes panel";
-
-  it("should give every hunk button the exact whitespace reason", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    setup();
-    await diffRegion();
-    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
-      expect(b).toHaveAttribute("title", WHITESPACE);
-    }
-  });
-
-  it("should give every hunk button the exact decoded reason", async () => {
-    vi.mocked(getFileDiff).mockResolvedValue(
-      textDiff({ oldEncoding: "utf32Be", newEncoding: "utf32Be" }),
-    );
-    setup();
-    await diffRegion();
-    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
-      expect(b).toHaveAttribute("title", DECODED);
-    }
-  });
-
-  it("should prefer the whitespace reason over the decoded reason", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    vi.mocked(getFileDiff).mockResolvedValue(
-      textDiff({ oldEncoding: "utf16Le", newEncoding: "utf16Le" }),
-    );
-    setup();
-    await diffRegion();
-    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
-      expect(b).toHaveAttribute("title", WHITESPACE);
-    }
-  });
-
-  it("should disable the hunk buttons with the whitespace reason once the box is ticked", async () => {
-    setup();
-    await diffRegion();
-    expect(screen.getByRole("button", { name: "Stage hunk" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stage hunk" })).toBeDisabled());
-    for (const b of screen.getAllByRole("button", { name: /hunk/ })) {
-      expect(b).toHaveAttribute("title", WHITESPACE);
-    }
-    expect(getFileDiff).toHaveBeenLastCalledWith(REPO, "a.ts", "unstaged", true, undefined);
-  });
-
-  it("should re-enable the hunk buttons when the box is unticked again", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stage hunk" })).toBeEnabled());
-    expect(screen.getByRole("button", { name: "Stage hunk" })).not.toHaveAttribute("title");
-  });
-
-  it("should show the pending reason while an action runs", async () => {
-    vi.mocked(applyHunk).mockReturnValue(new Promise(() => undefined));
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Stage hunk" })).toHaveAttribute(
-        "title",
-        "Applying changes…",
-      ),
-    );
-  });
-
-  it("should not apply an action through a button disabled for whitespace", async () => {
-    await seedSettings({ diff: { ignoreWhitespace: true } });
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    expect(applyHunk).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-// Contract: dialogs and action errors belong to one file and do not follow the user away.
-describe("DetailPane per-file transient state", () => {
-  const dialog = () => screen.queryByRole("dialog", { name: "Discard changes" });
-
-  it("should not reopen a discard dialog when returning to the file it was opened on", async () => {
-    setup("a.ts");
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    expect(dialog()).not.toBeNull();
-    select("b.ts");
-    await screen.findByText("b.ts");
-    select("a.ts");
-    await screen.findByText("a.ts");
-    expect(dialog()).toBeNull();
-    expect(applyHunk).not.toHaveBeenCalled();
-  });
-
-  it("should discard nothing when the file is switched while the dialog is open", async () => {
-    setup("a.ts");
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Discard hunk…" }));
-    select("b.ts");
-    await waitFor(() => expect(dialog()).toBeNull());
-    expect(applyHunk).not.toHaveBeenCalled();
-  });
-
-  it("should leave no alert after a failed action is dismissed and the next action succeeds", async () => {
-    vi.mocked(applyHunk).mockRejectedValueOnce({
-      kind: "badSelection",
-      message: "The diff changed",
-    });
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    fireEvent.click(
-      await within(await screen.findByRole("alert")).findByRole("button", { name: "Dismiss" }),
-    );
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(2));
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("should clear a stale action error when a later action succeeds", async () => {
-    vi.mocked(applyHunk).mockRejectedValueOnce({
-      kind: "badSelection",
-      message: "The diff changed",
-    });
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    await waitFor(() => expect(applyHunk).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-  });
-
-  it("should show only the action error, with no Retry, above the viewer", async () => {
-    vi.mocked(applyHunk).mockRejectedValue({ kind: "badSelection", message: "The diff changed" });
-    setup();
-    await diffRegion();
-    fireEvent.click(screen.getByRole("button", { name: "Stage hunk" }));
-    const alert = await screen.findByRole("alert");
-    expect(within(alert).queryByRole("button", { name: "Retry" })).toBeNull();
-  });
-});
-
 // Contract: "Only the encoding changed" needs two different encodings; otherwise nothing changed in lines.
 describe("DetailPane decoded zero-hunk copy", () => {
   it.each<[string, Partial<FileDiff>]>([
@@ -973,35 +1448,6 @@ describe("DetailPane decoded zero-hunk copy", () => {
     );
     setup();
     expect(await screen.findByText("Only the encoding changed")).toBeInTheDocument();
-  });
-});
-
-// Contract: the last hunk of a truncated diff is partial, so its whole-hunk buttons are off until the full diff loads.
-describe("DetailPane truncated last hunk", () => {
-  const LOAD = "Load the full diff to stage, unstage or discard this hunk";
-  const twoHunks = (truncated: boolean) =>
-    fileDiff(
-      [
-        hunk([L("deletion", "a1", 1, null), L("addition", "a2", null, 1)], "@@ -1 +1 @@"),
-        hunk([L("deletion", "b1", 9, null), L("addition", "b2", null, 9)], "@@ -9 +9 @@"),
-      ],
-      { truncated },
-    );
-
-  it("should disable the last hunk's buttons until the full diff is loaded, then enable them", async () => {
-    vi.mocked(getFileDiff).mockImplementation((_id, _p, _s, _w, max) =>
-      Promise.resolve(twoHunks(max === undefined)),
-    );
-    setup();
-    await diffRegion();
-    const stage = screen.getAllByRole("button", { name: "Stage hunk" });
-    expect(stage[0]).toBeEnabled();
-    expect(stage[1]).toBeDisabled();
-    expect(stage[1]).toHaveAttribute("title", LOAD);
-    fireEvent.click(screen.getByRole("button", { name: "Load full diff" }));
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: "Stage hunk" })[1]).toBeEnabled(),
-    );
   });
 });
 
@@ -1323,16 +1769,25 @@ describe("DetailPane commit scope", () => {
     expect(screen.queryByRole("button", { name: /^(Stage|Unstage|Discard)/ })).toBeNull();
   });
 
-  it("should render no gutter select buttons", async () => {
+  it("should open no menu on a right-click", async () => {
     commitSetup();
     await diffRegion();
-    expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
+    rightClick(rowAt(1));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("should still render the hunk header text", async () => {
+  it("should leave the browser's own menu alone on a right-click", async () => {
     commitSetup();
     await diffRegion();
-    expect(screen.getByText("@@ -1,2 +1,2 @@")).toBeInTheDocument();
+    const event = createEvent.contextMenu(rowAt(1), { clientX: 30, clientY: 40 });
+    fireEvent(rowAt(1), event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("should still render the line text", async () => {
+    commitSetup();
+    await diffRegion();
+    expect(screen.getByText("alpha")).toBeInTheDocument();
   });
 
   it("should say No changes in the path for a commit scope", async () => {
@@ -1342,10 +1797,13 @@ describe("DetailPane commit scope", () => {
     expect(await screen.findByText("No changes in src/a.ts")).toBeInTheDocument();
   });
 
-  it("should still offer the stage buttons for a working-tree scope", async () => {
+  it("should still offer the stage menu for a working-tree scope", async () => {
     setup("a.ts", "unstaged");
     await diffRegion();
-    expect(screen.getByRole("button", { name: "Stage hunk" })).toBeInTheDocument();
+    rightClick(rowAt(1));
+    expect(
+      within(screen.getByRole("menu")).getByRole("menuitem", { name: "Stage this line" }),
+    ).toBeInTheDocument();
   });
 
   it("should not carry the full-diff line cap from one commit to another with the same path", async () => {
@@ -1521,6 +1979,16 @@ describe("DetailPane stash files", () => {
     act(() => selectScope(COMMIT, "b.ts"));
     expect(await screen.findByRole("table", { name: "Blame" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Blame" })).toBeEnabled();
+  });
+
+  it("a stash file opens no menu and leaves the browser's own menu alone on a right-click", async () => {
+    selectStashFile();
+    renderWithProviders(<DetailPane repoId={REPO} />);
+    await diffRegion();
+    const event = createEvent.contextMenu(rowAt(1), { clientX: 30, clientY: 40 });
+    fireEvent(rowAt(1), event);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("a commit file without a source keeps Blame enabled with no title", async () => {
