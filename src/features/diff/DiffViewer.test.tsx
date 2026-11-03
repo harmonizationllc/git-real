@@ -1,10 +1,12 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiffMode, FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
+import { declarationsOf } from "../../test/cssRules";
 import type { CaretHit, CaretResolver } from "./caretResolver";
 import { DiffViewer, type DiffViewerHandle } from "./DiffViewer";
 import lineStyles from "./LineContent.module.css";
@@ -636,5 +638,13 @@ describe("DiffViewer virtualizer options", () => {
     const { getItemKey, count } = lastOptions();
     expect(count).toBe(split.length);
     expect(getItemKey(1)).toBe(split[1].key);
+  });
+});
+
+// Contract: a vertical touch swipe pans the list; the viewer's own range takes mouse and pen drags.
+describe("DiffViewer touch-action", () => {
+  it("should let touch pan the scroll container vertically", () => {
+    const css = readFileSync("src/features/diff/DiffViewer.module.css", "utf8");
+    expect(declarationsOf(css, "scroll")).toMatch(/touch-action:\s*pan-y;/);
   });
 });

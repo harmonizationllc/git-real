@@ -226,6 +226,41 @@ describe("useTextRange ending a drag", () => {
 });
 
 // Contract: only the primary button drags, so a right-click keeps the range for the context menu.
+// Contract: a touch pointer pans the list instead of dragging a range; mouse and pen still drag.
+describe("useTextRange touch", () => {
+  const touch = (el: HTMLElement, kind: "pointerDown" | "pointerMove", x: number) =>
+    fireEvent[kind](el, {
+      button: kind === "pointerDown" ? 0 : -1,
+      buttons: 1,
+      clientX: x,
+      clientY: INSIDE_Y,
+      pointerId: 1,
+      pointerType: "touch",
+    });
+
+  it("should not start a range from a touch drag", () => {
+    const { el } = setup();
+    touch(el, "pointerDown", 10);
+    touch(el, "pointerMove", 30);
+    expect(latest.range).toBeNull();
+    expect(el.setPointerCapture).not.toHaveBeenCalled();
+  });
+
+  it("should still drag a range with a pen", () => {
+    const { el } = setup();
+    fireEvent.pointerDown(el, {
+      button: 0,
+      buttons: 1,
+      clientX: 10,
+      clientY: INSIDE_Y,
+      pointerId: 1,
+      pointerType: "pen",
+    });
+    move(el, 30);
+    expect(latest.range).not.toBeNull();
+  });
+});
+
 describe("useTextRange other buttons", () => {
   it("should keep the range on a secondary-button pointerdown", () => {
     const { el } = setup();
@@ -380,6 +415,18 @@ describe("useTextRange double-click", () => {
     expect(latest.range).toBeNull();
   });
 
+  it("should select a word with non-ASCII letters whole", () => {
+    const cafe = fileDiff([hunk([L("context", "café au lait", 1, 1)])]);
+    const { el } = setup(resolver, buildRows(cafe, "split"), cafe);
+    hitAt(60, { row: 0, side: "new", offset: 2 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 0, offset: 0 },
+      focus: { row: 0, offset: 4 },
+    });
+  });
+
   it("should leave the range null when the resolver finds nothing", () => {
     const { el } = setup(resolver, splitRows);
     dbl(el, 999);
@@ -518,6 +565,18 @@ describe("useTextRange drag interruptions", () => {
       fireEvent[kind](el, { pointerId: 1 });
       move(el, 20);
       expect(latest.range).toEqual(dragged);
+    },
+  );
+
+  it.each(["pointerCancel", "lostPointerCapture"] as const)(
+    "should leave no range when %s ends a drag back on its anchor",
+    (kind) => {
+      const { el } = setup();
+      down(el, 10);
+      move(el, 30);
+      move(el, 10);
+      fireEvent[kind](el, { pointerId: 1 });
+      expect(latest.range).toBeNull();
     },
   );
 
