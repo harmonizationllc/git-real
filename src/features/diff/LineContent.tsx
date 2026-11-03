@@ -2,23 +2,34 @@ import type { Token } from "./model/highlight";
 import type { Range } from "./model/wordDiff";
 import styles from "./LineContent.module.css";
 
-const NBSP = "\u00a0";
+const NBSP = " ";
 
 interface Props {
   text: string;
   tokens: Token[] | null;
   ranges: Range[];
   noNewlineAtEof: boolean;
+  /** The part of the line inside the viewer's text range. */
+  selected?: Range | null;
 }
 
 interface Piece {
   text: string;
   className: string | null;
   marked: boolean;
+  selected: boolean;
 }
 
-/** Splits tokens at word-diff boundaries so each piece is wholly marked or not. */
-function pieces(text: string, tokens: Token[] | null, ranges: Range[]): Piece[] {
+/**
+ * Splits tokens at word-diff and selection boundaries so each piece is wholly marked or not and
+ * wholly selected or not, keeping its token class.
+ */
+function pieces(
+  text: string,
+  tokens: Token[] | null,
+  ranges: Range[],
+  selected: Range | null,
+): Piece[] {
   const toks = tokens ?? [{ text, className: null }];
   const cuts = new Set<number>([0, text.length]);
   let off = 0;
@@ -26,7 +37,7 @@ function pieces(text: string, tokens: Token[] | null, ranges: Range[]): Piece[] 
     off += t.text.length;
     cuts.add(off);
   }
-  for (const r of ranges) {
+  for (const r of [...ranges, ...(selected ? [selected] : [])]) {
     cuts.add(r.start);
     cuts.add(r.end);
   }
@@ -45,19 +56,21 @@ function pieces(text: string, tokens: Token[] | null, ranges: Range[]): Piece[] 
       text: text.slice(s, e),
       className: toks[ti].className,
       marked: ranges.some((r) => s >= r.start && e <= r.end),
+      selected: selected !== null && s >= selected.start && e <= selected.end,
     });
   }
   return out;
 }
 
-export function LineContent({ text, tokens, ranges, noNewlineAtEof }: Props) {
-  const parts = text.length === 0 ? [] : pieces(text, tokens, ranges);
+export function LineContent({ text, tokens, ranges, noNewlineAtEof, selected = null }: Props) {
+  const parts = text.length === 0 ? [] : pieces(text, tokens, ranges, selected);
   return (
-    <code className={styles.code}>
+    <code className={styles.code} data-line-text="">
       {/* A non-breaking space keeps an empty line at full height. */}
       {parts.length === 0 ? NBSP : null}
       {parts.map((p, i) => {
-        const className = p.className ?? undefined;
+        const classes = [p.className, p.selected ? styles.selected : null].filter(Boolean);
+        const className = classes.length > 0 ? classes.join(" ") : undefined;
         return p.marked ? (
           <mark key={i} className={styles.word}>
             <span className={className}>{p.text}</span>

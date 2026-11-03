@@ -36,16 +36,24 @@ export function rowLine(
   return lineIndex === null ? null : { hunkIndex: r.hunkIndex, lineIndex };
 }
 
-/** The text a range covers on its side, rows joined by newlines. */
+/**
+ * The text a range covers on its side, rows joined by newlines. A unified end row of the other
+ * kind (a deletion on the new side, an addition on the old side) is covered whole.
+ */
 export function coveredText(diff: FileDiff, rows: DiffRow[], range: TextRange): string {
   const { start, end } = orderedRange(range);
   const parts: string[] = [];
   for (let row = start.row; row <= end.row; row++) {
     const line = rowLine(diff, rows, row, range.side);
     if (line === null) continue;
-    const text = diff.hunks[line.hunkIndex].lines[line.lineIndex].content;
+    const { content: text, kind } = diff.hunks[line.hunkIndex].lines[line.lineIndex];
+    // Only a unified row can hold a line of the other kind: a split side shows its own lines.
+    const cut = kind === "context" || (kind === "deletion") === (range.side === "old");
     parts.push(
-      text.slice(row === start.row ? start.offset : 0, row === end.row ? end.offset : text.length),
+      text.slice(
+        cut && row === start.row ? start.offset : 0,
+        cut && row === end.row ? end.offset : text.length,
+      ),
     );
   }
   return parts.join("\n");
