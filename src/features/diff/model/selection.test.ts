@@ -214,7 +214,7 @@ describe("selectionRequest with several partial pairs", () => {
   });
 });
 
-// Contract: a row target selects the lines that row shows, never a partner.
+// Contract: a row target selects the lines that row shows plus, on a unified row, its partner.
 describe("selectionRequest from a row", () => {
   it("should select both lines of a split row", () => {
     expect(selectionRequest(diff, split, { kind: "row", row: 1 }, "discard")).toEqual({
@@ -223,10 +223,16 @@ describe("selectionRequest from a row", () => {
       edits: [],
     });
   });
-  it("should select only the single line of a unified row", () => {
+  it("should select a unified row's line together with its partner", () => {
+    // Row 4 is the addition "one two THREE"; row 1 is its partner deletion "one two three".
     expect(selectionRequest(diff, unified, { kind: "row", row: 4 }, "discard")).toEqual({
       hunkIndex: 0,
-      lines: [4],
+      lines: [1, 4],
+      edits: [],
+    });
+    expect(selectionRequest(diff, unified, { kind: "row", row: 1 }, "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [1, 4],
       edits: [],
     });
   });
