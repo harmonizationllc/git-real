@@ -2,8 +2,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { createRef } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DiffMode, FileDiff } from "../../lib/ipc";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
 import { useToasts } from "../../lib/store/toasts";
@@ -16,6 +16,12 @@ import { buildRows, type DiffRow } from "./model/rows";
 import type { MenuTarget } from "./model/selection";
 
 // Wrapped in a spy so tests can read the options DiffViewer hands the virtualizer.
+// Copy goes through the IPC clipboard seam, the front end's one mock point.
+vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  copyText: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-virtual", async () => {
   const fake = await import("../../test/mockVirtualizer");
   return { useVirtualizer: vi.fn(fake.useVirtualizer) };
@@ -43,8 +49,7 @@ const three = threePairDiff();
 const hits = new Map<number, CaretHit>();
 const resolveCaret = vi.fn<CaretResolver>((x) => hits.get(x) ?? null);
 
-const writeText = vi.fn<(text: string) => Promise<void>>();
-let clipboardDescriptor: PropertyDescriptor | undefined;
+const copy = vi.mocked(copyText);
 
 beforeEach(() => {
   hits.clear();
@@ -53,15 +58,8 @@ beforeEach(() => {
   mockWindow.size = Infinity;
   mockWindow.start = 0;
   mockWindow.visibleStart = null;
-  writeText.mockReset();
-  writeText.mockResolvedValue(undefined);
-  clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
-  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-});
-
-afterEach(() => {
-  if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
-  else delete (navigator as unknown as Record<string, unknown>).clipboard;
+  copy.mockReset();
+  copy.mockResolvedValue(undefined);
 });
 
 interface Over {
@@ -334,7 +332,7 @@ describe("DiffViewer copy", () => {
     // "four five six" + "seven eight nine" + "one two THREE".slice(0, 8).
     drag(scroll, { row: 4, side: "new", offset: 8 }, { row: 2, side: "new", offset: 4 });
     const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).toHaveBeenCalledExactlyOnceWith("four five six\nseven eight nine\none two ");
+    expect(copy).toHaveBeenCalledExactlyOnceWith("four five six\nseven eight nine\none two ");
     expect(notPrevented).toBe(false);
   });
 
@@ -342,7 +340,7 @@ describe("DiffViewer copy", () => {
     const { scroll } = setup();
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
     const notPrevented = fireEvent.keyDown(scroll, { key: "c", metaKey: true });
-    expect(writeText).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
+    expect(copy).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
     expect(notPrevented).toBe(false);
   });
 
@@ -350,20 +348,20 @@ describe("DiffViewer copy", () => {
     const { scroll } = setup({ mode: "split" });
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
     fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
+    expect(copy).toHaveBeenCalledExactlyOnceWith("two three\nfour five six\nseven");
   });
 
   it("should copy the new side of a split range", () => {
     const { scroll } = setup({ mode: "split" });
     drag(scroll, { row: 2, side: "new", offset: 5 }, { row: 1, side: "new", offset: 8 });
     fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).toHaveBeenCalledExactlyOnceWith("THREE\nFOUR ");
+    expect(copy).toHaveBeenCalledExactlyOnceWith("THREE\nFOUR ");
   });
 
   it("should neither copy nor prevent the default without a range", () => {
     const { scroll } = setup();
     const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).not.toHaveBeenCalled();
+    expect(copy).not.toHaveBeenCalled();
     expect(notPrevented).toBe(true);
   });
 
@@ -372,7 +370,7 @@ describe("DiffViewer copy", () => {
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
     fireEvent.keyDown(scroll, { key: "Escape" });
     const notPrevented = fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
-    expect(writeText).not.toHaveBeenCalled();
+    expect(copy).not.toHaveBeenCalled();
     expect(notPrevented).toBe(true);
   });
 
@@ -380,13 +378,13 @@ describe("DiffViewer copy", () => {
     const { scroll } = setup();
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
     const notPrevented = fireEvent.keyDown(scroll, { key: "c" });
-    expect(writeText).not.toHaveBeenCalled();
+    expect(copy).not.toHaveBeenCalled();
     expect(notPrevented).toBe(true);
   });
 
   it("should report a rejected clipboard write to console.error instead of leaving it unhandled", async () => {
     const error = new Error("denied");
-    writeText.mockRejectedValue(error);
+    copy.mockRejectedValue(error);
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { scroll } = setup();
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
@@ -398,7 +396,7 @@ describe("DiffViewer copy", () => {
 
   it("should show an error toast when the clipboard write is rejected", async () => {
     useToasts.setState({ toasts: [] });
-    writeText.mockRejectedValue(new Error("denied"));
+    copy.mockRejectedValue(new Error("denied"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { scroll } = setup();
     drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
