@@ -350,6 +350,27 @@ describe("selectionRequest with unpaired lines", () => {
       edits: [],
     });
   });
+  it("should order edits by line index across an unpaired line and a partial pair", () => {
+    const mixed = fileDiff([
+      hunk([
+        L("addition", "one two three", null, 1),
+        L("context", "m", 1, 2),
+        L("deletion", "foo bar baz qux", 2, null),
+        L("addition", "foo BAR baz QUX", null, 3),
+      ]),
+    ]);
+    const rows = buildRows(mixed, "split");
+    // From "two" on the unpaired addition to the end of "BAR" on the pair's addition.
+    const r = range("new", [0, 4], [2, 7]);
+    expect(selectionRequest(mixed, rows, target(r), "stage")).toEqual({
+      hunkIndex: 0,
+      lines: [0, 2],
+      edits: [
+        { index: 0, text: "two three" },
+        { index: 2, text: "foo BAR baz qux" },
+      ],
+    });
+  });
   it("should select nothing when the highlight on an unpaired line is empty", () => {
     const r = range("old", [1, 2], [1, 2]);
     expect(selectionRequest(solo, uRows, target(r), "discard")).toBeNull();

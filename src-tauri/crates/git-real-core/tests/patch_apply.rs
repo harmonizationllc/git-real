@@ -1570,4 +1570,5 @@ fn apply_hunk_discard_part_of_a_pure_addition_keeps_the_rest_of_the_line() {
         )
         .expect("discard part of the addition");
     assert_eq!(read(&path, "f.txt"), "a\nfoo  baz\nb\n");
+    assert_eq!(index_blob(&path, "f.txt"), Some(b"a\nb\n".to_vec()));
 }
