@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DiffMode, FileDiff } from "../../lib/ipc";
+import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { useToasts } from "../../lib/store/toasts";
 import { domCaretResolver, type CaretResolver } from "./caretResolver";
 import type { HighlightMap } from "./model/highlight";
@@ -109,7 +109,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
       text.clear();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && range !== null) {
       e.preventDefault();
-      navigator.clipboard.writeText(coveredText(diff, rows, range)).catch((err: unknown) => {
+      copyText(coveredText(diff, rows, range)).catch((err: unknown) => {
         console.error("Copying the diff text failed", err);
         useToasts.getState().notify({ text: "Couldn't copy the diff text", variant: "error" });
       });
