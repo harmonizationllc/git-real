@@ -1563,7 +1563,11 @@ fn apply_hunk_stage_part_of_a_pure_addition_stages_only_the_chosen_text() {
 fn apply_hunk_discard_part_of_a_pure_addition_keeps_the_rest_of_the_line() {
     let (_dir, path) = repo_with_pure_addition();
     session(&path)
-        .apply_hunk("f.txt", HunkAction::Discard, &edited(&[1], &[(1, "foo  baz")]))
+        .apply_hunk(
+            "f.txt",
+            HunkAction::Discard,
+            &edited(&[1], &[(1, "foo  baz")]),
+        )
         .expect("discard part of the addition");
     assert_eq!(read(&path, "f.txt"), "a\nfoo  baz\nb\n");
 }

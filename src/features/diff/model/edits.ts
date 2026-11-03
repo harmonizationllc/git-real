@@ -23,6 +23,25 @@ function offsets(toks: string[]): number[] {
   return out;
 }
 
+/** One range per token of a line (words, whitespace runs, single other characters), in order. */
+export function tokenRanges(text: string): Range[] {
+  const o = offsets(tokens(text));
+  return o.slice(0, -1).map((start, k) => ({ start, end: o[k + 1] }));
+}
+
+/** The chosen tokens joined (keep), or the line with the chosen tokens removed (not keep). */
+export function pickTokens(
+  text: string,
+  ranges: Range[],
+  chosen: ReadonlySet<number>,
+  keep: boolean,
+): string {
+  return ranges
+    .filter((_, k) => chosen.has(k) === keep)
+    .map((r) => text.slice(r.start, r.end))
+    .join("");
+}
+
 /** One unit per maximal run of unmatched tokens between token-LCS matches of two lines. */
 export function lineEdits(a: string, b: string): EditUnit[] {
   if (a === b) return [];

@@ -1,5 +1,5 @@
 import type { FileDiff, HunkAction, HunkSelection, LineEdit } from "../../../lib/ipc";
-import { applyUnits, lineEdits, type EditUnit, type Range } from "./edits";
+import { applyUnits, lineEdits, pickTokens, tokenRanges, type EditUnit, type Range } from "./edits";
 import type { DiffRow } from "./rows";
 
 export type Side = "old" | "new";
@@ -113,6 +113,8 @@ function rangeSelection(
   const lines = diff.hunks[hunkIndex].lines;
   const pairs = new Map<number, Pair>();
   const solo = new Set<number>();
+  /** Unpaired lines the highlight covers in part, with the text left to act on. */
+  const soloEdits = new Map<number, string>();
 
   const pairFor = (del: number, add: number): Pair => {
     let p = pairs.get(del);
@@ -128,7 +130,23 @@ function rangeSelection(
     const line = lines[index];
     if (line.kind === "context") return;
     if (partner === null) {
-      if (covered === null || covered.end > covered.start) solo.add(index);
+      if (covered === null) {
+        solo.add(index);
+        return;
+      }
+      // An unpaired line acts per token: each token the highlight touches is chosen.
+      const ranges = tokenRanges(line.content);
+      const chosen = new Set<number>();
+      ranges.forEach((r, k) => {
+        if (Math.max(r.start, covered.start) < Math.min(r.end, covered.end)) chosen.add(k);
+      });
+      if (chosen.size === 0) return;
+      if (chosen.size === ranges.length) {
+        solo.add(index);
+        return;
+      }
+      const keep = (line.kind === "addition") === forward;
+      soloEdits.set(index, pickTokens(line.content, ranges, chosen, keep));
       return;
     }
     const isDel = line.kind === "deletion";
@@ -170,6 +188,10 @@ function rangeSelection(
 
   const selected = new Set<number>(solo);
   const edits: LineEdit[] = [];
+  for (const [index, text] of soloEdits) {
+    selected.add(index);
+    edits.push({ index, text });
+  }
   for (const p of pairs.values()) {
     // A pair that is not whole was partially covered, so its units exist.
     const units = p.units as EditUnit[];
