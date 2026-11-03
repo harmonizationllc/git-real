@@ -292,6 +292,14 @@ describe("TabBar drag and drop", () => {
     expect(fireEvent.drop(wrapper("gamma"))).toBe(false);
   });
 
+  it("should keep the drop marker through repeated dragover on the same tab", () => {
+    setup(1, threeTabs);
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer: fakeTransfer() });
+    expect(wrapper("gamma")).toHaveAttribute("data-drop-target", "true");
+  });
+
   it("should clear the drop marker when the pointer leaves the tab", () => {
     setup(1, threeTabs);
     fireEvent.dragStart(wrapper("alpha"), { dataTransfer: fakeTransfer() });
