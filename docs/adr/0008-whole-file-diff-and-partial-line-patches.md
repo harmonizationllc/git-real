@@ -68,10 +68,10 @@ line for line, which the old matching three-line context guaranteed.
 - **D7 — Edit units shared with the word diff.** `model/edits.ts` pairs the edit units of a
   changed line from the same token LCS that drives the word diff, which is now a projection of
   it. The marks the user sees are the units they can choose. `selectionRequest` turns a range
-  into a `HunkSelection`: a unit touched by the range is chosen whole, a fully chosen pair becomes plain line indices,
-  and a partly chosen pair becomes one line plus one edit. An unpaired line has one unit per
-  token, and a partly chosen one becomes one edit, "chosen only" or "line minus chosen" by
-  action and line kind.
+  into a `HunkSelection`: a unit touched by the range is chosen whole, a fully chosen pair
+  becomes plain line indices, and a partly chosen pair becomes one line plus one edit. An
+  unpaired line has one unit per token, and a partly chosen one becomes one edit, "chosen only"
+  or "line minus chosen" by action and line kind.
 - **D8 — Navigation and menu.** Hunk headers and gutter line selection are removed. The toolbar
   has previous and next change buttons with a counter, bound to F7 and Shift+F7 through a
   `diffNavigation` slot in the shell store that the active diff publishes. The right-click menu
