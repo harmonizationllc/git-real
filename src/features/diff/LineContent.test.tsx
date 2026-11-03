@@ -338,3 +338,24 @@ describe("LineContent selected range", () => {
     expect(container.querySelector(`.${styles.selected}`)).toBeNull();
   });
 });
+
+// Contract: the code carries the line's own text length, so a caret resolver can clamp offsets
+// past the no-newline marker or the empty-line placeholder; the placeholder is the NBSP escape.
+describe("LineContent line length", () => {
+  it("should carry the text length on the code", () => {
+    const { container } = setup("const b = 1");
+    expect(container.querySelector("code")).toHaveAttribute("data-line-length", "11");
+  });
+
+  it("should not count the no-newline marker", () => {
+    const { container } = setup("xyz", null, [], true);
+    expect(container.querySelector("code")).toHaveAttribute("data-line-length", "3");
+  });
+
+  it("should give an empty line length 0 and the NBSP placeholder as its only text", () => {
+    const { container } = setup("");
+    const code = container.querySelector("code")!;
+    expect(code).toHaveAttribute("data-line-length", "0");
+    expect(code.textContent).toBe("\u00a0");
+  });
+});

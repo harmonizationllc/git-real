@@ -1,19 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { domCaretResolver } from "./caretResolver";
 
-// Two unified rows and one split row, laid out the way the viewer renders them:
-// wrapper[data-index] > row[data-side] > gutter span + code[data-line-text] > text spans.
+// Unified and split rows laid out the way the viewer renders them:
+// wrapper[data-index] > row[data-side] > gutter span + code[data-line-text][data-line-length] >
+// text spans. Row 3 ends with the no-newline marker, row 4 is an empty line (its NBSP
+// placeholder), row 5 is a split row whose new cell is empty (no code).
 const HTML = `
   <div data-index="0">
-    <div data-side="old"><span class="gutter">1</span><code data-line-text><span>ab</span><span>cdef</span></code></div>
+    <div data-side="old"><span class="gutter">1</span><code data-line-text data-line-length="6"><span>ab</span><span>cdef</span></code></div>
   </div>
   <div data-index="1">
-    <div data-side="new"><span class="gutter">2</span><code data-line-text><span>one </span><span>two</span></code></div>
+    <div data-side="new"><span class="gutter">2</span><code data-line-text data-line-length="7"><span>one </span><span>two</span></code></div>
   </div>
   <div data-index="2">
     <div>
-      <div data-side="old"><span class="gutter">3</span><code data-line-text><span>left</span></code></div>
-      <div data-side="new"><span class="gutter">3</span><code data-line-text><span>right side</span></code></div>
+      <div data-side="old"><span class="gutter">3</span><code data-line-text data-line-length="4"><span>left</span></code></div>
+      <div data-side="new"><span class="gutter">3</span><code data-line-text data-line-length="10"><span>right side</span></code></div>
+    </div>
+  </div>
+  <div data-index="3">
+    <div data-side="new"><span class="gutter">4</span><code data-line-text data-line-length="3"><span>xyz</span><span title="No newline at end of file">\u23ce</span></code></div>
+  </div>
+  <div data-index="4">
+    <div data-side="new"><span class="gutter">5</span><code data-line-text data-line-length="0">\u00a0</code></div>
+  </div>
+  <div data-index="5">
+    <div>
+      <div data-side="old"><span class="gutter">6</span><code data-line-text data-line-length="4"><span>gone</span></code></div>
+      <div data-side="new"></div>
     </div>
   </div>
 `;
@@ -137,5 +151,79 @@ describe("domCaretResolver caret APIs", () => {
     stub("caretRangeFromPoint", undefined);
     stub("caretPositionFromPoint", undefined);
     expect(domCaretResolver(container)(100, 10)).toBeNull();
+  });
+});
+
+// Contract: a caret outside the hit row's code is never walked into an offset: it snaps like a
+// point outside the text, to 0 left of the code and to the line length right of it.
+describe("domCaretResolver caret outside the code", () => {
+  it("should give 0 when the caret lands in the gutter and x is left of the code", () => {
+    hitElement = code(1);
+    caretAt(container.querySelector('[data-index="1"] .gutter')!.firstChild!, 1);
+    expect(domCaretResolver(container)(10, 10)).toEqual({ row: 1, side: "new", offset: 0 });
+  });
+
+  it("should give the line length when the caret lands in another row right of the code", () => {
+    hitElement = code(1);
+    caretAt(textNode(code(0), 1), 2);
+    expect(domCaretResolver(container)(300, 10)).toEqual({ row: 1, side: "new", offset: 7 });
+  });
+
+  it("should give 0 when the caret lands in another row left of the code", () => {
+    hitElement = code(1);
+    caretAt(textNode(code(0), 1), 2);
+    expect(domCaretResolver(container)(10, 10)).toEqual({ row: 1, side: "new", offset: 0 });
+  });
+});
+
+// Contract: only points inside the container resolve.
+describe("domCaretResolver containment", () => {
+  it("should give null for a row element outside the container", () => {
+    const outside = document.createElement("div");
+    outside.innerHTML = HTML;
+    document.body.appendChild(outside);
+    const foreign = outside.querySelector('[data-index="1"] code')!;
+    hitElement = foreign;
+    caretAt(foreign.querySelectorAll("span")[1].firstChild!, 1);
+    expect(domCaretResolver(container)(100, 10)).toBeNull();
+    outside.remove();
+  });
+});
+
+// Contract: offsets are clamped to the line's text (data-line-length): the no-newline marker and
+// the empty-line placeholder are not text.
+describe("domCaretResolver clamping", () => {
+  it("should give the text length for a caret on the no-newline marker", () => {
+    hitElement = code(3);
+    caretAt(code(3).querySelectorAll("span")[1].firstChild!, 1);
+    expect(domCaretResolver(container)(100, 10)).toEqual({ row: 3, side: "new", offset: 3 });
+  });
+
+  it("should give the text length, not counting the marker, right of the code", () => {
+    hitElement = container.querySelector('[data-index="3"] [data-side]');
+    caretAt(textNode(code(0), 1), 2);
+    expect(domCaretResolver(container)(300, 10)).toEqual({ row: 3, side: "new", offset: 3 });
+  });
+
+  it("should give 0 for a caret after the placeholder of an empty line", () => {
+    hitElement = code(4);
+    caretAt(code(4).firstChild!, 1);
+    expect(domCaretResolver(container)(100, 10)).toEqual({ row: 4, side: "new", offset: 0 });
+  });
+
+  it("should give 0 right of an empty line's code", () => {
+    hitElement = container.querySelector('[data-index="4"] [data-side]');
+    caretAt(textNode(code(0), 1), 2);
+    expect(domCaretResolver(container)(300, 10)).toEqual({ row: 4, side: "new", offset: 0 });
+  });
+});
+
+// Contract: an empty split cell resolves to its row and side at offset 0, so a drag over it can
+// snap to that row instead of losing the hit.
+describe("domCaretResolver empty split cell", () => {
+  it("should give the empty cell's row and side at offset 0", () => {
+    hitElement = container.querySelector('[data-index="5"] [data-side="new"]');
+    caretAt(textNode(code(0), 1), 2);
+    expect(domCaretResolver(container)(300, 10)).toEqual({ row: 5, side: "new", offset: 0 });
   });
 });

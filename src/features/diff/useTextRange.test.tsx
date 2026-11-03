@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type PointerEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { threePairDiff } from "../../test/diffFixtures";
+import type { FileDiff } from "../../lib/ipc";
+import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import type { CaretHit, CaretResolver } from "./caretResolver";
 import { buildRows, type DiffRow } from "./model/rows";
 import { useTextRange, type UseTextRange } from "./useTextRange";
@@ -24,9 +25,17 @@ const INSIDE_Y = 150;
 let latest: UseTextRange;
 
 // The fourth argument gives the hook the line text it needs to find a double-clicked word.
-function Probe({ rows, resolve }: { rows: DiffRow[]; resolve: CaretResolver | null }) {
+function Probe({
+  rows,
+  resolve,
+  lines = diff,
+}: {
+  rows: DiffRow[];
+  resolve: CaretResolver | null;
+  lines?: FileDiff;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const result = useTextRange(rows, resolve, () => ref.current, diff);
+  const result = useTextRange(rows, resolve, () => ref.current, lines);
   useLayoutEffect(() => {
     latest = result;
   });
@@ -38,13 +47,19 @@ function Probe({ rows, resolve }: { rows: DiffRow[]; resolve: CaretResolver | nu
       onPointerDown={result.onPointerDown}
       onPointerMove={result.onPointerMove}
       onPointerUp={result.onPointerUp}
+      onPointerCancel={result.onPointerCancel}
+      onLostPointerCapture={result.onLostPointerCapture}
       onDoubleClick={result.onDoubleClick}
     />
   );
 }
 
-function setup(resolve: CaretResolver | null = resolver, probeRows: DiffRow[] = rows) {
-  const view = render(<Probe rows={probeRows} resolve={resolve} />);
+function setup(
+  resolve: CaretResolver | null = resolver,
+  probeRows: DiffRow[] = rows,
+  lines: FileDiff = diff,
+) {
+  const view = render(<Probe rows={probeRows} resolve={resolve} lines={lines} />);
   const el = screen.getByTestId("probe");
   el.getBoundingClientRect = () => ({ ...RECT, toJSON: () => RECT }) as DOMRect;
   el.setPointerCapture = vi.fn();
@@ -56,14 +71,16 @@ function setup(resolve: CaretResolver | null = resolver, probeRows: DiffRow[] = 
 const down = (el: HTMLElement, x: number, over: { button?: number; clientY?: number } = {}) =>
   fireEvent.pointerDown(el, {
     button: over.button ?? 0,
+    buttons: over.button === 2 ? 2 : 1,
     clientX: x,
     clientY: over.clientY ?? INSIDE_Y,
     pointerId: 1,
   });
-const move = (el: HTMLElement, x: number, clientY = INSIDE_Y) =>
-  fireEvent.pointerMove(el, { button: 0, clientX: x, clientY, pointerId: 1 });
+// A move during a drag holds the primary button (buttons 1); pointerup has released it.
+const move = (el: HTMLElement, x: number, clientY = INSIDE_Y, buttons = 1) =>
+  fireEvent.pointerMove(el, { button: -1, buttons, clientX: x, clientY, pointerId: 1 });
 const up = (el: HTMLElement, x: number, clientY = INSIDE_Y) =>
-  fireEvent.pointerUp(el, { button: 0, clientX: x, clientY, pointerId: 1 });
+  fireEvent.pointerUp(el, { button: 0, buttons: 0, clientX: x, clientY, pointerId: 1 });
 
 beforeEach(() => {
   hits.clear();
@@ -330,9 +347,35 @@ describe("useTextRange double-click", () => {
     });
   });
 
-  it("should leave the range null on a double-click on whitespace", () => {
+  it("should select the word that ends at the offset", () => {
     const { el } = setup(resolver, splitRows);
-    hitAt(60, { row: 1, side: "new", offset: 3 });
+    // "one two THREE": offset 13 is the end of the line, the end of "THREE".
+    hitAt(60, { row: 1, side: "new", offset: 13 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 1, offset: 8 },
+      focus: { row: 1, offset: 13 },
+    });
+  });
+
+  it("should select the word ending at the offset when a space follows it", () => {
+    const { el } = setup(resolver, splitRows);
+    // "one two THREE": offset 7 is the space after "two".
+    hitAt(60, { row: 1, side: "new", offset: 7 });
+    dbl(el, 60);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: 1, offset: 4 },
+      focus: { row: 1, offset: 7 },
+    });
+  });
+
+  it("should leave the range null on a double-click strictly inside whitespace", () => {
+    const spaced = fileDiff([hunk([L("addition", "one  two", null, 1)])]);
+    const { el } = setup(resolver, buildRows(spaced, "unified"), spaced);
+    // "one  two": offset 4 sits between the two spaces.
+    hitAt(60, { row: 0, side: "new", offset: 4 });
     dbl(el, 60);
     expect(latest.range).toBeNull();
   });
@@ -341,6 +384,207 @@ describe("useTextRange double-click", () => {
     const { el } = setup(resolver, splitRows);
     dbl(el, 999);
     expect(latest.range).toBeNull();
+  });
+});
+
+// Split rows of this fixture, found by their line indices rather than assumed:
+// a context pair "c", the edited pair "alpha"/"ALPHA", a lone deletion "zeta theta" (empty new
+// cell) and a context pair "delta epsilon".
+const snapDiff = fileDiff([
+  hunk([
+    L("context", "c", 1, 1),
+    L("deletion", "alpha", 2, null),
+    L("deletion", "zeta theta", 3, null),
+    L("addition", "ALPHA", null, 2),
+    L("context", "delta epsilon", 4, 3),
+  ]),
+]);
+const snapRows = buildRows(snapDiff, "split");
+const rowOf = (old: number | null, nu: number | null) =>
+  snapRows.findIndex((r) => r.kind === "split" && r.old === old && r.new === nu);
+
+// Contract: in split mode a move onto the other side's cell (or an empty cell) snaps the focus to
+// that row on the drag side: its line length there when at or below the anchor row, 0 above it.
+// The other cell's offset is never applied to the drag side.
+describe("useTextRange split snap", () => {
+  const pair = rowOf(1, 3);
+  const lone = rowOf(2, null);
+  const last = rowOf(4, 4);
+
+  it("should find the fixture's rows", () => {
+    expect([pair, lone, last].every((i) => i >= 0)).toBe(true);
+    expect(pair).toBeLessThan(lone);
+    expect(lone).toBeLessThan(last);
+  });
+
+  it("should snap a move onto the new cell below the anchor to the old line's end", () => {
+    const { el } = setup(resolver, snapRows, snapDiff);
+    hitAt(60, { row: pair, side: "old", offset: 2 });
+    hitAt(70, { row: last, side: "new", offset: 2 });
+    down(el, 60);
+    move(el, 70);
+    expect(latest.range).toEqual({
+      side: "old",
+      anchor: { row: pair, offset: 2 },
+      focus: { row: last, offset: "delta epsilon".length },
+    });
+  });
+
+  it("should snap a move onto the new cell above the anchor to the old line's start", () => {
+    const { el } = setup(resolver, snapRows, snapDiff);
+    hitAt(60, { row: last, side: "old", offset: 4 });
+    hitAt(70, { row: pair, side: "new", offset: 3 });
+    down(el, 60);
+    move(el, 70);
+    expect(latest.range).toEqual({
+      side: "old",
+      anchor: { row: last, offset: 4 },
+      focus: { row: pair, offset: 0 },
+    });
+  });
+
+  it("should snap a move onto the empty new cell of a lone deletion to the old line's end", () => {
+    const { el } = setup(resolver, snapRows, snapDiff);
+    hitAt(60, { row: pair, side: "old", offset: 2 });
+    // The resolver reports an empty cell with its own side and offset 0.
+    hitAt(70, { row: lone, side: "new", offset: 0 });
+    down(el, 60);
+    move(el, 70);
+    expect(latest.range).toEqual({
+      side: "old",
+      anchor: { row: pair, offset: 2 },
+      focus: { row: lone, offset: "zeta theta".length },
+    });
+  });
+
+  it("should snap a new-side move onto a row with no new line to offset 0", () => {
+    const { el } = setup(resolver, snapRows, snapDiff);
+    hitAt(60, { row: pair, side: "new", offset: 1 });
+    // The empty new cell of the lone deletion, on the drag side but with no line there.
+    hitAt(70, { row: lone, side: "new", offset: 7 });
+    down(el, 60);
+    move(el, 70);
+    expect(latest.range).toEqual({
+      side: "new",
+      anchor: { row: pair, offset: 1 },
+      focus: { row: lone, offset: 0 },
+    });
+  });
+
+  it("should keep a same-side hit's own offset", () => {
+    const { el } = setup(resolver, snapRows, snapDiff);
+    hitAt(60, { row: pair, side: "old", offset: 2 });
+    hitAt(70, { row: last, side: "old", offset: 5 });
+    down(el, 60);
+    move(el, 70);
+    expect(latest.range?.focus).toEqual({ row: last, offset: 5 });
+  });
+});
+
+// Contract: pointercancel and lostpointercapture end the drag like pointerup (range kept, edge
+// scroll stopped); a move with no button held ends the drag instead of extending it; unmounting
+// mid-drag cancels the pending frame.
+describe("useTextRange drag interruptions", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+  });
+
+  const dragged = {
+    side: "new",
+    anchor: { row: 1, offset: 3 },
+    focus: { row: 3, offset: 2 },
+  };
+
+  it.each(["pointerCancel", "lostPointerCapture"] as const)(
+    "should keep the range and stop the edge scroll on %s",
+    (kind) => {
+      const { el } = setup();
+      down(el, 10);
+      move(el, 30, RECT.top - 40);
+      fireEvent[kind](el, { pointerId: 1 });
+      act(() => vi.advanceTimersToNextFrame());
+      act(() => vi.advanceTimersToNextFrame());
+      expect(el.scrollBy).not.toHaveBeenCalled();
+      expect(latest.range).toEqual(dragged);
+    },
+  );
+
+  it.each(["pointerCancel", "lostPointerCapture"] as const)(
+    "should ignore moves after %s",
+    (kind) => {
+      const { el } = setup();
+      down(el, 10);
+      move(el, 30);
+      fireEvent[kind](el, { pointerId: 1 });
+      move(el, 20);
+      expect(latest.range).toEqual(dragged);
+    },
+  );
+
+  it("should end the drag on a move with no button held", () => {
+    const { el } = setup();
+    down(el, 10);
+    move(el, 30);
+    move(el, 20, INSIDE_Y, 0);
+    expect(latest.range).toEqual(dragged);
+    move(el, 40);
+    expect(latest.range).toEqual(dragged);
+  });
+
+  it("should stop the edge scroll on a move with no button held", () => {
+    const { el } = setup();
+    down(el, 10);
+    move(el, 30, RECT.top - 40);
+    move(el, 30, RECT.top - 40, 0);
+    act(() => vi.advanceTimersToNextFrame());
+    expect(el.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("should not scroll after unmounting mid-drag", () => {
+    const { el, unmount } = setup();
+    down(el, 10);
+    move(el, 30, RECT.top - 40);
+    unmount();
+    act(() => vi.advanceTimersToNextFrame());
+    act(() => vi.advanceTimersToNextFrame());
+    expect(el.scrollBy).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: a move delivered after rows changed identity never builds a range from the old drag.
+describe("useTextRange refetch race", () => {
+  it("should not make a range from a move handler that outlived its rows", () => {
+    const { el, rerender } = setup();
+    down(el, 10);
+    const staleMove = latest.onPointerMove;
+    rerender(<Probe rows={buildRows(diff, "unified")} resolve={resolver} />);
+    act(() =>
+      staleMove({
+        buttons: 1,
+        clientX: 30,
+        clientY: INSIDE_Y,
+        pointerId: 1,
+        currentTarget: el,
+        target: el,
+      } as unknown as PointerEvent),
+    );
+    expect(latest.range).toBeNull();
+  });
+});
+
+// Contract: x, like y, is clamped into the container before it reaches the resolver.
+describe("useTextRange x clamp", () => {
+  it.each([
+    ["left of", -50],
+    ["right of", RECT.right + 50],
+  ])("should clamp a clientX %s the container into it", (_where, clientX) => {
+    const { el } = setup();
+    down(el, 10);
+    resolver.mockClear();
+    move(el, clientX);
+    const [x] = resolver.mock.calls[0];
+    expect(x).toBeGreaterThanOrEqual(RECT.left);
+    expect(x).toBeLessThanOrEqual(RECT.right);
   });
 });
 

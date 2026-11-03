@@ -110,15 +110,22 @@ function setup(over: Over = {}) {
 const rowEl = (container: HTMLElement, index: number) =>
   container.querySelector<HTMLElement>(`[data-index="${index}"]`)!.firstElementChild as HTMLElement;
 
-const pointer = (button = 0, x = 0) => ({ button, clientX: x, clientY: 50, pointerId: 1 });
+/** A pointer event init; `buttons` is what is held (1 primary, 2 secondary, 0 none). */
+const pointer = (button = 0, x = 0, buttons = button === 2 ? 2 : 1) => ({
+  button,
+  buttons,
+  clientX: x,
+  clientY: 50,
+  pointerId: 1,
+});
 
 /** Drags from the hit scripted at x 10 to the hit scripted at x 20. */
 function drag(scroll: HTMLElement, from: CaretHit, to: CaretHit) {
   hits.set(10, from);
   hits.set(20, to);
   fireEvent.pointerDown(scroll, pointer(0, 10));
-  fireEvent.pointerMove(scroll, pointer(0, 20));
-  fireEvent.pointerUp(scroll, pointer(0, 20));
+  fireEvent.pointerMove(scroll, pointer(-1, 20, 1));
+  fireEvent.pointerUp(scroll, pointer(0, 20, 0));
 }
 
 const kinds = (container: HTMLElement) =>
@@ -292,9 +299,24 @@ describe("DiffViewer text range", () => {
     const { container, scroll } = setup();
     hits.set(10, { row: 1, side: "old", offset: 4 });
     fireEvent.pointerDown(scroll, pointer(0, 10));
-    fireEvent.pointerUp(scroll, pointer(0, 10));
+    fireEvent.pointerUp(scroll, pointer(0, 10, 0));
     expect(selectedRows(container)).toEqual([]);
   });
+
+  it.each(["pointerCancel", "lostPointerCapture"] as const)(
+    "should end the drag on %s and keep the range",
+    (kind) => {
+      const { container, scroll } = setup();
+      hits.set(10, { row: 1, side: "old", offset: 4 });
+      hits.set(20, { row: 2, side: "old", offset: 2 });
+      hits.set(30, { row: 3, side: "old", offset: 5 });
+      fireEvent.pointerDown(scroll, pointer(0, 10));
+      fireEvent.pointerMove(scroll, pointer(-1, 20, 1));
+      fireEvent[kind](scroll, { pointerId: 1 });
+      fireEvent.pointerMove(scroll, pointer(-1, 30, 1));
+      expect(selectedRows(container)).toEqual([1, 2]);
+    },
+  );
 });
 
 // Contract: Ctrl+C or Cmd+C with a range copies exactly the covered text and prevents the
@@ -355,6 +377,18 @@ describe("DiffViewer copy", () => {
     const notPrevented = fireEvent.keyDown(scroll, { key: "c" });
     expect(writeText).not.toHaveBeenCalled();
     expect(notPrevented).toBe(true);
+  });
+
+  it("should report a rejected clipboard write to console.error instead of leaving it unhandled", async () => {
+    const error = new Error("denied");
+    writeText.mockRejectedValue(error);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { scroll } = setup();
+    drag(scroll, { row: 1, side: "old", offset: 4 }, { row: 3, side: "old", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "c", ctrlKey: true });
+    await vi.waitFor(() => expect(consoleError).toHaveBeenCalledOnce());
+    expect(consoleError.mock.calls[0]).toContain(error);
+    consoleError.mockRestore();
   });
 });
 
