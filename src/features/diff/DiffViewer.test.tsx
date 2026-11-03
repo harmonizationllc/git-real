@@ -532,6 +532,24 @@ describe("DiffViewer onUserScroll", () => {
     expect(onUserScroll).toHaveBeenCalledTimes(1);
   });
 
+  // Ruling: the flag is cleared by the next scroll event or by a user gesture on the container,
+  // whichever comes first, so a scrollToRow that moved nothing never swallows a user scroll.
+  it.each<[string, (el: HTMLElement) => void]>([
+    ["wheel", (el) => fireEvent.wheel(el, { deltaY: 100 })],
+    ["pointerdown", (el) => fireEvent.pointerDown(el, pointer(0, 0))],
+    ["keydown", (el) => fireEvent.keyDown(el, { key: "PageDown" })],
+  ])(
+    "should report the scroll after a %s when scrollToRow caused no scroll event",
+    (_name, gesture) => {
+      const onUserScroll = vi.fn();
+      const { ref, scroll } = setup({ onUserScroll });
+      ref.current!.scrollToRow(7);
+      gesture(scroll);
+      fireEvent.scroll(scroll);
+      expect(onUserScroll).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("should not throw on a scroll without the prop", () => {
     const { scroll } = setup();
     expect(() => fireEvent.scroll(scroll)).not.toThrow();
