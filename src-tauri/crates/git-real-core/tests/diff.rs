@@ -1612,11 +1612,12 @@ fn diff_options_whole_file_values() {
 
 #[test]
 fn diff_whole_file_context_yields_one_hunk_with_every_line() {
-    // ten_line_fixture() has l5 -> L5; also edit l9 -> L9 so default options give two hunks.
-    let (_dir, path) = ten_line_fixture();
-    let edited = std::fs::read_to_string(path.join("ten.txt"))
-        .unwrap()
-        .replace("l9\n", "L9\n");
+    // Two edits 14 lines apart: default context splits them into two hunks.
+    let (_dir, path) = common::temp_repo_with_commit();
+    let original: String = (1..=20).map(|i| format!("l{i}\n")).collect();
+    common::write_file(&path, "ten.txt", &original);
+    common::commit_all(&path, "add file");
+    let edited = original.replace("l3\n", "L3\n").replace("l18\n", "L18\n");
     common::write_file(&path, "ten.txt", &edited);
     assert_eq!(
         diff_of(
@@ -1638,6 +1639,6 @@ fn diff_whole_file_context_yields_one_hunk_with_every_line() {
     )
     .unwrap();
     assert_eq!(diff.hunks.len(), 1);
-    assert_eq!(diff.hunks[0].lines.len(), 12); // 8 context + 2 deletions + 2 additions
+    assert_eq!(diff.hunks[0].lines.len(), 22); // 18 context + 2 deletions + 2 additions
     assert_eq!((diff.hunks[0].old_start, diff.hunks[0].new_start), (1, 1));
 }
