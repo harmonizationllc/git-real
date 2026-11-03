@@ -1197,6 +1197,33 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
 }
 
 #[test]
+fn hunk_selection_serializes_edits_only_when_non_empty() {
+    use git_real_core::{HunkSelection, LineEdit};
+    let with = HunkSelection {
+        hunk_index: 0,
+        lines: Some(vec![1]),
+        edits: vec![LineEdit {
+            index: 1,
+            text: "C".to_owned(),
+        }],
+    };
+    assert_eq!(
+        serde_json::to_value(&with).unwrap(),
+        serde_json::json!({
+            "hunkIndex": 0,
+            "lines": [1],
+            "edits": [{ "index": 1, "text": "C" }]
+        })
+    );
+    let without = HunkSelection {
+        edits: vec![],
+        ..with
+    };
+    let value = serde_json::to_value(&without).unwrap();
+    assert!(value.get("edits").is_none(), "got {value}");
+}
+
+#[test]
 fn hunk_selection_without_lines_key_means_whole_hunk() {
     use git_real_core::HunkSelection;
     let parsed: HunkSelection = serde_json::from_str(r#"{"hunkIndex":1}"#).unwrap();
