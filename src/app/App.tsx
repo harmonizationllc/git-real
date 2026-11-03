@@ -34,6 +34,7 @@ function AppShell(): React.JSX.Element {
   const tabs = useRepoTabs((s) => s.tabs);
   const activeId = useRepoTabs((s) => s.activeId);
   const activate = useRepoTabs((s) => s.activate);
+  const moveTab = useRepoTabs((s) => s.moveTab);
   const [cloneOpen, setCloneOpen] = useState(false);
   const activeTab = tabs.find((t) => t.id === activeId) ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -61,7 +62,13 @@ function AppShell(): React.JSX.Element {
   return (
     <div ref={rootRef} tabIndex={-1} data-focus-target className={styles.root}>
       <header className={styles.header}>
-        <TabBar tabs={tabs} activeId={activeId} onActivate={activate} onClose={closeRepoTab} />
+        <TabBar
+          tabs={tabs}
+          activeId={activeId}
+          onActivate={activate}
+          onClose={closeRepoTab}
+          onMove={moveTab}
+        />
       </header>
       <main className={styles.body}>
         {activeTab !== null ? (

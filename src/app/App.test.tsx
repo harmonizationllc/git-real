@@ -188,6 +188,27 @@ describe("App changes panel", () => {
   });
 });
 
+// Contract: dropping a dragged tab on another reorders the tabs; the active repo stays active.
+describe("App reordering tabs", () => {
+  it("dropping a tab on another reorders the tabs and keeps the active one", async () => {
+    renderApp(repo(1, "alpha"), repo(2, "beta"), repo(3, "gamma"));
+    const wrapper = (name: string) =>
+      screen.getByRole("tab", { name }).parentElement as HTMLElement;
+    const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(wrapper("alpha"), { dataTransfer });
+    fireEvent.dragOver(wrapper("gamma"), { dataTransfer });
+    fireEvent.drop(wrapper("gamma"));
+    await waitFor(() =>
+      expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+        "beta",
+        "gamma",
+        "alpha",
+      ]),
+    );
+    expect(screen.getByRole("tab", { name: "gamma" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
 // Contract: closing a tab calls closeRepo, falls back to a neighbour or the start screen.
 describe("App closing tabs", () => {
   it("closing the active tab calls closeRepo and returns to the neighbour", async () => {
