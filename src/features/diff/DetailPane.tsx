@@ -244,30 +244,40 @@ function TextDiff({
       : actions.pending
         ? PENDING_REASON
         : undefined;
-  const menuActions: readonly HunkAction[] =
-    editable === "staged" ? ["unstage"] : ["discard", "stage"];
-  const items = (target: MenuTarget): MenuItem[] =>
-    menuActions.map((action) => {
-      const request = selectionRequest(diff, rows, target, action);
-      const title = reason ?? (request === null ? NOTHING_REASON[target.kind] : undefined);
-      return {
-        id: action,
-        label: LABELS[action][target.kind],
-        danger: action === "discard",
-        disabled: title !== undefined,
-        title,
-        onSelect: () => {
-          // A disabled item never fires, so an enabled one always has its request.
-          const selection = request as HunkSelection;
-          if (action === "discard") {
-            const body = revertBody(diff, rows, target, selection);
-            setUi((s) => ({ ...s, pending: { selection, body } }));
-          } else {
-            actions.applyHunk(diff.path, action, selection);
-          }
-        },
-      };
-    });
+  // The selection requests are computed once per opened menu, not on every render while it is open.
+  const target = menu?.target ?? null;
+  const requests = useMemo(() => {
+    if (target === null) return [];
+    const menuActions: readonly HunkAction[] =
+      editable === "staged" ? ["unstage"] : ["discard", "stage"];
+    return menuActions.map((action) => ({
+      action,
+      request: selectionRequest(diff, rows, target, action),
+    }));
+  }, [target, diff, rows, editable]);
+  const items: MenuItem[] =
+    target === null
+      ? []
+      : requests.map(({ action, request }) => {
+          const title = reason ?? (request === null ? NOTHING_REASON[target.kind] : undefined);
+          return {
+            id: action,
+            label: LABELS[action][target.kind],
+            danger: action === "discard",
+            disabled: title !== undefined,
+            title,
+            onSelect: () => {
+              // A disabled item never fires, so an enabled one always has its request.
+              const selection = request as HunkSelection;
+              if (action === "discard") {
+                const body = revertBody(diff, rows, target, selection);
+                setUi((s) => ({ ...s, pending: { selection, body } }));
+              } else {
+                actions.applyHunk(diff.path, action, selection);
+              }
+            },
+          };
+        });
 
   let body: React.ReactNode;
   if (rows.length === 0) {
@@ -327,7 +337,7 @@ function TextDiff({
             open={menu !== null}
             x={menu?.x ?? 0}
             y={menu?.y ?? 0}
-            items={menu ? items(menu.target) : []}
+            items={items}
             onClose={() => setUi((s) => ({ ...s, menu: null }))}
             fallbackFocus={rootRef}
           />
