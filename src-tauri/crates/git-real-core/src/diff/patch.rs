@@ -7,7 +7,7 @@
 //! side because libgit2 places a hunk at `new_start` without offset search.
 
 use crate::error::GitError;
-use crate::model::{ChangeKind, DiffLine, DiffLineKind, FileDiff, HunkSelection};
+use crate::model::{ChangeKind, DiffLine, DiffLineKind, FileDiff, HunkSelection, LineEdit};
 
 const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file\n";
 
@@ -17,6 +17,27 @@ enum Op {
     Context,
     Add,
     Remove,
+}
+
+/// One line of the patch: its op, the original line and an edited text that
+/// replaces the line's content on the post side.
+struct PatchLine<'a> {
+    op: Op,
+    line: &'a DiffLine,
+    replacement: Option<&'a str>,
+}
+
+impl PatchLine<'_> {
+    /// Whether the line is part of the patch's old side.
+    fn on_old(&self) -> bool {
+        self.op != Op::Add
+    }
+
+    /// Whether the line is part of the patch's new side; a replaced removal
+    /// is written back as the replacement text.
+    fn on_new(&self) -> bool {
+        self.op != Op::Remove || self.replacement.is_some()
+    }
 }
 
 /// Builds the patch text for `selection` of `diff`.
@@ -57,13 +78,32 @@ pub fn build_patch(
         }
     }
 
-    let mut ops = select_ops(&hunk.lines, selection.lines.as_deref(), reverse);
-    if ops.iter().all(|(op, _)| *op == Op::Context) {
+    let edit_invalid = selection.edits.iter().any(|e| {
+        let changed = hunk
+            .lines
+            .get(e.index)
+            .is_some_and(|l| l.kind != DiffLineKind::Context);
+        let picked = selection
+            .lines
+            .as_ref()
+            .is_none_or(|lines| lines.contains(&e.index));
+        !(changed && picked)
+    });
+    if edit_invalid {
         return Err(GitError::BadSelection);
     }
-    let side_len = |excluded: Op| ops.iter().filter(|(op, _)| *op != excluded).count() as u32;
-    let old_count = side_len(Op::Add);
-    let new_count = side_len(Op::Remove);
+
+    let mut ops = select_ops(
+        &hunk.lines,
+        selection.lines.as_deref(),
+        &selection.edits,
+        reverse,
+    );
+    if ops.iter().all(|o| o.op == Op::Context) {
+        return Err(GitError::BadSelection);
+    }
+    let old_count = ops.iter().filter(|o| o.on_old()).count() as u32;
+    let new_count = ops.iter().filter(|o| o.on_new()).count() as u32;
     let old_start = if reverse {
         hunk.new_start
     } else {
@@ -109,8 +149,9 @@ pub fn build_patch(
 fn select_ops<'a>(
     lines: &'a [DiffLine],
     picked: Option<&[usize]>,
+    edits: &'a [LineEdit],
     reverse: bool,
-) -> Vec<(Op, &'a DiffLine)> {
+) -> Vec<PatchLine<'a>> {
     let (post_only, pre_only) = if reverse {
         (DiffLineKind::Deletion, DiffLineKind::Addition)
     } else {
@@ -120,14 +161,31 @@ fn select_ops<'a>(
     for &i in picked.unwrap_or_default() {
         selected[i] = true;
     }
+    let plain = |op, line| PatchLine {
+        op,
+        line,
+        replacement: None,
+    };
     lines
         .iter()
+        .enumerate()
         .zip(selected)
-        .filter_map(|(line, selected)| match line.kind {
-            DiffLineKind::Context => Some((Op::Context, line)),
-            k if k == post_only => selected.then_some((Op::Add, line)),
-            k if k == pre_only && selected => Some((Op::Remove, line)),
-            _ => Some((Op::Context, line)),
+        .filter_map(|((i, line), selected)| {
+            let replacement = edits.iter().find(|e| e.index == i).map(|e| e.text.as_str());
+            match line.kind {
+                DiffLineKind::Context => Some(plain(Op::Context, line)),
+                k if k == post_only => selected.then_some(PatchLine {
+                    op: Op::Add,
+                    line,
+                    replacement,
+                }),
+                k if k == pre_only && selected => Some(PatchLine {
+                    op: Op::Remove,
+                    line,
+                    replacement,
+                }),
+                _ => Some(plain(Op::Context, line)),
+            }
         })
         .collect()
 }
@@ -135,10 +193,10 @@ fn select_ops<'a>(
 /// Within each run of changed lines that carries a no-newline flag, moves
 /// removals before additions: libgit2 rejects a `+` marker followed by `-`.
 /// Runs without a flag keep their order, which libgit2 accepts as is.
-fn order_flagged_runs(ops: &mut [(Op, &DiffLine)]) {
-    for run in ops.split_mut(|(op, _)| *op == Op::Context) {
-        if run.iter().any(|(_, line)| line.no_newline_at_eof) {
-            run.sort_by_key(|(op, _)| *op == Op::Add);
+fn order_flagged_runs(ops: &mut [PatchLine]) {
+    for run in ops.split_mut(|o| o.op == Op::Context) {
+        if run.iter().any(|o| o.line.no_newline_at_eof) {
+            run.sort_by_key(|o| o.op == Op::Add);
         }
     }
 }
@@ -146,11 +204,15 @@ fn order_flagged_runs(ops: &mut [(Op, &DiffLine)]) {
 /// Writes the hunk body. A marker follows a flagged line only when it is the
 /// last line of its side; a flagged context line that ends the old side but
 /// is followed by additions is written as a remove/add pair.
-fn render_lines(out: &mut String, ops: &[(Op, &DiffLine)]) {
-    let last_of = |excluded: Op| ops.iter().rposition(|(op, _)| *op != excluded);
-    let last_old = last_of(Op::Add);
-    let last_new = last_of(Op::Remove);
-    for (i, &(op, line)) in ops.iter().enumerate() {
+fn render_lines(out: &mut String, ops: &[PatchLine]) {
+    let last_old = ops.iter().rposition(PatchLine::on_old);
+    let last_new = ops.iter().rposition(PatchLine::on_new);
+    for (i, patch_line) in ops.iter().enumerate() {
+        let PatchLine {
+            op,
+            line,
+            replacement,
+        } = *patch_line;
         let content = &line.content;
         let ends_old = last_old == Some(i);
         let ends_new = last_new == Some(i);
@@ -163,6 +225,20 @@ fn render_lines(out: &mut String, ops: &[(Op, &DiffLine)]) {
             Op::Add => ('+', ends_new),
             Op::Remove => ('-', ends_old),
         };
+        if op == Op::Remove
+            && let Some(text) = replacement
+        {
+            out.push_str(&format!("-{content}\n"));
+            if marker && line.no_newline_at_eof {
+                out.push_str(NO_NEWLINE_MARKER);
+            }
+            out.push_str(&format!("+{text}\n"));
+            if ends_new && line.no_newline_at_eof {
+                out.push_str(NO_NEWLINE_MARKER);
+            }
+            continue;
+        }
+        let content = replacement.unwrap_or(content);
         out.push_str(&format!("{sign}{content}\n"));
         if marker && line.no_newline_at_eof {
             out.push_str(NO_NEWLINE_MARKER);
