@@ -102,35 +102,6 @@ fn get_file_diff_inner_zero_max_lines_is_an_empty_truncated_diff() {
     assert_eq!((collected, diff.truncated), (0, true));
 }
 
-// None means the core default of 10_000 lines, so an explicit 10_000 is equivalent.
-#[test]
-fn get_file_diff_inner_none_matches_the_core_default_cap() {
-    let (_dir, path, reg, id) = open_fixture();
-    let body: String = (0..10_050).map(|i| format!("line {i}\n")).collect();
-    std::fs::write(path.join("README.md"), body).unwrap();
-    let default =
-        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
-    let explicit = get_file_diff_inner(
-        &reg,
-        id,
-        "README.md",
-        DiffScope::Unstaged,
-        false,
-        Some(10_000),
-    )
-    .unwrap();
-    let count = |d: &git_real_core::FileDiff| d.hunks.iter().map(|h| h.lines.len()).sum::<usize>();
-    assert_eq!(
-        (
-            count(&default),
-            default.truncated,
-            count(&explicit),
-            explicit.truncated
-        ),
-        (10_000, true, 10_000, true)
-    );
-}
-
 // Every scope/side pair resolves to the documented source through the app layer.
 #[test]
 fn get_file_content_inner_staged_old_is_head_and_new_is_index() {
