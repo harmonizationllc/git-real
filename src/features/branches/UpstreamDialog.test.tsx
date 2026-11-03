@@ -120,8 +120,10 @@ describe("UpstreamDialog save", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it("should not confirm on a form submit while pending", () => {
-    const { onConfirm } = renderDialog({ current: null, pending: true });
+  it("should not confirm on a form submit while pending", async () => {
+    const { user, onConfirm, rerender } = renderDialog({ current: null });
+    await user.selectOptions(select(), "origin/main");
+    rerender({ current: null, pending: true });
     fireEvent.submit(form());
     expect(onConfirm).not.toHaveBeenCalled();
   });
