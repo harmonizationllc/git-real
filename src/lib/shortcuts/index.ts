@@ -23,6 +23,8 @@ export type ShortcutId =
   | "closeTab"
   | "nextTab"
   | "prevTab"
+  | "nextChange"
+  | "prevChange"
   | "fetch"
   | "pull"
   | "push"
@@ -83,6 +85,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: "prevTab",
     keys: "Mod+PageUp",
     label: "Previous repository tab",
+    group: "Navigation",
+    when: "repo",
+  },
+  { id: "nextChange", keys: "F7", label: "Next change", group: "Navigation", when: "repo" },
+  {
+    id: "prevChange",
+    keys: "Shift+F7",
+    label: "Previous change",
     group: "Navigation",
     when: "repo",
   },

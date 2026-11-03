@@ -8,6 +8,8 @@
 .scroll {
   flex: 1;
   overflow: auto;
+  /* A vertical touch swipe pans the list; mouse and pen drags make the viewer's own range. */
+  touch-action: pan-y;
 }
 
 .inner {

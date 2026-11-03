@@ -1,74 +1,139 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useMemo, useRef } from "react";
-import type { FileDiff, HunkAction, HunkSelection } from "../../lib/ipc";
-import type { DiffMode } from "../../lib/ipc";
-import { HunkHeader } from "./HunkHeader";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
+import { useToasts } from "../../lib/store/toasts";
+import { domCaretResolver, type CaretResolver } from "./caretResolver";
 import type { HighlightMap } from "./model/highlight";
-import { buildRows, type DiffRow } from "./model/rows";
+import type { DiffRow } from "./model/rows";
+import { coveredText, type MenuTarget } from "./model/selection";
 import { SplitRow } from "./SplitRow";
 import { UnifiedRow } from "./UnifiedRow";
-import type { UseLineSelection } from "./useLineSelection";
+import { useTextRange } from "./useTextRange";
 import styles from "./DiffViewer.module.css";
 
-/** apply_hunk acts on the whole hunk, but a truncated diff shows only part of its last one. */
-const TRUNCATED_REASON = "Load the full diff to stage, unstage or discard this hunk";
+export interface DiffViewerHandle {
+  scrollToRow(index: number): void;
+  firstVisibleRow(): number;
+}
 
 export interface DiffViewerProps {
   diff: FileDiff;
+  rows: DiffRow[];
   mode: DiffMode;
   highlight: HighlightMap | null;
-  selection?: UseLineSelection;
-  onHunkAction?(action: HunkAction, selection: HunkSelection): void;
-  actionsDisabledReason?: string;
+  /** Absent: a right-click does nothing and no menu opens. */
+  onContextMenu?(target: MenuTarget, x: number, y: number): void;
+  /** Fired once after the first render. */
+  onMounted?(): void;
+  /**
+   * A scroll the user made: a scroll event after a wheel, pointer or key gesture on the container
+   * and since the last `scrollToRow`. Bare scroll events, such as virtualizer corrections, never
+   * count.
+   */
+  onUserScroll?(): void;
+  /** Test seam; defaults to resolving carets from the rendered rows. */
+  resolveCaret?: CaretResolver;
 }
 
-/** Virtualized, read-only unless `selection` and `onHunkAction` are given. */
-export function DiffViewer({
-  diff,
-  mode,
-  highlight,
-  selection,
-  onHunkAction,
-  actionsDisabledReason,
-}: DiffViewerProps) {
-  const rows = useMemo(() => buildRows(diff, mode), [diff, mode]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+/** Virtualized rows with a viewer-owned text range, copy and a context-menu target. */
+export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer(
+  { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, resolveCaret },
+  ref,
+) {
+  // Held in state (a callback ref) so the default caret resolver is built once it exists, and in
+  // a ref so the virtualizer already has it in the commit that attaches it: a scrollToRow from
+  // the first effect would otherwise find no scroll element.
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const attach = useCallback((el: HTMLDivElement | null) => {
+    elRef.current = el;
+    setScrollEl(el);
+  }, []);
   // Keyed by row so measured heights follow their rows across mode switches and refetches.
   const getItemKey = useCallback((i: number) => rows[i].key, [rows]);
-  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => elRef.current,
     estimateSize: () => 22,
     overscan: 20,
     getItemKey,
   });
 
-  /** The hunk's selected lines, sorted, or null for the whole hunk. */
-  const selectionFor = (hunkIndex: number): HunkSelection => ({
-    hunkIndex,
-    lines:
-      selection && selection.hunkIndex === hunkIndex && selection.selected.size > 0
-        ? [...selection.selected].sort((a, b) => a - b)
-        : null,
-  });
+  const resolve = useMemo(
+    () => resolveCaret ?? (scrollEl && domCaretResolver(scrollEl)),
+    [resolveCaret, scrollEl],
+  );
+  const text = useTextRange(rows, resolve, () => scrollEl, diff);
+  const { range } = text;
 
-  const renderRow = (row: DiffRow) => {
-    if (row.kind === "header") {
-      return (
-        <HunkHeader
-          header={row.header}
-          scope={diff.scope}
-          selectedCount={selection?.hunkIndex === row.hunkIndex ? selection.selected.size : 0}
-          disabledReason={actionsDisabledReason}
-          wholeHunkDisabledReason={
-            diff.truncated && row.hunkIndex === diff.hunks.length - 1 ? TRUNCATED_REASON : undefined
-          }
-          onAction={onHunkAction && ((action) => onHunkAction(action, selectionFor(row.hunkIndex)))}
-        />
-      );
+  // A scroll is the user's only after a wheel, pointer or key gesture on the container. Bare
+  // scroll events never count: the virtualizer keeps correcting a jump over later frames.
+  const intent = useRef(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToRow: (index) => {
+        intent.current = false;
+        virtualizer.scrollToIndex(index, { align: "start" });
+      },
+      firstVisibleRow: () => virtualizer.range?.startIndex ?? 0,
+    }),
+    [virtualizer],
+  );
+
+  useEffect(() => {
+    onMounted?.();
+    // Once per mount by contract, whatever callback a later render passes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onScroll = () => {
+    if (intent.current) onUserScroll?.();
+  };
+  const userInput = () => {
+    intent.current = true;
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    userInput();
+    if (e.key === "Escape") {
+      text.clear();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && range !== null) {
+      e.preventDefault();
+      copyText(coveredText(diff, rows, range)).catch((err: unknown) => {
+        console.error("Copying the diff text failed", err);
+        useToasts.getState().notify({ text: "Couldn't copy the diff text", variant: "error" });
+      });
     }
-    const props = { diff, highlight, selection, onGutterClick: selection?.click };
+  };
+
+  const onMenu = (e: React.MouseEvent) => {
+    // The viewer owns right-click on its rows: with no handler nothing opens, not even the browser's.
+    if (!onContextMenu) {
+      e.preventDefault();
+      return;
+    }
+    const wrapper = (e.target as Element).closest("[data-index]");
+    const target: MenuTarget | null =
+      range !== null
+        ? { kind: "range", range }
+        : wrapper && { kind: "row", row: Number(wrapper.getAttribute("data-index")) };
+    if (target === null) return;
+    e.preventDefault();
+    onContextMenu(target, e.clientX, e.clientY);
+  };
+
+  const renderRow = (row: DiffRow, index: number) => {
+    const props = { diff, highlight, tint: text.tint(index) };
     return row.kind === "unified" ? (
       <UnifiedRow {...props} row={row} />
     ) : (
@@ -78,7 +143,26 @@ export function DiffViewer({
 
   return (
     <section aria-label="Diff" className={styles.root}>
-      <div ref={scrollRef} className={styles.scroll} data-testid="diff-scroll">
+      <div
+        ref={attach}
+        className={styles.scroll}
+        data-testid="diff-scroll"
+        tabIndex={-1}
+        data-focus-target
+        onPointerDown={(e) => {
+          userInput();
+          text.onPointerDown(e);
+        }}
+        onPointerMove={text.onPointerMove}
+        onPointerUp={text.onPointerUp}
+        onPointerCancel={text.onPointerCancel}
+        onLostPointerCapture={text.onLostPointerCapture}
+        onDoubleClick={text.onDoubleClick}
+        onKeyDown={onKeyDown}
+        onWheel={userInput}
+        onScroll={onScroll}
+        onContextMenu={onMenu}
+      >
         <div className={styles.inner} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => (
             <div
@@ -88,11 +172,11 @@ export function DiffViewer({
               className={styles.item}
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              {renderRow(rows[item.index])}
+              {renderRow(rows[item.index], item.index)}
             </div>
           ))}
         </div>
       </div>
     </section>
   );
-}
+});

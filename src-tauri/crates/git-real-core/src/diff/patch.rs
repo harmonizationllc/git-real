@@ -6,8 +6,10 @@
 //! from the emitted lines, and the new-side start is derived from the old
 //! side because libgit2 places a hunk at `new_start` without offset search.
 
+use std::collections::HashMap;
+
 use crate::error::GitError;
-use crate::model::{ChangeKind, DiffLine, DiffLineKind, FileDiff, HunkSelection};
+use crate::model::{ChangeKind, DiffLine, DiffLineKind, FileDiff, HunkSelection, LineEdit};
 
 const NO_NEWLINE_MARKER: &str = "\\ No newline at end of file\n";
 
@@ -17,6 +19,27 @@ enum Op {
     Context,
     Add,
     Remove,
+}
+
+/// One line of the patch: its op, the original line and an edited text that
+/// replaces the line's content on the post side.
+struct PatchLine<'a> {
+    op: Op,
+    line: &'a DiffLine,
+    replacement: Option<&'a str>,
+}
+
+impl PatchLine<'_> {
+    /// Whether the line is part of the patch's old side.
+    fn on_old(&self) -> bool {
+        self.op != Op::Add
+    }
+
+    /// Whether the line is part of the patch's new side; a replaced removal
+    /// is written back as the replacement text.
+    fn on_new(&self) -> bool {
+        self.op != Op::Remove || self.replacement.is_some()
+    }
 }
 
 /// Builds the patch text for `selection` of `diff`.
@@ -57,13 +80,41 @@ pub fn build_patch(
         }
     }
 
-    let mut ops = select_ops(&hunk.lines, selection.lines.as_deref(), reverse);
-    if ops.iter().all(|(op, _)| *op == Op::Context) {
+    let edit_invalid = selection.edits.iter().enumerate().any(|(n, e)| {
+        let duplicate = selection.edits[..n]
+            .iter()
+            .any(|prev| prev.index == e.index);
+        let changed = hunk
+            .lines
+            .get(e.index)
+            .is_some_and(|l| l.kind != DiffLineKind::Context);
+        let picked = selection
+            .lines
+            .as_ref()
+            .is_none_or(|lines| lines.contains(&e.index));
+        // Only a final `\r` is allowed; anything else would add patch lines.
+        let body = e.text.strip_suffix('\r').unwrap_or(&e.text);
+        let single_line = !body.contains(['\n', '\r']);
+        !(changed && picked && single_line) || duplicate
+    });
+    if edit_invalid {
         return Err(GitError::BadSelection);
     }
-    let side_len = |excluded: Op| ops.iter().filter(|(op, _)| *op != excluded).count() as u32;
-    let old_count = side_len(Op::Add);
-    let new_count = side_len(Op::Remove);
+
+    let mut ops = order_partial_groups(
+        &hunk.lines,
+        select_ops(
+            &hunk.lines,
+            selection.lines.as_deref(),
+            &selection.edits,
+            reverse,
+        ),
+    );
+    if ops.iter().all(|o| o.op == Op::Context) {
+        return Err(GitError::BadSelection);
+    }
+    let old_count = ops.iter().filter(|o| o.on_old()).count() as u32;
+    let new_count = ops.iter().filter(|o| o.on_new()).count() as u32;
     let old_start = if reverse {
         hunk.new_start
     } else {
@@ -103,14 +154,15 @@ pub fn build_patch(
     Ok(out)
 }
 
-/// Maps each line to its patch op in original order, dropping unselected
-/// post-side lines and turning unselected pre-side lines into context.
+/// Maps each line to its patch op, aligned with `lines`: `None` drops an
+/// unselected post-side line, and an unselected pre-side line becomes context.
 /// Indices in `picked` are already validated against `lines`.
 fn select_ops<'a>(
     lines: &'a [DiffLine],
     picked: Option<&[usize]>,
+    edits: &'a [LineEdit],
     reverse: bool,
-) -> Vec<(Op, &'a DiffLine)> {
+) -> Vec<Option<PatchLine<'a>>> {
     let (post_only, pre_only) = if reverse {
         (DiffLineKind::Deletion, DiffLineKind::Addition)
     } else {
@@ -120,37 +172,129 @@ fn select_ops<'a>(
     for &i in picked.unwrap_or_default() {
         selected[i] = true;
     }
+    // Indices are unique (duplicates are rejected before this).
+    let replacements: HashMap<usize, &str> =
+        edits.iter().map(|e| (e.index, e.text.as_str())).collect();
+    let plain = |op, line| PatchLine {
+        op,
+        line,
+        replacement: None,
+    };
     lines
         .iter()
+        .enumerate()
         .zip(selected)
-        .filter_map(|(line, selected)| match line.kind {
-            DiffLineKind::Context => Some((Op::Context, line)),
-            k if k == post_only => selected.then_some((Op::Add, line)),
-            k if k == pre_only && selected => Some((Op::Remove, line)),
-            _ => Some((Op::Context, line)),
+        .map(|((i, line), selected)| {
+            let replacement = replacements.get(&i).copied();
+            match line.kind {
+                DiffLineKind::Context => Some(plain(Op::Context, line)),
+                k if k == post_only => selected.then_some(PatchLine {
+                    op: Op::Add,
+                    line,
+                    replacement,
+                }),
+                k if k == pre_only && selected => Some(PatchLine {
+                    op: Op::Remove,
+                    line,
+                    replacement,
+                }),
+                _ => Some(plain(Op::Context, line)),
+            }
         })
         .collect()
+}
+
+/// Lays out each group of changed lines (a deletion run and the addition run
+/// after it, paired by position as the viewer pairs them) in hunk order when
+/// the selection takes all of it, none of it, or lines of one side only. A
+/// group the selection takes in part on both sides, or that holds an edit, is
+/// written as its old lines first as
+/// removals, then its new lines in pair order as additions, a kept line as a
+/// removal and an addition of itself. A selected pair or a replacement then
+/// lands in its own slot among the group's other lines.
+fn order_partial_groups<'a>(
+    lines: &'a [DiffLine],
+    ops: Vec<Option<PatchLine<'a>>>,
+) -> Vec<PatchLine<'a>> {
+    let mut out = Vec::with_capacity(ops.len());
+    let mut ops = ops.into_iter();
+    let mut start = 0;
+    while start < lines.len() {
+        if lines[start].kind == DiffLineKind::Context {
+            out.extend(ops.next().flatten());
+            start += 1;
+            continue;
+        }
+        let dels = lines[start..]
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Deletion)
+            .count();
+        let adds = lines[start + dels..]
+            .iter()
+            .take_while(|l| l.kind == DiffLineKind::Addition)
+            .count();
+        let group: Vec<_> = ops.by_ref().take(dels + adds).collect();
+        start += dels + adds;
+        let taken = |o: &Option<PatchLine>| o.as_ref().is_some_and(|o| o.op != Op::Context);
+        // Partial means some deletion and some addition are taken, but not every
+        // line: a one-sided pick keeps git's hunk order.
+        let (old_side, new_side) = group.split_at(dels);
+        let partial =
+            old_side.iter().any(taken) && new_side.iter().any(taken) && !group.iter().all(taken);
+        let edited = group.iter().flatten().any(|o| o.replacement.is_some());
+        if !partial && !edited {
+            out.extend(group.into_iter().flatten());
+            continue;
+        }
+        let as_op = |op, o: &PatchLine<'a>, replacement| PatchLine {
+            op,
+            line: o.line,
+            replacement,
+        };
+        out.extend(
+            group
+                .iter()
+                .flatten()
+                .filter(|o| o.on_old())
+                .map(|o| as_op(Op::Remove, o, None)),
+        );
+        for k in 0..dels.max(adds) {
+            let slot = [(k < dels).then_some(k), (k < adds).then_some(dels + k)];
+            for o in slot.into_iter().flatten().filter_map(|i| group[i].as_ref()) {
+                if o.on_new() {
+                    out.push(as_op(Op::Add, o, o.replacement));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Within each run of changed lines that carries a no-newline flag, moves
 /// removals before additions: libgit2 rejects a `+` marker followed by `-`.
 /// Runs without a flag keep their order, which libgit2 accepts as is.
-fn order_flagged_runs(ops: &mut [(Op, &DiffLine)]) {
-    for run in ops.split_mut(|(op, _)| *op == Op::Context) {
-        if run.iter().any(|(_, line)| line.no_newline_at_eof) {
-            run.sort_by_key(|(op, _)| *op == Op::Add);
+fn order_flagged_runs(ops: &mut [PatchLine]) {
+    for run in ops.split_mut(|o| o.op == Op::Context) {
+        if run.iter().any(|o| o.line.no_newline_at_eof) {
+            run.sort_by_key(|o| o.op == Op::Add);
         }
     }
 }
 
 /// Writes the hunk body. A marker follows a flagged line only when it is the
 /// last line of its side; a flagged context line that ends the old side but
-/// is followed by additions is written as a remove/add pair.
-fn render_lines(out: &mut String, ops: &[(Op, &DiffLine)]) {
-    let last_of = |excluded: Op| ops.iter().rposition(|(op, _)| *op != excluded);
-    let last_old = last_of(Op::Add);
-    let last_new = last_of(Op::Remove);
-    for (i, &(op, line)) in ops.iter().enumerate() {
+/// is followed by additions is written as a remove/add pair. Only additions
+/// carry a replacement here: `order_partial_groups` has already written each
+/// replaced removal as a plain removal plus an addition of its new text.
+fn render_lines(out: &mut String, ops: &[PatchLine]) {
+    let last_old = ops.iter().rposition(PatchLine::on_old);
+    let last_new = ops.iter().rposition(PatchLine::on_new);
+    for (i, patch_line) in ops.iter().enumerate() {
+        let PatchLine {
+            op,
+            line,
+            replacement,
+        } = *patch_line;
         let content = &line.content;
         let ends_old = last_old == Some(i);
         let ends_new = last_new == Some(i);
@@ -163,6 +307,7 @@ fn render_lines(out: &mut String, ops: &[(Op, &DiffLine)]) {
             Op::Add => ('+', ends_new),
             Op::Remove => ('-', ends_old),
         };
+        let content = replacement.unwrap_or(content);
         out.push_str(&format!("{sign}{content}\n"));
         if marker && line.no_newline_at_eof {
             out.push_str(NO_NEWLINE_MARKER);
@@ -175,7 +320,7 @@ mod tests {
     use super::*;
     use crate::error::GitError;
     use crate::model::{
-        ChangeKind, DiffLine, DiffLineKind, DiffScope, FileDiff, Hunk, HunkSelection,
+        ChangeKind, DiffLine, DiffLineKind, DiffScope, FileDiff, Hunk, HunkSelection, LineEdit,
     };
 
     // --- helpers ---
@@ -258,6 +403,7 @@ mod tests {
         HunkSelection {
             hunk_index,
             lines: None,
+            edits: vec![],
         }
     }
 
@@ -265,6 +411,21 @@ mod tests {
         HunkSelection {
             hunk_index,
             lines: Some(picked.to_vec()),
+            edits: vec![],
+        }
+    }
+
+    fn sel(picked: &[usize], edits: &[(usize, &str)]) -> HunkSelection {
+        HunkSelection {
+            hunk_index: 0,
+            lines: Some(picked.to_vec()),
+            edits: edits
+                .iter()
+                .map(|(index, text)| LineEdit {
+                    index: *index,
+                    text: (*text).to_owned(),
+                })
+                .collect(),
         }
     }
 
@@ -360,11 +521,59 @@ mod tests {
     // --- partial line selection: unselected deletions become context, unselected additions are dropped ---
 
     #[test]
-    fn build_patch_partial_lines_keeps_unselected_deletions_as_context() {
+    fn build_patch_partial_lines_keeps_unselected_deletions_in_their_slot() {
+        // Pair 0 (a→c) selected, b kept: c takes slot 0 and b stays in slot 1.
         let patch = build_patch(&two_for_two(), &lines(0, &[0, 2]), false, MODE).expect("patch");
         assert_eq!(
             patch,
-            format!("{}@@ -1,2 +1,2 @@\n-a\n b\n+c\n", modify_head("f.txt"))
+            format!("{}@@ -1,2 +1,2 @@\n-a\n-b\n+c\n+b\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn build_patch_only_the_additions_of_a_run_keep_hunk_order() {
+        let patch = build_patch(&two_for_two(), &lines(0, &[2, 3]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,2 +1,4 @@\n a\n b\n+c\n+d\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn build_patch_reverse_only_the_deletions_of_a_run_keep_hunk_order() {
+        let patch = build_patch(&two_for_two(), &lines(0, &[0, 1]), true, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,2 +1,4 @@\n+a\n+b\n c\n d\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn build_patch_middle_pair_of_a_run_is_written_in_pair_slot_order() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(
+                1,
+                1,
+                vec![del("a"), del("b"), del("c"), add("A"), add("B"), add("C")],
+            )],
+        );
+        let patch = build_patch(&diff, &lines(0, &[1, 4]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!(
+                "{}@@ -1,3 +1,3 @@\n-a\n-b\n-c\n+a\n+B\n+c\n",
+                modify_head("f.txt")
+            )
+        );
+        let reverse = build_patch(&diff, &lines(0, &[1, 4]), true, MODE).expect("reverse");
+        assert_eq!(
+            reverse,
+            format!(
+                "{}@@ -1,3 +1,3 @@\n-A\n-B\n-C\n+A\n+b\n+C\n",
+                modify_head("f.txt")
+            )
         );
     }
 
@@ -456,11 +665,12 @@ mod tests {
     // In reverse the patch targets the side that holds the additions, so
     // unselected additions are context and unselected deletions are dropped.
     #[test]
-    fn build_patch_reverse_partial_keeps_unselected_additions_as_context() {
+    fn build_patch_reverse_partial_keeps_unselected_additions_in_their_slot() {
+        // Pair 0 (c→a) restored, d kept: a takes slot 0 and d stays in slot 1.
         let patch = build_patch(&two_for_two(), &lines(0, &[0, 2]), true, MODE).expect("patch");
         assert_eq!(
             patch,
-            format!("{}@@ -1,2 +1,2 @@\n+a\n-c\n d\n", modify_head("f.txt"))
+            format!("{}@@ -1,2 +1,2 @@\n-c\n-d\n+a\n+d\n", modify_head("f.txt"))
         );
     }
 
@@ -498,6 +708,163 @@ mod tests {
                 modify_head("f.txt")
             )
         );
+    }
+
+    // --- GR-52: partial-line edits ---
+
+    fn del_add_diff() -> FileDiff {
+        file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B"), ctx("z")])],
+        )
+    }
+
+    #[test]
+    fn edit_on_remove_replaces_the_line_forward() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C")]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!("{}@@ -1,3 +1,3 @@\n a\n-A\n+C\n z\n", modify_head("f.txt"))
+        );
+    }
+
+    #[test]
+    fn edit_on_remove_replaces_the_line_reverse() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[2], &[(2, "C'")]), true, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n-B\n+C'\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_on_add_writes_replacement_text() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), add("B"), ctx("z")])],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "P")]), false, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n+P\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_on_add_reverse_of_pure_deletion() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), ctx("z")])],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "P")]), true, MODE).expect("patch");
+        assert!(patch.ends_with(" a\n+P\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn edit_keeps_no_newline_marker_on_last_line() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(
+                1,
+                1,
+                vec![
+                    ctx("a"),
+                    dl(DiffLineKind::Deletion, "A", true),
+                    dl(DiffLineKind::Addition, "B", true),
+                ],
+            )],
+        );
+        let patch = build_patch(&diff, &sel(&[1], &[(1, "C")]), false, MODE).expect("patch");
+        assert!(
+            patch.ends_with(
+                " a\n-A\n\\ No newline at end of file\n+C\n\\ No newline at end of file\n"
+            ),
+            "got {patch:?}"
+        );
+    }
+
+    #[test]
+    fn edit_on_unselected_line_is_bad_selection() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B")])],
+        );
+        let err = build_patch(&diff, &sel(&[1], &[(2, "x")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_on_context_line_is_bad_selection() {
+        let diff = file_diff(
+            "f.txt",
+            ChangeKind::Modified,
+            vec![hunk(1, 1, vec![ctx("a"), del("A"), add("B")])],
+        );
+        let err = build_patch(&diff, &sel(&[0, 1], &[(0, "x")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_text_with_newline_is_bad_selection() {
+        let err =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\nD")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edit_text_with_interior_carriage_return_is_bad_selection() {
+        let err =
+            build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\rD")]), false, MODE).expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+        let patch = build_patch(&del_add_diff(), &sel(&[1], &[(1, "C\r")]), false, MODE)
+            .expect("trailing CR is accepted");
+        assert!(patch.ends_with(" a\n-A\n+C\r\n z\n"), "got {patch:?}");
+    }
+
+    #[test]
+    fn duplicate_edit_index_is_bad_selection() {
+        let err = build_patch(
+            &del_add_diff(),
+            &sel(&[1], &[(1, "C"), (1, "D")]),
+            false,
+            MODE,
+        )
+        .expect_err("bad");
+        assert!(matches!(err, GitError::BadSelection), "got {err:?}");
+    }
+
+    #[test]
+    fn edited_remove_with_selected_partner_add_stages_both_texts() {
+        let patch =
+            build_patch(&del_add_diff(), &sel(&[1, 2], &[(1, "C")]), false, MODE).expect("patch");
+        assert_eq!(
+            patch,
+            format!(
+                "{}@@ -1,3 +1,4 @@\n a\n-A\n+C\n+B\n z\n",
+                modify_head("f.txt")
+            )
+        );
+    }
+
+    #[test]
+    fn serde_round_trips_edits_and_defaults_to_empty() {
+        let without: HunkSelection =
+            serde_json::from_str(r#"{"hunkIndex":0,"lines":[1]}"#).expect("parse");
+        assert_eq!(without.edits, vec![]);
+        let with: HunkSelection =
+            serde_json::from_str(r#"{"hunkIndex":0,"lines":[1],"edits":[{"index":1,"text":"C"}]}"#)
+                .expect("parse");
+        assert_eq!(
+            with.edits,
+            vec![LineEdit {
+                index: 1,
+                text: "C".to_owned()
+            }]
+        );
+        let back: HunkSelection =
+            serde_json::from_str(&serde_json::to_string(&with).expect("ser")).expect("parse");
+        assert_eq!(back, with);
     }
 
     // --- invalid selections ---

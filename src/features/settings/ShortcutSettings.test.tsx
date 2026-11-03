@@ -77,7 +77,7 @@ describe("ShortcutSettings layout", () => {
       expect(screen.getByRole("table", { name: group })).toBeInTheDocument();
     }
     expect(screen.getAllByRole("table")).toHaveLength(4);
-    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(14);
+    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(16);
     expect(screen.queryByText("Close dialog or menu")).toBeNull();
   });
 

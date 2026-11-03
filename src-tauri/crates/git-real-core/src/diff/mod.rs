@@ -59,9 +59,7 @@ impl RepoSession {
         };
         let opts = DiffOptions {
             ignore_whitespace: false,
-            context_lines: 3,
-            max_lines: usize::MAX,
-            ..DiffOptions::default()
+            ..DiffOptions::whole_file()
         };
         // Decided before the exact load so any encoding stages whole.
         let whole_untracked =
@@ -80,7 +78,8 @@ impl RepoSession {
             (loaded.old_mode, loaded.new_mode)
         };
         let mode = if target == 0 { other } else { target };
-        let text = build_patch(&loaded.diff, selection, reverse, mode)?;
+        let selection = keep_carriage_returns(&loaded.diff, selection);
+        let text = build_patch(&loaded.diff, &selection, reverse, mode)?;
         self.apply_patch_text(&text, action)
     }
 
@@ -339,6 +338,24 @@ pub(crate) fn change_kind(status: git2::Delta) -> Option<ChangeKind> {
         git2::Delta::Conflicted => Some(ChangeKind::Conflicted),
         git2::Delta::Unmodified | git2::Delta::Ignored | git2::Delta::Unreadable => None,
     }
+}
+
+/// Copies `selection`, appending `\r` to each edit whose original line ends
+/// in `\r` so an edited CRLF line keeps its line ending.
+fn keep_carriage_returns(diff: &FileDiff, selection: &HunkSelection) -> HunkSelection {
+    let mut selection = selection.clone();
+    if let Some(hunk) = diff.hunks.get(selection.hunk_index) {
+        for edit in &mut selection.edits {
+            let crlf = hunk
+                .lines
+                .get(edit.index)
+                .is_some_and(|l| l.content.ends_with('\r'));
+            if crlf && !edit.text.ends_with('\r') {
+                edit.text.push('\r');
+            }
+        }
+    }
+    selection
 }
 
 /// Collects hunks until `max_lines` lines are gathered; the flag reports

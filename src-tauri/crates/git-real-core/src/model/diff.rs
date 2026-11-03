@@ -94,6 +94,18 @@ pub struct HunkSelection {
     pub hunk_index: usize,
     /// Indices into `Hunk::lines` of Addition/Deletion lines; `None` = whole hunk.
     pub lines: Option<Vec<usize>>,
+    /// Replacement text for selected lines, so a line can be staged partway.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edits: Vec<LineEdit>,
+}
+
+/// Replacement text for one line of a hunk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineEdit {
+    /// Index into `Hunk::lines` of a selected Addition/Deletion line.
+    pub index: usize,
+    pub text: String,
 }
 
 /// What to do with a selected hunk.
@@ -114,6 +126,24 @@ pub struct DiffOptions {
     pub max_lines: usize,
     /// Largest side (in bytes) the loader will transcode from UTF-16/UTF-32.
     pub max_decode_bytes: u64,
+}
+
+/// Context-line count that makes every diff hunk span the whole file.
+///
+/// libgit2 copies `context_lines` into xdiff's `long ctxlen`, which is 32-bit
+/// on Windows, so the value stays below `i32::MAX`. `1 << 30` is far more
+/// lines than any file.
+pub const WHOLE_FILE_CONTEXT: u32 = 1 << 30;
+
+impl DiffOptions {
+    /// Options for a single hunk holding the whole file, with no line cap.
+    pub fn whole_file() -> Self {
+        Self {
+            context_lines: WHOLE_FILE_CONTEXT,
+            max_lines: usize::MAX,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for DiffOptions {

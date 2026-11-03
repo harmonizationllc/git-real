@@ -19,14 +19,14 @@ afterEach(() => {
   setActiveBindings(resolveBindings({}));
 });
 
-// Contract: 14-row registry with unique ids and keys.
+// Contract: 16-row registry with unique ids and keys.
 describe("SHORTCUTS registry", () => {
-  it("registry ids and keys are unique and the table has 14 rows", () => {
-    expect(SHORTCUTS).toHaveLength(14);
+  it("registry ids and keys are unique and the table has 16 rows", () => {
+    expect(SHORTCUTS).toHaveLength(16);
     const ids = SHORTCUTS.map((s) => s.id);
     const keys = SHORTCUTS.map((s) => s.keys);
-    expect(new Set(ids).size).toBe(14);
-    expect(new Set(keys).size).toBe(14);
+    expect(new Set(ids).size).toBe(16);
+    expect(new Set(keys).size).toBe(16);
   });
 
   it("shortcut(id) returns the matching row", () => {
@@ -48,6 +48,8 @@ describe("SHORTCUTS registry", () => {
     ["closeTab", "Mod+W"],
     ["nextTab", "Mod+PageDown"],
     ["prevTab", "Mod+PageUp"],
+    ["nextChange", "F7"],
+    ["prevChange", "Shift+F7"],
     ["fetch", "Mod+Shift+F"],
     ["pull", "Mod+Shift+L"],
     ["push", "Mod+Shift+P"],
@@ -94,6 +96,8 @@ describe("matchesShortcut matrix", () => {
     ["closeTab", { ctrlKey: true, key: "w", code: "KeyW" }],
     ["nextTab", { ctrlKey: true, key: "PageDown", code: "PageDown" }],
     ["prevTab", { ctrlKey: true, key: "PageUp", code: "PageUp" }],
+    ["nextChange", { key: "F7", code: "F7" }],
+    ["prevChange", { shiftKey: true, key: "F7", code: "F7" }],
     ["fetch", { ctrlKey: true, shiftKey: true, key: "F", code: "KeyF" }],
     ["pull", { ctrlKey: true, shiftKey: true, key: "L", code: "KeyL" }],
     ["push", { ctrlKey: true, shiftKey: true, key: "P", code: "KeyP" }],
@@ -117,6 +121,48 @@ describe("matchesShortcut matrix", () => {
       expect(matchesShortcut(makeEvent(overrides), id)).toBe(true);
     },
   );
+
+  it("F7 fires nextChange only and Shift+F7 fires prevChange only", () => {
+    const plain = makeEvent({ key: "F7", code: "F7" });
+    const shifted = makeEvent({ key: "F7", code: "F7", shiftKey: true });
+    expect(matchesShortcut(plain, "nextChange")).toBe(true);
+    expect(matchesShortcut(plain, "prevChange")).toBe(false);
+    expect(matchesShortcut(shifted, "prevChange")).toBe(true);
+    expect(matchesShortcut(shifted, "nextChange")).toBe(false);
+  });
+
+  it("a Ctrl or Meta press does not fire the modifier-free change shortcuts", () => {
+    expect(matchesShortcut(makeEvent({ ctrlKey: true, key: "F7", code: "F7" }), "nextChange")).toBe(
+      false,
+    );
+    expect(matchesShortcut(makeEvent({ metaKey: true, key: "F7", code: "F7" }), "nextChange")).toBe(
+      false,
+    );
+  });
+
+  it("an unbound change shortcut never matches", () => {
+    setActiveBindings(resolveBindings({ nextChange: null }));
+    expect(matchesShortcut(makeEvent({ key: "F7", code: "F7" }), "nextChange")).toBe(false);
+  });
+
+  it("the change shortcuts sit in Navigation, need a repo, and follow prevTab", () => {
+    expect(shortcut("nextChange")).toMatchObject({
+      group: "Navigation",
+      when: "repo",
+      label: "Next change",
+    });
+    expect(shortcut("prevChange")).toMatchObject({
+      group: "Navigation",
+      when: "repo",
+      label: "Previous change",
+    });
+    const ids = SHORTCUTS.map((s) => s.id);
+    expect(ids.slice(ids.indexOf("prevTab"), ids.indexOf("prevTab") + 3)).toEqual([
+      "prevTab",
+      "nextChange",
+      "prevChange",
+    ]);
+  });
 
   it("missing Shift does not fire a Shift shortcut", () => {
     expect(matchesShortcut(makeEvent({ ctrlKey: true, key: "F", code: "KeyF" }), "fetch")).toBe(

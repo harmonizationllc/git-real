@@ -78,3 +78,21 @@ describe("useShell publishRepoActions", () => {
     expect(useShell.getState().repoActions).toBeNull();
   });
 });
+
+describe("useShell publishDiffNavigation", () => {
+  it("starts with no diff navigation", () => {
+    expect(useShell.getState().diffNavigation).toBeNull();
+  });
+
+  it("publishDiffNavigation sets the slot", () => {
+    const nav = { repoId: 4, next: vi.fn(), prev: vi.fn() };
+    useShell.getState().publishDiffNavigation(nav);
+    expect(useShell.getState().diffNavigation).toBe(nav);
+  });
+
+  it("publishDiffNavigation clears when passed null", () => {
+    useShell.getState().publishDiffNavigation({ repoId: 4, next: vi.fn(), prev: vi.fn() });
+    useShell.getState().publishDiffNavigation(null);
+    expect(useShell.getState().diffNavigation).toBeNull();
+  });
+});

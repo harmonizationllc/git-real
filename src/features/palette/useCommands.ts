@@ -37,6 +37,7 @@ const THEME_LABEL: Record<ThemePref, string> = {
 export function useCommands(actions: ShellActions): Command[] {
   const theme = useSettings((s) => s.settings.appearance.theme);
   const repoActions = useShell((s) => s.repoActions);
+  const diffNavigation = useShell((s) => s.diffNavigation);
   const tabs = useRepoTabs((s) => s.tabs);
   const activeId = useRepoTabs((s) => s.activeId);
   const activate = useRepoTabs((s) => s.activate);
@@ -147,7 +148,25 @@ export function useCommands(actions: ShellActions): Command[] {
       label: "Close repository tab",
       group: "Actions",
       shortcutId: "closeTab",
-      run: () => closeRepoTab(repoActions.repoId),
+      run: () => void closeRepoTab(repoActions.repoId),
+    });
+  }
+
+  // Change navigation, only while the active tab's diff has published it.
+  if (diffNavigation !== null && diffNavigation.repoId === activeId) {
+    push({
+      id: "nextChange",
+      label: "Next change",
+      group: "Actions",
+      shortcutId: "nextChange",
+      run: diffNavigation.next,
+    });
+    push({
+      id: "prevChange",
+      label: "Previous change",
+      group: "Actions",
+      shortcutId: "prevChange",
+      run: diffNavigation.prev,
     });
   }
 

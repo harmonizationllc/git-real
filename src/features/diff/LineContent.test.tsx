@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LineContent } from "./LineContent";
 import type { Token } from "./model/highlight";
 import type { Range } from "./model/wordDiff";
+import styles from "./LineContent.module.css";
 
 function setup(text: string, tokens: Token[] | null = null, ranges: Range[] = [], eof = false) {
   const view = render(
@@ -217,5 +218,144 @@ describe("LineContent whitespace-only line", () => {
   it("should keep the placeholder space before the marker on an empty line", () => {
     const { container } = setup("", null, [], true);
     expect(container.querySelector("code")?.textContent).toBe("\u00a0⏎");
+  });
+});
+
+/** Each text run under the code, with whether it sits in a word mark and in the selection. */
+const runs = (container: HTMLElement) => {
+  const code = container.querySelector("code")!;
+  const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+  const out: { text: string; marked: boolean; selected: boolean }[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const parent = n.parentElement!;
+    out.push({
+      text: n.textContent ?? "",
+      marked: parent.closest("mark") !== null,
+      selected: parent.closest(`.${styles.selected}`) !== null,
+    });
+  }
+  return out;
+};
+
+const selectedText = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll(`.${styles.selected}`))
+    .map((e) => e.textContent)
+    .join("");
+
+// Contract: the selected range adds its bounds to the piece cuts and wraps the selected pieces in
+// span.selected, combining with word marks and token classes.
+describe("LineContent selected range", () => {
+  const renderSelected = (
+    text: string,
+    selected: Range | null | undefined,
+    ranges: Range[] = [],
+    tokens: Token[] | null = null,
+  ) =>
+    render(
+      <LineContent
+        text={text}
+        tokens={tokens}
+        ranges={ranges}
+        noNewlineAtEof={false}
+        selected={selected}
+      />,
+    );
+
+  it("should wrap the middle piece in a span with the selected class", () => {
+    const { container } = renderSelected("abcdefg", { start: 2, end: 5 });
+    const sel = container.querySelectorAll(`.${styles.selected}`);
+    expect(sel).toHaveLength(1);
+    expect(sel[0].tagName).toBe("SPAN");
+    expect(sel[0].textContent).toBe("cde");
+  });
+
+  it("should select nothing else", () => {
+    const { container } = renderSelected("abcdefg", { start: 2, end: 5 });
+    expect(runs(container)).toEqual([
+      { text: "ab", marked: false, selected: false },
+      { text: "cde", marked: false, selected: true },
+      { text: "fg", marked: false, selected: false },
+    ]);
+  });
+
+  it("should keep the full text", () => {
+    const { container } = renderSelected("abcdefg", { start: 2, end: 5 });
+    expect(container.querySelector("code")?.textContent).toBe("abcdefg");
+  });
+
+  it("should combine the selection cuts with word-mark cuts", () => {
+    const { container } = renderSelected("abcdefg", { start: 2, end: 5 }, [{ start: 3, end: 6 }]);
+    expect(runs(container)).toEqual([
+      { text: "ab", marked: false, selected: false },
+      { text: "c", marked: false, selected: true },
+      { text: "de", marked: true, selected: true },
+      { text: "f", marked: true, selected: false },
+      { text: "g", marked: false, selected: false },
+    ]);
+  });
+
+  it("should keep the token class on selected text", () => {
+    const tokens: Token[] = [
+      { text: "let ", className: "tok-keyword" },
+      { text: "x", className: "tok-variable" },
+    ];
+    const { container } = renderSelected("let x", { start: 2, end: 5 }, [], tokens);
+    expect(selectedText(container)).toBe("t x");
+    const x = Array.from(container.querySelectorAll(".tok-variable")).find(
+      (e) => e.textContent === "x",
+    )!;
+    expect(x.closest(`.${styles.selected}`)).not.toBeNull();
+    const t = Array.from(container.querySelectorAll(".tok-keyword")).find(
+      (e) => e.textContent === "t ",
+    )!;
+    expect(t.closest(`.${styles.selected}`)).not.toBeNull();
+  });
+
+  it("should select the whole line when the range covers all of it", () => {
+    const { container } = renderSelected("abc", { start: 0, end: 3 });
+    expect(runs(container)).toEqual([{ text: "abc", marked: false, selected: true }]);
+  });
+
+  it("should select nothing when selected is null", () => {
+    const { container } = renderSelected("abcdefg", null);
+    expect(container.querySelector(`.${styles.selected}`)).toBeNull();
+  });
+
+  it("should select nothing when selected is absent", () => {
+    const { container } = renderSelected("abcdefg", undefined);
+    expect(container.querySelector(`.${styles.selected}`)).toBeNull();
+  });
+
+  it("should select nothing and add no empty piece for an empty range", () => {
+    const { container } = renderSelected("abcdefg", { start: 3, end: 3 });
+    expect(container.querySelector(`.${styles.selected}`)).toBeNull();
+    expect(runs(container).every((r) => r.text.length > 0)).toBe(true);
+  });
+
+  it("should keep the placeholder and select nothing on an empty line", () => {
+    const { container } = renderSelected("", { start: 0, end: 0 });
+    expect(container.querySelector("code")?.textContent).toBe("\u00a0");
+    expect(container.querySelector(`.${styles.selected}`)).toBeNull();
+  });
+});
+
+// Contract: the code carries the line's own text length, so a caret resolver can clamp offsets
+// past the no-newline marker or the empty-line placeholder; the placeholder is the NBSP escape.
+describe("LineContent line length", () => {
+  it("should carry the text length on the code", () => {
+    const { container } = setup("const b = 1");
+    expect(container.querySelector("code")).toHaveAttribute("data-line-length", "11");
+  });
+
+  it("should not count the no-newline marker", () => {
+    const { container } = setup("xyz", null, [], true);
+    expect(container.querySelector("code")).toHaveAttribute("data-line-length", "3");
+  });
+
+  it("should give an empty line length 0 and the NBSP placeholder as its only text", () => {
+    const { container } = setup("");
+    const code = container.querySelector("code")!;
+    expect(code).toHaveAttribute("data-line-length", "0");
+    expect(code.textContent).toBe("\u00a0");
   });
 });

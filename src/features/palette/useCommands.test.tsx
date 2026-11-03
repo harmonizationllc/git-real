@@ -41,7 +41,7 @@ beforeEach(async () => {
   await resetSettings();
   queryClient.clear();
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
-  useShell.setState({ dialog: null, repoActions: null });
+  useShell.setState({ dialog: null, repoActions: null, diffNavigation: null });
   useToasts.setState({ toasts: [] });
   vi.mocked(listRecent).mockResolvedValue([]);
 });
@@ -327,5 +327,67 @@ describe("useCommands always-action run functions", () => {
     );
     act(() => result.current.find((c) => c.label === "Close repository tab")!.run());
     expect(useRepoTabs.getState().tabs.find((t) => t.id === 99)).toBeUndefined();
+  });
+});
+
+// Contract: Next change and Previous change appear only while the active tab publishes a diff.
+describe("useCommands change navigation", () => {
+  const openActive = (id: number) => {
+    useRepoTabs.getState().openTab({
+      id,
+      summary: { path: `/r/repo${id}`, name: `repo${id}`, headBranch: "main", isBare: false },
+    } as OpenedRepo);
+    act(() => useRepoTabs.getState().activate(id));
+  };
+  const labels = (cmds: { label: string }[]) => cmds.map((c) => c.label);
+
+  it("lists both commands in Actions with their shortcut ids and runs the slot", async () => {
+    openActive(5);
+    const nav = { repoId: 5, next: vi.fn(), prev: vi.fn() };
+    act(() => useShell.getState().publishDiffNavigation(nav));
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Next change")).toBeDefined(),
+    );
+    const next = result.current.find((c) => c.label === "Next change")!;
+    const prev = result.current.find((c) => c.label === "Previous change")!;
+    expect(next).toMatchObject({
+      group: "Actions",
+      shortcutId: "nextChange",
+      disabledReason: null,
+    });
+    expect(prev).toMatchObject({
+      group: "Actions",
+      shortcutId: "prevChange",
+      disabledReason: null,
+    });
+    act(() => next.run());
+    expect(nav.next).toHaveBeenCalledTimes(1);
+    expect(nav.prev).not.toHaveBeenCalled();
+    act(() => prev.run());
+    expect(nav.prev).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits both commands when no slot is published", async () => {
+    openActive(5);
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
+    );
+    expect(labels(result.current)).not.toContain("Next change");
+    expect(labels(result.current)).not.toContain("Previous change");
+  });
+
+  it("omits both commands when the slot belongs to another repository", async () => {
+    openActive(5);
+    act(() =>
+      useShell.getState().publishDiffNavigation({ repoId: 6, next: vi.fn(), prev: vi.fn() }),
+    );
+    const { result } = renderHookWithProviders(() => useCommands(stubActions()));
+    await waitFor(() =>
+      expect(result.current.find((c) => c.label === "Open repository…")).toBeDefined(),
+    );
+    expect(labels(result.current)).not.toContain("Next change");
+    expect(labels(result.current)).not.toContain("Previous change");
   });
 });

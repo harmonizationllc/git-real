@@ -57,6 +57,7 @@ import type {
   FileDiff,
   Hunk,
   HunkSelection,
+  LineEdit,
   RepoChangedPayload,
   StatusEntry,
   WorkingTreeStatus,
@@ -153,6 +154,13 @@ describe("worktree DTO shapes", () => {
     const payload: RepoChangedPayload = { repoId: 1 };
     expect(Object.keys(selection).sort()).toEqual(["hunkIndex", "lines"]);
     expect(Object.keys(payload)).toEqual(["repoId"]);
+  });
+
+  it("should accept a HunkSelection carrying partial-line edits", () => {
+    const edit: LineEdit = { index: 1, text: "C" };
+    const selection: HunkSelection = { hunkIndex: 0, lines: [1], edits: [edit] };
+    expect(Object.keys(selection).sort()).toEqual(["edits", "hunkIndex", "lines"]);
+    expect(selection.edits).toEqual([{ index: 1, text: "C" }]);
   });
 
   it("should cover every ChangeKind and the three new AppErrorKind members", () => {

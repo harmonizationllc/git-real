@@ -19,7 +19,7 @@ pub use branch::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, 
 pub use commit::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
 pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,
-    HunkSelection, TextEncoding,
+    HunkSelection, LineEdit, TextEncoding, WHOLE_FILE_CONTEXT,
 };
 pub use history::{Blame, BlameHunk, CommitFile, FileHistoryEntry, FileHistoryPage};
 pub use linked_worktree::{LinkedWorktree, PrunedWorktrees, WorktreeBranch};

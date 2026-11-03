@@ -51,4 +51,11 @@ describe("worktree command argument edges", () => {
     await applyHunk(1, "a.txt", "stage", { hunkIndex: 0, lines: [] });
     expect(calls[0]?.args).toMatchObject({ selection: { hunkIndex: 0, lines: [] } });
   });
+
+  it("should pass applyHunk edits through unchanged", async () => {
+    const calls = capture();
+    const selection = { hunkIndex: 0, lines: [1], edits: [{ index: 1, text: "C" }] };
+    await applyHunk(1, "a.txt", "stage", selection);
+    expect(calls[0]?.args).toEqual({ id: 1, path: "a.txt", action: "stage", selection });
+  });
 });

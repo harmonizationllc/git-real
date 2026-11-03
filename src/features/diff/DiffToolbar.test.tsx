@@ -2,8 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { FileDiff } from "../../lib/ipc";
 import type { DiffMode } from "../../lib/ipc";
+import { formatKeys } from "../../lib/shortcuts";
+import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { DiffToolbar } from "./DiffToolbar";
+import type { ChangeNavigation } from "./useChangeNavigation";
 
 // Two hunks: 2 additions and 1 deletion over 5 lines in total.
 const baseDiff = fileDiff([
@@ -11,11 +14,14 @@ const baseDiff = fileDiff([
   hunk([L("addition", "b", null, 9), L("context", "e", 9, 10)]),
 ]);
 
+type Navigation = Pick<ChangeNavigation, "count" | "current" | "next" | "prev">;
+
 function setup(
   over: {
     diff?: FileDiff;
     mode?: DiffMode;
     ignoreWhitespace?: boolean;
+    navigation?: Partial<Navigation>;
   } = {},
 ) {
   const props = {
@@ -23,15 +29,23 @@ function setup(
     onIgnoreWhitespaceChange: vi.fn(),
     onLoadFull: vi.fn(),
   };
+  const navigation: Navigation = {
+    count: 3,
+    current: null,
+    next: vi.fn(),
+    prev: vi.fn(),
+    ...over.navigation,
+  };
   const view = render(
     <DiffToolbar
       diff={over.diff ?? baseDiff}
       mode={over.mode ?? "split"}
       ignoreWhitespace={over.ignoreWhitespace ?? false}
+      navigation={navigation}
       {...props}
     />,
   );
-  return { ...view, ...props };
+  return { ...view, ...props, navigation };
 }
 
 // Contract: the path now lives in FileHeader; the toolbar shows none.
@@ -252,5 +266,109 @@ describe("DiffToolbar close removal", () => {
   it("should not render a Close diff button", () => {
     setup();
     expect(screen.queryByRole("button", { name: "Close diff" })).toBeNull();
+  });
+});
+
+// Contract: icon-only arrows step through the changes and a counter says where we are.
+describe("DiffToolbar change navigation", () => {
+  const prevButton = () => screen.getByRole("button", { name: "Previous change" });
+  const nextButton = () => screen.getByRole("button", { name: "Next change" });
+
+  it("should render both arrows inside a Changes group with only an svg and no text", () => {
+    setup();
+    const group = screen.getByRole("group", { name: "Changes" });
+    for (const button of [prevButton(), nextButton()]) {
+      expect(group).toContainElement(button);
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")).not.toBeNull();
+    }
+  });
+
+  it("should title the arrows with their default shortcuts", () => {
+    setup();
+    expect(nextButton()).toHaveAttribute("title", `Next change (${formatKeys("F7")})`);
+    expect(prevButton()).toHaveAttribute("title", `Previous change (${formatKeys("Shift+F7")})`);
+  });
+
+  it("should draw centred chevrons", () => {
+    setup();
+    expect(prevButton().querySelector("svg path")).toHaveAttribute("d", "M4 12l6-6 6 6");
+    expect(nextButton().querySelector("svg path")).toHaveAttribute("d", "M4 8l6 6 6-6");
+  });
+
+  it("should drop the shortcut from the title when it is unbound", () => {
+    const original = useSettings.getState().settings;
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        shortcuts: {
+          ...DEFAULT_SETTINGS.shortcuts,
+          bindings: { nextChange: null, prevChange: null },
+        },
+      },
+    });
+    try {
+      setup();
+      expect(nextButton()).toHaveAttribute("title", "Next change");
+      expect(prevButton()).toHaveAttribute("title", "Previous change");
+    } finally {
+      useSettings.setState({ settings: original });
+    }
+  });
+
+  it("should count the changes while none is current", () => {
+    setup({ navigation: { count: 3, current: null } });
+    expect(screen.getByText("3 changes")).toBeInTheDocument();
+  });
+
+  it("should show the position once a change is current", () => {
+    setup({ navigation: { count: 3, current: 1 } });
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+  });
+
+  it("should use the singular for one change", () => {
+    setup({ navigation: { count: 1, current: null } });
+    expect(screen.getByText("1 change")).toBeInTheDocument();
+  });
+
+  it("should disable both arrows when there are no changes", () => {
+    setup({ navigation: { count: 0, current: null } });
+    expect(prevButton()).toBeDisabled();
+    expect(nextButton()).toBeDisabled();
+  });
+
+  it("should disable previous on the first change only", () => {
+    setup({ navigation: { count: 3, current: 0 } });
+    expect(prevButton()).toBeDisabled();
+    expect(nextButton()).toBeEnabled();
+  });
+
+  it("should disable next on the last change only", () => {
+    setup({ navigation: { count: 3, current: 2 } });
+    expect(nextButton()).toBeDisabled();
+    expect(prevButton()).toBeEnabled();
+  });
+
+  it("should enable both arrows when no change is current", () => {
+    setup({ navigation: { count: 3, current: null } });
+    expect(prevButton()).toBeEnabled();
+    expect(nextButton()).toBeEnabled();
+  });
+
+  it("should call next and prev when the arrows are clicked", () => {
+    const { navigation } = setup({ navigation: { count: 3, current: 1 } });
+    fireEvent.click(nextButton());
+    expect(navigation.next).toHaveBeenCalledTimes(1);
+    expect(navigation.prev).not.toHaveBeenCalled();
+    fireEvent.click(prevButton());
+    expect(navigation.prev).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep the summary and mode radios alongside the arrows", () => {
+    setup();
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.getByText("−1")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Side by side" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Unified" })).not.toBeChecked();
   });
 });

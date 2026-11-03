@@ -200,6 +200,7 @@ fn apply_hunk_on_utf16_file_is_bad_selection() {
     let sel = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
     assert!(matches!(
         session.apply_hunk("a.txt", HunkAction::Stage, &sel),
@@ -576,6 +577,7 @@ fn exact_mode_still_rejects_utf16_unstage() {
     let sel = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
     assert!(matches!(
         session.apply_hunk("a.txt", HunkAction::Unstage, &sel),

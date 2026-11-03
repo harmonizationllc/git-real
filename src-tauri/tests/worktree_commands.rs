@@ -8,9 +8,9 @@ use git_real_core::{
     ChangeKind, DiffScope, DiffSide, HunkAction, HunkSelection, RepoSession, WorkingTreeStatus,
 };
 use git_real_lib::commands::worktree::{
-    MAX_PREVIEW_BYTES, add_to_gitignore_inner, apply_hunk_inner, discard_paths_inner,
-    get_file_content_inner, get_file_diff_inner, get_status_inner, stage_all_inner,
-    stage_paths_inner, unstage_all_inner, unstage_paths_inner,
+    DEFAULT_VIEW_LINES, MAX_PREVIEW_BYTES, add_to_gitignore_inner, apply_hunk_inner,
+    discard_paths_inner, get_file_content_inner, get_file_diff_inner, get_status_inner,
+    stage_all_inner, stage_paths_inner, unstage_all_inner, unstage_paths_inner,
 };
 use git_real_lib::error::{AppError, AppErrorKind};
 use git_real_lib::state::{RepoId, RepoRegistry};
@@ -100,35 +100,6 @@ fn get_file_diff_inner_zero_max_lines_is_an_empty_truncated_diff() {
         get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, Some(0)).unwrap();
     let collected: usize = diff.hunks.iter().map(|h| h.lines.len()).sum();
     assert_eq!((collected, diff.truncated), (0, true));
-}
-
-// None means the core default of 10_000 lines, so an explicit 10_000 is equivalent.
-#[test]
-fn get_file_diff_inner_none_matches_the_core_default_cap() {
-    let (_dir, path, reg, id) = open_fixture();
-    let body: String = (0..10_050).map(|i| format!("line {i}\n")).collect();
-    std::fs::write(path.join("README.md"), body).unwrap();
-    let default =
-        get_file_diff_inner(&reg, id, "README.md", DiffScope::Unstaged, false, None).unwrap();
-    let explicit = get_file_diff_inner(
-        &reg,
-        id,
-        "README.md",
-        DiffScope::Unstaged,
-        false,
-        Some(10_000),
-    )
-    .unwrap();
-    let count = |d: &git_real_core::FileDiff| d.hunks.iter().map(|h| h.lines.len()).sum::<usize>();
-    assert_eq!(
-        (
-            count(&default),
-            default.truncated,
-            count(&explicit),
-            explicit.truncated
-        ),
-        (10_000, true, 10_000, true)
-    );
 }
 
 // Every scope/side pair resolves to the documented source through the app layer.
@@ -348,6 +319,7 @@ fn apply_hunk_inner_stages_hunk() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Stage, &selection).unwrap();
@@ -366,6 +338,7 @@ fn apply_hunk_inner_bad_selection_errors() {
     let selection = HunkSelection {
         hunk_index: 99,
         lines: None,
+        edits: vec![],
     };
 
     let err = apply_hunk_inner(&reg, id, "README.md", HunkAction::Stage, &selection)
@@ -416,6 +389,7 @@ fn unknown_repo_id_errors_for_every_command() {
     let sel = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
     let p = paths(&["README.md"]);
     let results: Vec<(&str, Result<(), AppError>)> = vec![
@@ -502,6 +476,7 @@ fn apply_hunk_inner_unstage_clears_staged_hunk() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Unstage, &selection).unwrap();
@@ -520,6 +495,7 @@ fn apply_hunk_inner_discard_restores_worktree_and_keeps_index_untouched() {
     let selection = HunkSelection {
         hunk_index: 0,
         lines: None,
+        edits: vec![],
     };
 
     apply_hunk_inner(&reg, id, "README.md", HunkAction::Discard, &selection).unwrap();
@@ -540,6 +516,7 @@ fn apply_hunk_inner_unstage_bad_selection_errors() {
     let selection = HunkSelection {
         hunk_index: 99,
         lines: None,
+        edits: vec![],
     };
 
     let err = apply_hunk_inner(&reg, id, "README.md", HunkAction::Unstage, &selection)
@@ -795,4 +772,60 @@ fn get_file_diff_inner_with_commit_scope_echoes_the_scope_as_tagged_json() {
         serde_json::to_value(&diff.scope).unwrap(),
         serde_json::json!({ "commit": hex })
     );
+}
+
+// GR-51: the viewer asks for whole-file context and a larger default cap.
+fn numbered_lines(n: usize) -> String {
+    (1..=n).map(|i| format!("line {i}\n")).collect()
+}
+
+fn total_lines(diff: &git_real_core::FileDiff) -> usize {
+    diff.hunks.iter().map(|h| h.lines.len()).sum()
+}
+
+#[test]
+fn get_file_diff_inner_default_cap_is_default_view_lines() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("big.txt"), numbered_lines(60_000)).unwrap();
+
+    let diff = get_file_diff_inner(&reg, id, "big.txt", DiffScope::Unstaged, false, None).unwrap();
+
+    assert!(diff.truncated);
+    assert_eq!(total_lines(&diff), DEFAULT_VIEW_LINES);
+}
+
+#[test]
+fn get_file_diff_inner_explicit_cap_above_file_is_not_truncated() {
+    let (_dir, path, reg, id) = open_fixture();
+    std::fs::write(path.join("big.txt"), numbered_lines(60_000)).unwrap();
+
+    let diff = get_file_diff_inner(
+        &reg,
+        id,
+        "big.txt",
+        DiffScope::Unstaged,
+        false,
+        Some(70_000),
+    )
+    .unwrap();
+
+    assert!(!diff.truncated);
+    assert_eq!(total_lines(&diff), 60_000);
+}
+
+#[test]
+fn get_file_diff_inner_uses_whole_file_context() {
+    let (_dir, path, reg, id) = open_fixture();
+    common::commit_file(&path, "twenty.txt", &numbered_lines(20), "add twenty");
+    std::fs::write(
+        path.join("twenty.txt"),
+        numbered_lines(20).replace("line 10\n", "LINE 10\n"),
+    )
+    .unwrap();
+
+    let diff =
+        get_file_diff_inner(&reg, id, "twenty.txt", DiffScope::Unstaged, false, None).unwrap();
+
+    assert_eq!(diff.hunks.len(), 1);
+    assert_eq!(diff.hunks[0].lines.len(), 21); // 19 context + 1 deletion + 1 addition
 }

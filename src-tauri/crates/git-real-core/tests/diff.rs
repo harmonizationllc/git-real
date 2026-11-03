@@ -2,7 +2,7 @@ mod common;
 
 use git_real_core::{
     ChangeKind, DiffLine, DiffLineKind, DiffOptions, DiffScope, FileDiff, GitError, Hunk,
-    RepoSession,
+    RepoSession, WHOLE_FILE_CONTEXT,
 };
 
 fn diff_of(
@@ -1171,6 +1171,7 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
     let whole = HunkSelection {
         hunk_index: 2,
         lines: None,
+        edits: vec![],
     };
     let value = serde_json::to_value(&whole).unwrap();
     assert_eq!(value, serde_json::json!({ "hunkIndex": 2, "lines": null }));
@@ -1182,6 +1183,7 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
     let subset = HunkSelection {
         hunk_index: 0,
         lines: Some(vec![1, 3]),
+        edits: vec![],
     };
     let value = serde_json::to_value(&subset).unwrap();
     assert_eq!(
@@ -1192,6 +1194,33 @@ fn hunk_selection_serializes_and_parses_whole_hunk_and_line_subset() {
         serde_json::from_value::<HunkSelection>(value).unwrap(),
         subset
     );
+}
+
+#[test]
+fn hunk_selection_serializes_edits_only_when_non_empty() {
+    use git_real_core::{HunkSelection, LineEdit};
+    let with = HunkSelection {
+        hunk_index: 0,
+        lines: Some(vec![1]),
+        edits: vec![LineEdit {
+            index: 1,
+            text: "C".to_owned(),
+        }],
+    };
+    assert_eq!(
+        serde_json::to_value(&with).unwrap(),
+        serde_json::json!({
+            "hunkIndex": 0,
+            "lines": [1],
+            "edits": [{ "index": 1, "text": "C" }]
+        })
+    );
+    let without = HunkSelection {
+        edits: vec![],
+        ..with
+    };
+    let value = serde_json::to_value(&without).unwrap();
+    assert!(value.get("edits").is_none(), "got {value}");
 }
 
 #[test]
@@ -1596,4 +1625,49 @@ fn commit_scope_deleted_file_is_all_deletions() {
             vec![DiffLineKind::Deletion, DiffLineKind::Deletion]
         )
     );
+}
+
+// --- whole-file context ---
+
+#[test]
+fn diff_options_whole_file_values() {
+    let o = DiffOptions::whole_file();
+    assert_eq!(
+        (o.context_lines, o.max_lines, o.ignore_whitespace),
+        (WHOLE_FILE_CONTEXT, usize::MAX, false)
+    );
+    assert!(i32::try_from(WHOLE_FILE_CONTEXT).is_ok());
+}
+
+#[test]
+fn diff_whole_file_context_yields_one_hunk_with_every_line() {
+    // Two edits 14 lines apart: default context splits them into two hunks.
+    let (_dir, path) = common::temp_repo_with_commit();
+    let original: String = (1..=20).map(|i| format!("l{i}\n")).collect();
+    common::write_file(&path, "twenty.txt", &original);
+    common::commit_all(&path, "add file");
+    let edited = original.replace("l3\n", "L3\n").replace("l18\n", "L18\n");
+    common::write_file(&path, "twenty.txt", &edited);
+    assert_eq!(
+        diff_of(
+            &path,
+            "twenty.txt",
+            DiffScope::Unstaged,
+            DiffOptions::default()
+        )
+        .unwrap()
+        .hunks
+        .len(),
+        2
+    );
+    let diff = diff_of(
+        &path,
+        "twenty.txt",
+        DiffScope::Unstaged,
+        DiffOptions::whole_file(),
+    )
+    .unwrap();
+    assert_eq!(diff.hunks.len(), 1);
+    assert_eq!(diff.hunks[0].lines.len(), 22); // 18 context + 2 deletions + 2 additions
+    assert_eq!((diff.hunks[0].old_start, diff.hunks[0].new_start), (1, 1));
 }
