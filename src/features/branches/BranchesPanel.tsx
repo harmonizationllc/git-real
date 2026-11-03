@@ -27,6 +27,7 @@ import styles from "./BranchesPanel.module.css";
 import { filterBranches } from "./branchFilter";
 import { useBranchActions } from "./useBranchActions";
 import { useBranches } from "./useBranches";
+import { UpstreamDialog } from "./UpstreamDialog";
 
 export interface BranchesPanelProps {
   repoId: RepoId;
@@ -54,6 +55,7 @@ interface HeadingMenuState {
 type Dialog =
   | { kind: "create"; title: string; startPoint: string | null; checkout: boolean }
   | { kind: "rename"; name: string }
+  | { kind: "upstream"; name: string; current: string | null }
   | { kind: "deleteLocal"; name: string }
   | { kind: "forceDelete"; name: string }
   | { kind: "deleteRemote"; remote: string; name: string }
@@ -69,6 +71,10 @@ const createDialog = (title: string, startPoint: string | null): CreateDialog =>
   startPoint,
   checkout: true,
 });
+
+/** Every remote-tracking short name (`origin/main`), in the list's remote then branch order. */
+const remoteBranchNames = (list: BranchList | undefined): string[] =>
+  list?.remotes.flatMap((g) => g.branches.map((b) => `${g.remote}/${b.name}`)) ?? [];
 
 /** The non-interactive first Local row for a HEAD that is not on a born branch. */
 function headRow(head: HeadState) {
@@ -160,6 +166,11 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
 
   const confirmRename = async (oldName: string, newName: string) => {
     const err = await actions.run({ action: "rename", oldName, newName });
+    if (err === null) closeDialog();
+  };
+
+  const confirmUpstream = async (name: string, upstream: string | null) => {
+    const err = await actions.run({ action: "setUpstream", name, upstream });
     if (err === null) closeDialog();
   };
 
@@ -322,6 +333,8 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
       ];
     }
     const { name, isHead } = target.branch;
+    const current = target.branch.tracking?.upstream ?? null;
+    const noRemotes = remoteBranchNames(list).length === 0 && current === null;
     return [
       { ...checkout, disabled: pending || isHead || elsewhere !== null },
       ...(isHead && onCreatePullRequest
@@ -346,6 +359,13 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
         label: "Rename…",
         disabled: pending,
         onSelect: () => openDialog({ kind: "rename", name }),
+      },
+      {
+        id: "setUpstream",
+        label: "Set upstream…",
+        disabled: pending || noRemotes,
+        title: noRemotes ? "No remote branches to track" : undefined,
+        onSelect: () => openDialog({ kind: "upstream", name, current }),
       },
       {
         id: "delete",
@@ -539,6 +559,18 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
           error={actions.error}
           pending={actions.pending}
           onConfirm={(newName) => void confirmRename(dialog.name, newName)}
+          onCancel={closeDialog}
+          fallbackFocus={rootRef}
+        />
+      )}
+      {dialog?.kind === "upstream" && (
+        <UpstreamDialog
+          branch={dialog.name}
+          current={dialog.current}
+          candidates={remoteBranchNames(branches)}
+          error={actions.error}
+          pending={actions.pending}
+          onConfirm={(upstream) => void confirmUpstream(dialog.name, upstream)}
           onCancel={closeDialog}
           fallbackFocus={rootRef}
         />

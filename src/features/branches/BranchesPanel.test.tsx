@@ -13,6 +13,7 @@ import {
   rebasePlan,
   removeRemote,
   renameBranch,
+  setBranchUpstream,
 } from "../../lib/ipc";
 import type {
   AppError,
@@ -44,6 +45,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   listBranches: vi.fn(),
   createBranch: vi.fn(),
   renameBranch: vi.fn(),
+  setBranchUpstream: vi.fn(),
   deleteBranch: vi.fn(),
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
@@ -56,11 +58,15 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 }));
 
 const oid = (c: string) => c.repeat(40);
-const localBranch = (name: string, isHead = false): LocalBranch => ({
+const localBranch = (
+  name: string,
+  isHead = false,
+  tracking: LocalBranch["tracking"] = null,
+): LocalBranch => ({
   name,
   oid: oid("a"),
   isHead,
-  tracking: null,
+  tracking,
   worktree: null,
 });
 const list = (over: Partial<BranchList> = {}): BranchList => ({
@@ -125,6 +131,7 @@ beforeEach(() => {
   vi.mocked(listBranches).mockResolvedValue(list());
   vi.mocked(createBranch).mockResolvedValue(localBranch("topic"));
   vi.mocked(renameBranch).mockResolvedValue(undefined);
+  vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
   vi.mocked(deleteBranch).mockResolvedValue(undefined);
   vi.mocked(checkoutBranch).mockResolvedValue(undefined);
   vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
@@ -374,6 +381,7 @@ describe("BranchesPanel context menu", () => {
       "Create branch here…",
       "Create worktree…",
       "Rename…",
+      "Set upstream…",
       "Delete…",
     ]);
   });
@@ -2792,5 +2800,105 @@ describe("BranchesPanel linked worktrees", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "feat/a is checked out in worktree app-feat-a",
     );
+  });
+});
+
+// Contract: every local row offers Set upstream…, after Rename… and before Delete…; it opens the
+// upstream dialog preselected to the row's upstream, and saving calls setBranchUpstream.
+describe("BranchesPanel set upstream", () => {
+  it("should place Set upstream… between Rename… and Delete… on a local row", async () => {
+    await renderPanel();
+    rightClick(localRow("feature"));
+    const labels = itemLabels();
+    expect(labels.indexOf("Set upstream…")).toBe(labels.indexOf("Rename…") + 1);
+    expect(labels.indexOf("Delete…")).toBe(labels.indexOf("Set upstream…") + 1);
+  });
+
+  it("should offer Set upstream… on the current branch too", async () => {
+    await renderPanel();
+    rightClick(localRow("main"));
+    expect(menuItem("Set upstream…")).toBeEnabled();
+  });
+
+  it("should open the dialog preselected to the row's upstream", async () => {
+    const { user } = await renderPanel(
+      list({
+        local: [
+          localBranch("main", true),
+          localBranch("feature", false, { upstream: "origin/other", ahead: 0, behind: 0 }),
+        ],
+      }),
+    );
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Set upstream…"));
+    await dialogNamed("Upstream for feature");
+    expect(screen.getByRole("combobox", { name: "Upstream" })).toHaveValue("origin/other");
+  });
+
+  it("should list the remote-tracking branches as candidates", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Set upstream…"));
+    await dialogNamed("Upstream for feature");
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "None",
+      "origin/main",
+      "origin/other",
+    ]);
+  });
+
+  it("should save the chosen upstream and close the dialog", async () => {
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Set upstream…"));
+    await dialogNamed("Upstream for feature");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Upstream" }), "origin/main");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(setBranchUpstream).toHaveBeenCalledWith(1, "feature", "origin/main"),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("should keep the dialog open and show a backend error", async () => {
+    vi.mocked(setBranchUpstream).mockRejectedValue({
+      kind: "branchNotFound",
+      message: "no branch named origin/main",
+    });
+    const { user } = await renderPanel();
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Set upstream…"));
+    await dialogNamed("Upstream for feature");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Upstream" }), "origin/main");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("no branch named origin/main");
+    expect(screen.getByRole("dialog", { name: "Upstream for feature" })).toBeInTheDocument();
+  });
+
+  it("should disable Set upstream… when there are no remote branches and no upstream", async () => {
+    await renderPanel(list({ remotes: [] }));
+    rightClick(localRow("feature"));
+    expect(menuItem("Set upstream…")).toBeDisabled();
+    expect(menuItem("Set upstream…")).toHaveAttribute("title", "No remote branches to track");
+  });
+
+  it("should keep Set upstream… enabled for a gone upstream with no remote branches", async () => {
+    await renderPanel(
+      list({
+        remotes: [],
+        local: [
+          localBranch("main", true),
+          localBranch("feature", false, { upstream: "origin/gone", ahead: null, behind: null }),
+        ],
+      }),
+    );
+    rightClick(localRow("feature"));
+    expect(menuItem("Set upstream…")).toBeEnabled();
+  });
+
+  it("should not offer Set upstream… on a remote row", async () => {
+    await renderPanel();
+    rightClick(remoteRow("origin", "other"));
+    expect(itemLabels()).not.toContain("Set upstream…");
   });
 });
