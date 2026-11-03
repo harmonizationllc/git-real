@@ -412,7 +412,8 @@ describe("DiffViewer copy", () => {
 });
 
 // Contract: a right-click reports the range when one exists, else the row under the pointer, with
-// the pointer coordinates, and prevents the default; without onContextMenu it opens nothing but still prevents the default.
+// the pointer coordinates, and prevents the default; without onContextMenu it opens nothing but
+// still prevents the default.
 describe("DiffViewer context menu", () => {
   it("should report the row under the pointer when there is no range", () => {
     const { container, onContextMenu } = setup();
