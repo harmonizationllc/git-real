@@ -288,8 +288,12 @@ describe("DiffToolbar change navigation", () => {
     setup();
     expect(nextButton()).toHaveAttribute("title", `Next change (${formatKeys("F7")})`);
     expect(prevButton()).toHaveAttribute("title", `Previous change (${formatKeys("Shift+F7")})`);
-    expect(nextButton()).toHaveAttribute("title", "Next change (F7)");
-    expect(prevButton()).toHaveAttribute("title", "Previous change (Shift+F7)");
+  });
+
+  it("should draw centred chevrons", () => {
+    setup();
+    expect(prevButton().querySelector("svg path")).toHaveAttribute("d", "M4 12l6-6 6 6");
+    expect(nextButton().querySelector("svg path")).toHaveAttribute("d", "M4 8l6 6 6-6");
   });
 
   it("should drop the shortcut from the title when it is unbound", () => {

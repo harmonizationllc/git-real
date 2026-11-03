@@ -171,3 +171,53 @@ describe("useChangeNavigation without a viewer", () => {
     expect(result.current.current).toBe(2);
   });
 });
+
+// Contract: goTo is a no-op without blocks and clamps an out-of-range index.
+describe("useChangeNavigation goTo guard and clamping", () => {
+  it("should do nothing on goTo when the diff has no changes", () => {
+    const quiet = fileDiff([hunk([L("context", "a", 1, 1), L("context", "b", 2, 2)])]);
+    const scrollToRow = vi.fn();
+    const viewer: RefObject<DiffViewerHandle | null> = {
+      current: { scrollToRow, firstVisibleRow: () => 0 },
+    };
+    const rows = buildRows(quiet, "unified");
+    const { result } = renderHook(() => useChangeNavigation(quiet, rows, viewer));
+    expect(result.current.count).toBe(0);
+    act(() => result.current.goTo(0));
+    expect(scrollToRow).not.toHaveBeenCalled();
+    expect(result.current.current).toBeNull();
+  });
+
+  it("should clamp a too-large index to the last block", () => {
+    const { result, scrollToRow } = setup();
+    act(() => result.current.goTo(99));
+    expect(result.current.current).toBe(2);
+    expect(scrollToRow).toHaveBeenCalledExactlyOnceWith(5);
+  });
+
+  it("should clamp a negative index to the first block", () => {
+    const { result, scrollToRow } = setup();
+    act(() => result.current.goTo(-1));
+    expect(result.current.current).toBe(0);
+    expect(scrollToRow).toHaveBeenCalledExactlyOnceWith(0);
+  });
+});
+
+// Contract: a change at row 0 is reachable from the top of the viewport.
+describe("useChangeNavigation change at row 0", () => {
+  it("should go to block 0 on next when it starts at the first visible row", () => {
+    const top = fileDiff([
+      hunk([L("addition", "a0", null, 1), L("context", "c1", 1, 2), L("deletion", "d2", 2, null)]),
+    ]);
+    const scrollToRow = vi.fn();
+    const viewer: RefObject<DiffViewerHandle | null> = {
+      current: { scrollToRow, firstVisibleRow: () => 0 },
+    };
+    const rows = buildRows(top, "unified");
+    expect(changeBlocks(top, rows)[0].firstRow).toBe(0);
+    const { result } = renderHook(() => useChangeNavigation(top, rows, viewer));
+    act(() => result.current.next());
+    expect(result.current.current).toBe(0);
+    expect(scrollToRow).toHaveBeenCalledExactlyOnceWith(0);
+  });
+});
