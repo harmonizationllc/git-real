@@ -38,9 +38,6 @@ export interface DiffViewerProps {
   resolveCaret?: CaretResolver;
 }
 
-/** How many frames a scrollToRow waits for the virtualizer to measure before giving up. */
-const MEASURE_FRAMES = 30;
-
 /** Virtualized rows with a viewer-owned text range, copy and a context-menu target. */
 export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer(
   { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, resolveCaret },
@@ -72,33 +69,16 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   const text = useTextRange(rows, resolve, () => scrollEl, diff);
   const { range } = text;
 
-  // The scroll a scrollToRow causes is not the user's. Its own scroll event clears the flag, and
-  // so does any wheel, pointer or key input, since a scroll to the current offset fires none.
-  const programmatic = useRef(false);
-  // The frame a deferred scrollToRow waits on; 0 is never a frame id, so cancelling it is a no-op.
-  const frame = useRef({ id: 0 });
-  useEffect(() => {
-    const pending = frame.current;
-    return () => cancelAnimationFrame(pending.id);
-  }, []);
+  // A scroll is the user's only after a wheel, pointer or key gesture on the container. Bare
+  // scroll events never count: the virtualizer keeps correcting a jump over later frames.
+  const intent = useRef(false);
 
   useImperativeHandle(
     ref,
     () => ({
       scrollToRow: (index) => {
-        // A newer call replaces one still waiting for measurement.
-        cancelAnimationFrame(frame.current.id);
-        // Before the virtualizer has measured, a scroll is a no-op: retry on later frames.
-        const attempt = (framesLeft: number) => {
-          if (virtualizer.getTotalSize() > 0) {
-            // Armed only when the scroll is issued, so input while waiting is still the user's.
-            programmatic.current = true;
-            virtualizer.scrollToIndex(index, { align: "start" });
-          } else if (framesLeft > 0) {
-            frame.current.id = requestAnimationFrame(() => attempt(framesLeft - 1));
-          }
-        };
-        attempt(MEASURE_FRAMES);
+        intent.current = false;
+        virtualizer.scrollToIndex(index, { align: "start" });
       },
       firstVisibleRow: () => virtualizer.range?.startIndex ?? 0,
     }),
@@ -112,11 +92,10 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   }, []);
 
   const onScroll = () => {
-    if (programmatic.current) programmatic.current = false;
-    else onUserScroll?.();
+    if (intent.current) onUserScroll?.();
   };
   const userInput = () => {
-    programmatic.current = false;
+    intent.current = true;
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
