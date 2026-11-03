@@ -1057,8 +1057,9 @@ fn build_patch_picked_index_in_later_hunk_does_not_leak_across_hunks() {
 
 #[test]
 fn build_patch_reverse_marker_only_after_last_line_of_its_side() {
-    // Reverse with only the deletion picked: `+x` is followed by context `y`, so
-    // the restored x ends in a newline and must carry no marker; `y` keeps its own.
+    // Reverse with only the deletion picked: the pair is written in slot order,
+    // `+x` then the kept `y`, so the restored x ends in a newline and carries no
+    // marker; `y` keeps its own on both sides.
     let diff = hand_diff(
         ChangeKind::Modified,
         vec![
@@ -1072,7 +1073,7 @@ fn build_patch_reverse_marker_only_after_last_line_of_its_side() {
     let patch = build_patch(&diff, &picked(&[1]), true, 0o100644).expect("patch");
     assert_eq!(
         patch,
-        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,3 @@\n a\n+x\n y\n\\ No newline at end of file\n"
+        "diff --git a/f.txt b/f.txt\nindex 0000000..0000000 100644\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,3 @@\n a\n-y\n\\ No newline at end of file\n+x\n+y\n\\ No newline at end of file\n"
     );
 }
 

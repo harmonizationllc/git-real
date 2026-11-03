@@ -638,11 +638,12 @@ mod tests {
     // In reverse the patch targets the side that holds the additions, so
     // unselected additions are context and unselected deletions are dropped.
     #[test]
-    fn build_patch_reverse_partial_keeps_unselected_additions_as_context() {
+    fn build_patch_reverse_partial_keeps_unselected_additions_in_their_slot() {
+        // Pair 0 (c→a) restored, d kept: a takes slot 0 and d stays in slot 1.
         let patch = build_patch(&two_for_two(), &lines(0, &[0, 2]), true, MODE).expect("patch");
         assert_eq!(
             patch,
-            format!("{}@@ -1,2 +1,2 @@\n+a\n-c\n d\n", modify_head("f.txt"))
+            format!("{}@@ -1,2 +1,2 @@\n-c\n-d\n+a\n+d\n", modify_head("f.txt"))
         );
     }
 
