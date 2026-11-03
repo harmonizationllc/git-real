@@ -115,6 +115,11 @@ describe("BranchRow tracking badge", () => {
     expect(screen.getByLabelText("2 ahead, 1 behind")).toHaveTextContent("↑2 ↓1");
   });
 
+  it("should expose the count badge as an image with its accessible name", () => {
+    renderRow({ target: local({ tracking: tracking({ ahead: 2, behind: 1 }) }) });
+    expect(screen.getByRole("img", { name: "2 ahead, 1 behind" })).toHaveTextContent("↑2 ↓1");
+  });
+
   it("should show gone when both counts are null", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: null, behind: null }) }) });
     expect(screen.getByText("gone")).toBeInTheDocument();
@@ -244,22 +249,32 @@ describe("BranchRow keyboard default handling", () => {
   });
 });
 
-// Contract: the badge always shows both counts unless the upstream is gone.
+// Contract: the badge names only the non-zero counts and is absent when in sync.
 describe("BranchRow tracking badge counts", () => {
-  it("should show an ahead-only branch as ↑3 ↓0 with a matching label", () => {
+  it("should show an ahead-only branch as ↑3 with a matching label", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: 3, behind: 0 }) }) });
-    expect(screen.getByLabelText("3 ahead, 0 behind")).toHaveTextContent("↑3 ↓0");
+    expect(screen.getByLabelText("3 ahead")).toHaveTextContent(/^↑3$/);
   });
 
-  it("should show a behind-only branch as ↑0 ↓4 with a matching label", () => {
+  it("should show a behind-only branch as ↓4 with a matching label", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: 0, behind: 4 }) }) });
-    expect(screen.getByLabelText("0 ahead, 4 behind")).toHaveTextContent("↑0 ↓4");
+    expect(screen.getByLabelText("4 behind")).toHaveTextContent(/^↓4$/);
   });
 
-  it("should show an in-sync branch as ↑0 ↓0 rather than gone", () => {
+  it("should show no badge for an in-sync branch", () => {
     renderRow({ target: local({ tracking: tracking({ ahead: 0, behind: 0 }) }) });
-    expect(screen.getByText("↑0 ↓0")).toBeInTheDocument();
+    expect(screen.queryByText(/[↑↓]/)).toBeNull();
+    expect(screen.queryByLabelText(/ahead|behind/)).toBeNull();
     expect(screen.queryByText("gone")).toBeNull();
+    expect(rowButton()).toHaveTextContent(/^main$/);
+  });
+
+  it("should keep the worktree badge on an in-sync branch", () => {
+    renderRow({
+      target: local({ tracking: tracking({ ahead: 0, behind: 0 }), worktree: "/w/feature-x" }),
+    });
+    expect(screen.queryByText(/[↑↓]/)).toBeNull();
+    expect(screen.getByText("feature-x")).toBeInTheDocument();
   });
 
   it("should show gone when only one count is null", () => {
