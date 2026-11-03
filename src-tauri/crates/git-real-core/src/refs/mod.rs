@@ -180,16 +180,23 @@ impl RepoSession {
     ) -> Result<(), GitError> {
         let repo = self.repo();
         let mut local = find_local(repo, branch)?;
-        match upstream {
-            Some(name) => {
-                find_branch_exact(repo, name, BranchType::Remote)?;
-            }
-            // libgit2 errors when there is no upstream to unset; that is
-            // already the requested state.
-            None if local.upstream().is_err() => return Ok(()),
-            None => {}
+        if let Some(name) = upstream {
+            find_branch_exact(repo, name, BranchType::Remote)?;
         }
-        local.set_upstream(upstream)?;
+        match upstream {
+            Some(_) => local.set_upstream(upstream)?,
+            None => {
+                // `set_upstream(None)` fails when either key is missing, and a
+                // gone upstream still has its keys, so remove what exists.
+                let mut config = repo.config()?;
+                for key in ["remote", "merge"] {
+                    let key = format!("branch.{branch}.{key}");
+                    if config.get_entry(&key).is_ok() {
+                        config.remove(&key)?;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

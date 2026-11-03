@@ -1452,6 +1452,40 @@ fn set_branch_upstream_none_on_an_untracked_branch_is_a_no_op() {
 }
 
 #[test]
+fn set_branch_upstream_none_clears_a_gone_upstream() {
+    let (_d, _b, path, _bare, head) = remote_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .find_reference(&format!("refs/remotes/origin/{head}"))
+        .unwrap()
+        .delete()
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    let list = session.list_branches().unwrap();
+    let tracking = list
+        .local
+        .iter()
+        .find(|b| b.name == head)
+        .unwrap()
+        .tracking
+        .clone()
+        .expect("gone upstream is still reported");
+    assert_eq!(tracking.upstream, format!("origin/{head}"));
+    assert_eq!((tracking.ahead, tracking.behind), (None, None));
+
+    session.set_branch_upstream(&head, None).unwrap();
+
+    let config = Repository::open(&path).unwrap().config().unwrap();
+    assert!(config.get_string(&format!("branch.{head}.remote")).is_err());
+    assert!(config.get_string(&format!("branch.{head}.merge")).is_err());
+    let list = session.list_branches().unwrap();
+    assert_eq!(
+        list.local.iter().find(|b| b.name == head).unwrap().tracking,
+        None
+    );
+}
+
+#[test]
 fn set_branch_upstream_is_case_exact_when_ignorecase() {
     let (_d, _b, path, _bare, head) = remote_fixture();
     common::set_ignorecase(&path, true);
