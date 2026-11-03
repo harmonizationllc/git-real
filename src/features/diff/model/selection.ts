@@ -62,8 +62,10 @@ export function coveredText(diff: FileDiff, rows: DiffRow[], range: TextRange): 
 interface Pair {
   del: number;
   add: number;
-  units: EditUnit[];
+  /** The pair's edit units, computed only once a row of the pair is partially covered. */
+  units: EditUnit[] | null;
   chosen: Set<number>;
+  /** Acted on whole: every unit is chosen, so the units are never needed. */
   whole: boolean;
 }
 
@@ -115,13 +117,7 @@ function rangeSelection(
   const pairFor = (del: number, add: number): Pair => {
     let p = pairs.get(del);
     if (!p) {
-      p = {
-        del,
-        add,
-        units: lineEdits(lines[del].content, lines[add].content),
-        chosen: new Set(),
-        whole: false,
-      };
+      p = { del, add, units: null, chosen: new Set(), whole: false };
       pairs.set(del, p);
     }
     return p;
@@ -141,6 +137,8 @@ function rangeSelection(
       p.whole = true;
       return;
     }
+    if (p.whole) return;
+    p.units ??= lineEdits(lines[p.del].content, lines[p.add].content);
     p.units.forEach((u, k) => {
       const r = isDel ? u.old : u.new;
       const hit =
@@ -172,7 +170,9 @@ function rangeSelection(
   const selected = new Set<number>(solo);
   const edits: LineEdit[] = [];
   for (const p of pairs.values()) {
-    if (p.whole || (p.chosen.size > 0 && p.chosen.size === p.units.length)) {
+    // A pair that is not whole was partially covered, so its units exist.
+    const units = p.units as EditUnit[];
+    if (p.whole || (p.chosen.size > 0 && p.chosen.size === units.length)) {
       selected.add(p.del).add(p.add);
     } else if (p.chosen.size > 0) {
       const index = forward ? p.del : p.add;
@@ -180,7 +180,7 @@ function rangeSelection(
       const text = applyUnits(
         lines[p.del].content,
         lines[p.add].content,
-        p.units,
+        units,
         p.chosen,
         forward,
       );
