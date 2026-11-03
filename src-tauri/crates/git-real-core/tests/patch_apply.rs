@@ -385,15 +385,13 @@ fn repo_with_two_distant_edits() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[test]
-fn apply_hunk_stage_second_hunk_alone() {
+fn apply_hunk_stage_second_change_alone() {
     let (_dir, path) = repo_with_two_distant_edits();
-    let selection = HunkSelection {
-        hunk_index: 1,
-        lines: None,
-    };
+    // Whole-file hunk: l1, -l2, +L2, l3..l17, -l18, +L18, l19, l20; 18 and 19 are the l18 change.
+    let selection = picked(&[18, 19]);
     session(&path)
         .apply_hunk("f.txt", HunkAction::Stage, &selection)
-        .expect("stage second hunk");
+        .expect("stage second change");
     assert_eq!(
         changed(&path, DiffScope::Staged),
         vec![
@@ -461,10 +459,11 @@ fn apply_hunk_discard_preserves_executable_disk_mode() {
         .replace("l18\n", "L18\n");
     common::write_file(&path, "run.sh", &edited);
     session(&path)
-        .apply_hunk("run.sh", HunkAction::Stage, &whole())
-        .expect("stage hunk");
+        .apply_hunk("run.sh", HunkAction::Stage, &picked(&[1, 2]))
+        .expect("stage first change");
+    // Unstaged whole-file hunk is now l1, L2, l3..l17, -l18, +L18, l19, l20.
     session(&path)
-        .apply_hunk("run.sh", HunkAction::Discard, &whole())
+        .apply_hunk("run.sh", HunkAction::Discard, &picked(&[17, 18]))
         .expect("discard hunk");
     let disk_mode = std::fs::metadata(path.join("run.sh"))
         .expect("metadata")
@@ -769,29 +768,25 @@ fn apply_hunk_unstage_lines_of_added_file_keeps_unselected_lines_staged() {
 }
 
 #[test]
-fn apply_hunk_discard_second_hunk_alone_keeps_first_edit() {
+fn apply_hunk_discard_second_change_alone_keeps_first_edit() {
     let (_dir, path) = repo_with_two_distant_edits();
-    let selection = HunkSelection {
-        hunk_index: 1,
-        lines: None,
-    };
+    // Whole-file hunk: l1, -l2, +L2, l3..l17, -l18, +L18, l19, l20; 18 and 19 are the l18 change.
+    let selection = picked(&[18, 19]);
     session(&path)
         .apply_hunk("f.txt", HunkAction::Discard, &selection)
-        .expect("discard second hunk");
+        .expect("discard second change");
     assert_eq!(read(&path, "f.txt"), twenty_lines().replace("l2\n", "L2\n"));
 }
 
 #[test]
-fn apply_hunk_unstage_second_hunk_alone_keeps_first_edit_staged() {
+fn apply_hunk_unstage_second_change_alone_keeps_first_edit_staged() {
     let (_dir, path) = repo_with_two_distant_edits();
     common::stage(&path, "f.txt");
-    let selection = HunkSelection {
-        hunk_index: 1,
-        lines: None,
-    };
+    // Whole-file hunk: l1, -l2, +L2, l3..l17, -l18, +L18, l19, l20; 18 and 19 are the l18 change.
+    let selection = picked(&[18, 19]);
     session(&path)
         .apply_hunk("f.txt", HunkAction::Unstage, &selection)
-        .expect("unstage second hunk");
+        .expect("unstage second change");
     assert_eq!(
         changed(&path, DiffScope::Staged),
         vec![

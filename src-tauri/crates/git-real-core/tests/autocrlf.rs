@@ -36,7 +36,7 @@ fn base() -> String {
     text(&[])
 }
 
-/// Lines 2 and 10 edited: far enough apart for two hunks at 3 context lines.
+/// Lines 2 and 10 edited: two changes inside one whole-file hunk.
 fn edited() -> String {
     text(&[(2, "L2"), (10, "L10")])
 }
@@ -147,13 +147,6 @@ fn assert_twin(product: &Path, twin: &Path) {
     assert_eq!(git_status(twin), git_status(product), "status vs git");
 }
 
-fn hunk(index: usize) -> HunkSelection {
-    HunkSelection {
-        hunk_index: index,
-        lines: None,
-    }
-}
-
 fn lines(index: usize, picked: &[usize]) -> HunkSelection {
     HunkSelection {
         hunk_index: index,
@@ -181,7 +174,7 @@ fn stage_hunk_stores_lf_and_leaves_worktree() {
     let (_d, path) = crlf_repo("true");
     write_work(&path, &crlf(&edited()));
     session(&path)
-        .apply_hunk(F, HunkAction::Stage, &hunk(0))
+        .apply_hunk(F, HunkAction::Stage, &lines(0, &[1, 2]))
         .expect("stage hunk");
     assert_eq!(work(&path), crlf(&edited()));
     assert_eq!(index_blob(&path), lf(&text(&[(2, "L2")])));
@@ -196,9 +189,9 @@ fn stage_hunk_stores_lf_and_leaves_worktree() {
 fn stage_lines_stores_lf() {
     let (_d, path) = crlf_repo("true");
     write_work(&path, &crlf(&edited()));
-    // Hunk 1 is [l7, l8, l9, -l10, +L10, l11, l12].
+    // The whole-file hunk is [l1, -l2, +L2, l3..l9, -l10, +L10, l11, l12]; 10 and 11 are the l10 change.
     session(&path)
-        .apply_hunk(F, HunkAction::Stage, &lines(1, &[3, 4]))
+        .apply_hunk(F, HunkAction::Stage, &lines(0, &[10, 11]))
         .expect("stage lines");
     assert_eq!(work(&path), crlf(&edited()));
     assert_eq!(index_blob(&path), lf(&text(&[(10, "L10")])));
@@ -216,7 +209,7 @@ fn unstage_hunk_keeps_worktree() {
     let s = session(&path);
     s.stage_paths(&[F.to_owned()]).expect("stage file");
     assert_eq!(index_blob(&path), lf(&edited()));
-    s.apply_hunk(F, HunkAction::Unstage, &hunk(0))
+    s.apply_hunk(F, HunkAction::Unstage, &lines(0, &[1, 2]))
         .expect("unstage hunk");
     assert_eq!(work(&path), crlf(&edited()));
     assert_eq!(index_blob(&path), lf(&text(&[(10, "L10")])));
@@ -228,11 +221,11 @@ fn unstage_hunk_keeps_worktree() {
 }
 
 #[test]
-fn discard_hunk_keeps_crlf_and_other_hunk() {
+fn discard_change_keeps_crlf_and_other_change() {
     let (_d, path) = crlf_repo("true");
     write_work(&path, &crlf(&edited()));
     session(&path)
-        .apply_hunk(F, HunkAction::Discard, &hunk(0))
+        .apply_hunk(F, HunkAction::Discard, &lines(0, &[1, 2]))
         .expect("discard hunk");
     assert_eq!(work(&path), crlf(&text(&[(10, "L10")])));
     assert_eq!(index_blob(&path), lf(&base()));
@@ -243,7 +236,7 @@ fn discard_hunk_keeps_crlf_and_other_hunk() {
 fn discard_lines_keeps_crlf() {
     let (_d, path) = crlf_repo("true");
     write_work(&path, &crlf(&edited()));
-    // Hunk 0 is [l1, -l2, +L2, l3, l4, l5].
+    // The whole-file hunk is [l1, -l2, +L2, ...]; 1 and 2 are the l2 change.
     session(&path)
         .apply_hunk(F, HunkAction::Discard, &lines(0, &[1, 2]))
         .expect("discard lines");
@@ -518,7 +511,7 @@ fn input_stage_hunk_lf() {
     // An editor that saves CRLF: staging must still store LF.
     write_work(&path, &crlf(&edited()));
     session(&path)
-        .apply_hunk(F, HunkAction::Stage, &hunk(0))
+        .apply_hunk(F, HunkAction::Stage, &lines(0, &[1, 2]))
         .expect("stage hunk");
     assert_eq!(work(&path), crlf(&edited()));
     assert_eq!(index_blob(&path), lf(&text(&[(2, "L2")])));
@@ -534,7 +527,7 @@ fn input_discard_hunk_keeps_lf() {
     let (_d, path) = crlf_repo("input");
     write_work(&path, &lf(&edited()));
     session(&path)
-        .apply_hunk(F, HunkAction::Discard, &hunk(0))
+        .apply_hunk(F, HunkAction::Discard, &lines(0, &[1, 2]))
         .expect("discard hunk");
     assert_eq!(work(&path), lf(&text(&[(10, "L10")])));
     assert_eq!(index_blob(&path), lf(&base()));
@@ -565,7 +558,7 @@ fn input_discard_hunk_of_a_crlf_file() {
     // file comes back LF, as git's own apply-through-the-filters leaves it.
     write_work(&path, &crlf(&edited()));
     session(&path)
-        .apply_hunk(F, HunkAction::Discard, &hunk(0))
+        .apply_hunk(F, HunkAction::Discard, &lines(0, &[1, 2]))
         .expect("discard hunk");
     assert_eq!(work(&path), lf(&text(&[(10, "L10")])));
     assert_eq!(index_blob(&path), lf(&base()));
