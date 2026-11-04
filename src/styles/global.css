@@ -208,6 +208,15 @@ b {
   font-weight: 700;
 }
 
+/* A section's header row: an accent-tinted band under the heading and its buttons. Each panel adds
+   its own right padding. */
+.gr-section-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  background: var(--color-accent-tint);
+}
+
 /* Section headings in panels. A global class so every panel's heading reads the same. */
 .gr-section-heading {
   margin: 0;
@@ -216,6 +225,11 @@ b {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--color-on-accent-tint);
+}
+
+/* A sub-heading inside a section (a remote's name) stays off the band, so it stays muted. */
+.gr-section-heading[data-sub] {
   color: var(--color-text-muted);
 }
 

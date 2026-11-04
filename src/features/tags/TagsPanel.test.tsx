@@ -82,6 +82,14 @@ const waitForBranches = () => waitFor(() => expect(plus()).toBeEnabled());
 
 // Contract: a collapsible Tags section; collapsed by default, the preference is stored.
 describe("TagsPanel collapse", () => {
+  it("puts the heading row on the accent band", async () => {
+    renderWithProviders(<TagsPanel repoId={1} />);
+    await waitFor(() => expect(toggle()).toHaveTextContent("Tags (3)"));
+    expect(
+      screen.getByRole("heading", { name: /^Tags/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("should render a collapsed Tags (n) toggle with aria-expanded false and no list", async () => {
     renderWithProviders(<TagsPanel repoId={1} />);
     await waitFor(() => expect(toggle()).toHaveTextContent("Tags (3)"));
@@ -654,7 +662,7 @@ describe("TagsPanel sign-in", () => {
 
 describe("section header alignment", () => {
   it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/features/tags/TagsPanel.module.css", "utf8");
-    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+    const css = readFileSync("src/styles/global.css", "utf8");
+    expect(declarationsOf(css, "gr-section-header")).toMatch(/align-items:\s*flex-end/);
   });
 });

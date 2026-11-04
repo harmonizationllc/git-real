@@ -1562,7 +1562,7 @@ describe("RepoPane remotes dialog", () => {
 
   it("Edit remote… on a remote heading opens the dialog on that remote's form", async () => {
     const { user } = renderWithProviders(<RepoPane tab={tab(1)} />);
-    fireEvent.contextMenu(await screen.findByRole("heading", { level: 2, name: "origin" }), {
+    fireEvent.contextMenu(await screen.findByRole("heading", { level: 3, name: "origin" }), {
       clientX: 5,
       clientY: 5,
     });
@@ -1646,7 +1646,7 @@ describe("RepoPane remotes dialog", () => {
       return Promise.resolve();
     });
     const { user } = renderWithProviders(<RepoPane tab={tab(1)} />);
-    fireEvent.contextMenu(await screen.findByRole("heading", { level: 2, name: "origin" }), {
+    fireEvent.contextMenu(await screen.findByRole("heading", { level: 3, name: "origin" }), {
       clientX: 5,
       clientY: 5,
     });
@@ -1655,7 +1655,7 @@ describe("RepoPane remotes dialog", () => {
     await user.clear(nameInput);
     await user.type(nameInput, "renamed");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await screen.findByRole("heading", { level: 2, name: "renamed" });
+    await screen.findByRole("heading", { level: 3, name: "renamed" });
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.getByRole("region", { name: "repo1" })).toHaveFocus();
   });

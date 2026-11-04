@@ -78,6 +78,7 @@ describe("LocalSection heading", () => {
     renderLocal();
     await waitFor(() => expect(toggle()).toHaveTextContent("Local (2)"));
     expect(screen.getByRole("heading", { level: 2, name: "Local (2)" })).toContainElement(toggle());
+    expect(screen.getByRole("heading", { level: 2 }).closest(".gr-section-header")).not.toBeNull();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     const controlled = document.getElementById(toggle().getAttribute("aria-controls") as string);
     expect(controlled).toContainElement(screen.getByRole("list", { name: "Local branches" }));

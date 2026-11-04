@@ -170,7 +170,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
 
   return (
     <section aria-labelledby={headingId} className={styles.root}>
-      <div className={styles.header}>
+      <div className={`gr-section-header ${styles.header}`}>
         <h2
           id={headingId}
           ref={headingRef}

@@ -113,6 +113,13 @@ describe("WorktreesPanel list", () => {
     expect(rows.map((r) => r.getAttribute("title"))).toEqual(["/repos/app", "/repos/app-feat-a"]);
   });
 
+  it("puts the heading row on the accent band", async () => {
+    await renderPanel();
+    expect(
+      screen.getByRole("heading", { name: /^Worktrees/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("should label the region by the heading", async () => {
     await renderPanel();
     expect(screen.getByRole("region", { name: "Worktrees (2)" })).not.toHaveAttribute("aria-busy");

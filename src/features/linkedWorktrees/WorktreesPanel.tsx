@@ -145,7 +145,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={styles.header}>
+      <div className={`gr-section-header ${styles.header}`}>
         <h2
           id={headingId}
           ref={headingRef}

@@ -96,6 +96,13 @@ describe("PullRequestsPanel visibility", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("puts the heading row on the accent band", async () => {
+    await renderPanel();
+    expect(
+      screen.getByRole("heading", { name: /^Pull requests/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("labels the region by its heading and marks the heading a focus target", async () => {
     await renderPanel();
     expect(screen.getByRole("region", { name: "Pull requests (2)" })).toBeInTheDocument();
@@ -623,8 +630,8 @@ describe("PullRequestsPanel row menu toggle", () => {
 
 describe("section header alignment", () => {
   it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/features/hosting/PullRequestsPanel.module.css", "utf8");
-    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+    const css = readFileSync("src/styles/global.css", "utf8");
+    expect(declarationsOf(css, "gr-section-header")).toMatch(/align-items:\s*flex-end/);
   });
 });
 

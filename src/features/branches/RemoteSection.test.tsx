@@ -101,9 +101,12 @@ describe("RemoteSection heading", () => {
     await screen.findByRole("list", { name: "origin branches" });
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
       "Remote (3)",
+    ]);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
       "origin",
       "up",
     ]);
+    expect(screen.getByRole("heading", { level: 2 }).closest(".gr-section-header")).not.toBeNull();
     expect(screen.getByRole("list", { name: "up branches" })).toBeInTheDocument();
   });
 
@@ -167,7 +170,7 @@ describe("RemoteSection collapse", () => {
 describe("RemoteSection actions", () => {
   it("should remove a remote from its sub-heading's Remove remote…", async () => {
     const { user } = renderRemote();
-    rightClick(await screen.findByRole("heading", { level: 2, name: "origin" }));
+    rightClick(await screen.findByRole("heading", { level: 3, name: "origin" }));
     await user.click(screen.getByRole("menuitem", { name: "Remove remote…" }));
     const dialog = await screen.findByRole("dialog", { name: "Remove remote origin?" });
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
@@ -176,7 +179,7 @@ describe("RemoteSection actions", () => {
 
   it("should open the remotes dialog for the sub-heading's Edit remote…", async () => {
     const { user } = renderRemote();
-    rightClick(await screen.findByRole("heading", { level: 2, name: "up" }));
+    rightClick(await screen.findByRole("heading", { level: 3, name: "up" }));
     await user.click(screen.getByRole("menuitem", { name: "Edit remote…" }));
     expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "up" });
   });

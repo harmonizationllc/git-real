@@ -330,7 +330,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
             const pane = section !== "conflicts";
             const content = (
               <>
-                <div className={styles.sectionHeader}>
+                <div className={`gr-section-header ${styles.sectionHeader}`}>
                   <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
                     {title} ({rows[section].length})
                   </h2>

@@ -176,6 +176,8 @@ describe("BranchesPanel rendering", () => {
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
       "Local (2)",
       "Remote (2)",
+    ]);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
       "origin",
     ]);
   });
@@ -2449,7 +2451,7 @@ describe("BranchesPanel focus fallback", () => {
 
 // Contract: a remote group's heading has its own menu (Edit remote…, Remove remote…); Local has none.
 describe("BranchesPanel remote heading menu", () => {
-  const originHeading = () => screen.getByRole("heading", { level: 2, name: "origin" });
+  const originHeading = () => screen.getByRole("heading", { level: 3, name: "origin" });
 
   async function renderWithOpen() {
     const onOpenRemotes = vi.fn();
@@ -2505,7 +2507,7 @@ describe("BranchesPanel remote heading menu", () => {
     const { user } = renderWithProviders(
       <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} onCreatePullRequest={null} />,
     );
-    rightClick(await screen.findByRole("heading", { level: 2, name: "up" }));
+    rightClick(await screen.findByRole("heading", { level: 3, name: "up" }));
     await user.click(menuItem("Edit remote…"));
     expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "up" });
   });

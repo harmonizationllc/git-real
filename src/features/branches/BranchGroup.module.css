@@ -13,37 +13,15 @@
   color: var(--color-text-muted);
 }
 
-/* A section's header row: the heading takes the width, buttons sit at its right. */
+/* The section header, heading and collapse toggle are shared with the other panels. */
 .header {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding-right: 10px;
+  composes: header from "../tags/TagsPanel.module.css";
 }
 
 .heading {
-  flex: 1;
+  composes: heading from "../tags/TagsPanel.module.css";
 }
 
-/* A text-styled button carrying the heading's font. */
 .toggle {
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
-  cursor: pointer;
-}
-
-/* The caret's alt text is empty, so it stays out of the accessible name. */
-.toggle::before {
-  content: "▸ ";
-  content: "▸ " / "";
-}
-
-.toggle[aria-expanded="true"]::before {
-  content: "▾ ";
-  content: "▾ " / "";
+  composes: toggle from "../tags/TagsPanel.module.css";
 }

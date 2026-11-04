@@ -92,6 +92,13 @@ describe("StashesPanel list", () => {
     expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
   });
 
+  it("puts the heading row on the accent band", async () => {
+    await renderPanel();
+    expect(
+      screen.getByRole("heading", { name: /^Stashes/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("should show Stashes (2) and one row per stash", async () => {
     await renderPanel();
     expect(screen.getByRole("heading", { name: "Stashes (2)" })).toBeInTheDocument();
@@ -563,8 +570,8 @@ describe("StashesPanel feedback edge cases", () => {
 
 describe("section header alignment", () => {
   it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/features/stash/StashesPanel.module.css", "utf8");
-    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+    const css = readFileSync("src/styles/global.css", "utf8");
+    expect(declarationsOf(css, "gr-section-header")).toMatch(/align-items:\s*flex-end/);
   });
 });
 

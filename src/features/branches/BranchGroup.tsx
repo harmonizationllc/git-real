@@ -68,9 +68,9 @@ export function BranchGroup({ heading, onHeadingContextMenu, ...body }: BranchGr
   };
   return (
     <section className={styles.group} aria-labelledby={headingId}>
-      <h2 id={headingId} className="gr-section-heading" {...menuProps}>
+      <h3 id={headingId} className="gr-section-heading" data-sub {...menuProps}>
         {heading}
-      </h2>
+      </h3>
       <BranchGroupBody {...body} />
     </section>
   );
@@ -96,7 +96,7 @@ export function BranchSectionHeader({
   children,
 }: BranchSectionHeaderProps) {
   return (
-    <div className={styles.header}>
+    <div className={`gr-section-header ${styles.header}`}>
       <h2 className={`gr-section-heading ${styles.heading}`}>
         <button
           type="button"
