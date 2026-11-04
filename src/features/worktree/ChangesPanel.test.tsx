@@ -1879,7 +1879,6 @@ class StubResizeObserver {
   }
 }
 
-const observer = () => StubResizeObserver.instances.at(-1) as StubResizeObserver;
 const body = () => screen.getByTestId("changes-body");
 const pane = (p: "unstaged" | "staged") => body().querySelector<HTMLElement>(`[data-pane="${p}"]`)!;
 const conflictsSection = () => screen.getByRole("region", { name: /Conflicts/ });
@@ -1891,7 +1890,9 @@ function measure(bodyHeight: number, conflictsHeight = 0) {
   if (screen.queryByTestId("conflicts-content") !== null) {
     entries.push({ target: conflictsContent(), height: conflictsHeight });
   }
-  act(() => observer().fire(entries));
+  // Each live observer ignores targets it does not watch.
+  const live = StubResizeObserver.instances.filter((o) => o.disconnect.mock.calls.length === 0);
+  act(() => live.forEach((o) => o.fire(entries)));
 }
 
 describe("ChangesPanel split", () => {
@@ -1981,15 +1982,13 @@ describe("ChangesPanel split", () => {
     expect(pane("staged").style.height).toBe("200px");
   });
 
-  it("drops a stale measurement when Conflicts goes away", async () => {
+  it("keeps the body measurement when Conflicts goes away", async () => {
     const { queryClient } = await renderPanel(conflict("c.txt"));
     measure(406, 300);
     expect(pane("unstaged").style.height).toBe("120px");
     vi.mocked(getStatus).mockResolvedValue(status(unstaged("a.txt")));
     await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
     await waitFor(() => expect(screen.queryByTestId("conflicts-content")).toBeNull());
-    expect(pane("unstaged").style.height).toBe("");
-    measure(406);
     expect(pane("unstaged").style.height).toBe("200px");
     expect(pane("staged").style.height).toBe("200px");
   });

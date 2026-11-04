@@ -75,6 +75,15 @@ describe("fitChangesPanes", () => {
     });
   });
 
+  it("rounds a fractional Conflicts height up to whole pixels", () => {
+    expect(fitChangesPanes(400, 99.4, null)).toEqual({
+      conflicts: 100,
+      unstaged: 150,
+      staged: 150,
+      max: 228,
+    });
+  });
+
   it("leaves Conflicts at its natural height when it equals the cap", () => {
     expect(fitChangesPanes(400, 160, null)).toEqual({
       conflicts: 160,

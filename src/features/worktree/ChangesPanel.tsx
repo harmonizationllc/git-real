@@ -145,27 +145,35 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const hasConflicts = rows.conflicts.length > 0;
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  // One observer for the body wrapper and, while it is rendered, the Conflicts content. A batch
-  // is applied in one functional update; entries for any other target are ignored.
+  // The body wrapper keeps its size when Conflicts appears or goes, so its observation lives apart
+  // from the Conflicts one: only the measurement of what was unmounted is cleared.
   useEffect(() => {
     if (!bodyShown) return;
     const ro = new ResizeObserver((entries) => {
-      const bodyEntries = entries.filter((e) => e.target === bodyRef.current);
-      const conflictEntries = entries.filter((e) => e.target === conflictsRef.current);
-      if (bodyEntries.length === 0 && conflictEntries.length === 0) return;
-      setMeasured((prev) => ({
-        body: bodyEntries.at(-1)?.contentRect.height ?? prev.body,
-        conflicts: conflictEntries.at(-1)?.contentRect.height ?? prev.conflicts,
-      }));
+      const last = entries.filter((e) => e.target === bodyRef.current).at(-1);
+      if (last === undefined) return;
+      setMeasured((prev) => ({ ...prev, body: last.contentRect.height }));
     });
     ro.observe(bodyRef.current as HTMLDivElement);
-    if (hasConflicts) ro.observe(conflictsRef.current as HTMLDivElement);
     return () => {
       ro.disconnect();
-      // A remounted observer reports afresh; a stale height must not size the panes meanwhile.
-      setMeasured({ body: null, conflicts: null });
+      setMeasured((prev) => ({ ...prev, body: null }));
     };
-  }, [bodyShown, hasConflicts]);
+  }, [bodyShown]);
+
+  useEffect(() => {
+    if (!hasConflicts) return;
+    const ro = new ResizeObserver((entries) => {
+      const last = entries.filter((e) => e.target === conflictsRef.current).at(-1);
+      if (last === undefined) return;
+      setMeasured((prev) => ({ ...prev, conflicts: last.contentRect.height }));
+    });
+    ro.observe(conflictsRef.current as HTMLDivElement);
+    return () => {
+      ro.disconnect();
+      setMeasured((prev) => ({ ...prev, conflicts: null }));
+    };
+  }, [hasConflicts]);
 
   // Until the body (and the Conflicts content, when shown) has reported, the panes keep their flex
   // fallback. Nothing here writes settings: the stored height is only clamped for display.

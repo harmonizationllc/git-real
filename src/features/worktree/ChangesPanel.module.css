@@ -32,8 +32,10 @@
   overflow: auto;
 }
 
+/* max-height is the CSS twin of CONFLICTS_MAX_SHARE, bounding the section before it is measured. */
 .conflicts {
   flex: none;
+  max-height: 40%;
   min-height: 0;
   overflow: auto;
 }

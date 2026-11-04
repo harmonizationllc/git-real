@@ -35,7 +35,10 @@ export function fitChangesPanes(
       max: Infinity,
     };
   }
-  const conflicts = Math.min(conflictsNatural, Math.floor(container * CONFLICTS_MAX_SHARE));
+  const conflicts = Math.min(
+    Math.ceil(conflictsNatural),
+    Math.floor(container * CONFLICTS_MAX_SHARE),
+  );
   const shared = container - conflicts;
   const max = Math.max(PANE_FLOOR, shared - PANE_FLOOR);
   const unstaged = Math.min(max, Math.max(PANE_FLOOR, stored ?? Math.round(shared / 2)));
