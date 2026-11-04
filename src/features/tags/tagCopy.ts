@@ -29,7 +29,3 @@ export function createErrorText(error: AppError, name: string): string {
       return error.message; // operationFailed carries git's text
   }
 }
-
-/** The Tags header: `Tags (n)`, or `Tags (m of n)` while the filter narrows the list. */
-export const tagCountLabel = (shown: number, total: number, filtering: boolean): string =>
-  filtering ? `Tags (${shown} of ${total})` : `Tags (${total})`;

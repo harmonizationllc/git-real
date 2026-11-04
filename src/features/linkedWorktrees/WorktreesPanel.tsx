@@ -6,6 +6,7 @@ import { useSettings } from "../../lib/store/settings";
 import { setWorktreesCollapsed } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterWorktrees, isFiltering } from "../branches/branchFilter";
+import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { RepoError } from "../repo/RepoError";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { AddWorktreeDialog } from "./AddWorktreeDialog";
@@ -155,16 +156,12 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => setWorktreesCollapsed(!collapsed)}
           >
-            {list === undefined
-              ? "Worktrees"
-              : filtering
-                ? `Worktrees (${shown.length} of ${list.length})`
-                : `Worktrees (${list.length})`}
+            {sectionCountLabel("Worktrees", shown.length, list?.length, filtering)}
           </button>
         </h2>
         {!bare && (

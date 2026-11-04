@@ -21,7 +21,7 @@ interface WorkspaceState {
   historyPath: Record<RepoId, string | null>;
   /** Survives selecting another file, so Blame stays on while browsing. */
   centreView: Record<RepoId, CentreView>;
-  /** The branch and tag filter text of the refs column; shared by BranchesPanel and TagsPanel. */
+  /** The left column's filter query, entered in RefsColumn and read by every section. */
   refsFilter: Record<RepoId, string>;
   select(repoId: RepoId, file: SelectedFile | null): void;
   /** A non-null oid also clears the selected stash. */

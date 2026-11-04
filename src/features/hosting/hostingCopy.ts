@@ -127,10 +127,10 @@ export function hostingMessage(error: AppError, provider: HostingProvider): Netw
     : networkMessage(error);
 }
 
-/** The "(n)" or "(shown of n)" suffix; `more` adds a plus while further pages exist. */
+/** The "(n)" or "(shown of n)" suffix (shown is passed only while filtering); `more` adds a plus while further pages exist. */
 function countSuffix(count: number, more: boolean, shown: number | undefined): string {
   const total = `${count}${more ? "+" : ""}`;
-  return shown === undefined || shown === count ? `(${total})` : `(${shown} of ${total})`;
+  return shown === undefined ? `(${total})` : `(${shown} of ${total})`;
 }
 
 /** The panel heading; `more` adds a plus while further pages exist, `shown` is the filtered count. */

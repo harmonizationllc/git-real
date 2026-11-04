@@ -13,15 +13,11 @@
   color: var(--color-text-muted);
 }
 
-/* The section header, heading and collapse toggle are shared with the other panels. */
+/* The section header and heading are shared with the other panels. */
 .header {
   composes: header from "../tags/TagsPanel.module.css";
 }
 
 .heading {
   composes: heading from "../tags/TagsPanel.module.css";
-}
-
-.toggle {
-  composes: toggle from "../tags/TagsPanel.module.css";
 }

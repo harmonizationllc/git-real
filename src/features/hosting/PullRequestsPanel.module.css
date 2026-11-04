@@ -12,11 +12,6 @@
   flex: 1;
 }
 
-/* The collapse toggle and its caret are shared with the other panels. */
-.toggle {
-  composes: toggle from "../tags/TagsPanel.module.css";
-}
-
 .create,
 .refresh {
   flex: none;

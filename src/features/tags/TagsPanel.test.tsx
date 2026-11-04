@@ -71,7 +71,7 @@ async function renderPanel(expanded = true) {
   return view;
 }
 
-const toggle = () => screen.getByRole("button", { name: /^Tags \(/ });
+const toggle = () => screen.getByRole("button", { name: /^Tags/ });
 const plus = () => screen.getByRole("button", { name: "Create tag…" });
 const row = (name: string) => screen.getByText(name).closest("button") as HTMLButtonElement;
 const rightClick = (el: HTMLElement) => fireEvent.contextMenu(el, { clientX: 10, clientY: 20 });

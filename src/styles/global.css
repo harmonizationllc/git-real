@@ -217,6 +217,29 @@ b {
   background: var(--color-accent-tint);
 }
 
+/* A section header's collapse toggle: a text-styled button carrying the heading's font. */
+.gr-section-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+/* The caret's alt text is empty, so it stays out of the accessible name. */
+.gr-section-toggle::before {
+  content: "▸ ";
+  content: "▸ " / "";
+}
+
+.gr-section-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+  content: "▾ " / "";
+}
+
 /* Section headings in panels. A global class so every panel's heading reads the same. */
 .gr-section-heading {
   margin: 0;

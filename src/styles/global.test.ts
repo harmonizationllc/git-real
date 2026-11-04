@@ -153,6 +153,13 @@ describe("section heading and pill helpers", () => {
     expect(h).toMatch(/font-weight:\s*600/);
     expect(block(".gr-section-heading[data-sub]")).toMatch(/color:\s*var\(--color-text-muted\)/);
   });
+  it("styles .gr-section-toggle as a text button with a caret that follows aria-expanded", () => {
+    const t = block(".gr-section-toggle");
+    expect(t).toMatch(/background:\s*transparent/);
+    expect(t).toMatch(/letter-spacing:\s*inherit/);
+    expect(block(".gr-section-toggle::before")).toMatch(/content:\s*"▸ "/);
+    expect(block('.gr-section-toggle[aria-expanded="true"]::before')).toMatch(/content:\s*"▾ "/);
+  });
   it("styles .gr-section-header as a flex row on the accent tint", () => {
     const h = block(".gr-section-header");
     expect(h).toMatch(/display:\s*flex/);

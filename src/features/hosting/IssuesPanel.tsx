@@ -18,6 +18,7 @@ import {
   noIssuesText,
 } from "./hostingCopy";
 import { IssueRow } from "./IssueRow";
+import { isFiltering } from "../branches/branchFilter";
 import styles from "./IssuesPanel.module.css";
 import { useIssues } from "./useIssues";
 import { useLinkActions } from "./useLinkActions";
@@ -180,7 +181,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={!collapsed}
             aria-controls={bodyId}
             onClick={() => setIssuesCollapsed(!collapsed)}
@@ -189,7 +190,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
               listed ? (loaded as Issue[]).length : null,
               list.hasMore,
               provider,
-              listed ? (issues as Issue[]).length : undefined,
+              listed && isFiltering(query) ? (issues as Issue[]).length : undefined,
             )}
           </button>
         </h2>

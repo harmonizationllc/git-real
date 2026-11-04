@@ -12,6 +12,7 @@ import { AccountsDialog } from "./AccountsDialog";
 import type { AccountsPreset } from "./AccountsDialog";
 import { PROVIDER_LABEL, RECONNECT_TEXT, hostingMessage, prCountLabel } from "./hostingCopy";
 import { PullRequestRow } from "./PullRequestRow";
+import { isFiltering } from "../branches/branchFilter";
 import styles from "./PullRequestsPanel.module.css";
 import { usePrActions } from "./usePrActions";
 import { usePullRequests } from "./usePullRequests";
@@ -165,7 +166,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={!collapsed}
             aria-controls={bodyId}
             onClick={() => setPullRequestsCollapsed(!collapsed)}
@@ -173,7 +174,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
             {prCountLabel(
               listed ? (loaded as PullRequest[]).length : null,
               list.hasMore,
-              listed ? (prs as PullRequest[]).length : undefined,
+              listed && isFiltering(query) ? (prs as PullRequest[]).length : undefined,
             )}
           </button>
         </h2>

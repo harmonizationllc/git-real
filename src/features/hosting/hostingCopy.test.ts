@@ -295,8 +295,8 @@ describe("prCountLabel", () => {
     expect(prCountLabel(5, false, 0)).toBe("Pull requests (0 of 5)");
   });
 
-  it("should show only the count when everything is shown", () => {
-    expect(prCountLabel(5, false, 5)).toBe("Pull requests (5)");
+  it("should show shown of total even when everything matches", () => {
+    expect(prCountLabel(5, false, 5)).toBe("Pull requests (5 of 5)");
   });
 
   it("should ignore shown while the count is unknown", () => {
@@ -332,8 +332,8 @@ describe("issueCountLabel", () => {
     expect(issueCountLabel(5, false, "azure", 1)).toBe("Work items (1 of 5)");
   });
 
-  it("should show only the count when everything is shown", () => {
-    expect(issueCountLabel(5, false, "github", 5)).toBe("Issues (5)");
+  it("should show shown of total even when everything matches", () => {
+    expect(issueCountLabel(5, false, "github", 5)).toBe("Issues (5 of 5)");
   });
 
   it("should be Issues while the count is unknown", () => {

@@ -1261,10 +1261,7 @@ describe("BranchesPanel body states", () => {
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "New branch…" })).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
-    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
-      "Local (0)",
-      "Remote (0)",
-    ]);
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["Local", "Remote"]);
   });
 
   it("should refetch the list when the query error is dismissed", async () => {

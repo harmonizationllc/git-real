@@ -2,7 +2,8 @@ import { useId } from "react";
 import type { HeadState } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setLocalCollapsed } from "../../lib/store/settingsActions";
-import { BranchGroupBody, BranchSectionHeader, sectionCountLabel } from "./BranchGroup";
+import { BranchGroupBody, BranchSectionHeader } from "./BranchGroup";
+import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import styles from "./BranchesPanel.module.css";
 
@@ -67,7 +68,7 @@ export function LocalSection() {
         label={sectionCountLabel(
           "Local",
           shown?.local.length ?? 0,
-          branches?.local.length ?? 0,
+          branches?.local.length,
           filtering,
         )}
         expanded={expanded}

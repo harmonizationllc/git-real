@@ -100,7 +100,7 @@ export function BranchSectionHeader({
       <h2 className={`gr-section-heading ${styles.heading}`}>
         <button
           type="button"
-          className={styles.toggle}
+          className="gr-section-toggle"
           aria-expanded={expanded}
           aria-controls={bodyId}
           onClick={onToggle}
@@ -112,11 +112,3 @@ export function BranchSectionHeader({
     </div>
   );
 }
-
-/** A section heading's count, e.g. "Local (3)", or "Local (1 of 3)" while filtering. */
-export const sectionCountLabel = (
-  name: string,
-  shown: number,
-  total: number,
-  filtering: boolean,
-): string => (filtering ? `${name} (${shown} of ${total})` : `${name} (${total})`);

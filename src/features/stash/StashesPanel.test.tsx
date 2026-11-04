@@ -577,12 +577,12 @@ describe("StashesPanel filtering", () => {
     expect(row(1)).toBeInTheDocument();
   });
 
-  it("should keep Stashes (0) while the list is still loading", async () => {
+  it("should show the plain Stashes label while the list is still loading", async () => {
     vi.mocked(listStashes).mockReturnValue(new Promise(() => undefined));
     act(() => useWorkspace.getState().setRefsFilter(1, "dev"));
     renderWithProviders(<StashesPanel repoId={1} />);
     expect(await screen.findByText("Loading stashes…")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Stashes (0)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Stashes" })).toBeInTheDocument();
   });
 
   it("should keep the plain total when the filter is blank", async () => {

@@ -4,6 +4,7 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { AppError, RepoId, StashEntry } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterStashes, isFiltering } from "../branches/branchFilter";
+import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { useNow } from "../graph/useNow";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
@@ -129,9 +130,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           data-focus-target
           className={`gr-section-heading ${styles.heading}`}
         >
-          {filtering && stashes !== undefined
-            ? `Stashes (${shown.length} of ${stashes.length})`
-            : `Stashes (${stashes?.length ?? 0})`}
+          {sectionCountLabel("Stashes", shown.length, stashes?.length, filtering)}
         </h2>
         <StashButton
           repoId={repoId}

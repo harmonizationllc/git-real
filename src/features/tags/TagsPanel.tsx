@@ -15,7 +15,8 @@ import { TagFeedback } from "./TagFeedback";
 import { TagRow } from "./TagRow";
 import styles from "./TagsPanel.module.css";
 import { headCommit } from "./headCommit";
-import { MAKE_COMMIT_FIRST, NO_REMOTES_TITLE, tagCountLabel } from "./tagCopy";
+import { sectionCountLabel } from "../branches/sectionCountLabel";
+import { MAKE_COMMIT_FIRST, NO_REMOTES_TITLE } from "./tagCopy";
 import { useTagActions } from "./useTagActions";
 import { useTags } from "./useTags";
 
@@ -169,12 +170,12 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => setTagsCollapsed(!collapsed)}
           >
-            {tagCountLabel(shown.length, list?.tags.length ?? 0, filtering)}
+            {sectionCountLabel("Tags", shown.length, list?.tags.length, filtering)}
           </button>
         </h2>
         <button

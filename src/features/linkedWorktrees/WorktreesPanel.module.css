@@ -11,10 +11,6 @@
   composes: heading from "../tags/TagsPanel.module.css";
 }
 
-.toggle {
-  composes: toggle from "../tags/TagsPanel.module.css";
-}
-
 .action {
   flex: none;
 }

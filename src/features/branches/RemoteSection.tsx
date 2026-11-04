@@ -2,7 +2,8 @@ import { useId } from "react";
 import type { BranchList } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setRemoteCollapsed } from "../../lib/store/settingsActions";
-import { BranchGroup, BranchSectionHeader, sectionCountLabel } from "./BranchGroup";
+import { BranchGroup, BranchSectionHeader } from "./BranchGroup";
+import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import groupStyles from "./BranchGroup.module.css";
 import styles from "./BranchesPanel.module.css";
@@ -49,7 +50,12 @@ export function RemoteSection() {
   return (
     <section aria-label="Remote branches" aria-busy={pending || undefined} className={styles.root}>
       <BranchSectionHeader
-        label={sectionCountLabel("Remote", remoteCount(shown), remoteCount(branches), filtering)}
+        label={sectionCountLabel(
+          "Remote",
+          remoteCount(shown),
+          branches === undefined ? undefined : remoteCount(branches),
+          filtering,
+        )}
         expanded={expanded}
         bodyId={bodyId}
         onToggle={() => setRemoteCollapsed(!collapsed)}
