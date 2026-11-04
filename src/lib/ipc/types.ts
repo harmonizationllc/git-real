@@ -66,6 +66,7 @@ export type AppErrorKind =
   | "unbornHead"
   | "revisionNotFound"
   | "remoteNotFound"
+  | "upstreamUnmapped"
   | "checkoutFailed"
   | "logStale"
   | "commitNotFound"

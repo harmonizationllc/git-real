@@ -112,6 +112,14 @@ fn app_error_kind_for_each_git_error_variant() {
             None,
         ),
         (
+            GitError::UpstreamUnmapped {
+                upstream: "origin/x".into(),
+                detail: "no remote fetches it".into(),
+            },
+            AppErrorKind::UpstreamUnmapped,
+            None,
+        ),
+        (
             GitError::CheckoutFailed {
                 code: Some(128),
                 stdout: String::new(),
@@ -496,6 +504,7 @@ fn branch_error_kinds_serialize_camel_case() {
         (AppErrorKind::UnbornHead, "unbornHead"),
         (AppErrorKind::RevisionNotFound, "revisionNotFound"),
         (AppErrorKind::RemoteNotFound, "remoteNotFound"),
+        (AppErrorKind::UpstreamUnmapped, "upstreamUnmapped"),
         (AppErrorKind::CheckoutFailed, "checkoutFailed"),
     ];
     for (kind, expected) in cases {
