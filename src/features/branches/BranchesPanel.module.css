@@ -13,11 +13,6 @@
   padding: var(--space-2) 10px;
 }
 
-.filter {
-  flex: 1;
-  min-width: 0;
-}
-
 .newBranch {
   flex: none;
   white-space: nowrap;

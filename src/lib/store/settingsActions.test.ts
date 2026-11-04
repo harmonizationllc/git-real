@@ -112,18 +112,26 @@ describe("layout setters", () => {
 
   it("setSectionHeight rounds and saves the section's height leaf", async () => {
     actions.setSectionHeight("tags", 300.4);
-    actions.setSectionHeight("branches", 199.6);
+    actions.setSectionHeight("local", 199.6);
+    actions.setSectionHeight("remote", 150);
     actions.setSectionHeight("worktrees", 88);
     actions.setSectionHeight("stashes", 90);
     expect(settings().layout).toMatchObject({
       tagsHeight: 300,
       branchesHeight: 200,
+      remoteHeight: 150,
       worktreesHeight: 88,
       stashesHeight: 90,
     });
     expect(await patches()).toEqual([
       {
-        layout: { tagsHeight: 300, branchesHeight: 200, worktreesHeight: 88, stashesHeight: 90 },
+        layout: {
+          tagsHeight: 300,
+          branchesHeight: 200,
+          remoteHeight: 150,
+          worktreesHeight: 88,
+          stashesHeight: 90,
+        },
       },
     ]);
   });

@@ -72,15 +72,17 @@ class StubResizeObserver {
 }
 
 const observer = () => StubResizeObserver.instances[0] as StubResizeObserver;
-const root = () => screen.getByTestId("refs-column");
+const column = () => screen.getByTestId("refs-column");
+// The measured container: the sections below the filter box.
+const root = () => screen.getByTestId("refs-sections");
 const wrapper = (s: string) => root().querySelector(`[data-section="${s}"]`) as HTMLElement;
 const content = (s: string) => wrapper(s).firstElementChild as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 
-// Root 666 (= 636 + 5 handles of 6); naturals for branches, stashes, tags, worktrees, pullRequests,
-// issues. Worktrees adds 36 + one handle of 6 to the five-section column, so every figure below
-// keeps the value it had with five sections.
-const NATURALS = [200, 60, 150, 36, 36, 36];
+// Root 666 (= 636 + 5 handles of 6); naturals for local, remote, stashes, tags, worktrees,
+// pullRequests, issues. Remote reports 0 here (no handle, no space), so every figure below keeps
+// the value it had before the Local/Remote split; the Remote tests stub a non-zero natural.
+const NATURALS = [200, 0, 60, 150, 36, 36, 36];
 const sectionEntries = () =>
   REFS_SECTIONS.map((s, i) => ({ target: content(s), height: NATURALS[i] as number }));
 
@@ -100,7 +102,7 @@ function measureAt(rootHeight: number, heights: number[]) {
 // Without a hosting context the pull requests and issues panels render nothing, so they measure 0.
 // Four handles render, so the container is 666 - 4 * 6 = 642.
 function measureWithZeroHostingSections() {
-  measureAt(666, [200, 60, 150, 36, 0, 0]);
+  measureAt(666, [200, 0, 60, 150, 36, 0, 0]);
 }
 
 async function renderColumn() {
@@ -139,15 +141,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Contract: six sections in column order with five labelled horizontal handles between them.
+// Contract: seven sections in column order with six labelled horizontal handles between them.
 describe("RefsColumn structure", () => {
-  it("should render the six sections in order with five horizontal handles between them", async () => {
+  it("should render the seven sections in order with six horizontal handles between them", async () => {
     await renderColumn();
     const sections = [...root().querySelectorAll("[data-section]")].map((e) =>
       e.getAttribute("data-section"),
     );
     expect(sections).toEqual([
-      "branches",
+      "local",
+      "remote",
       "stashes",
       "tags",
       "worktrees",
@@ -156,7 +159,8 @@ describe("RefsColumn structure", () => {
     ]);
     const handles = screen.getAllByRole("separator");
     expect(handles.map((h) => h.getAttribute("aria-label"))).toEqual([
-      "Resize Branches section",
+      "Resize Local section",
+      "Resize Remote section",
       "Resize Stashes section",
       "Resize Tags section",
       "Resize Worktrees section",
@@ -173,6 +177,41 @@ describe("RefsColumn structure", () => {
   });
 });
 
+// Contract (spec: Filter box): one filter box above every section, bound to the repo's refsFilter.
+describe("RefsColumn filter box", () => {
+  const filter = () => screen.getByRole("searchbox", { name: "Filter" });
+
+  it("should render a Filter search box above the sections, outside the measured container", async () => {
+    await renderColumn();
+    expect(filter()).toHaveAttribute("placeholder", "Filter");
+    expect(column().firstElementChild?.contains(filter())).toBe(true);
+    expect(root().contains(filter())).toBe(false);
+    expect(filter().closest("[data-section]")).toBeNull();
+  });
+
+  it("should write the typed text to the workspace store for the repo", async () => {
+    const { user } = await renderColumn();
+    await user.type(filter(), "fe");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("fe");
+  });
+
+  it("should show the repo's stored text and not another repo's", async () => {
+    useWorkspace.getState().setRefsFilter(2, "other");
+    await renderColumn();
+    expect(filter()).toHaveValue("");
+    act(() => useWorkspace.getState().setRefsFilter(1, "mine"));
+    expect(filter()).toHaveValue("mine");
+  });
+
+  it("should clear the stored text on Escape", async () => {
+    const { user } = await renderColumn();
+    await user.type(filter(), "oth");
+    await user.keyboard("{Escape}");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("");
+    expect(filter()).toHaveValue("");
+  });
+});
+
 // Contract: inline heights come from fitSections once the root and every section have reported.
 describe("RefsColumn measurement", () => {
   it("should set no inline heights until the root and every section are measured", async () => {
@@ -184,14 +223,14 @@ describe("RefsColumn measurement", () => {
   it("should apply fitSections heights once measured", async () => {
     await renderColumn();
     measure();
-    expect(wrapper("branches").style.height).toBe("318px");
+    expect(wrapper("local").style.height).toBe("318px");
     expect(wrapper("tags").style.height).toBe("150px");
   });
 
   it("should apply fitted heights once every target has reported, even at zero", async () => {
     await renderColumn();
     measureWithZeroHostingSections();
-    expect(wrapper("branches").style.height).toBe("396px");
+    expect(wrapper("local").style.height).toBe("396px");
     expect(wrapper("tags").style.height).toBe("150px");
     expect(wrapper("worktrees").style.height).toBe("36px");
     expect(wrapper("pullRequests").style.height).toBe("0px");
@@ -201,8 +240,9 @@ describe("RefsColumn measurement", () => {
     await renderColumn();
     measureWithZeroHostingSections();
     expect(screen.queryByRole("separator", { name: "Resize Pull requests section" })).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize Remote section" })).toBeNull();
     for (const name of [
-      "Resize Branches section",
+      "Resize Local section",
       "Resize Stashes section",
       "Resize Tags section",
       "Resize Worktrees section",
@@ -228,7 +268,7 @@ describe("RefsColumn measurement", () => {
     expect(wrapper("tags").style.height).toBe("");
   });
 
-  it("should observe the root and the six content wrappers with one observer and disconnect on unmount", async () => {
+  it("should observe the sections container and the seven content wrappers with one observer and disconnect on unmount", async () => {
     const { unmount } = await renderColumn();
     expect(StubResizeObserver.instances).toHaveLength(1);
     const targets = observer().observe.mock.calls.map(([t]) => t);
@@ -249,25 +289,25 @@ describe("RefsColumn handles", () => {
     expect(tags).toHaveAttribute("aria-valuemax", "150");
   });
 
-  it("should bound the Branches handle by the column, not its content", async () => {
+  it("should bound the Local handle by the column, not its content", async () => {
     await renderColumn();
     measure();
-    const branches = handle("Resize Branches section");
+    const branches = handle("Resize Local section");
     expect(branches).toHaveAttribute("aria-valuenow", "318");
     expect(branches).toHaveAttribute("aria-valuemax", "396");
   });
 
-  it("should persist an ArrowDown on the Branches handle", async () => {
+  it("should persist an ArrowDown on the Local handle", async () => {
     await renderColumn();
     measure();
-    fireEvent.keyDown(handle("Resize Branches section"), { key: "ArrowDown" });
+    fireEvent.keyDown(handle("Resize Local section"), { key: "ArrowDown" });
     expect(useSettings.getState().settings.layout.branchesHeight).toBe(334);
   });
 
-  it("should persist an ArrowUp on the Branches handle", async () => {
+  it("should persist an ArrowUp on the Local handle", async () => {
     await renderColumn();
     measure();
-    fireEvent.keyDown(handle("Resize Branches section"), { key: "ArrowUp" });
+    fireEvent.keyDown(handle("Resize Local section"), { key: "ArrowUp" });
     expect(useSettings.getState().settings.layout.branchesHeight).toBe(302);
   });
 
@@ -294,26 +334,26 @@ describe("RefsColumn handles", () => {
 
   it("should expose whole-pixel values", async () => {
     await renderColumn();
-    // container 636; over 232 shared by room: branches 400 - 263.14, tags 300 - 204.86
-    measureAt(666, [400, 60, 300, 36, 36, 36]);
-    expect(wrapper("branches").style.height).toBe("263px");
+    // container 636; over 232 shared by room: local 400 - 263.14, tags 300 - 204.86
+    measureAt(666, [400, 0, 60, 300, 36, 36, 36]);
+    expect(wrapper("local").style.height).toBe("263px");
     expect(wrapper("tags").style.height).toBe("205px");
-    expect(handle("Resize Branches section")).toHaveAttribute("aria-valuenow", "263");
+    expect(handle("Resize Local section")).toHaveAttribute("aria-valuenow", "263");
     expect(handle("Resize Tags section")).toHaveAttribute("aria-valuenow", "205");
   });
 
   it("should keep the inline heights when a batch changes nothing", async () => {
     await renderColumn();
     measure();
-    const before = ["branches", "stashes", "tags"].map((s) => wrapper(s).style.height);
+    const before = ["local", "stashes", "tags"].map((s) => wrapper(s).style.height);
     act(() => observer().fire([{ target: document.body, height: 999 }]));
-    expect(["branches", "stashes", "tags"].map((s) => wrapper(s).style.height)).toEqual(before);
+    expect(["local", "stashes", "tags"].map((s) => wrapper(s).style.height)).toEqual(before);
   });
 
   it("should persist an ArrowUp resize to the section's height leaf", async () => {
     await renderColumn();
     // container 1012: everything fits, so Tags renders at its natural 300
-    measureAt(1042, [200, 60, 300, 36, 36, 36]);
+    measureAt(1042, [200, 0, 60, 300, 36, 36, 36]);
     fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowUp" });
     expect(useSettings.getState().settings.layout.tagsHeight).toBe(284);
   });
@@ -331,6 +371,73 @@ describe("RefsColumn handles", () => {
     await renderColumn();
     measure();
     expect(wrapper("tags").style.height).toBe("120px");
-    expect(wrapper("branches").style.height).toBe("348px");
+    expect(wrapper("local").style.height).toBe("348px");
+  });
+});
+
+// Contract (GR-58): Local absorbs the leftover while open, else an open Remote, else nothing.
+// Remote's natural is stubbed non-zero, so it has a handle: six handles, container = root - 36.
+describe("RefsColumn Local and Remote", () => {
+  it("should give the leftover to an open Local and show Remote at its content", async () => {
+    await renderColumn();
+    // container 736: 736 - (100 + 60 + 150 + 36 * 3) = 318 for Local
+    measureAt(772, [200, 100, 60, 150, 36, 36, 36]);
+    expect(wrapper("local").style.height).toBe("318px");
+    expect(wrapper("remote").style.height).toBe("100px");
+    expect(handle("Resize Remote section")).toHaveAttribute("aria-valuemax", "100");
+  });
+
+  it("should give the leftover to Remote when Local is collapsed", async () => {
+    await seedSettings({ layout: { localCollapsed: true } });
+    await renderColumn();
+    // container 736: 736 - (28 + 60 + 150 + 36 * 3) = 390 for Remote
+    measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
+    expect(wrapper("local").style.height).toBe("28px");
+    expect(wrapper("remote").style.height).toBe("390px");
+    // the absorbing Remote is bounded by the column (736 less the other floors), not its content
+    expect(handle("Resize Remote section")).toHaveAttribute("aria-valuemax", "468");
+    expect(handle("Resize Local section")).toHaveAttribute("aria-valuemax", "28");
+  });
+
+  it("should ignore a stored Remote height while Remote absorbs", async () => {
+    await seedSettings({ layout: { localCollapsed: true, remoteHeight: 120 } });
+    await renderColumn();
+    measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
+    expect(wrapper("remote").style.height).toBe("390px");
+  });
+
+  it("should cap a collapsed Local's stored height at its content", async () => {
+    await seedSettings({ layout: { localCollapsed: true, branchesHeight: 300 } });
+    await renderColumn();
+    measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
+    expect(wrapper("local").style.height).toBe("28px");
+    expect(wrapper("remote").style.height).toBe("390px");
+  });
+
+  it("should leave the leftover unassigned when Local and Remote are both collapsed", async () => {
+    await seedSettings({ layout: { localCollapsed: true, remoteCollapsed: true } });
+    await renderColumn();
+    measureAt(772, [28, 28, 60, 150, 36, 36, 36]);
+    expect(wrapper("local").style.height).toBe("28px");
+    expect(wrapper("remote").style.height).toBe("28px");
+    expect(wrapper("tags").style.height).toBe("150px");
+  });
+
+  it("should render a stored Remote height while Local absorbs", async () => {
+    await seedSettings({ layout: { remoteHeight: 120 } });
+    await renderColumn();
+    // container 736: Remote 120; Local 736 - (120 + 60 + 150 + 36 * 3) = 298
+    measureAt(772, [200, 300, 60, 150, 36, 36, 36]);
+    expect(wrapper("remote").style.height).toBe("120px");
+    expect(wrapper("local").style.height).toBe("298px");
+  });
+
+  it("should persist an ArrowUp on the Remote handle to remoteHeight", async () => {
+    await renderColumn();
+    // container 1036: everything fits, so Remote renders at its natural 300
+    measureAt(1072, [200, 300, 60, 150, 36, 36, 36]);
+    fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowUp" });
+    expect(useSettings.getState().settings.layout.remoteHeight).toBe(284);
+    expect(useSettings.getState().settings.layout.branchesHeight).toBeNull();
   });
 });

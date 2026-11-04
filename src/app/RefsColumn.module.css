@@ -1,9 +1,29 @@
-/* The refs column: the sections stacked with a horizontal handle between each pair. */
+/* The refs column: the filter box above the sections. */
 .column {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
+}
+
+/* The one filter box for the whole column; not part of any measured section. */
+.filterBar {
+  flex: none;
+  display: flex;
+  padding: var(--space-2) 10px;
+}
+
+.filter {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The measured container: the sections stacked with a horizontal handle between each pair. */
+.sections {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* A section wrapper; height and flex: none are set inline once the column is measured. */

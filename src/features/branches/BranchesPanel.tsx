@@ -105,7 +105,6 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
   const opener = useOpenRepo();
   const panelError = actions.error ?? integration.error ?? remoteError ?? opener.error;
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
-  const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // Drag-to-merge: the branch being dragged, and how deep the pointer is inside the current
@@ -417,19 +416,6 @@ export function BranchesPanel({ repoId, onOpenRemotes, onCreatePullRequest }: Br
     return (
       <>
         <div className={styles.toolbar}>
-          <input
-            type="search"
-            className={styles.filter}
-            aria-label="Filter branches and tags"
-            placeholder="Filter branches and tags"
-            value={query}
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setQuery("");
-            }}
-          />
           <button
             type="button"
             className={styles.newBranch}

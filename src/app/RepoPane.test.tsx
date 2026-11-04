@@ -461,18 +461,11 @@ describe("RepoPane columns", () => {
 
   it("should keep each tab's filter text when switching tabs", async () => {
     const { rerender, user } = renderWithProviders(<RepoPane tab={tab(1)} />);
-    await user.type(
-      await screen.findByRole("searchbox", { name: "Filter branches and tags" }),
-      "zzz",
-    );
+    await user.type(await screen.findByRole("searchbox", { name: "Filter" }), "zzz");
     rerender(<RepoPane tab={tab(2)} />);
-    expect(await screen.findByRole("searchbox", { name: "Filter branches and tags" })).toHaveValue(
-      "",
-    );
+    expect(await screen.findByRole("searchbox", { name: "Filter" })).toHaveValue("");
     rerender(<RepoPane tab={tab(1)} />);
-    expect(await screen.findByRole("searchbox", { name: "Filter branches and tags" })).toHaveValue(
-      "zzz",
-    );
+    expect(await screen.findByRole("searchbox", { name: "Filter" })).toHaveValue("zzz");
   });
 });
 

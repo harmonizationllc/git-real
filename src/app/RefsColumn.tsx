@@ -10,6 +10,7 @@ import { WorktreesPanel } from "../features/linkedWorktrees/WorktreesPanel";
 import { TagsPanel } from "../features/tags/TagsPanel";
 import type { RepoId } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
+import { useWorkspace } from "../lib/store/workspace";
 import { setSectionHeight } from "../lib/store/settingsActions";
 import { KEY_STEP } from "./layout";
 import { REFS_SECTIONS, fitSections, maxSectionHeight, sectionFloor } from "./refsLayout";
@@ -23,22 +24,25 @@ export interface RefsColumnProps {
 }
 
 const LABELS: Record<ResizableSection, string> = {
-  branches: "Resize Branches section",
+  local: "Resize Local section",
+  remote: "Resize Remote section",
   stashes: "Resize Stashes section",
   tags: "Resize Tags section",
   worktrees: "Resize Worktrees section",
   pullRequests: "Resize Pull requests section",
 };
 
-/** The column root's content height and each section's content height; null until reported. */
+/** The sections container's content height and each section's; null until reported. */
 interface Measured {
   root: number | null;
   naturals: Array<number | null>;
 }
 
 /**
- * The refs column (spec §3): Branches, Stashes, Tags, Worktrees, Pull requests and Issues, each
- * sized by its content and fitted to the column, with a horizontal handle below each resizable section.
+ * The refs column (spec §3, GR-58): one filter box above Local, Remote, Stashes, Tags, Worktrees,
+ * Pull requests and Issues, each sized by its content and fitted to the space below the filter
+ * box, with a horizontal handle below each resizable section. An open Local takes the leftover
+ * height, else an open Remote, else nothing does.
  */
 export function RefsColumn({
   repoId,
@@ -46,6 +50,8 @@ export function RefsColumn({
   onCreatePullRequest,
 }: RefsColumnProps): React.JSX.Element {
   const layout = useSettings((s) => s.settings.layout);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
+  const setQuery = (text: string) => useWorkspace.getState().setRefsFilter(repoId, text);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [measured, setMeasured] = useState<Measured>({
@@ -53,9 +59,9 @@ export function RefsColumn({
     naturals: REFS_SECTIONS.map(() => null),
   });
 
-  // One observer for the root and every content wrapper. Entries for any other target (or none)
-  // are ignored, and a batch is applied in one functional update, so it causes one render; a batch
-  // of ignored entries keeps the previous state, so it causes none.
+  // One observer for the sections container (root) and every content wrapper. Entries for any
+  // other target (or none) are ignored, and a batch is applied in one functional update, so it
+  // causes one render; a batch of ignored entries keeps the previous state, so it causes none.
   useEffect(() => {
     const ro = new ResizeObserver((entries) => {
       const root = entries.filter((e) => e.target === rootRef.current);
@@ -82,20 +88,31 @@ export function RefsColumn({
   const hasHandle = REFS_SECTIONS.map((s, i) => s !== "issues" && measured.naturals[i] !== 0);
   const tracks = hasHandle.filter(Boolean).length * SPLIT_HANDLE_WIDTH;
   const container = ready ? (measured.root as number) - tracks : 0;
+  const absorber = !layout.localCollapsed ? 0 : !layout.remoteCollapsed ? 1 : null;
+  // Remote's stored height is ignored while it absorbs; Local's is a true height when it absorbs.
+  const stored: Record<ResizableSection, number | null> = {
+    local: layout.branchesHeight,
+    remote: absorber === 1 ? null : layout.remoteHeight,
+    stashes: layout.stashesHeight,
+    tags: layout.tagsHeight,
+    worktrees: layout.worktreesHeight,
+    pullRequests: layout.pullRequestsHeight,
+  };
   const inputs: SectionInput[] = REFS_SECTIONS.map((section, i) => ({
     natural: measured.naturals[i] ?? 0,
-    fixed: section === "issues" ? null : layout[`${section}Height`],
+    fixed: section === "issues" ? null : stored[section],
   }));
-  const heights = fitSections(container, inputs);
+  const heights = fitSections(container, inputs, absorber);
 
   const panels: Record<RefsSection, ReactNode> = {
-    branches: (
+    local: (
       <BranchesPanel
         repoId={repoId}
         onOpenRemotes={onOpenRemotes}
         onCreatePullRequest={onCreatePullRequest}
       />
     ),
+    remote: null,
     stashes: <StashesPanel repoId={repoId} />,
     tags: <TagsPanel repoId={repoId} />,
     worktrees: <WorktreesPanel repoId={repoId} />,
@@ -104,48 +121,66 @@ export function RefsColumn({
   };
 
   return (
-    <div ref={rootRef} data-testid="refs-column" className={styles.column}>
-      {REFS_SECTIONS.map((section, i) => (
-        <Fragment key={section}>
-          <div
-            data-section={section}
-            className={styles.section}
-            style={ready ? { height: heights[i], flex: "none" } : undefined}
-          >
+    <div data-testid="refs-column" className={styles.column}>
+      <div className={styles.filterBar}>
+        <input
+          type="search"
+          className={styles.filter}
+          aria-label="Filter"
+          placeholder="Filter"
+          value={query}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setQuery("");
+          }}
+        />
+      </div>
+      {/* Measured below the filter box, so the sections share only the space under it. */}
+      <div ref={rootRef} data-testid="refs-sections" className={styles.sections}>
+        {REFS_SECTIONS.map((section, i) => (
+          <Fragment key={section}>
             <div
-              ref={(el) => {
-                contentRefs.current[i] = el;
-              }}
+              data-section={section}
+              className={styles.section}
+              style={ready ? { height: heights[i], flex: "none" } : undefined}
             >
-              {panels[section]}
+              <div
+                ref={(el) => {
+                  contentRefs.current[i] = el;
+                }}
+              >
+                {panels[section]}
+              </div>
             </div>
-          </div>
-          {section !== "issues" && hasHandle[i] && (
-            <SplitHandle
-              label={LABELS[section]}
-              orientation="horizontal"
-              value={ready ? (heights[i] as number) : (layout[`${section}Height`] ?? 0)}
-              min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-              // A secondary section is capped at its content, so an inert (collapsed or empty) one
-              // cannot be dragged; Branches is bounded by the column alone.
-              max={
-                ready
-                  ? Math.min(
-                      maxSectionHeight(container, inputs, i),
-                      i === 0 ? Infinity : inputs[i]!.natural,
-                    )
-                  : Infinity
-              }
-              step={KEY_STEP}
-              // Nothing is stored before measuring, or when the value would not change.
-              onChange={(px) => {
-                if (ready && px !== heights[i]) setSectionHeight(section, px);
-              }}
-              onReset={() => setSectionHeight(section, null)}
-            />
-          )}
-        </Fragment>
-      ))}
+            {section !== "issues" && hasHandle[i] && (
+              <SplitHandle
+                label={LABELS[section]}
+                orientation="horizontal"
+                value={ready ? (heights[i] as number) : (stored[section] ?? 0)}
+                min={ready ? sectionFloor(inputs[i]!.natural) : 0}
+                // A non-absorbing section is capped at its content, so an inert (collapsed or empty)
+                // one cannot be dragged; the absorber is bounded by the column alone.
+                max={
+                  ready
+                    ? Math.min(
+                        maxSectionHeight(container, inputs, i),
+                        i === absorber ? Infinity : inputs[i]!.natural,
+                      )
+                    : Infinity
+                }
+                step={KEY_STEP}
+                // Nothing is stored before measuring, or when the value would not change.
+                onChange={(px) => {
+                  if (ready && px !== heights[i]) setSectionHeight(section, px);
+                }}
+                onReset={() => setSectionHeight(section, null)}
+              />
+            )}
+          </Fragment>
+        ))}
+      </div>
     </div>
   );
 }

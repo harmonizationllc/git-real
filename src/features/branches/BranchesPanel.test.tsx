@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addLinkedWorktree,
@@ -212,81 +212,66 @@ describe("BranchesPanel rendering", () => {
   });
 });
 
-// Contract: the filter narrows rows, keeps empty groups, and Escape clears it.
+// Contract: the stored filter narrows rows and keeps empty groups; the input lives in RefsColumn.
 describe("BranchesPanel filter", () => {
-  const filter = () => screen.getByRole("searchbox", { name: "Filter branches and tags" });
+  const setFilter = (text: string) => act(() => useWorkspace.getState().setRefsFilter(1, text));
 
-  it("should have a filter input labelled and placeholdered Filter branches and tags", async () => {
+  it("should render no filter input of its own", async () => {
     await renderPanel();
-    expect(filter()).toHaveAttribute("placeholder", "Filter branches and tags");
+    expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
-  it("should write the filter text to the workspace store for the repo", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "fe");
-    expect(useWorkspace.getState().refsFilter[1]).toBe("fe");
-  });
-
-  it("should show the stored filter text on mount and filter by it", async () => {
+  it("should filter by the stored filter text on mount", async () => {
     useWorkspace.getState().setRefsFilter(1, "feat");
     await renderPanel();
-    expect(filter()).toHaveValue("feat");
     expect(localRow("feature")).toBeInTheDocument();
     expect(screen.queryByTitle("refs/heads/main")).toBeNull();
-  });
-
-  it("should clear the stored filter text on Escape", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "oth");
-    await user.keyboard("{Escape}");
-    expect(useWorkspace.getState().refsFilter[1]).toBe("");
   });
 
   it("should not read the filter text of another repo", async () => {
     useWorkspace.getState().setRefsFilter(2, "feat");
     await renderPanel();
-    expect(filter()).toHaveValue("");
+    expect(localRow("main")).toBeInTheDocument();
   });
 
   it("should narrow the rows to the matches", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "oth");
+    await renderPanel();
+    setFilter("oth");
     expect(remoteRow("origin", "other")).toBeInTheDocument();
     expect(screen.queryByTitle("refs/remotes/origin/main")).toBeNull();
     expect(screen.queryByTitle("refs/heads/main")).toBeNull();
   });
 
   it("should show No matches in a group with no matches", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "oth");
+    await renderPanel();
+    setFilter("oth");
     const local = screen.getByRole("region", { name: "Local" });
     expect(within(local).getByText("No matches")).toBeInTheDocument();
   });
 
   it("should match remote branches by their remote prefix", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "origin/o");
+    await renderPanel();
+    setFilter("origin/o");
     expect(remoteRow("origin", "other")).toBeInTheDocument();
     expect(screen.queryByTitle("refs/remotes/origin/main")).toBeNull();
   });
 
   it("should match case-insensitively", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "FEAT");
+    await renderPanel();
+    setFilter("FEAT");
     expect(localRow("feature")).toBeInTheDocument();
   });
 
-  it("should clear the filter on Escape", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "oth");
-    await user.keyboard("{Escape}");
-    expect(filter()).toHaveValue("");
+  it("should show every row again when the filter is cleared", async () => {
+    await renderPanel();
+    setFilter("oth");
+    setFilter("");
     expect(localRow("main")).toBeInTheDocument();
   });
 
   it("should not refetch while filtering", async () => {
-    const { user } = await renderPanel();
-    await user.type(filter(), "oth");
+    await renderPanel();
+    setFilter("oth");
     expect(listBranches).toHaveBeenCalledTimes(1);
   });
 });
@@ -1228,11 +1213,8 @@ describe("BranchesPanel remote checkout title with a filter", () => {
         { remote: "origin", branches: [{ remote: "origin", name: "feature", oid: oid("b") }] },
       ],
     });
-    const { user } = await renderPanel(data);
-    await user.type(
-      screen.getByRole("searchbox", { name: "Filter branches and tags" }),
-      "origin/f",
-    );
+    await renderPanel(data);
+    act(() => useWorkspace.getState().setRefsFilter(1, "origin/f"));
     expect(screen.queryByTitle("refs/heads/feature")).toBeNull();
     rightClick(remoteRow("origin", "feature"));
     expect(menuItem("Checkout")).not.toHaveAttribute("title");
@@ -1377,14 +1359,13 @@ describe("BranchesPanel cancelled force delete", () => {
 describe("BranchesPanel filter across refetch", () => {
   it("should keep the query and the narrowed rows after the list is refetched", async () => {
     const { user } = await renderPanel();
-    const filter = screen.getByRole("searchbox", { name: "Filter branches and tags" });
-    await user.type(filter, "feat");
+    act(() => useWorkspace.getState().setRefsFilter(1, "feat"));
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
     );
-    expect(filter).toHaveValue("feat");
+    expect(useWorkspace.getState().refsFilter[1]).toBe("feat");
     expect(localRow("feature")).toBeInTheDocument();
     expect(screen.queryByTitle("refs/heads/main")).toBeNull();
   });
