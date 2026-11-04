@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SPLIT_HANDLE_WIDTH, SplitHandle } from "../components/SplitHandle";
-import { BranchesPanel } from "../features/branches/BranchesPanel";
+import { BranchesProvider } from "../features/branches/BranchesProvider";
+import { LocalSection } from "../features/branches/LocalSection";
+import { RemoteSection } from "../features/branches/RemoteSection";
 import { IssuesPanel } from "../features/hosting/IssuesPanel";
 import { PullRequestsPanel } from "../features/hosting/PullRequestsPanel";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
@@ -42,7 +44,7 @@ interface Measured {
  * The refs column (spec §3, GR-58): one filter box above Local, Remote, Stashes, Tags, Worktrees,
  * Pull requests and Issues, each sized by its content and fitted to the space below the filter
  * box, with a horizontal handle below each resizable section. An open Local takes the leftover
- * height, else an open Remote, else nothing does.
+ * height, else an open Remote, else nothing does. Local and Remote share one BranchesProvider.
  */
 export function RefsColumn({
   repoId,
@@ -105,14 +107,8 @@ export function RefsColumn({
   const heights = fitSections(container, inputs, absorber);
 
   const panels: Record<RefsSection, ReactNode> = {
-    local: (
-      <BranchesPanel
-        repoId={repoId}
-        onOpenRemotes={onOpenRemotes}
-        onCreatePullRequest={onCreatePullRequest}
-      />
-    ),
-    remote: null,
+    local: <LocalSection />,
+    remote: <RemoteSection />,
     stashes: <StashesPanel repoId={repoId} />,
     tags: <TagsPanel repoId={repoId} />,
     worktrees: <WorktreesPanel repoId={repoId} />,
@@ -137,50 +133,58 @@ export function RefsColumn({
           }}
         />
       </div>
-      {/* Measured below the filter box, so the sections share only the space under it. */}
-      <div ref={rootRef} data-testid="refs-sections" className={styles.sections}>
-        {REFS_SECTIONS.map((section, i) => (
-          <Fragment key={section}>
-            <div
-              data-section={section}
-              className={styles.section}
-              style={ready ? { height: heights[i], flex: "none" } : undefined}
-            >
+      {/* The provider's host block (branch errors, menus, dialogs) renders first, between the
+          filter box and the measured container, so a banner never takes a section's height. */}
+      <BranchesProvider
+        repoId={repoId}
+        onOpenRemotes={onOpenRemotes}
+        onCreatePullRequest={onCreatePullRequest}
+      >
+        {/* Measured below the filter box, so the sections share only the space under it. */}
+        <div ref={rootRef} data-testid="refs-sections" className={styles.sections}>
+          {REFS_SECTIONS.map((section, i) => (
+            <Fragment key={section}>
               <div
-                ref={(el) => {
-                  contentRefs.current[i] = el;
-                }}
+                data-section={section}
+                className={styles.section}
+                style={ready ? { height: heights[i], flex: "none" } : undefined}
               >
-                {panels[section]}
+                <div
+                  ref={(el) => {
+                    contentRefs.current[i] = el;
+                  }}
+                >
+                  {panels[section]}
+                </div>
               </div>
-            </div>
-            {section !== "issues" && hasHandle[i] && (
-              <SplitHandle
-                label={LABELS[section]}
-                orientation="horizontal"
-                value={ready ? (heights[i] as number) : (stored[section] ?? 0)}
-                min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-                // A non-absorbing section is capped at its content, so an inert (collapsed or empty)
-                // one cannot be dragged; the absorber is bounded by the column alone.
-                max={
-                  ready
-                    ? Math.min(
-                        maxSectionHeight(container, inputs, i),
-                        i === absorber ? Infinity : inputs[i]!.natural,
-                      )
-                    : Infinity
-                }
-                step={KEY_STEP}
-                // Nothing is stored before measuring, or when the value would not change.
-                onChange={(px) => {
-                  if (ready && px !== heights[i]) setSectionHeight(section, px);
-                }}
-                onReset={() => setSectionHeight(section, null)}
-              />
-            )}
-          </Fragment>
-        ))}
-      </div>
+              {section !== "issues" && hasHandle[i] && (
+                <SplitHandle
+                  label={LABELS[section]}
+                  orientation="horizontal"
+                  value={ready ? (heights[i] as number) : (stored[section] ?? 0)}
+                  min={ready ? sectionFloor(inputs[i]!.natural) : 0}
+                  // A non-absorbing section is capped at its content, so an inert (collapsed or empty)
+                  // one cannot be dragged; the absorber is bounded by the column alone.
+                  max={
+                    ready
+                      ? Math.min(
+                          maxSectionHeight(container, inputs, i),
+                          i === absorber ? Infinity : inputs[i]!.natural,
+                        )
+                      : Infinity
+                  }
+                  step={KEY_STEP}
+                  // Nothing is stored before measuring, or when the value would not change.
+                  onChange={(px) => {
+                    if (ready && px !== heights[i]) setSectionHeight(section, px);
+                  }}
+                  onReset={() => setSectionHeight(section, null)}
+                />
+              )}
+            </Fragment>
+          ))}
+        </div>
+      </BranchesProvider>
     </div>
   );
 }

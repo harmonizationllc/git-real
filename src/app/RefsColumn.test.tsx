@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  checkoutBranch,
   hostingListIssues,
   hostingListPullRequests,
   hostingRepoContext,
@@ -27,6 +28,7 @@ vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
 vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   updateSettings: vi.fn(),
+  checkoutBranch: vi.fn(),
   hostingListIssues: vi.fn(),
   hostingListPullRequests: vi.fn(),
   hostingRepoContext: vi.fn(),
@@ -48,6 +50,7 @@ const branchList = (): BranchList => ({
       tracking: { upstream: "origin/main", ahead: 0, behind: 0 },
       worktree: null,
     },
+    { name: "feature", oid: "b".repeat(40), isHead: false, tracking: null, worktree: null },
   ],
   remotes: [],
 });
@@ -109,7 +112,7 @@ async function renderColumn() {
   const result = renderWithProviders(
     <RefsColumn repoId={1} onOpenRemotes={vi.fn()} onCreatePullRequest={null} />,
   );
-  await screen.findByRole("region", { name: "Branches" });
+  await screen.findByRole("region", { name: "Local branches" });
   return result;
 }
 
@@ -442,5 +445,48 @@ describe("RefsColumn Local and Remote", () => {
     fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowUp" });
     expect(useSettings.getState().settings.layout.remoteHeight).toBe(284);
     expect(useSettings.getState().settings.layout.branchesHeight).toBeNull();
+  });
+});
+
+// Contract (spec: Panel errors and dialogs): the branch banner and dialogs are hosted once, at
+// column level directly above Local and outside the measured sections.
+describe("RefsColumn branch host block", () => {
+  it("should render an action error once above Local, outside the measured sections", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue({
+      kind: "checkoutFailed",
+      message: "error: Your local changes would be overwritten",
+    });
+    const { user } = await renderColumn();
+    await user.dblClick(await screen.findByTitle("refs/heads/feature"));
+    const alert = await screen.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(root()).not.toContainElement(alert);
+    expect(alert.compareDocumentPosition(root()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // collapsing Local leaves the banner in place
+    await user.click(within(wrapper("local")).getByRole("button", { name: /^Local \(/ }));
+    expect(screen.getByRole("alert")).toBe(alert);
+  });
+
+  it("should open the create dialog from New branch… in the Local header", async () => {
+    const { user } = await renderColumn();
+    await user.click(await within(wrapper("local")).findByRole("button", { name: "New branch…" }));
+    expect(await screen.findByRole("dialog", { name: "New branch" })).toBeInTheDocument();
+  });
+
+  it("should render Local in the local wrapper and Remote in the remote wrapper", async () => {
+    await renderColumn();
+    expect(within(wrapper("local")).getByRole("region", { name: "Local branches" })).toBeVisible();
+    expect(
+      within(wrapper("remote")).getByRole("region", { name: "Remote branches" }),
+    ).toBeVisible();
+  });
+
+  it("should write no remoteHeight while fitting with Local collapsed", async () => {
+    await seedSettings({ layout: { localCollapsed: true } });
+    await renderColumn();
+    measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
+    measureAt(700, [28, 120, 60, 150, 36, 36, 36]);
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(useSettings.getState().settings.layout.remoteHeight).toBeNull();
   });
 });

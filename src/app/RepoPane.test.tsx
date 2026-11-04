@@ -419,7 +419,7 @@ const follows = (a: Element, b: Element) =>
 describe("RepoPane columns", () => {
   it("should render the branches region left of the history region and that left of changes", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    const branches = await screen.findByRole("region", { name: "Branches" });
+    const branches = await screen.findByRole("region", { name: "Local branches" });
     const history = screen.getByRole("region", { name: "History" });
     const changes = await screen.findByRole("region", { name: "Changes" });
     expect(follows(branches, history)).toBe(true);
@@ -429,7 +429,7 @@ describe("RepoPane columns", () => {
   it("should order the regions and separators branches, handle, history, handle, changes", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     const els = [
-      await screen.findByRole("region", { name: "Branches" }),
+      await screen.findByRole("region", { name: "Local branches" }),
       handle("Resize branches column"),
       screen.getByRole("region", { name: "History" }),
       handle("Resize changes column"),
@@ -455,7 +455,7 @@ describe("RepoPane columns", () => {
 
   it("should load the branch list for the tab's repo id", async () => {
     renderWithProviders(<RepoPane tab={tab(7)} />);
-    await screen.findByRole("region", { name: "Branches" });
+    await screen.findByRole("region", { name: "Local branches" });
     expect(listBranches).toHaveBeenCalledWith(7);
   });
 
@@ -901,7 +901,7 @@ describe("RepoPane history mode", () => {
 
   it("should show the branches panel by default", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Local branches" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
   });
 
@@ -909,7 +909,7 @@ describe("RepoPane history mode", () => {
     useWorkspace.getState().showHistory(1, PATH);
     renderWithProviders(<RepoPane tab={tab(1)} />);
     expect(await screen.findByRole("region", { name: "File history" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Local branches" })).toBeNull();
   });
 
   it("should pass the history path to the panel", async () => {
@@ -938,14 +938,14 @@ describe("RepoPane history mode", () => {
     useWorkspace.getState().showHistory(1, PATH);
     renderWithProviders(<RepoPane tab={tab(1)} />);
     fireEvent.click(await screen.findByRole("button", { name: "Close file history" }));
-    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Local branches" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
   });
 
   it("should show the history of only the tab's own repo", async () => {
     useWorkspace.getState().showHistory(1, PATH);
     renderWithProviders(<RepoPane tab={tab(2)} />);
-    expect(await screen.findByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Local branches" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "File history" })).toBeNull();
   });
 });
@@ -1160,7 +1160,7 @@ describe("RepoPane stashes", () => {
 
   it("renders the Stashes panel below the branches in the refs column", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
-    const branches = await screen.findByRole("region", { name: "Branches" });
+    const branches = await screen.findByRole("region", { name: "Local branches" });
     const stashes = await screen.findByRole("region", { name: "Stashes (0)" });
     expect(precedes(branches, stashes)).toBe(true);
   });
@@ -1175,7 +1175,7 @@ describe("RepoPane stashes", () => {
     useWorkspace.getState().showHistory(1, "src/a.ts");
     renderWithProviders(<RepoPane tab={tab(1)} />);
     expect(await screen.findByRole("region", { name: "File history" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Local branches" })).toBeNull();
     expect(screen.queryByRole("region", { name: /^Stashes/ })).toBeNull();
   });
 
@@ -1268,7 +1268,7 @@ describe("RepoPane tags", () => {
     useWorkspace.setState({ historyPath: { 1: "src/a.ts" } });
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "File history" });
-    expect(screen.queryByRole("region", { name: "Branches" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Local branches" })).toBeNull();
     expect(screen.queryByRole("heading", { name: /^Stashes/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Tags/ })).toBeNull();
   });

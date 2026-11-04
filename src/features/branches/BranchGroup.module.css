@@ -12,3 +12,38 @@
   margin: 4px 16px;
   color: var(--color-text-muted);
 }
+
+/* A section's header row: the heading takes the width, buttons sit at its right. */
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.heading {
+  flex: 1;
+}
+
+/* A text-styled button carrying the heading's font. */
+.toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+/* The caret's alt text is empty, so it stays out of the accessible name. */
+.toggle::before {
+  content: "▸ ";
+  content: "▸ " / "";
+}
+
+.toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+  content: "▾ " / "";
+}

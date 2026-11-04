@@ -151,8 +151,8 @@ const opened = (path: string): OpenedRepo => ({
 async function renderPanel(data: BranchList = list()) {
   vi.mocked(listBranches).mockResolvedValue(data);
   const view = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
-  await screen.findByRole("region", { name: "Branches" });
-  await screen.findByRole("heading", { name: "Local" });
+  await screen.findByRole("region", { name: "Local branches" });
+  await screen.findByRole("button", { name: "New branch…" });
   return view;
 }
 
@@ -168,13 +168,14 @@ const dialogNamed = (name: string) => screen.findByRole("dialog", { name });
 describe("BranchesPanel rendering", () => {
   it("should render the Branches region", async () => {
     await renderPanel();
-    expect(screen.getByRole("region", { name: "Branches" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Local branches" })).toBeInTheDocument();
   });
 
-  it("should render a Local group and a group per remote", async () => {
+  it("should render a Local section, a Remote section and a group per remote", async () => {
     await renderPanel();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
-      "Local",
+      "Local (2)",
+      "Remote (2)",
       "origin",
     ]);
   });
@@ -208,7 +209,7 @@ describe("BranchesPanel rendering", () => {
 
   it("should not be busy when idle", async () => {
     await renderPanel();
-    expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy");
+    expect(screen.getByRole("region", { name: "Local branches" })).not.toHaveAttribute("aria-busy");
   });
 });
 
@@ -245,7 +246,7 @@ describe("BranchesPanel filter", () => {
   it("should show No matches in a group with no matches", async () => {
     await renderPanel();
     setFilter("oth");
-    const local = screen.getByRole("region", { name: "Local" });
+    const local = screen.getByRole("region", { name: "Local branches" });
     expect(within(local).getByText("No matches")).toBeInTheDocument();
   });
 
@@ -467,7 +468,7 @@ describe("BranchesPanel context menu", () => {
     const { user } = await renderPanel();
     rightClick(localRow("feature"));
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveFocus();
   });
 });
 
@@ -896,7 +897,7 @@ describe("BranchesPanel head states", () => {
 
   it("should show Detached at <7 hex> in the Local group", async () => {
     await renderPanel(list({ head: detached }));
-    const local = screen.getByRole("region", { name: "Local" });
+    const local = screen.getByRole("region", { name: "Local branches" });
     expect(within(local).getByText("Detached at 0123abc")).toBeInTheDocument();
   });
 
@@ -955,7 +956,7 @@ describe("BranchesPanel query errors", () => {
     const { user } = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await user.click(await screen.findByRole("button", { name: "Retry" }));
     expect(listBranches).toHaveBeenCalledTimes(2);
-    expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "New branch…" })).toBeInTheDocument();
   });
 
   it("should not render branch rows while the list is in error", async () => {
@@ -974,11 +975,16 @@ describe("BranchesPanel pending", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     d.resolve();
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
+      expect(screen.getByRole("region", { name: "Local branches" })).not.toHaveAttribute(
+        "aria-busy",
+      ),
     );
   });
 
@@ -987,7 +993,10 @@ describe("BranchesPanel pending", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     rightClick(localRow("feature"));
     for (const item of screen.getAllByRole("menuitem")) expect(item).toBeDisabled();
@@ -1180,7 +1189,10 @@ describe("BranchesPanel activation while pending", () => {
     const view = await renderPanel();
     await view.user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     return view;
   }
@@ -1240,13 +1252,17 @@ describe("BranchesPanel body states", () => {
     expect(screen.getByRole("list", { name: "origin branches" })).toBeInTheDocument();
   });
 
-  it("should show only the error, without filter or New branch…, when the list fails", async () => {
+  it("should show the error with bare headers, without filter, New branch… or lists, when the list fails", async () => {
     vi.mocked(listBranches).mockRejectedValueOnce({ kind: "io", message: "list exploded" });
     renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await screen.findByRole("alert");
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "New branch…" })).toBeNull();
-    expect(screen.queryByRole("heading")).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Local (0)",
+      "Remote (0)",
+    ]);
   });
 
   it("should refetch the list when the query error is dismissed", async () => {
@@ -1256,7 +1272,7 @@ describe("BranchesPanel body states", () => {
     const { user } = renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={null} />);
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(listBranches).toHaveBeenCalledTimes(2);
-    expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "New branch…" })).toBeInTheDocument();
   });
 
   it("should show no empty copy under the unborn row", async () => {
@@ -1363,7 +1379,9 @@ describe("BranchesPanel filter across refetch", () => {
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
+      expect(screen.getByRole("region", { name: "Local branches" })).not.toHaveAttribute(
+        "aria-busy",
+      ),
     );
     expect(useWorkspace.getState().refsFilter[1]).toBe("feat");
     expect(localRow("feature")).toBeInTheDocument();
@@ -1379,7 +1397,9 @@ describe("BranchesPanel busy state after failure", () => {
     await user.dblClick(localRow("feature"));
     await screen.findByRole("alert");
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy"),
+      expect(screen.getByRole("region", { name: "Local branches" })).not.toHaveAttribute(
+        "aria-busy",
+      ),
     );
   });
 
@@ -1388,7 +1408,10 @@ describe("BranchesPanel busy state after failure", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     rightClick(remoteRow("origin", "other"));
     const items = screen.getAllByRole("menuitem");
@@ -1407,7 +1430,7 @@ describe("BranchesPanel busy state after failure", () => {
 
 // Contract: New branch… is unavailable while any action is pending, and on an unborn HEAD.
 describe("BranchesPanel New branch… while pending", () => {
-  const busy = () => screen.getByRole("region", { name: "Branches" });
+  const busy = () => screen.getByRole("region", { name: "Local branches" });
 
   it("should disable New branch… while an action is pending and enable it once it settles", async () => {
     const d = deferred();
@@ -1617,7 +1640,10 @@ describe("BranchesPanel integration menu items", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     rightClick(localRow("feature"));
     for (const label of INTEGRATION) expect(menuItem(label)).toBeDisabled();
@@ -1767,12 +1793,15 @@ describe("BranchesPanel integration pending", () => {
   it("should set aria-busy on the region while an integration action is pending", async () => {
     provideMerge({ pending: true });
     await renderPanel();
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
   });
 
   it("should not be busy when the integration is idle", async () => {
     await renderPanel();
-    expect(screen.getByRole("region", { name: "Branches" })).not.toHaveAttribute("aria-busy");
+    expect(screen.getByRole("region", { name: "Local branches" })).not.toHaveAttribute("aria-busy");
   });
 });
 
@@ -2374,7 +2403,10 @@ describe("BranchesPanel drag-to-merge", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     expect(draggableRows()).toHaveLength(0);
   });
@@ -2394,7 +2426,7 @@ describe("BranchesPanel focus fallback", () => {
     await user.click(
       within(await dialogNamed("New branch")).getByRole("button", { name: "Cancel" }),
     );
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveFocus();
   });
 
   it("should focus the Branches region when a dialog opened from the menu is cancelled", async () => {
@@ -2404,12 +2436,12 @@ describe("BranchesPanel focus fallback", () => {
     const rename = await dialogNamed("Rename feature");
     expect(within(rename).getByRole("textbox")).toHaveFocus();
     await user.click(within(rename).getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveFocus();
   });
 
   it("should mark the Branches region as a programmatic focus target", async () => {
     await renderPanel();
-    const target = screen.getByRole("region", { name: "Branches" });
+    const target = screen.getByRole("region", { name: "Local branches" });
     expect(target).toHaveAttribute("data-focus-target");
     expect(target).toHaveAttribute("tabindex", "-1");
   });
@@ -2425,7 +2457,7 @@ describe("BranchesPanel remote heading menu", () => {
     const view = renderWithProviders(
       <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} onCreatePullRequest={null} />,
     );
-    await screen.findByRole("heading", { name: "Local" });
+    await screen.findByRole("button", { name: "New branch…" });
     return { ...view, onOpenRemotes };
   }
 
@@ -2449,7 +2481,7 @@ describe("BranchesPanel remote heading menu", () => {
 
   it("the Local heading has no context menu", async () => {
     await renderPanel();
-    rightClick(screen.getByRole("heading", { level: 2, name: "Local" }));
+    rightClick(screen.getByRole("heading", { level: 2, name: "Local (2)" }));
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -2547,7 +2579,10 @@ describe("BranchesPanel remote heading menu", () => {
     const dialog = await dialogNamed("Delete origin/other on origin?");
     await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
     await waitFor(() =>
-      expect(screen.getByRole("region", { name: "Branches" })).toHaveAttribute("aria-busy", "true"),
+      expect(screen.getByRole("region", { name: "Local branches" })).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
     );
     rightClick(originHeading());
     expect(menuItem("Remove remote…")).toBeDisabled();
@@ -2558,7 +2593,7 @@ describe("BranchesPanel remote heading menu", () => {
     const { user } = await renderPanel();
     rightClick(originHeading());
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveFocus();
   });
 
   it("cancelling Remove remote… returns focus to the Branches region", async () => {
@@ -2567,7 +2602,7 @@ describe("BranchesPanel remote heading menu", () => {
     await user.click(menuItem("Remove remote…"));
     const dialog = await dialogNamed("Remove remote origin?");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("region", { name: "Branches" })).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Local branches" })).toHaveFocus();
   });
 });
 
@@ -2578,7 +2613,7 @@ describe("BranchesPanel Create pull request menu item", () => {
     const view = renderWithProviders(
       <BranchesPanel repoId={1} onCreatePullRequest={onCreatePullRequest} />,
     );
-    await screen.findByRole("heading", { name: "Local" });
+    await screen.findByRole("button", { name: "New branch…" });
     return view;
   }
 
@@ -2619,7 +2654,7 @@ describe("BranchesPanel Create pull request menu item edge cases", () => {
   it("should not list it when the prop is absent", async () => {
     vi.mocked(listBranches).mockResolvedValue(list());
     renderWithProviders(<BranchesPanel repoId={1} />);
-    await screen.findByRole("heading", { name: "Local" });
+    await screen.findByRole("button", { name: "New branch…" });
     rightClick(localRow("main"));
     expect(itemLabels()).not.toContain("Create pull request…");
   });
@@ -2627,7 +2662,7 @@ describe("BranchesPanel Create pull request menu item edge cases", () => {
   it("should not add it to the menu opened by dropping a branch on the current branch", async () => {
     vi.mocked(listBranches).mockResolvedValue(list());
     renderWithProviders(<BranchesPanel repoId={1} onCreatePullRequest={vi.fn()} />);
-    await screen.findByRole("heading", { name: "Local" });
+    await screen.findByRole("button", { name: "New branch…" });
     pickUp(localRow("feature"));
     hover(localRow("main"));
     dropOn(localRow("main"));
