@@ -537,6 +537,11 @@ describe("WorktreesPanel filtering", () => {
     await renderPanel();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(useSettings.getState().settings.layout.worktreesCollapsed).toBe(true);
+    expect(
+      within(list())
+        .getAllByRole("button")
+        .map((r) => r.getAttribute("title")),
+    ).toEqual(["/repos/app-feat-a"]);
   });
 
   it("should say No matches when nothing hits", async () => {

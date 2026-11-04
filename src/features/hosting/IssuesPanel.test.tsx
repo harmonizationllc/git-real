@@ -745,6 +745,15 @@ describe("IssuesPanel filtering", () => {
     expect(screen.getByRole("button", { name: "Issues (0 of 2)" })).toBeInTheDocument();
   });
 
+  it("should keep Show more under No matches while more pages exist", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue(manyIssues(50));
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issues (0 of 50+)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+  });
+
   it("should not fetch or relabel a collapsed section because of the filter", async () => {
     await seedSettings({ layout: { issuesCollapsed: true } });
     act(() => useWorkspace.getState().setRefsFilter(1, "#12"));

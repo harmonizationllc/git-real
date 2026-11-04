@@ -129,8 +129,8 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           data-focus-target
           className={`gr-section-heading ${styles.heading}`}
         >
-          {filtering
-            ? `Stashes (${shown.length} of ${stashes?.length ?? 0})`
+          {filtering && stashes !== undefined
+            ? `Stashes (${shown.length} of ${stashes.length})`
             : `Stashes (${stashes?.length ?? 0})`}
         </h2>
         <StashButton

@@ -77,6 +77,19 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     { id: "copy", label: "Copy link", onSelect: () => links.copyLink(issue.webUrl) },
   ];
 
+  const showMore = (
+    <button
+      data-variant="ghost"
+      data-size="sm"
+      type="button"
+      className={styles.more}
+      disabled={list.loadingMore}
+      onClick={list.loadMore}
+    >
+      {list.loadingMore ? "Loading…" : "Show more"}
+    </button>
+  );
+
   // The heading shows the count only while the body shows the loaded list (or its empty state).
   let listed = false;
   let body: React.ReactNode;
@@ -120,9 +133,12 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   } else if (issues.length === 0) {
     listed = true;
     body = (
-      <p className={styles.empty}>
-        {(loaded as Issue[]).length === 0 ? noIssuesText(provider) : "No matches"}
-      </p>
+      <>
+        <p className={styles.empty}>
+          {(loaded as Issue[]).length === 0 ? noIssuesText(provider) : "No matches"}
+        </p>
+        {list.hasMore && showMore}
+      </>
     );
   } else {
     listed = true;
@@ -147,18 +163,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         {list.error !== null && (
           <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
         )}
-        {list.hasMore && (
-          <button
-            data-variant="ghost"
-            data-size="sm"
-            type="button"
-            className={styles.more}
-            disabled={list.loadingMore}
-            onClick={list.loadMore}
-          >
-            {list.loadingMore ? "Loading…" : "Show more"}
-          </button>
-        )}
+        {list.hasMore && showMore}
       </>
     );
   }

@@ -210,6 +210,7 @@ describe("filterStashes", () => {
     stashEntry(0, { message: "On main: Fix Login", branch: "main" }),
     stashEntry(1, { message: "WIP on dev: abc second", branch: "dev" }),
     stashEntry(2, { message: "custom note", branch: null }),
+    stashEntry(3, { message: "unrelated words", branch: "Topic" }),
   ];
 
   it("should return the same array for a blank query", () => {
@@ -222,7 +223,8 @@ describe("filterStashes", () => {
   });
 
   it("should match the branch", () => {
-    expect(filterStashes(stashes, "DEV").map((s) => s.index)).toEqual([1]);
+    expect(filterStashes(stashes, "TOPIC").map((s) => s.index)).toEqual([3]);
+    expect(filterStashes(stashes, "dev").map((s) => s.index)).toEqual([1]);
   });
 
   it("should not fail on a null branch", () => {

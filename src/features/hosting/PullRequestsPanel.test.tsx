@@ -660,6 +660,15 @@ describe("PullRequestsPanel filtering", () => {
     expect(screen.getByRole("button", { name: "Pull requests (0 of 2)" })).toBeInTheDocument();
   });
 
+  it("should keep Show more under No matches while more pages exist", async () => {
+    vi.mocked(hostingListPullRequests).mockResolvedValue(pullRequests(50));
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pull requests (0 of 50+)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+  });
+
   it("should not fetch or relabel a collapsed section because of the filter", async () => {
     await seedSettings({ layout: { pullRequestsCollapsed: true } });
     act(() => useWorkspace.getState().setRefsFilter(1, "#12"));
