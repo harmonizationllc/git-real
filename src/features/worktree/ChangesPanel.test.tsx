@@ -1863,7 +1863,10 @@ describe("ChangesPanel COSMIC look", () => {
 // Records every observer and its targets; fire() delivers one batch shaped like the real API.
 class StubResizeObserver {
   static instances: StubResizeObserver[] = [];
-  observe = vi.fn();
+  // Like the real API, observing a missing element throws.
+  observe = vi.fn((target: Element | null) => {
+    if (target === null) throw new TypeError("observe() needs an Element");
+  });
   unobserve = vi.fn();
   disconnect = vi.fn();
   constructor(readonly callback: ResizeObserverCallback) {
@@ -1991,6 +1994,24 @@ describe("ChangesPanel split", () => {
     await waitFor(() => expect(screen.queryByTestId("conflicts-content")).toBeNull());
     expect(pane("unstaged").style.height).toBe("200px");
     expect(pane("staged").style.height).toBe("200px");
+  });
+
+  it("survives a failed refetch with Conflicts shown and observes it again on recovery", async () => {
+    const { queryClient } = await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    vi.mocked(getStatus).mockRejectedValue({ kind: "noChanges", message: "boom" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(screen.queryByTestId("changes-body")).toBeNull();
+    vi.mocked(getStatus).mockResolvedValue(status(conflict("c.txt")));
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByTestId("conflicts-content");
+    const fresh = StubResizeObserver.instances.filter((o) => o.disconnect.mock.calls.length === 0);
+    expect(fresh.flatMap((o) => o.observe.mock.calls.map(([el]) => el))).toContain(
+      conflictsContent(),
+    );
+    measure(406, 300);
+    expect(pane("unstaged").style.height).toBe("120px");
   });
 
   it("does not write on reset when nothing is stored", async () => {

@@ -162,7 +162,8 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   }, [bodyShown]);
 
   useEffect(() => {
-    if (!hasConflicts) return;
+    // A failed refetch keeps the rows but unmounts the body, and with it the Conflicts content.
+    if (!hasConflicts || !bodyShown) return;
     const ro = new ResizeObserver((entries) => {
       const last = entries.filter((e) => e.target === conflictsRef.current).at(-1);
       if (last === undefined) return;
@@ -173,7 +174,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
       ro.disconnect();
       setMeasured((prev) => ({ ...prev, conflicts: null }));
     };
-  }, [hasConflicts]);
+  }, [hasConflicts, bodyShown]);
 
   // Until the body (and the Conflicts content, when shown) has reported, the panes keep their flex
   // fallback. Nothing here writes settings: the stored height is only clamped for display.
