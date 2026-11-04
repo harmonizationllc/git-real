@@ -176,7 +176,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
           ref={headingRef}
           tabIndex={-1}
           data-focus-target
-          className={styles.heading}
+          className={`gr-section-heading ${styles.heading}`}
         >
           <button
             type="button"

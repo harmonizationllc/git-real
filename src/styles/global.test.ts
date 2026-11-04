@@ -156,6 +156,8 @@ describe("section heading and pill helpers", () => {
   it("styles .gr-section-header as a flex row on the accent tint", () => {
     const h = block(".gr-section-header");
     expect(h).toMatch(/display:\s*flex/);
+    expect(h).toMatch(/align-items:\s*flex-end/);
+    expect(h).toMatch(/gap:\s*6px/);
     expect(h).toMatch(/background:\s*var\(--color-accent-tint\)/);
   });
   it("styles .gr-pill as an 18px pill with a kind per ref type", () => {

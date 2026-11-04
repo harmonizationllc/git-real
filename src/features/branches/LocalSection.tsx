@@ -78,6 +78,8 @@ export function LocalSection() {
           <button
             type="button"
             className={styles.newBranch}
+            data-variant="ghost"
+            data-size="sm"
             disabled={unborn || pending}
             title={unborn ? "Make a commit first" : undefined}
             onClick={openNewBranch}

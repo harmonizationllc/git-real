@@ -32,8 +32,9 @@ export function sectionFloor(natural: number): number {
 
 /**
  * Shares the column between the sections (spec §3.1). The absorber (default index 0; null for
- * none) takes the leftover; it must be null or an index into `sections` (not range-checked). Each section prefers its content height, or its stored height clamped
- * between its floor and its content; the absorber's stored height is a true height, only floored.
+ * none) takes the leftover; it must be null or an index into `sections` (not range-checked).
+ * Each section prefers its content height, or its stored height clamped between its floor and
+ * its content; the absorber's stored height is a true height, only floored.
  * Leftover space goes to an automatic absorber; an overflow is taken from the automatic sections
  * in proportion to their room above the floor, then from the fixed ones. Floors are never
  * crossed. Heights are whole pixels: when the shares fill the container, the rounding remainder

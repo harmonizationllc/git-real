@@ -164,6 +164,13 @@ describe("LocalSection New branch…", () => {
     expect(createBranch).toHaveBeenCalledExactlyOnceWith(1, "topic", null, true);
   });
 
+  it("should style New branch… as a small ghost button on the band", async () => {
+    renderLocal();
+    const button = await screen.findByRole("button", { name: "New branch…" });
+    expect(button).toHaveAttribute("data-variant", "ghost");
+    expect(button).toHaveAttribute("data-size", "sm");
+  });
+
   it("should disable New branch… with Make a commit first on an unborn HEAD", async () => {
     vi.mocked(listBranches).mockResolvedValue(
       list({ head: { kind: "unborn", name: "main" }, local: [] }),

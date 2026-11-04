@@ -1,4 +1,3 @@
-/* The section rules mirror PullRequestsPanel.module.css; no feature imports another feature's module. */
 /* The RefsColumn wrapper sizes and scrolls the section; its handle draws the divider. */
 .root {
   color: var(--color-text);
@@ -13,26 +12,9 @@
   flex: 1;
 }
 
-/* A text-styled button carrying the heading's font. */
+/* The collapse toggle and its caret are shared with the other panels. */
 .toggle {
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-}
-
-/* The caret's alt text is empty, so it stays out of the accessible name. */
-.toggle::before {
-  content: "▸ ";
-  content: "▸ " / "";
-}
-
-.toggle[aria-expanded="true"]::before {
-  content: "▾ ";
-  content: "▾ " / "";
+  composes: toggle from "../tags/TagsPanel.module.css";
 }
 
 .refresh {

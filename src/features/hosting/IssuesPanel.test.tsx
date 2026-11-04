@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { declarationsOf } from "../../test/cssRules";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -102,6 +100,7 @@ describe("IssuesPanel visibility", () => {
     await renderPanel();
     expect(screen.getByRole("region", { name: "Issues (2)" })).toBeInTheDocument();
     const heading = screen.getByRole("heading", { name: /^Issues/ });
+    expect(heading).toHaveClass("gr-section-heading");
     expect(heading).toHaveAttribute("data-focus-target");
     expect(heading).toHaveAttribute("tabindex", "-1");
   });
@@ -714,13 +713,6 @@ describe("IssuesPanel row menu toggle", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
     await user.click(row(12));
     expect(screen.queryByRole("menu")).toBeNull();
-  });
-});
-
-describe("section header alignment", () => {
-  it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/styles/global.css", "utf8");
-    expect(declarationsOf(css, "gr-section-header")).toMatch(/align-items:\s*flex-end/);
   });
 });
 
