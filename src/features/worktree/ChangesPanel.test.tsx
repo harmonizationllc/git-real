@@ -19,7 +19,9 @@ import type {
   StatusEntry,
   WorkingTreeStatus,
 } from "../../lib/ipc";
+import { setChangesUnstagedHeight } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { useBranches } from "../branches/useBranches";
 import { useIntegrationActions } from "../merge/useIntegrationActions";
@@ -46,6 +48,12 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   discardPaths: vi.fn(),
   addToGitignore: vi.fn(),
   stashPush: vi.fn(),
+  updateSettings: vi.fn(),
+}));
+
+vi.mock(import("../../lib/store/settingsActions"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  setChangesUnstagedHeight: vi.fn(),
 }));
 
 const entry = (over: Partial<StatusEntry> & { path: string }): StatusEntry => ({
@@ -1849,5 +1857,122 @@ describe("ChangesPanel COSMIC look", () => {
   it("styles the section headings with the shared class", async () => {
     await renderPanel(unstaged("a.txt"));
     expect(screen.getByRole("heading", { name: /Unstaged/ })).toHaveClass("gr-section-heading");
+  });
+});
+
+// Records every observer and its targets; fire() delivers one batch shaped like the real API.
+class StubResizeObserver {
+  static instances: StubResizeObserver[] = [];
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  constructor(readonly callback: ResizeObserverCallback) {
+    StubResizeObserver.instances.push(this);
+  }
+  fire(entries: Array<{ target: Element; height: number }>) {
+    this.callback(
+      entries.map(
+        ({ target, height }) => ({ target, contentRect: { height } }) as ResizeObserverEntry,
+      ),
+      this as never,
+    );
+  }
+}
+
+const observer = () => StubResizeObserver.instances.at(-1) as StubResizeObserver;
+const body = () => screen.getByTestId("changes-body");
+const pane = (p: "unstaged" | "staged") => body().querySelector<HTMLElement>(`[data-pane="${p}"]`)!;
+const conflictsSection = () => screen.getByRole("region", { name: /Conflicts/ });
+const conflictsContent = () => screen.getByTestId("conflicts-content");
+
+/** One observer batch: the body and, when the Conflicts section is rendered, its content. */
+function measure(bodyHeight: number, conflictsHeight = 0) {
+  const entries = [{ target: body() as Element, height: bodyHeight }];
+  if (screen.queryByTestId("conflicts-content") !== null) {
+    entries.push({ target: conflictsContent(), height: conflictsHeight });
+  }
+  act(() => observer().fire(entries));
+}
+
+describe("ChangesPanel split", () => {
+  beforeEach(async () => {
+    StubResizeObserver.instances = [];
+    vi.stubGlobal("ResizeObserver", StubResizeObserver);
+    // jsdom has no pointer capture.
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    await resetSettings();
+  });
+
+  it("renders a horizontal separator between the panes", async () => {
+    await renderPanel(unstaged("a.txt"), staged("b.txt"));
+    const sep = screen.getByRole("separator", { name: "Resize Unstaged and Staged" });
+    expect(sep).toHaveAttribute("aria-orientation", "horizontal");
+    expect(pane("unstaged").nextElementSibling).toBe(sep);
+    expect(sep.nextElementSibling).toBe(pane("staged"));
+  });
+
+  it("keeps the panes on their flex fallback until measured", async () => {
+    await renderPanel();
+    expect(pane("unstaged").style.height).toBe("");
+    expect(pane("staged").style.height).toBe("");
+  });
+
+  it("splits a measured body in half when nothing is stored", async () => {
+    await renderPanel();
+    measure(406); // 400 + the 6 px divider
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+    expect(screen.getByRole("separator")).toHaveAttribute("aria-valuenow", "200");
+    expect(screen.getByRole("separator")).toHaveAttribute("aria-valuemax", "328");
+  });
+
+  it("uses the stored height and clamps it without writing it back", async () => {
+    await seedSettings({ layout: { changesUnstagedHeight: 1000 } });
+    await renderPanel();
+    measure(406);
+    expect(pane("unstaged").style.height).toBe("328px");
+    expect(pane("staged").style.height).toBe("72px");
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("writes the dragged height and ignores a drag to the same value", async () => {
+    await renderPanel();
+    measure(406);
+    const sep = screen.getByRole("separator");
+    fireEvent.pointerDown(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(sep, { clientY: 140, pointerId: 1 });
+    fireEvent.pointerUp(sep, { clientY: 140, pointerId: 1 });
+    expect(setChangesUnstagedHeight).toHaveBeenCalledExactlyOnceWith(240);
+    vi.mocked(setChangesUnstagedHeight).mockClear();
+    fireEvent.pointerDown(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(sep, { clientY: 100, pointerId: 1 });
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("does not write while unmeasured", async () => {
+    await renderPanel();
+    const sep = screen.getByRole("separator");
+    fireEvent.keyDown(sep, { key: "ArrowDown" });
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("moves by KEY_STEP on ArrowDown and resets to null on double-click", async () => {
+    await renderPanel();
+    measure(406);
+    const sep = screen.getByRole("separator");
+    fireEvent.keyDown(sep, { key: "ArrowDown" });
+    expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(216);
+    fireEvent.doubleClick(sep);
+    expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(null);
+  });
+
+  it("caps Conflicts at 40 % and takes it off the shared space", async () => {
+    await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    expect(conflictsSection().style.height).toBe("160px");
+    expect(pane("unstaged").style.height).toBe("120px");
+    expect(pane("staged").style.height).toBe("120px");
   });
 });

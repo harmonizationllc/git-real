@@ -1,4 +1,4 @@
-/* The sidebar column is already a card; the panel fills it, scrolls inside it and insets its lists. */
+/* The sidebar column is already a card; the panel fills it; its body wrapper and each pane list scroll, and its lists are inset. */
 .root {
   flex: 1;
   display: flex;
