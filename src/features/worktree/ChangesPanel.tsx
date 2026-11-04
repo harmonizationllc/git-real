@@ -38,8 +38,8 @@ interface ConfirmState {
 
 const SECTIONS: { section: Section; title: string; listLabel: string }[] = [
   { section: "conflicts", title: "Conflicts", listLabel: "Conflicts" },
-  { section: "staged", title: "Staged", listLabel: "Staged changes" },
   { section: "unstaged", title: "Unstaged", listLabel: "Unstaged changes" },
+  { section: "staged", title: "Staged", listLabel: "Staged changes" },
 ];
 
 const keyOf = (section: Section, path: string): string => `${section}:${path}`;
@@ -241,7 +241,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
         type="button"
         data-variant="ghost"
         data-size="sm"
-        disabled={pending}
+        disabled={pending || rows[section].length === 0}
         onClick={() => run()}
       >
         {label}
@@ -255,43 +255,53 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   } else if (statusError !== null) {
     body = <RepoError error={statusError} path={null} variant="panel" onDismiss={refetch} />;
   } else {
-    const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
-      <>
+      <div data-testid="changes-body" className={styles.body}>
         {panelError !== null && (
           <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         )}
-        {nonEmpty.length === 0 && <p className={styles.empty}>No changes</p>}
-        {nonEmpty.map(({ section, title, listLabel }) => {
-          const headingId = `${idPrefix}-${section}`;
-          return (
-            <section key={section} className={styles.section} aria-labelledby={headingId}>
-              <div className={styles.sectionHeader}>
-                <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
-                  {title} ({rows[section].length})
-                </h2>
-                {headerAction(section)}
-              </div>
-              <ul aria-label={listLabel} className={styles.list}>
-                {rows[section].map((row) => (
-                  <FileRow
-                    key={row.key}
-                    entry={row.entry}
-                    section={section}
-                    kind={row.kind}
-                    selected={selection.isSelected(row.key)}
-                    disabled={pending}
-                    onClick={(mods) => selectRow(row, mods)}
-                    onContextMenu={(x, y) => setMenu({ x, y, kind: "row", row })}
-                    onPrimary={() => primary(row)}
-                    onDiscard={section === "unstaged" ? () => openDiscard(row) : undefined}
-                  />
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </>
+        {SECTIONS.filter(({ section }) => section !== "conflicts" || rows.conflicts.length > 0).map(
+          ({ section, title, listLabel }) => {
+            const headingId = `${idPrefix}-${section}`;
+            const pane = section !== "conflicts";
+            return (
+              <section
+                key={section}
+                className={pane ? styles.pane : styles.conflicts}
+                data-pane={pane ? section : undefined}
+                aria-labelledby={headingId}
+              >
+                <div className={styles.sectionHeader}>
+                  <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
+                    {title} ({rows[section].length})
+                  </h2>
+                  {headerAction(section)}
+                </div>
+                {rows[section].length === 0 ? (
+                  <p className={styles.empty}>No {section} changes</p>
+                ) : (
+                  <ul aria-label={listLabel} className={styles.list}>
+                    {rows[section].map((row) => (
+                      <FileRow
+                        key={row.key}
+                        entry={row.entry}
+                        section={section}
+                        kind={row.kind}
+                        selected={selection.isSelected(row.key)}
+                        disabled={pending}
+                        onClick={(mods) => selectRow(row, mods)}
+                        onContextMenu={(x, y) => setMenu({ x, y, kind: "row", row })}
+                        onPrimary={() => primary(row)}
+                        onDiscard={section === "unstaged" ? () => openDiscard(row) : undefined}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          },
+        )}
+      </div>
     );
   }
 

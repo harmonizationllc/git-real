@@ -156,14 +156,27 @@ describe("ChangesPanel states", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading changes…");
   });
 
-  it("should show No changes when the status has no entries", async () => {
+  it("shows both panes with zero counts and empty lines when there are no entries", async () => {
     await renderPanel();
-    expect(screen.getByText("No changes")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Unstaged (0)",
+      "Staged (0)",
+    ]);
+    expect(screen.getByText("No unstaged changes")).toBeInTheDocument();
+    expect(screen.getByText("No staged changes")).toBeInTheDocument();
+    expect(screen.queryByText("No changes")).toBeNull();
   });
 
-  it("should render no section headings when there are no entries", async () => {
+  it("disables Stage all and Unstage all while their panes are empty", async () => {
     await renderPanel();
-    expect(screen.queryByRole("heading")).toBeNull();
+    expect(btn("Stage all")).toBeDisabled();
+    expect(btn("Unstage all")).toBeDisabled();
+  });
+
+  it("enables only the button whose pane has rows", async () => {
+    await renderPanel(unstaged("a.txt"));
+    expect(btn("Stage all")).toBeEnabled();
+    expect(btn("Unstage all")).toBeDisabled();
   });
 
   it("should render the changes region when there are entries", async () => {
@@ -200,29 +213,49 @@ describe("ChangesPanel states", () => {
   });
 });
 
-// Contract: sections in order Conflicts, Staged, Unstaged with counts; empty sections hidden.
+// Contract: sections in order Conflicts, Unstaged, Staged with counts; Unstaged and Staged always shown.
 describe("ChangesPanel sections", () => {
   it("should show a heading with the count for each non-empty section", async () => {
     await renderPanel(conflict("c.txt"), staged("s1.txt"), staged("s2.txt"), unstaged("u.txt"));
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
       "Conflicts (1)",
-      "Staged (2)",
       "Unstaged (1)",
+      "Staged (2)",
     ]);
+  });
+
+  it("keeps an empty Staged pane visible below a non-empty Unstaged pane", async () => {
+    await renderPanel(unstaged("u.txt"));
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Unstaged (1)",
+      "Staged (0)",
+    ]);
+    expect(screen.getByText("No staged changes")).toBeInTheDocument();
+  });
+
+  it("shows the empty line and disables the button when a refetch empties a selected pane", async () => {
+    vi.mocked(getStatus)
+      .mockResolvedValueOnce(status(unstaged("a.txt")))
+      .mockResolvedValue(status());
+    const { user, queryClient } = renderWithProviders(<ChangesPanel repoId={1} />);
+    await user.click(await screen.findByText("a.txt"));
+    await act(() => queryClient.invalidateQueries());
+    expect(await screen.findByText("No unstaged changes")).toBeInTheDocument();
+    expect(btn("Stage all")).toBeDisabled();
   });
 
   it("should label each list by section", async () => {
     await renderPanel(conflict("c.txt"), staged("s.txt"), unstaged("u.txt"));
     expect(screen.getAllByRole("list").map((l) => l.getAttribute("aria-label"))).toEqual([
       "Conflicts",
-      "Staged changes",
       "Unstaged changes",
+      "Staged changes",
     ]);
   });
 
-  it("should not render empty sections", async () => {
+  it("should not render a list for an empty pane", async () => {
     await renderPanel(unstaged("u.txt"));
-    expect(screen.queryByRole("heading", { name: /^Staged/ })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Staged changes" })).toBeNull();
   });
 
   it("should not render the conflicts section when there are no conflicts", async () => {
@@ -293,7 +326,8 @@ describe("ChangesPanel buttons", () => {
 
   it("should not offer Stage all or Unstage all in the conflicts section", async () => {
     await renderPanel(conflict("c.txt"));
-    expect(screen.queryByRole("button", { name: /all$/ })).toBeNull();
+    const section = screen.getByRole("region", { name: "Conflicts (1)" });
+    expect(within(section).queryByRole("button", { name: /all$/ })).toBeNull();
   });
 
   it("should call stageAll when Stage all is clicked", async () => {
@@ -903,8 +937,8 @@ describe("ChangesPanel cross-section behaviour", () => {
 
   async function selectAcrossBoundary() {
     const view = await renderPanel(...crossEntries());
-    await view.user.click(btn("modified s1.txt"));
-    await modClick(view.user, btn("modified u1.txt"), "Shift");
+    await view.user.click(btn("modified u2.txt"));
+    await modClick(view.user, btn("modified s1.txt"), "Shift");
     return view;
   }
 
@@ -913,19 +947,19 @@ describe("ChangesPanel cross-section behaviour", () => {
     const pressed = ["s1.txt", "s2.txt", "u1.txt", "u2.txt"].map((p) =>
       screen.getAllByRole("button", { name: `modified ${p}` })[0].getAttribute("aria-pressed"),
     );
-    expect(pressed).toEqual(["true", "true", "true", "false"]);
+    expect(pressed).toEqual(["true", "false", "false", "true"]);
   });
 
   it("should stage only the unstaged part of a cross-section selection", async () => {
     const { user } = await selectAcrossBoundary();
-    await user.click(btn("Stage u1.txt"));
-    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["u1.txt"]);
+    await user.click(btn("Stage u2.txt"));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["u2.txt"]);
   });
 
   it("should unstage only the staged part of a cross-section selection", async () => {
     const { user } = await selectAcrossBoundary();
     await user.click(btn("Unstage s1.txt"));
-    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["s1.txt", "s2.txt"]);
+    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["s1.txt"]);
   });
 });
 
@@ -985,7 +1019,7 @@ describe("ChangesPanel status error retry", () => {
       .mockResolvedValue(status());
     const { user } = renderWithProviders(<ChangesPanel repoId={1} />);
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
-    await screen.findByText("No changes");
+    await screen.findByText("No unstaged changes");
     expect(getStatus).toHaveBeenCalledTimes(2);
   });
 });
@@ -1694,7 +1728,7 @@ describe("ChangesPanel Stash button", () => {
 
   it("disables Stash… with No changes to stash when there are no changes", async () => {
     await renderPanel();
-    expect(screen.getByText("No changes")).toBeInTheDocument();
+    expect(screen.getByText("No unstaged changes")).toBeInTheDocument();
     expect(stashBtn()).toBeDisabled();
     expect(stashBtn()).toHaveAttribute("title", "No changes to stash");
   });
