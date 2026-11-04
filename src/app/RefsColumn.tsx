@@ -89,10 +89,10 @@ export function RefsColumn({
   const tracks = hasHandle.filter(Boolean).length * SPLIT_HANDLE_WIDTH;
   const container = ready ? (measured.root as number) - tracks : 0;
   const absorber = !layout.localCollapsed ? 0 : !layout.remoteCollapsed ? 1 : null;
-  // Remote's stored height is ignored while it absorbs; Local's is a true height when it absorbs.
+  // Each section passes its own stored height; the absorber's is a true height, only floored.
   const stored: Record<ResizableSection, number | null> = {
     local: layout.branchesHeight,
-    remote: absorber === 1 ? null : layout.remoteHeight,
+    remote: layout.remoteHeight,
     stashes: layout.stashesHeight,
     tags: layout.tagsHeight,
     worktrees: layout.worktreesHeight,

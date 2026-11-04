@@ -46,7 +46,7 @@ export function setSidebarWidth(width: number): void {
 }
 
 /** The settings leaf that stores each resizable section's height. */
-type HeightLeaf = keyof Settings["layout"] & `${string}Height`;
+type HeightLeaf = "branchesHeight" | `${Exclude<ResizableSection, "local">}Height`;
 
 const HEIGHT_LEAF: Record<ResizableSection, HeightLeaf> = {
   local: "branchesHeight",

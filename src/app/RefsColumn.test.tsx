@@ -399,11 +399,14 @@ describe("RefsColumn Local and Remote", () => {
     expect(handle("Resize Local section")).toHaveAttribute("aria-valuemax", "28");
   });
 
-  it("should ignore a stored Remote height while Remote absorbs", async () => {
+  it("should render a stored Remote height as a true height while Remote absorbs", async () => {
     await seedSettings({ layout: { localCollapsed: true, remoteHeight: 120 } });
     await renderColumn();
+    // above its 100 px content, and the leftover stays unassigned (as a stored Local height does)
     measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
-    expect(wrapper("remote").style.height).toBe("390px");
+    expect(wrapper("remote").style.height).toBe("120px");
+    expect(wrapper("local").style.height).toBe("28px");
+    expect(handle("Resize Remote section")).toHaveAttribute("aria-valuenow", "120");
   });
 
   it("should cap a collapsed Local's stored height at its content", async () => {

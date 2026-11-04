@@ -32,7 +32,7 @@ export function sectionFloor(natural: number): number {
 
 /**
  * Shares the column between the sections (spec §3.1). The absorber (default index 0; null for
- * none) takes the leftover. Each section prefers its content height, or its stored height clamped
+ * none) takes the leftover; it must be null or an index into `sections` (not range-checked). Each section prefers its content height, or its stored height clamped
  * between its floor and its content; the absorber's stored height is a true height, only floored.
  * Leftover space goes to an automatic absorber; an overflow is taken from the automatic sections
  * in proportion to their room above the floor, then from the fixed ones. Floors are never
@@ -55,7 +55,7 @@ export function fitSections(
   );
   let over = heights.reduce((sum, h) => sum + h, 0) - container;
   if (over <= 0) {
-    if (absorber !== null && sections[absorber]?.fixed === null) heights[absorber] -= over;
+    if (absorber !== null && sections[absorber].fixed === null) heights[absorber] -= over;
   } else {
     for (const automatic of [true, false]) {
       const members = sections.flatMap((s, i) => ((s.fixed === null) === automatic ? [i] : []));
