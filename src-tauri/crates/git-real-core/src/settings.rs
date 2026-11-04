@@ -115,6 +115,9 @@ pub struct LayoutSettings {
     pub worktrees_height: Option<u32>,
     pub pull_requests_height: Option<u32>,
     pub changes_unstaged_height: Option<u32>,
+    pub local_collapsed: bool,
+    pub remote_collapsed: bool,
+    pub remote_height: Option<u32>,
 }
 
 impl Default for LayoutSettings {
@@ -132,6 +135,9 @@ impl Default for LayoutSettings {
             worktrees_height: None,
             pull_requests_height: None,
             changes_unstaged_height: None,
+            local_collapsed: false,
+            remote_collapsed: false,
+            remote_height: None,
         }
     }
 }
@@ -372,6 +378,15 @@ pub struct LayoutPatch {
         skip_serializing_if = "Option::is_none"
     )]
     pub changes_unstaged_height: Option<Option<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_collapsed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_collapsed: Option<bool>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub remote_height: Option<Option<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -514,6 +529,7 @@ impl Settings {
                 &mut layout.changes_unstaged_height,
                 "layout.changesUnstagedHeight",
             ),
+            (&mut layout.remote_height, "layout.remoteHeight"),
         ] {
             if let Some(h) = *height {
                 *height = Some(bounded(h, SECTION_HEIGHT_MIN, u32::MAX, field, warnings));
@@ -762,6 +778,21 @@ impl Settings {
                     d.layout.changes_unstaged_height,
                     &mut w,
                 ),
+                local_collapsed: leaf(
+                    v,
+                    "layout",
+                    "localCollapsed",
+                    d.layout.local_collapsed,
+                    &mut w,
+                ),
+                remote_collapsed: leaf(
+                    v,
+                    "layout",
+                    "remoteCollapsed",
+                    d.layout.remote_collapsed,
+                    &mut w,
+                ),
+                remote_height: leaf(v, "layout", "remoteHeight", d.layout.remote_height, &mut w),
             },
             updates: UpdateSettings {
                 check_on_startup: leaf(
@@ -934,6 +965,9 @@ impl Settings {
                 &mut next.layout.changes_unstaged_height,
                 &p.changes_unstaged_height,
             );
+            set(&mut next.layout.local_collapsed, &p.local_collapsed);
+            set(&mut next.layout.remote_collapsed, &p.remote_collapsed);
+            set(&mut next.layout.remote_height, &p.remote_height);
         }
         if let Some(p) = &patch.updates {
             set(&mut next.updates.check_on_startup, &p.check_on_startup);

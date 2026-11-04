@@ -174,6 +174,9 @@ export interface Settings {
     worktreesHeight: number | null;
     pullRequestsHeight: number | null;
     changesUnstagedHeight: number | null;
+    localCollapsed: boolean;
+    remoteCollapsed: boolean;
+    remoteHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
   shortcuts: { bindings: ShortcutBindings; keycaps: ShortcutKeycaps };

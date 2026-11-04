@@ -80,6 +80,14 @@ export function setWorktreesCollapsed(worktreesCollapsed: boolean): void {
   setPref({ layout: { worktreesCollapsed } });
 }
 
+export function setLocalCollapsed(localCollapsed: boolean): void {
+  setPref({ layout: { localCollapsed } });
+}
+
+export function setRemoteCollapsed(remoteCollapsed: boolean): void {
+  setPref({ layout: { remoteCollapsed } });
+}
+
 export function setPullRequestsCollapsed(pullRequestsCollapsed: boolean): void {
   setPref({ layout: { pullRequestsCollapsed } });
 }

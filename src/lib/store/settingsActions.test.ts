@@ -158,6 +158,14 @@ describe("layout setters", () => {
     });
   });
 
+  it("setLocalCollapsed and setRemoteCollapsed save their leaves", async () => {
+    actions.setLocalCollapsed(true);
+    actions.setRemoteCollapsed(true);
+    expect(settings().layout.localCollapsed).toBe(true);
+    expect(settings().layout.remoteCollapsed).toBe(true);
+    expect(await patches()).toEqual([{ layout: { localCollapsed: true, remoteCollapsed: true } }]);
+  });
+
   it("the collapsed-section setters set their flags", async () => {
     actions.setTagsCollapsed(false);
     actions.setPullRequestsCollapsed(true);
