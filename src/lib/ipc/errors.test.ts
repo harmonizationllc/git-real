@@ -38,6 +38,13 @@ describe("isAppError tag kinds", () => {
   );
 });
 
+// Contract: the GR-45 upstream kind is recognised.
+describe("isAppError upstream kinds", () => {
+  it.each(["upstreamUnmapped"] as const)("isAppError accepts kind %s", (kind) => {
+    expect(isAppError({ kind, message: "m" })).toBe(true);
+  });
+});
+
 // Contract: isAppError is a strict guard for { kind: AppErrorKind, message: string }.
 describe("isAppError", () => {
   it.each(kinds)("isAppError accepts kind %s", (kind) => {

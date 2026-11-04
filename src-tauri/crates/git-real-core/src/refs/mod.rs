@@ -482,7 +482,7 @@ fn upstream_mapping(
         Err(e) if e.code() == ErrorCode::Ambiguous => {
             return Err(unmapped("more than one remote fetches it"));
         }
-        Err(e) if e.code() == ErrorCode::NotFound => None,
+        Err(e) if is_not_found(&e) => None,
         Err(e) => return Err(e.into()),
     };
     let Some(remote_name) = remote_name else {
@@ -505,7 +505,7 @@ fn upstream_mapping(
 trait ConfigKeys {
     fn set(&mut self, key: &str, value: &str) -> Result<(), git2::Error>;
     fn remove(&mut self, key: &str) -> Result<(), git2::Error>;
-    fn has(&self, key: &str) -> bool;
+    fn get(&self, key: &str) -> Option<String>;
 }
 
 impl ConfigKeys for git2::Config {
@@ -515,13 +515,14 @@ impl ConfigKeys for git2::Config {
     fn remove(&mut self, key: &str) -> Result<(), git2::Error> {
         git2::Config::remove(self, key)
     }
-    fn has(&self, key: &str) -> bool {
-        self.get_entry(key).is_ok()
+    fn get(&self, key: &str) -> Option<String> {
+        self.get_string(key).ok()
     }
 }
 
 /// Writes `branch.<b>.remote` then `branch.<b>.merge`; when the second write
-/// fails the first is removed again so no half-written upstream is left.
+/// fails the previous remote value is restored (or the key removed when
+/// there was none) so the config is left exactly as it was.
 fn write_upstream(
     keys: &mut impl ConfigKeys,
     branch: &str,
@@ -529,9 +530,13 @@ fn write_upstream(
     merge: &str,
 ) -> Result<(), git2::Error> {
     let remote_key = format!("branch.{branch}.remote");
+    let previous = keys.get(&remote_key);
     keys.set(&remote_key, remote)?;
     if let Err(e) = keys.set(&format!("branch.{branch}.merge"), merge) {
-        let _ = keys.remove(&remote_key);
+        let _ = match previous {
+            Some(old) => keys.set(&remote_key, &old),
+            None => keys.remove(&remote_key),
+        };
         return Err(e);
     }
     Ok(())
@@ -544,7 +549,7 @@ fn clear_upstream(config: &git2::Config, branch: &str) -> Result<(), git2::Error
     // A gone upstream still has its keys, so remove what exists.
     for key in ["remote", "merge"] {
         let key = format!("branch.{branch}.{key}");
-        if local.has(&key) {
+        if local.get_entry(&key).is_ok() {
             local.remove(&key)?;
         }
     }
@@ -643,61 +648,76 @@ fn count(n: usize) -> u32 {
 mod tests {
     use super::*;
 
-    /// Records writes; fails `set` for `fail_key`.
+    /// An in-memory key store; `set` fails for keys ending in `fail_key`.
     struct FakeKeys {
-        fail_key: &'static str,
-        set: Vec<(String, String)>,
-        removed: Vec<String>,
+        fail_key: Option<&'static str>,
+        map: std::collections::BTreeMap<String, String>,
+    }
+
+    impl FakeKeys {
+        fn new(fail_key: Option<&'static str>, seed: &[(&str, &str)]) -> Self {
+            FakeKeys {
+                fail_key,
+                map: map_of(seed),
+            }
+        }
     }
 
     impl ConfigKeys for FakeKeys {
         fn set(&mut self, key: &str, value: &str) -> Result<(), git2::Error> {
-            if key.ends_with(self.fail_key) {
+            if self.fail_key.is_some_and(|f| key.ends_with(f)) {
                 return Err(git2::Error::from_str("disk full"));
             }
-            self.set.push((key.to_owned(), value.to_owned()));
+            self.map.insert(key.to_owned(), value.to_owned());
             Ok(())
         }
         fn remove(&mut self, key: &str) -> Result<(), git2::Error> {
-            self.removed.push(key.to_owned());
+            self.map.remove(key);
             Ok(())
         }
-        fn has(&self, key: &str) -> bool {
-            self.set.iter().any(|(k, _)| k == key)
+        fn get(&self, key: &str) -> Option<String> {
+            self.map.get(key).cloned()
         }
+    }
+
+    fn map_of(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
     }
 
     #[test]
     fn write_upstream_sets_remote_then_merge() {
-        let mut keys = FakeKeys {
-            fail_key: "never",
-            set: vec![],
-            removed: vec![],
-        };
+        let mut keys = FakeKeys::new(None, &[]);
         write_upstream(&mut keys, "topic", "origin", "refs/heads/main").unwrap();
         assert_eq!(
-            keys.set,
-            vec![
-                ("branch.topic.remote".to_owned(), "origin".to_owned()),
-                (
-                    "branch.topic.merge".to_owned(),
-                    "refs/heads/main".to_owned()
-                ),
-            ]
+            keys.map,
+            map_of(&[
+                ("branch.topic.remote", "origin"),
+                ("branch.topic.merge", "refs/heads/main"),
+            ])
         );
-        assert!(keys.removed.is_empty());
     }
 
     #[test]
-    fn write_upstream_removes_remote_when_merge_fails() {
-        let mut keys = FakeKeys {
-            fail_key: ".merge",
-            set: vec![],
-            removed: vec![],
-        };
+    fn write_upstream_leaves_nothing_when_merge_fails() {
+        let mut keys = FakeKeys::new(Some(".merge"), &[]);
         let err = write_upstream(&mut keys, "topic", "origin", "refs/heads/main").unwrap_err();
         assert_eq!(err.message(), "disk full");
-        assert_eq!(keys.removed, vec!["branch.topic.remote".to_owned()]);
+        assert!(keys.map.is_empty(), "{:?}", keys.map);
+    }
+
+    #[test]
+    fn write_upstream_restores_the_previous_remote_when_merge_fails() {
+        let before = [
+            ("branch.topic.remote", "upstream"),
+            ("branch.topic.merge", "refs/heads/old"),
+        ];
+        let mut keys = FakeKeys::new(Some(".merge"), &before);
+        let err = write_upstream(&mut keys, "topic", "origin", "refs/heads/main").unwrap_err();
+        assert_eq!(err.message(), "disk full");
+        assert_eq!(keys.map, map_of(&before));
     }
 
     fn two_level_config(dir: &std::path::Path, global: &str, local: &str) -> git2::Config {
