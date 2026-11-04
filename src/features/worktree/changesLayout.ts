@@ -16,15 +16,17 @@ export interface PaneHeights {
 
 /**
  * Sizes the Changes panel's panes.
- * container: the body wrapper's height minus the divider (SPLIT_HANDLE_WIDTH).
+ * measuredContainer: the body wrapper's height minus the divider (SPLIT_HANDLE_WIDTH).
  * conflictsNatural: the Conflicts section's content height, 0 when hidden.
  * stored: layout.changesUnstagedHeight.
  */
 export function fitChangesPanes(
-  container: number,
+  measuredContainer: number,
   conflictsNatural: number,
   stored: number | null,
 ): PaneHeights {
+  // A measured height can be fractional; every output is a whole pixel.
+  const container = Math.floor(measuredContainer);
   if (container <= 0) {
     return {
       conflicts: conflictsNatural,

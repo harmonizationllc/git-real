@@ -41,8 +41,8 @@ interface ConfirmState {
   confirmLabel: string;
 }
 
-const SECTIONS: { section: Section; title: string; listLabel: string; emptyLabel: string }[] = [
-  { section: "conflicts", title: "Conflicts", listLabel: "Conflicts", emptyLabel: "No conflicts" },
+const SECTIONS: { section: Section; title: string; listLabel: string; emptyLabel?: string }[] = [
+  { section: "conflicts", title: "Conflicts", listLabel: "Conflicts" },
   {
     section: "unstaged",
     title: "Unstaged",
@@ -160,14 +160,18 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
     });
     ro.observe(bodyRef.current as HTMLDivElement);
     if (hasConflicts) ro.observe(conflictsRef.current as HTMLDivElement);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      // A remounted observer reports afresh; a stale height must not size the panes meanwhile.
+      setMeasured({ body: null, conflicts: null });
+    };
   }, [bodyShown, hasConflicts]);
 
   // Until the body (and the Conflicts content, when shown) has reported, the panes keep their flex
   // fallback. Nothing here writes settings: the stored height is only clamped for display.
   const conflictsNatural = hasConflicts ? measured.conflicts : 0;
   const ready = measured.body !== null && conflictsNatural !== null;
-  const container = measured.body !== null && ready ? measured.body - SPLIT_HANDLE_WIDTH : 0;
+  const container = measured.body !== null ? measured.body - SPLIT_HANDLE_WIDTH : 0;
   const heights = fitChangesPanes(container, conflictsNatural ?? 0, stored);
   const sized = (height: number): React.CSSProperties | undefined =>
     ready ? { height, flex: "none" } : undefined;
@@ -311,9 +315,6 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   } else {
     body = (
       <div ref={bodyRef} data-testid="changes-body" className={styles.body}>
-        {panelError !== null && (
-          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
-        )}
         {SECTIONS.filter(({ section }) => section !== "conflicts" || hasConflicts).map(
           ({ section, title, listLabel, emptyLabel }) => {
             const headingId = `${idPrefix}-${section}`;
@@ -377,7 +378,9 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
                     onChange={(px) => {
                       if (ready && px !== heights.unstaged) setChangesUnstagedHeight(px);
                     }}
-                    onReset={() => setChangesUnstagedHeight(null)}
+                    onReset={() => {
+                      if (stored !== null) setChangesUnstagedHeight(null);
+                    }}
                   />
                 )}
               </Fragment>
@@ -405,6 +408,12 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
             disabled={pending || statusError !== null}
             fallbackFocus={rootRef}
           />
+        </div>
+      )}
+      {bodyShown && panelError !== null && (
+        // Outside the measured body, so the panes are sized to the space left below it.
+        <div className={styles.error}>
+          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         </div>
       )}
       {body}

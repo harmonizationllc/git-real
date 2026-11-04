@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addToGitignore,
   discardPaths,
@@ -1898,10 +1898,11 @@ describe("ChangesPanel split", () => {
   beforeEach(async () => {
     StubResizeObserver.instances = [];
     vi.stubGlobal("ResizeObserver", StubResizeObserver);
-    // jsdom has no pointer capture.
-    Element.prototype.setPointerCapture = vi.fn();
-    Element.prototype.releasePointerCapture = vi.fn();
     await resetSettings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("renders a horizontal separator between the panes", async () => {
@@ -1959,6 +1960,7 @@ describe("ChangesPanel split", () => {
   });
 
   it("moves by KEY_STEP on ArrowDown and resets to null on double-click", async () => {
+    await seedSettings({ layout: { changesUnstagedHeight: 200 } });
     await renderPanel();
     measure(406);
     const sep = screen.getByRole("separator");
@@ -1966,6 +1968,37 @@ describe("ChangesPanel split", () => {
     expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(216);
     fireEvent.doubleClick(sep);
     expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps an action error outside the measured body", async () => {
+    vi.mocked(stagePaths).mockRejectedValue({ kind: "noChanges", message: "nothing to do" });
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    const alert = await screen.findByRole("alert");
+    expect(body()).not.toContainElement(alert);
+    measure(406);
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+  });
+
+  it("drops a stale measurement when Conflicts goes away", async () => {
+    const { queryClient } = await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    expect(pane("unstaged").style.height).toBe("120px");
+    vi.mocked(getStatus).mockResolvedValue(status(unstaged("a.txt")));
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await waitFor(() => expect(screen.queryByTestId("conflicts-content")).toBeNull());
+    expect(pane("unstaged").style.height).toBe("");
+    measure(406);
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+  });
+
+  it("does not write on reset when nothing is stored", async () => {
+    await renderPanel();
+    measure(406);
+    fireEvent.doubleClick(screen.getByRole("separator"));
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
   });
 
   it("caps Conflicts at 40 % and takes it off the shared space", async () => {

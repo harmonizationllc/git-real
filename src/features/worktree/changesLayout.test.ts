@@ -65,4 +65,22 @@ describe("fitChangesPanes", () => {
       max: Infinity,
     });
   });
+
+  it("returns whole pixels for a fractional container", () => {
+    expect(fitChangesPanes(400.6, 0, null)).toEqual({
+      conflicts: 0,
+      unstaged: 200,
+      staged: 200,
+      max: 328,
+    });
+  });
+
+  it("leaves Conflicts at its natural height when it equals the cap", () => {
+    expect(fitChangesPanes(400, 160, null)).toEqual({
+      conflicts: 160,
+      unstaged: 120,
+      staged: 120,
+      max: 168,
+    });
+  });
 });
