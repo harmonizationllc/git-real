@@ -173,6 +173,7 @@ export interface Settings {
     worktreesCollapsed: boolean;
     worktreesHeight: number | null;
     pullRequestsHeight: number | null;
+    changesUnstagedHeight: number | null;
   };
   updates: { checkOnStartup: boolean };
   shortcuts: { bindings: ShortcutBindings; keycaps: ShortcutKeycaps };

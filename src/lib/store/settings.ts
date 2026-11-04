@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
     worktreesCollapsed: false,
     worktreesHeight: null,
     pullRequestsHeight: null,
+    changesUnstagedHeight: null,
   },
   updates: { checkOnStartup: true },
   shortcuts: { bindings: {}, keycaps: {} },

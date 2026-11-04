@@ -61,6 +61,11 @@ export function setSectionHeight(section: ResizableSection, height: number | nul
   setPref({ layout: { [HEIGHT_LEAF[section]]: height === null ? null : Math.round(height) } });
 }
 
+/** Persists the Changes panel's Unstaged pane height; null returns it to the half split. */
+export function setChangesUnstagedHeight(height: number | null): void {
+  setPref({ layout: { changesUnstagedHeight: height === null ? null : Math.round(height) } });
+}
+
 export function resetWidth(column: LayoutColumn): void {
   setPref({
     layout: column === "refs" ? { refsWidth: REFS_DEFAULT } : { sidebarWidth: SIDEBAR_DEFAULT },

@@ -552,6 +552,45 @@ fn section_heights_round_trip_through_the_file_codec() {
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
+// --- GR-50: Changes panel split ---
+
+#[test]
+fn changes_unstaged_height_defaults_to_none_and_clamps() {
+    assert_eq!(Settings::default().layout.changes_unstaged_height, None);
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"changesUnstagedHeight": 10}
+    }));
+    assert_eq!(s.layout.changes_unstaged_height, Some(72));
+    assert_eq!(fields(&warnings), vec!["layout.changesUnstagedHeight"]);
+    let (s, warnings) = Settings::from_json_lenient(&json!({
+        "layout": {"changesUnstagedHeight": "x"}
+    }));
+    assert_eq!(s.layout.changes_unstaged_height, None);
+    assert_eq!(fields(&warnings), vec!["layout.changesUnstagedHeight"]);
+}
+
+#[test]
+fn patch_changes_unstaged_height_sets_clears_and_round_trips() {
+    let base = Settings::default();
+    let set = base
+        .apply(&patch(json!({"layout": {"changesUnstagedHeight": 300}})))
+        .unwrap();
+    assert_eq!(set.layout.changes_unstaged_height, Some(300));
+    let cleared = set
+        .apply(&patch(json!({"layout": {"changesUnstagedHeight": null}})))
+        .unwrap();
+    assert_eq!(cleared.layout.changes_unstaged_height, None);
+    let kept = set
+        .apply(&patch(json!({"layout": {"refsWidth": 250}})))
+        .unwrap();
+    assert_eq!(kept.layout.changes_unstaged_height, Some(300));
+    let text = serde_json::to_string_pretty(&SettingsFile::current(set.clone())).unwrap();
+    assert!(text.contains("\"changesUnstagedHeight\": 300"), "{text}");
+    let (back, warnings) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, set);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
 // --- GR-39: worktrees section layout ---
 
 #[test]

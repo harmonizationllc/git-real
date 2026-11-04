@@ -135,6 +135,13 @@ describe("layout setters", () => {
     expect(await patches()).toEqual([{ layout: { pullRequestsHeight: null } }]);
   });
 
+  it("setChangesUnstagedHeight rounds, saves and clears the leaf", async () => {
+    actions.setChangesUnstagedHeight(210.6);
+    expect(settings().layout.changesUnstagedHeight).toBe(211);
+    actions.setChangesUnstagedHeight(null);
+    expect(settings().layout.changesUnstagedHeight).toBeNull();
+  });
+
   it("the defaults carry five null section heights", () => {
     expect(DEFAULT_SETTINGS.layout).toMatchObject({
       branchesHeight: null,
