@@ -1,7 +1,11 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SPLIT_HANDLE_WIDTH, SplitHandle } from "../../components/SplitHandle";
+import { KEY_STEP } from "../../app/layout";
 import type { ChangeKind, RepoId, StatusEntry } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
+import { setChangesUnstagedHeight } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
 import { useBranches } from "../branches/useBranches";
 import { headName, sideLabels } from "../merge/operationCopy";
@@ -10,6 +14,7 @@ import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import { StashButton } from "../stash/StashButton";
 import styles from "./ChangesPanel.module.css";
+import { PANE_FLOOR, fitChangesPanes } from "./changesLayout";
 import { FileRow, type Section } from "./FileRow";
 import { useFileSelection } from "./useFileSelection";
 import { useStatus } from "./useStatus";
@@ -36,11 +41,27 @@ interface ConfirmState {
   confirmLabel: string;
 }
 
-const SECTIONS: { section: Section; title: string; listLabel: string }[] = [
+const SECTIONS: { section: Section; title: string; listLabel: string; emptyLabel?: string }[] = [
   { section: "conflicts", title: "Conflicts", listLabel: "Conflicts" },
-  { section: "staged", title: "Staged", listLabel: "Staged changes" },
-  { section: "unstaged", title: "Unstaged", listLabel: "Unstaged changes" },
+  {
+    section: "unstaged",
+    title: "Unstaged",
+    listLabel: "Unstaged changes",
+    emptyLabel: "No unstaged changes",
+  },
+  {
+    section: "staged",
+    title: "Staged",
+    listLabel: "Staged changes",
+    emptyLabel: "No staged changes",
+  },
 ];
+
+/** The body wrapper's and the Conflicts content's heights; null until reported. */
+interface Measured {
+  body: number | null;
+  conflicts: number | null;
+}
 
 const keyOf = (section: Section, path: string): string => `${section}:${path}`;
 
@@ -116,7 +137,53 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const rootRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const conflictsRef = useRef<HTMLDivElement>(null);
+  const stored = useSettings((s) => s.settings.layout.changesUnstagedHeight);
+  const [measured, setMeasured] = useState<Measured>({ body: null, conflicts: null });
+  const bodyShown = !isLoading && statusError === null;
+  const hasConflicts = rows.conflicts.length > 0;
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  // The body wrapper keeps its size when Conflicts appears or goes, so its observation lives apart
+  // from the Conflicts one: only the measurement of what was unmounted is cleared.
+  useEffect(() => {
+    if (!bodyShown) return;
+    const ro = new ResizeObserver((entries) => {
+      const last = entries.filter((e) => e.target === bodyRef.current).at(-1);
+      if (last === undefined) return;
+      setMeasured((prev) => ({ ...prev, body: last.contentRect.height }));
+    });
+    ro.observe(bodyRef.current as HTMLDivElement);
+    return () => {
+      ro.disconnect();
+      setMeasured((prev) => ({ ...prev, body: null }));
+    };
+  }, [bodyShown]);
+
+  useEffect(() => {
+    // A failed refetch keeps the rows but unmounts the body, and with it the Conflicts content.
+    if (!hasConflicts || !bodyShown) return;
+    const ro = new ResizeObserver((entries) => {
+      const last = entries.filter((e) => e.target === conflictsRef.current).at(-1);
+      if (last === undefined) return;
+      setMeasured((prev) => ({ ...prev, conflicts: last.contentRect.height }));
+    });
+    ro.observe(conflictsRef.current as HTMLDivElement);
+    return () => {
+      ro.disconnect();
+      setMeasured((prev) => ({ ...prev, conflicts: null }));
+    };
+  }, [hasConflicts, bodyShown]);
+
+  // Until the body (and the Conflicts content, when shown) has reported, the panes keep their flex
+  // fallback. Nothing here writes settings: the stored height is only clamped for display.
+  const conflictsNatural = hasConflicts ? measured.conflicts : 0;
+  const ready = measured.body !== null && conflictsNatural !== null;
+  const container = measured.body !== null ? measured.body - SPLIT_HANDLE_WIDTH : 0;
+  const heights = fitChangesPanes(container, conflictsNatural ?? 0, stored);
+  const sized = (height: number): React.CSSProperties | undefined =>
+    ready ? { height, flex: "none" } : undefined;
 
   const clearErrors = () => {
     actions.clearError();
@@ -241,7 +308,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
         type="button"
         data-variant="ghost"
         data-size="sm"
-        disabled={pending}
+        disabled={pending || rows[section].length === 0}
         onClick={() => run()}
       >
         {label}
@@ -255,43 +322,81 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   } else if (statusError !== null) {
     body = <RepoError error={statusError} path={null} variant="panel" onDismiss={refetch} />;
   } else {
-    const nonEmpty = SECTIONS.filter(({ section }) => rows[section].length > 0);
     body = (
-      <>
-        {panelError !== null && (
-          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
-        )}
-        {nonEmpty.length === 0 && <p className={styles.empty}>No changes</p>}
-        {nonEmpty.map(({ section, title, listLabel }) => {
-          const headingId = `${idPrefix}-${section}`;
-          return (
-            <section key={section} className={styles.section} aria-labelledby={headingId}>
-              <div className={styles.sectionHeader}>
-                <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
-                  {title} ({rows[section].length})
-                </h2>
-                {headerAction(section)}
-              </div>
-              <ul aria-label={listLabel} className={styles.list}>
-                {rows[section].map((row) => (
-                  <FileRow
-                    key={row.key}
-                    entry={row.entry}
-                    section={section}
-                    kind={row.kind}
-                    selected={selection.isSelected(row.key)}
-                    disabled={pending}
-                    onClick={(mods) => selectRow(row, mods)}
-                    onContextMenu={(x, y) => setMenu({ x, y, kind: "row", row })}
-                    onPrimary={() => primary(row)}
-                    onDiscard={section === "unstaged" ? () => openDiscard(row) : undefined}
+      <div ref={bodyRef} data-testid="changes-body" className={styles.body}>
+        {SECTIONS.filter(({ section }) => section !== "conflicts" || hasConflicts).map(
+          ({ section, title, listLabel, emptyLabel }) => {
+            const headingId = `${idPrefix}-${section}`;
+            const pane = section !== "conflicts";
+            const content = (
+              <>
+                <div className={styles.sectionHeader}>
+                  <h2 id={headingId} className={`gr-section-heading ${styles.heading}`}>
+                    {title} ({rows[section].length})
+                  </h2>
+                  {headerAction(section)}
+                </div>
+                {rows[section].length === 0 ? (
+                  <p className={styles.empty}>{emptyLabel}</p>
+                ) : (
+                  <ul aria-label={listLabel} className={styles.list}>
+                    {rows[section].map((row) => (
+                      <FileRow
+                        key={row.key}
+                        entry={row.entry}
+                        section={section}
+                        kind={row.kind}
+                        selected={selection.isSelected(row.key)}
+                        disabled={pending}
+                        onClick={(mods) => selectRow(row, mods)}
+                        onContextMenu={(x, y) => setMenu({ x, y, kind: "row", row })}
+                        onPrimary={() => primary(row)}
+                        onDiscard={section === "unstaged" ? () => openDiscard(row) : undefined}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </>
+            );
+            return (
+              <Fragment key={section}>
+                <section
+                  className={pane ? styles.pane : styles.conflicts}
+                  data-pane={pane ? section : undefined}
+                  aria-labelledby={headingId}
+                  style={sized(heights[section])}
+                >
+                  {pane ? (
+                    content
+                  ) : (
+                    // The observed wrapper keeps its natural height; the section above caps and scrolls it.
+                    <div ref={conflictsRef} data-testid="conflicts-content">
+                      {content}
+                    </div>
+                  )}
+                </section>
+                {section === "unstaged" && (
+                  <SplitHandle
+                    label="Resize Unstaged and Staged"
+                    orientation="horizontal"
+                    value={ready ? heights.unstaged : (stored ?? 0)}
+                    min={ready ? PANE_FLOOR : 0}
+                    max={ready ? heights.max : Infinity}
+                    step={KEY_STEP}
+                    // Nothing is stored before measuring, or when the value would not change.
+                    onChange={(px) => {
+                      if (ready && px !== heights.unstaged) setChangesUnstagedHeight(px);
+                    }}
+                    onReset={() => {
+                      if (stored !== null) setChangesUnstagedHeight(null);
+                    }}
                   />
-                ))}
-              </ul>
-            </section>
-          );
-        })}
-      </>
+                )}
+              </Fragment>
+            );
+          },
+        )}
+      </div>
     );
   }
 
@@ -312,6 +417,12 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
             disabled={pending || statusError !== null}
             fallbackFocus={rootRef}
           />
+        </div>
+      )}
+      {bodyShown && panelError !== null && (
+        // Outside the measured body, so the panes are sized to the space left below it.
+        <div className={styles.error}>
+          <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
         </div>
       )}
       {body}

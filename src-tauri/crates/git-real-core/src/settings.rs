@@ -114,6 +114,7 @@ pub struct LayoutSettings {
     pub worktrees_collapsed: bool,
     pub worktrees_height: Option<u32>,
     pub pull_requests_height: Option<u32>,
+    pub changes_unstaged_height: Option<u32>,
 }
 
 impl Default for LayoutSettings {
@@ -130,6 +131,7 @@ impl Default for LayoutSettings {
             worktrees_collapsed: false,
             worktrees_height: None,
             pull_requests_height: None,
+            changes_unstaged_height: None,
         }
     }
 }
@@ -365,6 +367,11 @@ pub struct LayoutPatch {
         skip_serializing_if = "Option::is_none"
     )]
     pub pull_requests_height: Option<Option<u32>>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub changes_unstaged_height: Option<Option<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -502,6 +509,10 @@ impl Settings {
             (
                 &mut layout.pull_requests_height,
                 "layout.pullRequestsHeight",
+            ),
+            (
+                &mut layout.changes_unstaged_height,
+                "layout.changesUnstagedHeight",
             ),
         ] {
             if let Some(h) = *height {
@@ -744,6 +755,13 @@ impl Settings {
                     d.layout.pull_requests_height,
                     &mut w,
                 ),
+                changes_unstaged_height: leaf(
+                    v,
+                    "layout",
+                    "changesUnstagedHeight",
+                    d.layout.changes_unstaged_height,
+                    &mut w,
+                ),
             },
             updates: UpdateSettings {
                 check_on_startup: leaf(
@@ -911,6 +929,10 @@ impl Settings {
             set(
                 &mut next.layout.pull_requests_height,
                 &p.pull_requests_height,
+            );
+            set(
+                &mut next.layout.changes_unstaged_height,
+                &p.changes_unstaged_height,
             );
         }
         if let Some(p) = &patch.updates {

@@ -1,15 +1,43 @@
-/* The sidebar column is already a card; the panel fills it, scrolls inside it and insets its lists. */
+/* The sidebar column is already a card; the panel fills it; its body wrapper and each pane list scroll, and its lists are inset. */
 .root {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
   color: var(--color-text);
 }
 
-.section {
-  padding: 0 0 var(--space-2);
+.error {
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.pane .list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* max-height is the CSS twin of CONFLICTS_MAX_SHARE, bounding the section before it is measured. */
+.conflicts {
+  flex: none;
+  max-height: 40%;
+  min-height: 0;
+  overflow: auto;
 }
 
 .sectionHeader {
@@ -32,7 +60,7 @@
 }
 
 .empty {
-  margin: var(--space-4);
+  margin: var(--space-2) 10px;
   color: var(--color-text-muted);
 }
 

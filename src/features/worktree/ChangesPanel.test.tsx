@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addToGitignore,
   discardPaths,
@@ -19,7 +19,9 @@ import type {
   StatusEntry,
   WorkingTreeStatus,
 } from "../../lib/ipc";
+import { setChangesUnstagedHeight } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
+import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { useBranches } from "../branches/useBranches";
 import { useIntegrationActions } from "../merge/useIntegrationActions";
@@ -46,6 +48,12 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   discardPaths: vi.fn(),
   addToGitignore: vi.fn(),
   stashPush: vi.fn(),
+  updateSettings: vi.fn(),
+}));
+
+vi.mock(import("../../lib/store/settingsActions"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  setChangesUnstagedHeight: vi.fn(),
 }));
 
 const entry = (over: Partial<StatusEntry> & { path: string }): StatusEntry => ({
@@ -156,14 +164,27 @@ describe("ChangesPanel states", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading changes…");
   });
 
-  it("should show No changes when the status has no entries", async () => {
+  it("shows both panes with zero counts and empty lines when there are no entries", async () => {
     await renderPanel();
-    expect(screen.getByText("No changes")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Unstaged (0)",
+      "Staged (0)",
+    ]);
+    expect(screen.getByText("No unstaged changes")).toBeInTheDocument();
+    expect(screen.getByText("No staged changes")).toBeInTheDocument();
+    expect(screen.queryByText("No changes")).toBeNull();
   });
 
-  it("should render no section headings when there are no entries", async () => {
+  it("disables Stage all and Unstage all while their panes are empty", async () => {
     await renderPanel();
-    expect(screen.queryByRole("heading")).toBeNull();
+    expect(btn("Stage all")).toBeDisabled();
+    expect(btn("Unstage all")).toBeDisabled();
+  });
+
+  it("enables only the button whose pane has rows", async () => {
+    await renderPanel(unstaged("a.txt"));
+    expect(btn("Stage all")).toBeEnabled();
+    expect(btn("Unstage all")).toBeDisabled();
   });
 
   it("should render the changes region when there are entries", async () => {
@@ -200,29 +221,49 @@ describe("ChangesPanel states", () => {
   });
 });
 
-// Contract: sections in order Conflicts, Staged, Unstaged with counts; empty sections hidden.
+// Contract: sections in order Conflicts, Unstaged, Staged with counts; Unstaged and Staged always shown.
 describe("ChangesPanel sections", () => {
   it("should show a heading with the count for each non-empty section", async () => {
     await renderPanel(conflict("c.txt"), staged("s1.txt"), staged("s2.txt"), unstaged("u.txt"));
     expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
       "Conflicts (1)",
-      "Staged (2)",
       "Unstaged (1)",
+      "Staged (2)",
     ]);
+  });
+
+  it("keeps an empty Staged pane visible below a non-empty Unstaged pane", async () => {
+    await renderPanel(unstaged("u.txt"));
+    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual([
+      "Unstaged (1)",
+      "Staged (0)",
+    ]);
+    expect(screen.getByText("No staged changes")).toBeInTheDocument();
+  });
+
+  it("shows the empty line and disables the button when a refetch empties a selected pane", async () => {
+    vi.mocked(getStatus)
+      .mockResolvedValueOnce(status(unstaged("a.txt")))
+      .mockResolvedValue(status());
+    const { user, queryClient } = renderWithProviders(<ChangesPanel repoId={1} />);
+    await user.click(await screen.findByText("a.txt"));
+    await act(() => queryClient.invalidateQueries());
+    expect(await screen.findByText("No unstaged changes")).toBeInTheDocument();
+    expect(btn("Stage all")).toBeDisabled();
   });
 
   it("should label each list by section", async () => {
     await renderPanel(conflict("c.txt"), staged("s.txt"), unstaged("u.txt"));
     expect(screen.getAllByRole("list").map((l) => l.getAttribute("aria-label"))).toEqual([
       "Conflicts",
-      "Staged changes",
       "Unstaged changes",
+      "Staged changes",
     ]);
   });
 
-  it("should not render empty sections", async () => {
+  it("should not render a list for an empty pane", async () => {
     await renderPanel(unstaged("u.txt"));
-    expect(screen.queryByRole("heading", { name: /^Staged/ })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Staged changes" })).toBeNull();
   });
 
   it("should not render the conflicts section when there are no conflicts", async () => {
@@ -293,7 +334,8 @@ describe("ChangesPanel buttons", () => {
 
   it("should not offer Stage all or Unstage all in the conflicts section", async () => {
     await renderPanel(conflict("c.txt"));
-    expect(screen.queryByRole("button", { name: /all$/ })).toBeNull();
+    const section = screen.getByRole("region", { name: "Conflicts (1)" });
+    expect(within(section).queryByRole("button", { name: /all$/ })).toBeNull();
   });
 
   it("should call stageAll when Stage all is clicked", async () => {
@@ -903,8 +945,8 @@ describe("ChangesPanel cross-section behaviour", () => {
 
   async function selectAcrossBoundary() {
     const view = await renderPanel(...crossEntries());
-    await view.user.click(btn("modified s1.txt"));
-    await modClick(view.user, btn("modified u1.txt"), "Shift");
+    await view.user.click(btn("modified u2.txt"));
+    await modClick(view.user, btn("modified s1.txt"), "Shift");
     return view;
   }
 
@@ -913,19 +955,19 @@ describe("ChangesPanel cross-section behaviour", () => {
     const pressed = ["s1.txt", "s2.txt", "u1.txt", "u2.txt"].map((p) =>
       screen.getAllByRole("button", { name: `modified ${p}` })[0].getAttribute("aria-pressed"),
     );
-    expect(pressed).toEqual(["true", "true", "true", "false"]);
+    expect(pressed).toEqual(["true", "false", "false", "true"]);
   });
 
   it("should stage only the unstaged part of a cross-section selection", async () => {
     const { user } = await selectAcrossBoundary();
-    await user.click(btn("Stage u1.txt"));
-    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["u1.txt"]);
+    await user.click(btn("Stage u2.txt"));
+    expect(stagePaths).toHaveBeenCalledExactlyOnceWith(1, ["u2.txt"]);
   });
 
   it("should unstage only the staged part of a cross-section selection", async () => {
     const { user } = await selectAcrossBoundary();
     await user.click(btn("Unstage s1.txt"));
-    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["s1.txt", "s2.txt"]);
+    expect(unstagePaths).toHaveBeenCalledExactlyOnceWith(1, ["s1.txt"]);
   });
 });
 
@@ -985,7 +1027,7 @@ describe("ChangesPanel status error retry", () => {
       .mockResolvedValue(status());
     const { user } = renderWithProviders(<ChangesPanel repoId={1} />);
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
-    await screen.findByText("No changes");
+    await screen.findByText("No unstaged changes");
     expect(getStatus).toHaveBeenCalledTimes(2);
   });
 });
@@ -1694,7 +1736,7 @@ describe("ChangesPanel Stash button", () => {
 
   it("disables Stash… with No changes to stash when there are no changes", async () => {
     await renderPanel();
-    expect(screen.getByText("No changes")).toBeInTheDocument();
+    expect(screen.getByText("No unstaged changes")).toBeInTheDocument();
     expect(stashBtn()).toBeDisabled();
     expect(stashBtn()).toHaveAttribute("title", "No changes to stash");
   });
@@ -1815,5 +1857,175 @@ describe("ChangesPanel COSMIC look", () => {
   it("styles the section headings with the shared class", async () => {
     await renderPanel(unstaged("a.txt"));
     expect(screen.getByRole("heading", { name: /Unstaged/ })).toHaveClass("gr-section-heading");
+  });
+});
+
+// Records every observer and its targets; fire() delivers one batch shaped like the real API.
+class StubResizeObserver {
+  static instances: StubResizeObserver[] = [];
+  // Like the real API, observing a missing element throws.
+  observe = vi.fn((target: Element | null) => {
+    if (target === null) throw new TypeError("observe() needs an Element");
+  });
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  constructor(readonly callback: ResizeObserverCallback) {
+    StubResizeObserver.instances.push(this);
+  }
+  fire(entries: Array<{ target: Element; height: number }>) {
+    this.callback(
+      entries.map(
+        ({ target, height }) => ({ target, contentRect: { height } }) as ResizeObserverEntry,
+      ),
+      this as never,
+    );
+  }
+}
+
+const body = () => screen.getByTestId("changes-body");
+const pane = (p: "unstaged" | "staged") => body().querySelector<HTMLElement>(`[data-pane="${p}"]`)!;
+const conflictsSection = () => screen.getByRole("region", { name: /Conflicts/ });
+const conflictsContent = () => screen.getByTestId("conflicts-content");
+
+/** One observer batch: the body and, when the Conflicts section is rendered, its content. */
+function measure(bodyHeight: number, conflictsHeight = 0) {
+  const entries = [{ target: body() as Element, height: bodyHeight }];
+  if (screen.queryByTestId("conflicts-content") !== null) {
+    entries.push({ target: conflictsContent(), height: conflictsHeight });
+  }
+  // Each live observer ignores targets it does not watch.
+  const live = StubResizeObserver.instances.filter((o) => o.disconnect.mock.calls.length === 0);
+  act(() => live.forEach((o) => o.fire(entries)));
+}
+
+describe("ChangesPanel split", () => {
+  beforeEach(async () => {
+    StubResizeObserver.instances = [];
+    vi.stubGlobal("ResizeObserver", StubResizeObserver);
+    await resetSettings();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders a horizontal separator between the panes", async () => {
+    await renderPanel(unstaged("a.txt"), staged("b.txt"));
+    const sep = screen.getByRole("separator", { name: "Resize Unstaged and Staged" });
+    expect(sep).toHaveAttribute("aria-orientation", "horizontal");
+    expect(pane("unstaged").nextElementSibling).toBe(sep);
+    expect(sep.nextElementSibling).toBe(pane("staged"));
+  });
+
+  it("keeps the panes on their flex fallback until measured", async () => {
+    await renderPanel();
+    expect(pane("unstaged").style.height).toBe("");
+    expect(pane("staged").style.height).toBe("");
+  });
+
+  it("splits a measured body in half when nothing is stored", async () => {
+    await renderPanel();
+    measure(406); // 400 + the 6 px divider
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+    expect(screen.getByRole("separator")).toHaveAttribute("aria-valuenow", "200");
+    expect(screen.getByRole("separator")).toHaveAttribute("aria-valuemax", "328");
+  });
+
+  it("uses the stored height and clamps it without writing it back", async () => {
+    await seedSettings({ layout: { changesUnstagedHeight: 1000 } });
+    await renderPanel();
+    measure(406);
+    expect(pane("unstaged").style.height).toBe("328px");
+    expect(pane("staged").style.height).toBe("72px");
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("writes the dragged height and ignores a drag to the same value", async () => {
+    await renderPanel();
+    measure(406);
+    const sep = screen.getByRole("separator");
+    fireEvent.pointerDown(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(sep, { clientY: 140, pointerId: 1 });
+    fireEvent.pointerUp(sep, { clientY: 140, pointerId: 1 });
+    expect(setChangesUnstagedHeight).toHaveBeenCalledExactlyOnceWith(240);
+    vi.mocked(setChangesUnstagedHeight).mockClear();
+    fireEvent.pointerDown(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(sep, { clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(sep, { clientY: 100, pointerId: 1 });
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("does not write while unmeasured", async () => {
+    await renderPanel();
+    const sep = screen.getByRole("separator");
+    fireEvent.keyDown(sep, { key: "ArrowDown" });
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("moves by KEY_STEP on ArrowDown and resets to null on double-click", async () => {
+    await seedSettings({ layout: { changesUnstagedHeight: 200 } });
+    await renderPanel();
+    measure(406);
+    const sep = screen.getByRole("separator");
+    fireEvent.keyDown(sep, { key: "ArrowDown" });
+    expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(216);
+    fireEvent.doubleClick(sep);
+    expect(setChangesUnstagedHeight).toHaveBeenLastCalledWith(null);
+  });
+
+  it("keeps an action error outside the measured body", async () => {
+    vi.mocked(stagePaths).mockRejectedValue({ kind: "noChanges", message: "nothing to do" });
+    const { user } = await renderPanel(unstaged("a.txt"));
+    await user.click(btn("Stage a.txt"));
+    const alert = await screen.findByRole("alert");
+    expect(body()).not.toContainElement(alert);
+    measure(406);
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+  });
+
+  it("keeps the body measurement when Conflicts goes away", async () => {
+    const { queryClient } = await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    expect(pane("unstaged").style.height).toBe("120px");
+    vi.mocked(getStatus).mockResolvedValue(status(unstaged("a.txt")));
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await waitFor(() => expect(screen.queryByTestId("conflicts-content")).toBeNull());
+    expect(pane("unstaged").style.height).toBe("200px");
+    expect(pane("staged").style.height).toBe("200px");
+  });
+
+  it("survives a failed refetch with Conflicts shown and observes it again on recovery", async () => {
+    const { queryClient } = await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    vi.mocked(getStatus).mockRejectedValue({ kind: "noChanges", message: "boom" });
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(screen.queryByTestId("changes-body")).toBeNull();
+    vi.mocked(getStatus).mockResolvedValue(status(conflict("c.txt")));
+    await act(() => queryClient.invalidateQueries({ queryKey: ["repo", 1] }));
+    await screen.findByTestId("conflicts-content");
+    const fresh = StubResizeObserver.instances.filter((o) => o.disconnect.mock.calls.length === 0);
+    expect(fresh.flatMap((o) => o.observe.mock.calls.map(([el]) => el))).toContain(
+      conflictsContent(),
+    );
+    measure(406, 300);
+    expect(pane("unstaged").style.height).toBe("120px");
+  });
+
+  it("does not write on reset when nothing is stored", async () => {
+    await renderPanel();
+    measure(406);
+    fireEvent.doubleClick(screen.getByRole("separator"));
+    expect(setChangesUnstagedHeight).not.toHaveBeenCalled();
+  });
+
+  it("caps Conflicts at 40 % and takes it off the shared space", async () => {
+    await renderPanel(conflict("c.txt"));
+    measure(406, 300);
+    expect(conflictsSection().style.height).toBe("160px");
+    expect(pane("unstaged").style.height).toBe("120px");
+    expect(pane("staged").style.height).toBe("120px");
   });
 });
