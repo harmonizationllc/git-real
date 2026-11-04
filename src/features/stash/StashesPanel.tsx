@@ -3,6 +3,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { AppError, RepoId, StashEntry } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
+import { filterStashes, isFiltering } from "../branches/branchFilter";
 import { useNow } from "../graph/useNow";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
@@ -34,12 +35,15 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   const { status } = useStatus(repoId);
   const { state } = useOperationState(repoId);
   const now = useNow();
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const selected = useWorkspace((s) => s.selectedStash[repoId] ?? null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<StashEntry | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const apply = applyGate(status, state);
+  const filtering = isFiltering(query);
+  const shown = stashes ? filterStashes(stashes, query) : [];
 
   // A newer result must not hide behind an older, undismissed error.
   const run = (action: () => Promise<AppError | null>) => {
@@ -92,10 +96,12 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
     body = <p role="status">Loading stashes…</p>;
   } else if (stashes.length === 0) {
     body = <p className={styles.empty}>No stashes</p>;
+  } else if (shown.length === 0) {
+    body = <p className={styles.empty}>No matches</p>;
   } else {
     body = (
       <ul aria-label="Stash list" className={styles.list}>
-        {stashes.map((entry) => (
+        {shown.map((entry) => (
           <StashRow
             key={entry.oid}
             entry={entry}
@@ -123,7 +129,9 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           data-focus-target
           className={`gr-section-heading ${styles.heading}`}
         >
-          {`Stashes (${stashes?.length ?? 0})`}
+          {filtering
+            ? `Stashes (${shown.length} of ${stashes?.length ?? 0})`
+            : `Stashes (${stashes?.length ?? 0})`}
         </h2>
         <StashButton
           repoId={repoId}

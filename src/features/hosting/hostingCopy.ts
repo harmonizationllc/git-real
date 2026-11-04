@@ -127,9 +127,15 @@ export function hostingMessage(error: AppError, provider: HostingProvider): Netw
     : networkMessage(error);
 }
 
-/** The panel heading; `more` adds a plus while further pages exist. */
-export function prCountLabel(count: number | null, more: boolean): string {
-  return count === null ? "Pull requests" : `Pull requests (${count}${more ? "+" : ""})`;
+/** The "(n)" or "(shown of n)" suffix; `more` adds a plus while further pages exist. */
+function countSuffix(count: number, more: boolean, shown: number | undefined): string {
+  const total = `${count}${more ? "+" : ""}`;
+  return shown === undefined || shown === count ? `(${total})` : `(${shown} of ${total})`;
+}
+
+/** The panel heading; `more` adds a plus while further pages exist, `shown` is the filtered count. */
+export function prCountLabel(count: number | null, more: boolean, shown?: number): string {
+  return count === null ? "Pull requests" : `Pull requests ${countSuffix(count, more, shown)}`;
 }
 
 /** What the provider calls its issues: Azure DevOps has work items. */
@@ -142,9 +148,10 @@ export function issueCountLabel(
   count: number | null,
   more: boolean,
   provider: HostingProvider,
+  shown?: number,
 ): string {
   const noun = provider === "azure" ? "Work items" : "Issues";
-  return count === null ? noun : `${noun} (${count}${more ? "+" : ""})`;
+  return count === null ? noun : `${noun} ${countSuffix(count, more, shown)}`;
 }
 
 /** The Issues panel's empty state (work items on Azure DevOps). */

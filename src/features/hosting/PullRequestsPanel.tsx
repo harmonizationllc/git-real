@@ -4,6 +4,8 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { PullRequest, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setPullRequestsCollapsed } from "../../lib/store/settingsActions";
+import { useWorkspace } from "../../lib/store/workspace";
+import { filterPullRequests } from "../branches/branchFilter";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
@@ -34,6 +36,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
   const collapsed = useSettings((s) => s.settings.layout.pullRequestsCollapsed);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const list = usePullRequests(repoId, !collapsed && usable);
@@ -51,7 +54,9 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const provider = repo.provider;
   const openAccounts = () => setAccountsPreset({ provider, host: repo.host });
   const reconnect = account?.needsReconnect === true || list.error?.kind === "hostingAuth";
-  const prs = list.pullRequests;
+  const loaded = list.pullRequests;
+  // The filter narrows only an expanded section; a collapsed one never fetches because of it.
+  const prs = loaded && !collapsed ? filterPullRequests(loaded, query) : loaded;
 
   const menuItems = (pr: PullRequest): MenuItem[] => [
     {
@@ -96,7 +101,11 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
     body = <p role="status">Loading pull requests…</p>;
   } else if (prs.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>No open pull requests</p>;
+    body = (
+      <p className={styles.empty}>
+        {(loaded as PullRequest[]).length === 0 ? "No open pull requests" : "No matches"}
+      </p>
+    );
   } else {
     listed = true;
     body = (
@@ -156,7 +165,11 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
             aria-controls={bodyId}
             onClick={() => setPullRequestsCollapsed(!collapsed)}
           >
-            {prCountLabel(listed ? (prs as PullRequest[]).length : null, list.hasMore)}
+            {prCountLabel(
+              listed ? (loaded as PullRequest[]).length : null,
+              list.hasMore,
+              listed ? (prs as PullRequest[]).length : undefined,
+            )}
           </button>
         </h2>
         <button

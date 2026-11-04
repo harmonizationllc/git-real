@@ -4,6 +4,8 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { LinkedWorktree, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setWorktreesCollapsed } from "../../lib/store/settingsActions";
+import { useWorkspace } from "../../lib/store/workspace";
+import { filterWorktrees, isFiltering } from "../branches/branchFilter";
 import { RepoError } from "../repo/RepoError";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { AddWorktreeDialog } from "./AddWorktreeDialog";
@@ -40,11 +42,15 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   const actions = useLinkedWorktreeActions(repoId);
   const opener = useOpenRepo();
   const collapsed = useSettings((s) => s.settings.layout.worktreesCollapsed);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [adding, setAdding] = useState(false);
   const closeMenu = useCallback(() => setMenu(null), []);
 
+  const filtering = isFiltering(query);
+  const expanded = filtering || !collapsed;
+  const shown = list ? filterWorktrees(list, query) : [];
   const bare = list !== undefined && list.length === 0;
   const stale = (list ?? []).filter(isStale).map((w) => w.path);
 
@@ -98,7 +104,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   };
 
   let body: React.ReactNode;
-  if (collapsed) {
+  if (!expanded) {
     body = null;
   } else if (listError !== null) {
     body = (
@@ -114,10 +120,12 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
     body = <p role="status">Loading worktrees…</p>;
   } else if (bare) {
     body = <p className={styles.empty}>Not available for bare repositories</p>;
+  } else if (shown.length === 0) {
+    body = <p className={styles.empty}>No matches</p>;
   } else {
     body = (
       <ul aria-label="Worktree list" className={styles.list}>
-        {list.map((w) => (
+        {shown.map((w) => (
           <WorktreeRow
             key={w.path}
             worktree={w}
@@ -148,11 +156,15 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
           <button
             type="button"
             className={styles.toggle}
-            aria-expanded={!collapsed}
+            aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => setWorktreesCollapsed(!collapsed)}
           >
-            {list === undefined ? "Worktrees" : `Worktrees (${list.length})`}
+            {list === undefined
+              ? "Worktrees"
+              : filtering
+                ? `Worktrees (${shown.length} of ${list.length})`
+                : `Worktrees (${list.length})`}
           </button>
         </h2>
         {!bare && (

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { declarationsOf } from "../../test/cssRules";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOperationState,
@@ -52,7 +52,7 @@ function load(
 
 beforeEach(() => {
   vi.resetAllMocks();
-  useWorkspace.setState({ selectedStash: {}, selectedCommit: {} });
+  useWorkspace.setState({ selectedStash: {}, selectedCommit: {}, refsFilter: {} });
   load();
   vi.mocked(stashApply).mockResolvedValue("applied");
   vi.mocked(stashPop).mockResolvedValue("applied");
@@ -565,5 +565,30 @@ describe("section header alignment", () => {
   it("bottom-aligns the action button with the heading text", () => {
     const css = readFileSync("src/features/stash/StashesPanel.module.css", "utf8");
     expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+  });
+});
+
+// Contract: the shared refs filter narrows the stash list and relabels the heading.
+describe("StashesPanel filtering", () => {
+  it("should show only matching stashes and a shown-of-total heading", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "dev"));
+    await renderPanel();
+    expect(screen.getByRole("heading", { name: "Stashes (1 of 2)" })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.queryByTitle(entries()[0]!.message)).not.toBeInTheDocument();
+    expect(row(1)).toBeInTheDocument();
+  });
+
+  it("should keep the plain total when the filter is blank", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "  "));
+    await renderPanel();
+    expect(screen.getByRole("heading", { name: "Stashes (2)" })).toBeInTheDocument();
+  });
+
+  it("should say No matches when nothing hits", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<StashesPanel repoId={1} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Stashes (0 of 2)" })).toBeInTheDocument();
   });
 });

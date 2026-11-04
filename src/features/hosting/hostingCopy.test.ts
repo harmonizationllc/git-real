@@ -289,6 +289,19 @@ describe("prCountLabel", () => {
   it("should add a plus while more pages exist", () => {
     expect(prCountLabel(50, true)).toBe("Pull requests (50+)");
   });
+
+  it("should show shown of total while the shown count differs", () => {
+    expect(prCountLabel(5, true, 2)).toBe("Pull requests (2 of 5+)");
+    expect(prCountLabel(5, false, 0)).toBe("Pull requests (0 of 5)");
+  });
+
+  it("should show only the count when everything is shown", () => {
+    expect(prCountLabel(5, false, 5)).toBe("Pull requests (5)");
+  });
+
+  it("should ignore shown while the count is unknown", () => {
+    expect(prCountLabel(null, false, 0)).toBe("Pull requests");
+  });
 });
 
 // Contract: copy of the create pull request dialog and its toast.
@@ -314,6 +327,15 @@ describe("create pull request copy", () => {
 
 // Contract: the Issues heading counts the issues, with + while more pages exist.
 describe("issueCountLabel", () => {
+  it("should show shown of total while the shown count differs", () => {
+    expect(issueCountLabel(5, true, "github", 2)).toBe("Issues (2 of 5+)");
+    expect(issueCountLabel(5, false, "azure", 1)).toBe("Work items (1 of 5)");
+  });
+
+  it("should show only the count when everything is shown", () => {
+    expect(issueCountLabel(5, false, "github", 5)).toBe("Issues (5)");
+  });
+
   it("should be Issues while the count is unknown", () => {
     expect(issueCountLabel(null, false, "github")).toBe("Issues");
   });

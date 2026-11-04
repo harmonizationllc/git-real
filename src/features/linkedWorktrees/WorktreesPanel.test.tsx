@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addLinkedWorktree,
@@ -14,6 +14,7 @@ import {
 import type { AppError, BranchList, LinkedWorktree, OpenedRepo } from "../../lib/ipc";
 import { useCommitDraft } from "../../lib/store/commitDraft";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useWorkspace } from "../../lib/store/workspace";
 import { useSettings } from "../../lib/store/settings";
 import { oidOf } from "../../test/graphFixtures";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -69,6 +70,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   await resetSettings();
   useRepoTabs.setState({ tabs: [], activeId: null });
+  useWorkspace.setState({ refsFilter: {} });
   vi.mocked(listLinkedWorktrees).mockResolvedValue([main, a]);
   vi.mocked(listBranches).mockResolvedValue(branches());
   vi.mocked(addLinkedWorktree).mockResolvedValue(undefined);
@@ -510,5 +512,37 @@ describe("WorktreesPanel add", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(addLinkedWorktree).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the shared refs filter narrows the list, forces it open and leaves the preference alone.
+describe("WorktreesPanel filtering", () => {
+  it("should show only matching worktrees and a shown-of-total heading", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "feat/a"));
+    await renderPanel();
+    expect(toggle()).toHaveTextContent("Worktrees (1 of 2)");
+    const rows = within(list()).getAllByRole("button");
+    expect(rows.map((r) => r.getAttribute("title"))).toEqual(["/repos/app-feat-a"]);
+  });
+
+  it("should match on the path too", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "/repos/app-feat"));
+    await renderPanel();
+    expect(toggle()).toHaveTextContent("Worktrees (1 of 2)");
+  });
+
+  it("should open a collapsed section while filtering without changing the preference", async () => {
+    await seedSettings({ layout: { worktreesCollapsed: true } });
+    act(() => useWorkspace.getState().setRefsFilter(1, "feat"));
+    await renderPanel();
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(useSettings.getState().settings.layout.worktreesCollapsed).toBe(true);
+  });
+
+  it("should say No matches when nothing hits", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<WorktreesPanel repoId={1} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(toggle()).toHaveTextContent("Worktrees (0 of 2)");
   });
 });

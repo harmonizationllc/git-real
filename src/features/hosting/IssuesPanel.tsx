@@ -3,6 +3,8 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { Issue, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setIssuesCollapsed } from "../../lib/store/settingsActions";
+import { useWorkspace } from "../../lib/store/workspace";
+import { filterIssues } from "../branches/branchFilter";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
 import type { AccountsPreset } from "./AccountsDialog";
@@ -35,6 +37,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
   const collapsed = useSettings((s) => s.settings.layout.issuesCollapsed);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const repoInfo = useRepoInfo(repoId, !collapsed && usable);
@@ -60,7 +63,9 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     account?.needsReconnect === true ||
     repoInfo.error?.kind === "hostingAuth" ||
     list.error?.kind === "hostingAuth";
-  const issues = list.issues;
+  const loaded = list.issues;
+  // The filter narrows only an expanded section; a collapsed one never fetches because of it.
+  const issues = loaded && !collapsed ? filterIssues(loaded, query) : loaded;
 
   const refresh = () => {
     repoInfo.refetch();
@@ -114,7 +119,11 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     body = <p role="status">Loading {issuesNoun(provider)}…</p>;
   } else if (issues.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>{noIssuesText(provider)}</p>;
+    body = (
+      <p className={styles.empty}>
+        {(loaded as Issue[]).length === 0 ? noIssuesText(provider) : "No matches"}
+      </p>
+    );
   } else {
     listed = true;
     body = (
@@ -171,7 +180,12 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
             aria-controls={bodyId}
             onClick={() => setIssuesCollapsed(!collapsed)}
           >
-            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore, provider)}
+            {issueCountLabel(
+              listed ? (loaded as Issue[]).length : null,
+              list.hasMore,
+              provider,
+              listed ? (issues as Issue[]).length : undefined,
+            )}
           </button>
         </h2>
         <button

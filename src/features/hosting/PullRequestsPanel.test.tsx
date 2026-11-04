@@ -13,6 +13,7 @@ import {
 } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useSettings } from "../../lib/store/settings";
+import { useWorkspace } from "../../lib/store/workspace";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
   hostingAccount,
@@ -42,6 +43,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   await resetSettings();
   localStorage.clear();
+  useWorkspace.setState({ refsFilter: {} });
   await seedSettings({ layout: { pullRequestsCollapsed: false } });
   vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
   vi.mocked(hostingListPullRequests).mockResolvedValue(twoPrs());
@@ -623,5 +625,48 @@ describe("section header alignment", () => {
   it("bottom-aligns the action button with the heading text", () => {
     const css = readFileSync("src/features/hosting/PullRequestsPanel.module.css", "utf8");
     expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+  });
+});
+
+// Contract: the shared refs filter narrows the loaded list only while the section is expanded.
+describe("PullRequestsPanel filtering", () => {
+  it("should show matching pull requests and a shown-of-total heading", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "#12"));
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
+    expect(
+      await screen.findByRole("button", { name: "Pull requests (1 of 2)" }),
+    ).toBeInTheDocument();
+    expect(row(12)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^#9\b/ })).not.toBeInTheDocument();
+  });
+
+  it("should match on the title", async () => {
+    vi.mocked(hostingListPullRequests).mockResolvedValue([
+      pullRequest(12, { title: "Add Login" }),
+      pullRequest(9, { title: "Fix crash" }),
+    ]);
+    act(() => useWorkspace.getState().setRefsFilter(1, "crash"));
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
+    expect(
+      await screen.findByRole("button", { name: "Pull requests (1 of 2)" }),
+    ).toBeInTheDocument();
+    expect(row(9)).toBeInTheDocument();
+  });
+
+  it("should say No matches when nothing hits", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pull requests (0 of 2)" })).toBeInTheDocument();
+  });
+
+  it("should not fetch or relabel a collapsed section because of the filter", async () => {
+    await seedSettings({ layout: { pullRequestsCollapsed: true } });
+    act(() => useWorkspace.getState().setRefsFilter(1, "#12"));
+    renderWithProviders(<PullRequestsPanel repoId={1} onCreatePullRequest={null} />);
+    await screen.findByRole("button", { name: /^Pull requests/ });
+    expect(toggle()).toHaveTextContent(/^Pull requests$/);
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(hostingListPullRequests).not.toHaveBeenCalled();
   });
 });
