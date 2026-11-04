@@ -1584,3 +1584,50 @@ fn set_branch_upstream_refuses_an_unknown_branch() {
         .unwrap_err();
     assert!(matches!(err, GitError::BranchNotFound(n) if n == "ghost"));
 }
+
+#[test]
+fn set_branch_upstream_reports_a_remote_tracking_ref_no_remote_fetches() {
+    let (_d, _b, path, _bare, _head) = remote_fixture();
+    let oid = head_oid(&path);
+    Repository::open(&path)
+        .unwrap()
+        .reference("refs/remotes/nowhere/x", oid, false, "stale")
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    let err = session
+        .set_branch_upstream("topic", Some("nowhere/x"))
+        .unwrap_err();
+    assert!(
+        matches!(&err, GitError::UpstreamUnmapped { upstream, detail }
+            if upstream == "nowhere/x" && detail == "no remote fetches it"),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "nowhere/x cannot be an upstream: no remote fetches it"
+    );
+}
+
+#[test]
+fn set_branch_upstream_reports_a_ref_two_remotes_fetch() {
+    let (_d, _b, path, bare, head) = remote_fixture();
+    Repository::open(&path)
+        .unwrap()
+        .remote_with_fetch(
+            "mirror",
+            bare.to_str().unwrap(),
+            "+refs/heads/*:refs/remotes/origin/*",
+        )
+        .unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    session.create_branch("topic", None).unwrap();
+    let err = session
+        .set_branch_upstream("topic", Some(&format!("origin/{head}")))
+        .unwrap_err();
+    assert!(
+        matches!(&err, GitError::UpstreamUnmapped { detail, .. }
+            if detail == "more than one remote fetches it"),
+        "{err:?}"
+    );
+}

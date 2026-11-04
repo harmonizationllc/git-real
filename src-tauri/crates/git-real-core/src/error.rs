@@ -58,6 +58,8 @@ pub enum GitError {
     RevisionNotFound(String),
     #[error("no remote named {0}")]
     RemoteNotFound(String),
+    #[error("{upstream} cannot be an upstream: {detail}")]
+    UpstreamUnmapped { upstream: String, detail: String },
     #[error("git switch failed (exit code {code:?}): {stderr}")]
     CheckoutFailed {
         code: Option<i32>,

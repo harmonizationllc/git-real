@@ -183,7 +183,7 @@ impl RepoSession {
         // Both keys are read and written at repository level only: libgit2's
         // set-upstream would prefer a local branch of the same name, and
         // removal can only ever reach repository config.
-        let mut config = repo.config()?.open_level(git2::ConfigLevel::Local)?;
+        let config = repo.config()?;
         match upstream {
             Some(name) => {
                 let found = find_branch_exact(repo, name, BranchType::Remote)?;
@@ -192,20 +192,11 @@ impl RepoSession {
                     .name()
                     .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?
                     .to_owned();
-                let (remote, merge) = upstream_mapping(repo, &refname)
-                    .ok_or_else(|| GitError::BranchNotFound(name.to_owned()))?;
-                config.set_str(&format!("branch.{branch}.remote"), &remote)?;
-                config.set_str(&format!("branch.{branch}.merge"), &merge)?;
+                let (remote, merge) = upstream_mapping(repo, name, &refname)?;
+                let mut local = config.open_level(git2::ConfigLevel::Local)?;
+                write_upstream(&mut local, branch, &remote, &merge)?;
             }
-            None => {
-                // A gone upstream still has its keys, so remove what exists.
-                for key in ["remote", "merge"] {
-                    let key = format!("branch.{branch}.{key}");
-                    if config.get_entry(&key).is_ok() {
-                        config.remove(&key)?;
-                    }
-                }
-            }
+            None => clear_upstream(&config, branch)?,
         }
         Ok(())
     }
@@ -475,19 +466,89 @@ pub(crate) fn find_local<'r>(repo: &'r Repository, name: &str) -> Result<Branch<
 }
 
 /// The remote name and `refs/heads/...` merge ref a remote-tracking ref maps
-/// back to through its remote's fetch refspec, or `None` without such a
-/// mapping.
-fn upstream_mapping(repo: &Repository, refname: &str) -> Option<(String, String)> {
-    let remote_name = repo.branch_remote_name(refname).ok()?;
-    let remote_name = remote_name.as_str()?.to_owned();
-    let remote = repo.find_remote(&remote_name).ok()?;
+/// back to through its remote's fetch refspec. `name` is the short name used
+/// in the error when no single remote maps it.
+fn upstream_mapping(
+    repo: &Repository,
+    name: &str,
+    refname: &str,
+) -> Result<(String, String), GitError> {
+    let unmapped = |detail: &str| GitError::UpstreamUnmapped {
+        upstream: name.to_owned(),
+        detail: detail.to_owned(),
+    };
+    let remote_name = match repo.branch_remote_name(refname) {
+        Ok(buf) => buf.as_str().map(str::to_owned),
+        Err(e) if e.code() == ErrorCode::Ambiguous => {
+            return Err(unmapped("more than one remote fetches it"));
+        }
+        Err(e) if e.code() == ErrorCode::NotFound => None,
+        Err(e) => return Err(e.into()),
+    };
+    let Some(remote_name) = remote_name else {
+        return Err(unmapped("no remote fetches it"));
+    };
+    let remote = repo.find_remote(&remote_name)?;
     for spec in remote.refspecs() {
         if spec.direction() == git2::Direction::Fetch && spec.dst_matches(refname) {
-            let merge = spec.rtransform(refname).ok()?;
-            return Some((remote_name, merge.as_str()?.to_owned()));
+            let merge = spec.rtransform(refname)?;
+            if let Some(merge) = merge.as_str() {
+                return Ok((remote_name, merge.to_owned()));
+            }
         }
     }
-    None
+    Err(unmapped("no remote fetches it"))
+}
+
+/// The config operations `write_upstream` and `clear_upstream` need, so the
+/// rollback path can be tested without forcing a real write failure.
+trait ConfigKeys {
+    fn set(&mut self, key: &str, value: &str) -> Result<(), git2::Error>;
+    fn remove(&mut self, key: &str) -> Result<(), git2::Error>;
+    fn has(&self, key: &str) -> bool;
+}
+
+impl ConfigKeys for git2::Config {
+    fn set(&mut self, key: &str, value: &str) -> Result<(), git2::Error> {
+        self.set_str(key, value)
+    }
+    fn remove(&mut self, key: &str) -> Result<(), git2::Error> {
+        git2::Config::remove(self, key)
+    }
+    fn has(&self, key: &str) -> bool {
+        self.get_entry(key).is_ok()
+    }
+}
+
+/// Writes `branch.<b>.remote` then `branch.<b>.merge`; when the second write
+/// fails the first is removed again so no half-written upstream is left.
+fn write_upstream(
+    keys: &mut impl ConfigKeys,
+    branch: &str,
+    remote: &str,
+    merge: &str,
+) -> Result<(), git2::Error> {
+    let remote_key = format!("branch.{branch}.remote");
+    keys.set(&remote_key, remote)?;
+    if let Err(e) = keys.set(&format!("branch.{branch}.merge"), merge) {
+        let _ = keys.remove(&remote_key);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Removes the repository-level upstream keys of `branch`. Opens the local
+/// level itself so keys from global or system config are never touched.
+fn clear_upstream(config: &git2::Config, branch: &str) -> Result<(), git2::Error> {
+    let mut local = config.open_level(git2::ConfigLevel::Local)?;
+    // A gone upstream still has its keys, so remove what exists.
+    for key in ["remote", "merge"] {
+        let key = format!("branch.{branch}.{key}");
+        if local.has(&key) {
+            local.remove(&key)?;
+        }
+    }
+    Ok(())
 }
 
 /// Finds the branch of `kind` called exactly `name` (`origin/main` for a
@@ -576,4 +637,111 @@ fn tip(branch: &Branch) -> String {
 
 fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Records writes; fails `set` for `fail_key`.
+    struct FakeKeys {
+        fail_key: &'static str,
+        set: Vec<(String, String)>,
+        removed: Vec<String>,
+    }
+
+    impl ConfigKeys for FakeKeys {
+        fn set(&mut self, key: &str, value: &str) -> Result<(), git2::Error> {
+            if key.ends_with(self.fail_key) {
+                return Err(git2::Error::from_str("disk full"));
+            }
+            self.set.push((key.to_owned(), value.to_owned()));
+            Ok(())
+        }
+        fn remove(&mut self, key: &str) -> Result<(), git2::Error> {
+            self.removed.push(key.to_owned());
+            Ok(())
+        }
+        fn has(&self, key: &str) -> bool {
+            self.set.iter().any(|(k, _)| k == key)
+        }
+    }
+
+    #[test]
+    fn write_upstream_sets_remote_then_merge() {
+        let mut keys = FakeKeys {
+            fail_key: "never",
+            set: vec![],
+            removed: vec![],
+        };
+        write_upstream(&mut keys, "topic", "origin", "refs/heads/main").unwrap();
+        assert_eq!(
+            keys.set,
+            vec![
+                ("branch.topic.remote".to_owned(), "origin".to_owned()),
+                (
+                    "branch.topic.merge".to_owned(),
+                    "refs/heads/main".to_owned()
+                ),
+            ]
+        );
+        assert!(keys.removed.is_empty());
+    }
+
+    #[test]
+    fn write_upstream_removes_remote_when_merge_fails() {
+        let mut keys = FakeKeys {
+            fail_key: ".merge",
+            set: vec![],
+            removed: vec![],
+        };
+        let err = write_upstream(&mut keys, "topic", "origin", "refs/heads/main").unwrap_err();
+        assert_eq!(err.message(), "disk full");
+        assert_eq!(keys.removed, vec!["branch.topic.remote".to_owned()]);
+    }
+
+    fn two_level_config(dir: &std::path::Path, global: &str, local: &str) -> git2::Config {
+        let g = dir.join("global");
+        let l = dir.join("local");
+        std::fs::write(&g, global).unwrap();
+        std::fs::write(&l, local).unwrap();
+        let mut config = git2::Config::new().unwrap();
+        config
+            .add_file(&g, git2::ConfigLevel::Global, false)
+            .unwrap();
+        config
+            .add_file(&l, git2::ConfigLevel::Local, false)
+            .unwrap();
+        config
+    }
+
+    #[test]
+    fn clear_upstream_leaves_global_keys_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = two_level_config(
+            dir.path(),
+            "[branch \"probe\"]\n\tremote = origin\n\tmerge = refs/heads/probe\n",
+            "",
+        );
+        clear_upstream(&config, "probe").unwrap();
+        let global = std::fs::read_to_string(dir.path().join("global")).unwrap();
+        assert!(global.contains("remote = origin"), "{global}");
+        assert!(global.contains("merge = refs/heads/probe"), "{global}");
+    }
+
+    #[test]
+    fn clear_upstream_removes_local_keys_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = two_level_config(
+            dir.path(),
+            "[branch \"probe\"]\n\tremote = elsewhere\n",
+            "[branch \"probe\"]\n\tremote = origin\n\tmerge = refs/heads/probe\n",
+        );
+        clear_upstream(&config, "probe").unwrap();
+        let local = std::fs::read_to_string(dir.path().join("local")).unwrap();
+        assert!(!local.contains("remote ="), "{local}");
+        assert!(!local.contains("merge ="), "{local}");
+        let global = std::fs::read_to_string(dir.path().join("global")).unwrap();
+        assert!(global.contains("remote = elsewhere"), "{global}");
+    }
 }

@@ -26,6 +26,7 @@ const KINDS: Record<AppErrorKind, true> = {
   unbornHead: true,
   revisionNotFound: true,
   remoteNotFound: true,
+  upstreamUnmapped: true,
   checkoutFailed: true,
   logStale: true,
   commitNotFound: true,
