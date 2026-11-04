@@ -6,7 +6,6 @@ import {
   createErrorText,
   displayError,
   statusText,
-  tagCountLabel,
 } from "./tagCopy";
 
 const err = (kind: AppError["kind"], message = "raw"): AppError => ({ kind, message });
@@ -84,23 +83,5 @@ describe("createErrorText", () => {
 
   it("should pass the message through for an io error", () => {
     expect(createErrorText(err("io", "disk full"), "v1")).toBe("disk full");
-  });
-});
-
-describe("tagCountLabel", () => {
-  it("should show only the total when not filtering", () => {
-    expect(tagCountLabel(3, 3, false)).toBe("Tags (3)");
-  });
-
-  it("should show m of n while filtering", () => {
-    expect(tagCountLabel(1, 3, true)).toBe("Tags (1 of 3)");
-  });
-
-  it("should show 0 of 0 while filtering an empty list", () => {
-    expect(tagCountLabel(0, 0, true)).toBe("Tags (0 of 0)");
-  });
-
-  it("should ignore the shown count when not filtering", () => {
-    expect(tagCountLabel(0, 2, false)).toBe("Tags (2)");
   });
 });

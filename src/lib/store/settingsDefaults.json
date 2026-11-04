@@ -32,7 +32,10 @@
     "worktreesCollapsed": false,
     "worktreesHeight": null,
     "pullRequestsHeight": null,
-    "changesUnstagedHeight": null
+    "changesUnstagedHeight": null,
+    "localCollapsed": false,
+    "remoteCollapsed": false,
+    "remoteHeight": null
   },
   "updates": {
     "checkOnStartup": true

@@ -1,4 +1,4 @@
-/* The RefsColumn wrapper sizes and scrolls the section; the flex column stacks toolbar and list. */
+/* A Local or Remote section; the RefsColumn wrapper sizes and scrolls it. */
 .root {
   display: flex;
   flex-direction: column;
@@ -6,15 +6,9 @@
   color: var(--color-text);
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-2) 10px;
-}
-
-.filter {
-  flex: 1;
+/* The provider's host block: the branch error banners in flow above Local, plus overlays. */
+.host {
+  flex: none;
   min-width: 0;
 }
 

@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { BranchList } from "../../lib/ipc";
 import { tagEntry } from "../../test/tagFixtures";
-import { filterBranches, filterTags, isFiltering } from "./branchFilter";
+import { issue, pullRequest } from "../../test/hostingFixtures";
+import { stashEntry } from "../../test/stashFixtures";
+import { linkedWorktree } from "../../test/worktreeFixtures";
+import {
+  filterBranches,
+  filterIssues,
+  filterPullRequests,
+  filterStashes,
+  filterTags,
+  filterWorktrees,
+  isFiltering,
+} from "./branchFilter";
 
 const list: BranchList = {
   head: { kind: "branch", name: "main" },
@@ -190,5 +201,102 @@ describe("isFiltering", () => {
 
   it("should be true for a query with text, spaces around it included", () => {
     expect(isFiltering(" a ")).toBe(true);
+  });
+});
+
+// Contract: stashes match on message or parsed branch.
+describe("filterStashes", () => {
+  const stashes = [
+    stashEntry(0, { message: "On main: Fix Login", branch: "main" }),
+    stashEntry(1, { message: "WIP on dev: abc second", branch: "dev" }),
+    stashEntry(2, { message: "custom note", branch: null }),
+    stashEntry(3, { message: "unrelated words", branch: "Topic" }),
+  ];
+
+  it("should return the same array for a blank query", () => {
+    expect(filterStashes(stashes, "")).toBe(stashes);
+    expect(filterStashes(stashes, "  ")).toBe(stashes);
+  });
+
+  it("should match the message case-insensitively", () => {
+    expect(filterStashes(stashes, "fix login").map((s) => s.index)).toEqual([0]);
+  });
+
+  it("should match the branch", () => {
+    expect(filterStashes(stashes, "TOPIC").map((s) => s.index)).toEqual([3]);
+    expect(filterStashes(stashes, "dev").map((s) => s.index)).toEqual([1]);
+  });
+
+  it("should not fail on a null branch", () => {
+    expect(filterStashes(stashes, "custom").map((s) => s.index)).toEqual([2]);
+  });
+});
+
+// Contract: worktrees match on the checked-out branch (when there is one) or the path.
+describe("filterWorktrees", () => {
+  const trees = [
+    linkedWorktree(),
+    linkedWorktree({
+      path: "/work/Feature-A",
+      head: { kind: "branch", name: "feat/a" },
+      isMain: false,
+    }),
+    linkedWorktree({ path: "/work/loose", head: { kind: "detached", oid: "f".repeat(40) } }),
+    linkedWorktree({ path: "/work/unread", head: null }),
+  ];
+
+  it("should return the same array for a blank query", () => {
+    expect(filterWorktrees(trees, "")).toBe(trees);
+  });
+
+  it("should match the branch name", () => {
+    expect(filterWorktrees(trees, "FEAT/").map((w) => w.path)).toEqual(["/work/Feature-A"]);
+  });
+
+  it("should match the path", () => {
+    expect(filterWorktrees(trees, "loose").map((w) => w.path)).toEqual(["/work/loose"]);
+    expect(filterWorktrees(trees, "unread").map((w) => w.path)).toEqual(["/work/unread"]);
+  });
+
+  it("should not match a detached oid", () => {
+    expect(filterWorktrees(trees, "ffff")).toEqual([]);
+  });
+});
+
+// Contract: pull requests and issues match on the title or the literal #number.
+describe("filterPullRequests", () => {
+  const prs = [pullRequest(12, { title: "Add Login" }), pullRequest(9, { title: "Fix crash" })];
+
+  it("should return the same array for a blank query", () => {
+    expect(filterPullRequests(prs, " ")).toBe(prs);
+  });
+
+  it("should match the title case-insensitively", () => {
+    expect(filterPullRequests(prs, "login").map((p) => p.number)).toEqual([12]);
+  });
+
+  it("should match the number with its hash", () => {
+    expect(filterPullRequests(prs, "#9").map((p) => p.number)).toEqual([9]);
+  });
+
+  it("should not match the url", () => {
+    expect(filterPullRequests(prs, "github.com")).toEqual([]);
+  });
+});
+
+describe("filterIssues", () => {
+  const issues = [issue(4, { title: "Slow Start" }), issue(40, { title: "Typo" })];
+
+  it("should return the same array for a blank query", () => {
+    expect(filterIssues(issues, "")).toBe(issues);
+  });
+
+  it("should match the title case-insensitively", () => {
+    expect(filterIssues(issues, "slow").map((i) => i.number)).toEqual([4]);
+  });
+
+  it("should match the number with its hash", () => {
+    expect(filterIssues(issues, "#40").map((i) => i.number)).toEqual([40]);
+    expect(filterIssues(issues, "#4").map((i) => i.number)).toEqual([4, 40]);
   });
 });

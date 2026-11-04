@@ -4,12 +4,15 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { PullRequest, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setPullRequestsCollapsed } from "../../lib/store/settingsActions";
+import { useWorkspace } from "../../lib/store/workspace";
+import { filterPullRequests } from "../branches/branchFilter";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
 import type { AccountsPreset } from "./AccountsDialog";
 import { PROVIDER_LABEL, RECONNECT_TEXT, hostingMessage, prCountLabel } from "./hostingCopy";
 import { PullRequestRow } from "./PullRequestRow";
+import { isFiltering } from "../branches/branchFilter";
 import styles from "./PullRequestsPanel.module.css";
 import { usePrActions } from "./usePrActions";
 import { usePullRequests } from "./usePullRequests";
@@ -34,6 +37,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
   const collapsed = useSettings((s) => s.settings.layout.pullRequestsCollapsed);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const list = usePullRequests(repoId, !collapsed && usable);
@@ -51,7 +55,9 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
   const provider = repo.provider;
   const openAccounts = () => setAccountsPreset({ provider, host: repo.host });
   const reconnect = account?.needsReconnect === true || list.error?.kind === "hostingAuth";
-  const prs = list.pullRequests;
+  const loaded = list.pullRequests;
+  // The filter narrows only an expanded section; a collapsed one never fetches because of it.
+  const prs = loaded && !collapsed ? filterPullRequests(loaded, query) : loaded;
 
   const menuItems = (pr: PullRequest): MenuItem[] => [
     {
@@ -63,6 +69,19 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
     { id: "open", label: "Open in browser", onSelect: () => actions.open(pr) },
     { id: "copy", label: "Copy link", onSelect: () => actions.copyLink(pr) },
   ];
+
+  const showMore = (
+    <button
+      data-variant="ghost"
+      data-size="sm"
+      type="button"
+      className={styles.more}
+      disabled={list.loadingMore}
+      onClick={list.loadMore}
+    >
+      {list.loadingMore ? "Loading…" : "Show more"}
+    </button>
+  );
 
   // The heading shows the count only while the body shows the loaded list (or its empty state).
   let listed = false;
@@ -96,7 +115,14 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
     body = <p role="status">Loading pull requests…</p>;
   } else if (prs.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>No open pull requests</p>;
+    body = (
+      <>
+        <p className={styles.empty}>
+          {(loaded as PullRequest[]).length === 0 ? "No open pull requests" : "No matches"}
+        </p>
+        {list.hasMore && showMore}
+      </>
+    );
   } else {
     listed = true;
     body = (
@@ -117,18 +143,7 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
         {list.error !== null && (
           <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
         )}
-        {list.hasMore && (
-          <button
-            data-variant="ghost"
-            data-size="sm"
-            type="button"
-            className={styles.more}
-            disabled={list.loadingMore}
-            onClick={list.loadMore}
-          >
-            {list.loadingMore ? "Loading…" : "Show more"}
-          </button>
-        )}
+        {list.hasMore && showMore}
       </>
     );
   }
@@ -141,22 +156,26 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={styles.header}>
+      <div className={`gr-section-header ${styles.header}`}>
         <h2
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
           data-focus-target
-          className={styles.heading}
+          className={`gr-section-heading ${styles.heading}`}
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={!collapsed}
             aria-controls={bodyId}
             onClick={() => setPullRequestsCollapsed(!collapsed)}
           >
-            {prCountLabel(listed ? (prs as PullRequest[]).length : null, list.hasMore)}
+            {prCountLabel(
+              listed ? (loaded as PullRequest[]).length : null,
+              list.hasMore,
+              listed && isFiltering(query) ? (prs as PullRequest[]).length : undefined,
+            )}
           </button>
         </h2>
         <button

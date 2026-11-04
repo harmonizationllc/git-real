@@ -33,8 +33,8 @@ const lightTheme = themeTokens(rootMap);
 const mediaDarkTheme = themeTokens(mediaDarkMap);
 // Review Focus item 3 (plan § Task 7): token structure assertions.
 describe("tokens.css structure", () => {
-  it("declares 43 theme tokens on :root plus --font-mono and --diff-font-size", () => {
-    expect(lightTheme.size).toBe(43); // 38 + surface-2, accent-tint, shadow-card, backdrop, shadow-popover
+  it("declares 44 theme tokens on :root plus --font-mono and --diff-font-size", () => {
+    expect(lightTheme.size).toBe(44); // 38 + surface-2, accent-tint, shadow-card, backdrop, shadow-popover, on-accent-tint
     expect(rootMap.has("--font-mono")).toBe(true);
     expect(rootMap.has("--diff-font-size")).toBe(true);
   });
@@ -48,6 +48,7 @@ describe("tokens.css structure", () => {
     expect(rootMap.get("--color-accent")).toBe("#00525a");
     expect(rootMap.get("--color-on-accent")).toBe("#ffffff");
     expect(rootMap.get("--color-accent-tint")).toBe("rgba(0, 82, 90, 0.12)");
+    expect(rootMap.get("--color-on-accent-tint")).toBe("#00525a");
     expect(rootMap.get("--color-danger")).toBe("#890418");
     expect(rootMap.get("--color-warning")).toBe("#792c00");
     expect(rootMap.get("--color-added")).toBe("#00572c");
@@ -69,6 +70,7 @@ describe("tokens.css structure", () => {
       expect(map.get("--color-accent")).toBe("#63d0df");
       expect(map.get("--color-on-accent")).toBe("#111111");
       expect(map.get("--color-accent-tint")).toBe("rgba(99, 208, 223, 0.16)");
+      expect(map.get("--color-on-accent-tint")).toBe("#d5f3f7");
       expect(map.get("--color-added")).toBe("#5edb8c");
       expect(map.get("--color-modified")).toBe("#ffad00");
       expect(map.get("--color-removed")).toBe("#ffa09a");

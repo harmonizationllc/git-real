@@ -149,8 +149,23 @@ describe("section heading and pill helpers", () => {
     expect(h).toMatch(/font-size:\s*var\(--text-xs\)/);
     expect(h).toMatch(/text-transform:\s*uppercase/);
     expect(h).toMatch(/letter-spacing:\s*0\.06em/);
-    expect(h).toMatch(/color:\s*var\(--color-text-muted\)/);
+    expect(h).toMatch(/color:\s*var\(--color-on-accent-tint\)/);
     expect(h).toMatch(/font-weight:\s*600/);
+    expect(block(".gr-section-heading[data-sub]")).toMatch(/color:\s*var\(--color-text-muted\)/);
+  });
+  it("styles .gr-section-toggle as a text button with a caret that follows aria-expanded", () => {
+    const t = block(".gr-section-toggle");
+    expect(t).toMatch(/background:\s*transparent/);
+    expect(t).toMatch(/letter-spacing:\s*inherit/);
+    expect(block(".gr-section-toggle::before")).toMatch(/content:\s*"▸ "/);
+    expect(block('.gr-section-toggle[aria-expanded="true"]::before')).toMatch(/content:\s*"▾ "/);
+  });
+  it("styles .gr-section-header as a flex row on the accent tint", () => {
+    const h = block(".gr-section-header");
+    expect(h).toMatch(/display:\s*flex/);
+    expect(h).toMatch(/align-items:\s*flex-end/);
+    expect(h).toMatch(/gap:\s*6px/);
+    expect(h).toMatch(/background:\s*var\(--color-accent-tint\)/);
   });
   it("styles .gr-pill as an 18px pill with a kind per ref type", () => {
     const p = block(".gr-pill");

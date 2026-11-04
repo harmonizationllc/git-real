@@ -12,3 +12,12 @@
   margin: 4px 16px;
   color: var(--color-text-muted);
 }
+
+/* The section header and heading are shared with the other panels. */
+.header {
+  composes: header from "../tags/TagsPanel.module.css";
+}
+
+.heading {
+  composes: heading from "../tags/TagsPanel.module.css";
+}

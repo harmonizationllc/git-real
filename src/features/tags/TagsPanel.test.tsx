@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { declarationsOf } from "../../test/cssRules";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -73,7 +71,7 @@ async function renderPanel(expanded = true) {
   return view;
 }
 
-const toggle = () => screen.getByRole("button", { name: /^Tags \(/ });
+const toggle = () => screen.getByRole("button", { name: /^Tags/ });
 const plus = () => screen.getByRole("button", { name: "Create tag…" });
 const row = (name: string) => screen.getByText(name).closest("button") as HTMLButtonElement;
 const rightClick = (el: HTMLElement) => fireEvent.contextMenu(el, { clientX: 10, clientY: 20 });
@@ -82,6 +80,14 @@ const waitForBranches = () => waitFor(() => expect(plus()).toBeEnabled());
 
 // Contract: a collapsible Tags section; collapsed by default, the preference is stored.
 describe("TagsPanel collapse", () => {
+  it("puts the heading row on the accent band", async () => {
+    renderWithProviders(<TagsPanel repoId={1} />);
+    await waitFor(() => expect(toggle()).toHaveTextContent("Tags (3)"));
+    expect(
+      screen.getByRole("heading", { name: /^Tags/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("should render a collapsed Tags (n) toggle with aria-expanded false and no list", async () => {
     renderWithProviders(<TagsPanel repoId={1} />);
     await waitFor(() => expect(toggle()).toHaveTextContent("Tags (3)"));
@@ -649,12 +655,5 @@ describe("TagsPanel sign-in", () => {
     expect(
       await screen.findByRole("dialog", { name: "Sign in to github.com" }),
     ).toBeInTheDocument();
-  });
-});
-
-describe("section header alignment", () => {
-  it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/features/tags/TagsPanel.module.css", "utf8");
-    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
   });
 });

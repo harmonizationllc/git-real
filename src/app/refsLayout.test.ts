@@ -17,7 +17,8 @@ describe("refsLayout constants", () => {
   it("should pin SECTION_MIN and the section order", () => {
     expect(SECTION_MIN).toBe(72);
     expect(REFS_SECTIONS).toEqual([
-      "branches",
+      "local",
+      "remote",
       "stashes",
       "tags",
       "worktrees",
@@ -162,6 +163,35 @@ describe("fitSections", () => {
     expect(fitSections(0, [auto(1072), auto(72), fixed(572, 100), auto(36), auto(36)])).toEqual([
       1072, 72, 572, 36, 36,
     ]);
+  });
+});
+
+// Contract: the absorber index takes the leftover; null leaves it unassigned (GR-58).
+describe("fitSections absorber", () => {
+  it("should give the leftover to the absorber at index 1", () => {
+    expect(fitSections(500, [auto(100), auto(200), auto(60)], 1)).toEqual([100, 340, 60]);
+  });
+
+  it("should cap index 0's stored height at its content when it is not the absorber", () => {
+    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], 1)).toEqual([100, 340, 60]);
+  });
+
+  it("should keep the absorber's stored height above its content, only floored", () => {
+    expect(fitSections(500, [auto(100), fixed(200, 300), auto(60)], 1)).toEqual([100, 300, 60]);
+    expect(fitSections(500, [auto(100), fixed(200, 10), auto(60)], 1)).toEqual([100, 72, 60]);
+  });
+
+  it("should give a fits-all rounding pixel to the absorber at index 1", () => {
+    expect(fitSections(600, [auto(60.3), auto(200.4), auto(150.3)], 1)).toEqual([60, 390, 150]);
+  });
+
+  it("should leave the leftover unassigned with no absorber", () => {
+    expect(fitSections(500, [auto(100), auto(200), auto(60)], null)).toEqual([100, 200, 60]);
+    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], null)).toEqual([100, 200, 60]);
+  });
+
+  it("should still shrink sections in proportion when there is no absorber", () => {
+    expect(fitSections(400, [auto(400), auto(400)], null)).toEqual([200, 200]);
   });
 });
 

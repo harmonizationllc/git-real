@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { declarationsOf } from "../../test/cssRules";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,6 +11,7 @@ import {
 } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useSettings } from "../../lib/store/settings";
+import { useWorkspace } from "../../lib/store/workspace";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import {
   azureRepoContext,
@@ -46,6 +45,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   await resetSettings();
   localStorage.clear();
+  useWorkspace.setState({ refsFilter: {} });
   await seedSettings({ layout: { issuesCollapsed: false } });
   vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
   vi.mocked(hostingRepoInfo).mockResolvedValue(repoInfo());
@@ -89,10 +89,18 @@ describe("IssuesPanel visibility", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("puts the heading row on the accent band", async () => {
+    await renderPanel();
+    expect(
+      screen.getByRole("heading", { name: /^Issues/ }).closest(".gr-section-header"),
+    ).not.toBeNull();
+  });
+
   it("labels the region by its heading and marks the heading a focus target", async () => {
     await renderPanel();
     expect(screen.getByRole("region", { name: "Issues (2)" })).toBeInTheDocument();
     const heading = screen.getByRole("heading", { name: /^Issues/ });
+    expect(heading).toHaveClass("gr-section-heading");
     expect(heading).toHaveAttribute("data-focus-target");
     expect(heading).toHaveAttribute("tabindex", "-1");
   });
@@ -708,9 +716,50 @@ describe("IssuesPanel row menu toggle", () => {
   });
 });
 
-describe("section header alignment", () => {
-  it("bottom-aligns the action button with the heading text", () => {
-    const css = readFileSync("src/features/hosting/IssuesPanel.module.css", "utf8");
-    expect(declarationsOf(css, "header")).toMatch(/align-items:\s*flex-end/);
+// Contract: the shared refs filter narrows the loaded list only while the section is expanded.
+describe("IssuesPanel filtering", () => {
+  it("should show matching issues and a shown-of-total heading", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "#9"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Issues (1 of 2)" })).toBeInTheDocument();
+    expect(row(9)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^#12\b/ })).not.toBeInTheDocument();
+  });
+
+  it("should match on the title", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue([
+      issue(12, { title: "Slow start" }),
+      issue(9, { title: "Typo" }),
+    ]);
+    act(() => useWorkspace.getState().setRefsFilter(1, "SLOW"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByRole("button", { name: "Issues (1 of 2)" })).toBeInTheDocument();
+    expect(row(12)).toBeInTheDocument();
+  });
+
+  it("should say No matches when nothing hits", async () => {
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issues (0 of 2)" })).toBeInTheDocument();
+  });
+
+  it("should keep Show more under No matches while more pages exist", async () => {
+    vi.mocked(hostingListIssues).mockResolvedValue(manyIssues(50));
+    act(() => useWorkspace.getState().setRefsFilter(1, "zzz"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    expect(await screen.findByText("No matches")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issues (0 of 50+)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show more" })).toBeInTheDocument();
+  });
+
+  it("should not fetch or relabel a collapsed section because of the filter", async () => {
+    await seedSettings({ layout: { issuesCollapsed: true } });
+    act(() => useWorkspace.getState().setRefsFilter(1, "#12"));
+    renderWithProviders(<IssuesPanel repoId={1} />);
+    await screen.findByRole("button", { name: /^Issues/ });
+    expect(toggle()).toHaveTextContent(/^Issues$/);
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(hostingListIssues).not.toHaveBeenCalled();
   });
 });

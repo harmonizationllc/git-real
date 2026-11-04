@@ -1,4 +1,11 @@
-import type { BranchList, TagEntry } from "../../lib/ipc";
+import type {
+  BranchList,
+  Issue,
+  LinkedWorktree,
+  PullRequest,
+  StashEntry,
+  TagEntry,
+} from "../../lib/ipc";
 
 /** A case-insensitive substring test for `query`, or null when the query is blank. */
 function matcher(query: string): ((s: string) => boolean) | null {
@@ -31,4 +38,29 @@ export function filterBranches(list: BranchList, query: string): BranchList {
 export function filterTags(tags: TagEntry[], query: string): TagEntry[] {
   const hit = matcher(query);
   return hit === null ? tags : tags.filter((t) => hit(t.name));
+}
+
+/** Stashes whose message or parsed branch contains the query; a blank query returns `entries` itself. */
+export function filterStashes(entries: StashEntry[], query: string): StashEntry[] {
+  const hit = matcher(query);
+  return hit === null ? entries : entries.filter((e) => hit(e.message) || hit(e.branch ?? ""));
+}
+
+/** Worktrees whose checked-out branch (when on one) or path contains the query; a blank query returns `list` itself. */
+export function filterWorktrees(list: LinkedWorktree[], query: string): LinkedWorktree[] {
+  const hit = matcher(query);
+  if (hit === null) return list;
+  return list.filter((w) => (w.head?.kind === "branch" && hit(w.head.name)) || hit(w.path));
+}
+
+/** Pull requests whose title or `#number` contains the query; a blank query returns `items` itself. */
+export function filterPullRequests(items: PullRequest[], query: string): PullRequest[] {
+  const hit = matcher(query);
+  return hit === null ? items : items.filter((p) => hit(p.title) || hit(`#${p.number}`));
+}
+
+/** Issues whose title or `#number` contains the query; a blank query returns `items` itself. */
+export function filterIssues(items: Issue[], query: string): Issue[] {
+  const hit = matcher(query);
+  return hit === null ? items : items.filter((i) => hit(i.title) || hit(`#${i.number}`));
 }

@@ -1854,6 +1854,13 @@ describe("ChangesPanel COSMIC look", () => {
     }
   });
 
+  it("puts the Conflicts, Unstaged and Staged header rows on the accent band", async () => {
+    await renderPanel(conflict("c.txt"), unstaged("a.txt"), staged("b.txt"));
+    for (const name of [/^Conflicts/, /^Unstaged/, /^Staged/]) {
+      expect(screen.getByRole("heading", { name }).closest(".gr-section-header")).not.toBeNull();
+    }
+  });
+
   it("styles the section headings with the shared class", async () => {
     await renderPanel(unstaged("a.txt"));
     expect(screen.getByRole("heading", { name: /Unstaged/ })).toHaveClass("gr-section-heading");

@@ -1,5 +1,6 @@
 export const REFS_SECTIONS = [
-  "branches",
+  "local",
+  "remote",
   "stashes",
   "tags",
   "worktrees",
@@ -30,27 +31,32 @@ export function sectionFloor(natural: number): number {
 }
 
 /**
- * Shares the column between the sections (spec §3.1; index 0 is Branches). Each section prefers
- * its content height, or its stored height clamped between its floor and its content; a stored
- * Branches height is a true height, only floored. Leftover space goes to an automatic Branches;
- * an overflow is taken from the automatic sections in proportion to their room above the floor,
- * then from the fixed ones. Floors are never crossed. Heights are whole pixels: when the shares
- * fill the container, the rounding remainder goes to the last automatic section that is sharing,
- * else to an automatic Branches above its floor, so the heights sum exactly to the container;
- * when no automatic section can take the pixel it stays unassigned. An unmeasured container
- * (<= 0) returns the content heights unchanged.
+ * Shares the column between the sections (spec §3.1). The absorber (default index 0; null for
+ * none) takes the leftover; it must be null or an index into `sections` (not range-checked).
+ * Each section prefers its content height, or its stored height clamped between its floor and
+ * its content; the absorber's stored height is a true height, only floored.
+ * Leftover space goes to an automatic absorber; an overflow is taken from the automatic sections
+ * in proportion to their room above the floor, then from the fixed ones. Floors are never
+ * crossed. Heights are whole pixels: when the shares fill the container, the rounding remainder
+ * goes to the last automatic section that is sharing, else to an automatic absorber above its
+ * floor, so the heights sum exactly to the container; when no automatic section can take the
+ * pixel it stays unassigned. An unmeasured container (<= 0) returns the content heights unchanged.
  */
-export function fitSections(container: number, sections: SectionInput[]): number[] {
+export function fitSections(
+  container: number,
+  sections: SectionInput[],
+  absorber: number | null = 0,
+): number[] {
   if (container <= 0) return sections.map((s) => s.natural);
   const floors = sections.map((s) => sectionFloor(s.natural));
   const heights = sections.map((s, i) =>
     s.fixed === null
       ? s.natural
-      : Math.min(i === 0 ? Infinity : s.natural, Math.max(floors[i], s.fixed)),
+      : Math.min(i === absorber ? Infinity : s.natural, Math.max(floors[i], s.fixed)),
   );
   let over = heights.reduce((sum, h) => sum + h, 0) - container;
   if (over <= 0) {
-    if (sections[0].fixed === null) heights[0] -= over;
+    if (absorber !== null && sections[absorber].fixed === null) heights[absorber] -= over;
   } else {
     for (const automatic of [true, false]) {
       const members = sections.flatMap((s, i) => ((s.fixed === null) === automatic ? [i] : []));
@@ -61,13 +67,13 @@ export function fitSections(container: number, sections: SectionInput[]): number
       over -= taken;
     }
   }
-  return toWholePixels(container, sections, floors, heights);
+  return toWholePixels(container, sections, floors, heights, absorber);
 }
 
 /**
  * Rounds each height. When the unrounded heights fill the container, the rounding remainder goes
  * to the last automatic section that is sharing (above its floor and shrunk below its content),
- * else to an automatic Branches above its floor, else it stays unassigned. A section shown whole
+ * else to an automatic absorber above its floor, else it stays unassigned. A section shown whole
  * never gives or takes the pixel, and a recipient never ends below its floor or, while sharing,
  * above its content.
  */
@@ -76,6 +82,7 @@ function toWholePixels(
   sections: SectionInput[],
   floors: number[],
   heights: number[],
+  absorber: number | null,
 ): number[] {
   const rounded = heights.map(Math.round);
   const sum = heights.reduce((total, h) => total + h, 0);
@@ -92,7 +99,7 @@ function toWholePixels(
     const natural = sections[i].natural;
     if (heights[i] < natural && takes(i, natural)) recipient = i;
   }
-  if (recipient < 0 && takes(0, Infinity)) recipient = 0;
+  if (recipient < 0 && absorber !== null && takes(absorber, Infinity)) recipient = absorber;
   if (recipient >= 0) rounded[recipient] += remainder;
   return rounded;
 }

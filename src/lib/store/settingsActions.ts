@@ -46,10 +46,11 @@ export function setSidebarWidth(width: number): void {
 }
 
 /** The settings leaf that stores each resizable section's height. */
-type HeightLeaf = keyof Settings["layout"] & `${ResizableSection}Height`;
+type HeightLeaf = "branchesHeight" | `${Exclude<ResizableSection, "local">}Height`;
 
 const HEIGHT_LEAF: Record<ResizableSection, HeightLeaf> = {
-  branches: "branchesHeight",
+  local: "branchesHeight",
+  remote: "remoteHeight",
   stashes: "stashesHeight",
   tags: "tagsHeight",
   worktrees: "worktreesHeight",
@@ -78,6 +79,14 @@ export function setTagsCollapsed(tagsCollapsed: boolean): void {
 
 export function setWorktreesCollapsed(worktreesCollapsed: boolean): void {
   setPref({ layout: { worktreesCollapsed } });
+}
+
+export function setLocalCollapsed(localCollapsed: boolean): void {
+  setPref({ layout: { localCollapsed } });
+}
+
+export function setRemoteCollapsed(remoteCollapsed: boolean): void {
+  setPref({ layout: { remoteCollapsed } });
 }
 
 export function setPullRequestsCollapsed(pullRequestsCollapsed: boolean): void {

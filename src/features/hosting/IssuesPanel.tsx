@@ -3,6 +3,8 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { Issue, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setIssuesCollapsed } from "../../lib/store/settingsActions";
+import { useWorkspace } from "../../lib/store/workspace";
+import { filterIssues } from "../branches/branchFilter";
 import { NetworkError } from "../remotes/NetworkError";
 import { AccountsDialog } from "./AccountsDialog";
 import type { AccountsPreset } from "./AccountsDialog";
@@ -16,6 +18,7 @@ import {
   noIssuesText,
 } from "./hostingCopy";
 import { IssueRow } from "./IssueRow";
+import { isFiltering } from "../branches/branchFilter";
 import styles from "./IssuesPanel.module.css";
 import { useIssues } from "./useIssues";
 import { useLinkActions } from "./useLinkActions";
@@ -35,6 +38,7 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { context } = useRepoContext(repoId);
   const collapsed = useSettings((s) => s.settings.layout.issuesCollapsed);
+  const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const account = context?.account ?? null;
   const usable = account !== null && !account.needsReconnect;
   const repoInfo = useRepoInfo(repoId, !collapsed && usable);
@@ -60,7 +64,9 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     account?.needsReconnect === true ||
     repoInfo.error?.kind === "hostingAuth" ||
     list.error?.kind === "hostingAuth";
-  const issues = list.issues;
+  const loaded = list.issues;
+  // The filter narrows only an expanded section; a collapsed one never fetches because of it.
+  const issues = loaded && !collapsed ? filterIssues(loaded, query) : loaded;
 
   const refresh = () => {
     repoInfo.refetch();
@@ -71,6 +77,19 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     { id: "open", label: "Open in browser", onSelect: () => links.open(issue.webUrl) },
     { id: "copy", label: "Copy link", onSelect: () => links.copyLink(issue.webUrl) },
   ];
+
+  const showMore = (
+    <button
+      data-variant="ghost"
+      data-size="sm"
+      type="button"
+      className={styles.more}
+      disabled={list.loadingMore}
+      onClick={list.loadMore}
+    >
+      {list.loadingMore ? "Loading…" : "Show more"}
+    </button>
+  );
 
   // The heading shows the count only while the body shows the loaded list (or its empty state).
   let listed = false;
@@ -114,7 +133,14 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
     body = <p role="status">Loading {issuesNoun(provider)}…</p>;
   } else if (issues.length === 0) {
     listed = true;
-    body = <p className={styles.empty}>{noIssuesText(provider)}</p>;
+    body = (
+      <>
+        <p className={styles.empty}>
+          {(loaded as Issue[]).length === 0 ? noIssuesText(provider) : "No matches"}
+        </p>
+        {list.hasMore && showMore}
+      </>
+    );
   } else {
     listed = true;
     body = (
@@ -138,40 +164,34 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
         {list.error !== null && (
           <NetworkError message={hostingMessage(list.error, provider)} onDismiss={list.refetch} />
         )}
-        {list.hasMore && (
-          <button
-            data-variant="ghost"
-            data-size="sm"
-            type="button"
-            className={styles.more}
-            disabled={list.loadingMore}
-            onClick={list.loadMore}
-          >
-            {list.loadingMore ? "Loading…" : "Show more"}
-          </button>
-        )}
+        {list.hasMore && showMore}
       </>
     );
   }
 
   return (
     <section aria-labelledby={headingId} className={styles.root}>
-      <div className={styles.header}>
+      <div className={`gr-section-header ${styles.header}`}>
         <h2
           id={headingId}
           ref={headingRef}
           tabIndex={-1}
           data-focus-target
-          className={styles.heading}
+          className={`gr-section-heading ${styles.heading}`}
         >
           <button
             type="button"
-            className={styles.toggle}
+            className="gr-section-toggle"
             aria-expanded={!collapsed}
             aria-controls={bodyId}
             onClick={() => setIssuesCollapsed(!collapsed)}
           >
-            {issueCountLabel(listed ? (issues as Issue[]).length : null, list.hasMore, provider)}
+            {issueCountLabel(
+              listed ? (loaded as Issue[]).length : null,
+              list.hasMore,
+              provider,
+              listed && isFiltering(query) ? (issues as Issue[]).length : undefined,
+            )}
           </button>
         </h2>
         <button

@@ -591,6 +591,41 @@ fn patch_changes_unstaged_height_sets_clears_and_round_trips() {
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
+// --- GR-58: left column split ---
+
+#[test]
+fn left_column_split_leaves_default_and_round_trip() {
+    let d = Settings::default();
+    assert!(!d.layout.local_collapsed);
+    assert!(!d.layout.remote_collapsed);
+    assert_eq!(d.layout.remote_height, None);
+    // An older file: branchesHeight set, no new keys, no warnings.
+    let (s, w) = Settings::from_json_lenient(&json!({"layout": {"branchesHeight": 300}}));
+    assert_eq!(s.layout.branches_height, Some(300));
+    assert_eq!(s.layout.remote_height, None);
+    assert!(w.is_empty(), "{w:?}");
+    let (s, w) = Settings::from_json_lenient(&json!({
+        "layout": {"localCollapsed": true, "remoteCollapsed": "x", "remoteHeight": 10}
+    }));
+    assert!(s.layout.local_collapsed);
+    assert!(!s.layout.remote_collapsed);
+    assert_eq!(s.layout.remote_height, Some(72));
+    let mut got = fields(&w);
+    got.sort_unstable();
+    assert_eq!(got, vec!["layout.remoteCollapsed", "layout.remoteHeight"]);
+    let p = Settings::default()
+        .apply(&patch(
+            json!({"layout": {"remoteCollapsed": true, "remoteHeight": 200}}),
+        ))
+        .unwrap();
+    assert!(p.layout.remote_collapsed);
+    assert_eq!(p.layout.remote_height, Some(200));
+    let text = serde_json::to_string_pretty(&SettingsFile::current(p.clone())).unwrap();
+    let (back, w) = SettingsFile::parse(&text).unwrap();
+    assert_eq!(back, p);
+    assert!(w.is_empty(), "{w:?}");
+}
+
 // --- GR-39: worktrees section layout ---
 
 #[test]

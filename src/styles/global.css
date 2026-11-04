@@ -208,6 +208,38 @@ b {
   font-weight: 700;
 }
 
+/* A section's header row: an accent-tinted band under the heading and its buttons. Each panel adds
+   its own right padding. */
+.gr-section-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  background: var(--color-accent-tint);
+}
+
+/* A section header's collapse toggle: a text-styled button carrying the heading's font. */
+.gr-section-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+/* The caret's alt text is empty, so it stays out of the accessible name. */
+.gr-section-toggle::before {
+  content: "▸ ";
+  content: "▸ " / "";
+}
+
+.gr-section-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+  content: "▾ " / "";
+}
+
 /* Section headings in panels. A global class so every panel's heading reads the same. */
 .gr-section-heading {
   margin: 0;
@@ -216,6 +248,11 @@ b {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--color-on-accent-tint);
+}
+
+/* A sub-heading inside a section (a remote's name) stays off the band, so it stays muted. */
+.gr-section-heading[data-sub] {
   color: var(--color-text-muted);
 }
 

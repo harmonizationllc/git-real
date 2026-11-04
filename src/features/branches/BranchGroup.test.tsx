@@ -15,11 +15,13 @@ function renderGroup(over: Partial<BranchGroupProps> = {}) {
   return render(<BranchGroup {...props} />);
 }
 
-// Contract: the heading is an h2 and the rows sit in a labelled list.
+// Contract: the heading is an h3 and the rows sit in a labelled list.
 describe("BranchGroup structure", () => {
-  it("should render the heading as a level 2 heading", () => {
+  it("should render the heading as an unbanded level 3 sub-heading", () => {
     renderGroup({ heading: "origin" });
-    expect(screen.getByRole("heading", { level: 2, name: "origin" })).toBeInTheDocument();
+    const h = screen.getByRole("heading", { level: 3, name: "origin" });
+    expect(h).toHaveClass("gr-section-heading");
+    expect(h).toHaveAttribute("data-sub");
   });
 
   it("should render the children in a list with the given label", () => {
@@ -113,7 +115,7 @@ describe("BranchGroup empty copy with leading", () => {
 
 // Contract: without onHeadingContextMenu the heading is plain; with it, the heading opens a menu by mouse or keyboard.
 describe("BranchGroup heading context menu", () => {
-  const heading = () => screen.getByRole("heading", { level: 2 });
+  const heading = () => screen.getByRole("heading", { level: 3 });
 
   it("without onHeadingContextMenu the heading is not focusable and has no menu", () => {
     renderGroup();

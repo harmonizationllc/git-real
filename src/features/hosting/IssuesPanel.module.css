@@ -1,47 +1,15 @@
-/* The section rules mirror PullRequestsPanel.module.css; no feature imports another feature's module. */
 /* The RefsColumn wrapper sizes and scrolls the section; its handle draws the divider. */
 .root {
   color: var(--color-text);
 }
 
 .header {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
   padding: 0 6px 0 0;
 }
 
+/* Type and colour come from the shared gr-section-heading class. */
 .heading {
   flex: 1;
-  margin: 0;
-  padding: 12px 10px 4px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-/* A text-styled button carrying the heading's font. */
-.toggle {
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-}
-
-/* The caret's alt text is empty, so it stays out of the accessible name. */
-.toggle::before {
-  content: "▸ ";
-  content: "▸ " / "";
-}
-
-.toggle[aria-expanded="true"]::before {
-  content: "▾ ";
-  content: "▾ " / "";
 }
 
 .refresh {
