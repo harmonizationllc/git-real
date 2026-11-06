@@ -1,8 +1,10 @@
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import type { HeadState } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setLocalCollapsed } from "../../lib/store/settingsActions";
 import { BranchGroupBody, BranchSectionHeader } from "./BranchGroup";
+import { BranchTreeItems, useCollapsedFolders } from "./BranchTree";
+import { buildBranchTree } from "./branchTree";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import styles from "./BranchesPanel.module.css";
@@ -34,6 +36,8 @@ export function LocalSection() {
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
   const unborn = branches?.head.kind === "unborn";
+  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
+  const tree = useMemo(() => buildBranchTree(shown?.local ?? []), [shown]);
 
   let body: React.ReactNode = null;
   if (!expanded) {
@@ -48,9 +52,14 @@ export function LocalSection() {
         count={shown.local.length}
         leading={headRow(branches.head)}
       >
-        {shown.local.map((branch) =>
-          row({ kind: "local", branch }, `local:${branch.name}`, branch.isHead),
-        )}
+        <BranchTreeItems
+          nodes={tree}
+          collapsed={collapsedFolders}
+          onToggle={toggleFolder}
+          renderBranch={(branch) =>
+            row({ kind: "local", branch }, `local:${branch.name}`, branch.isHead)
+          }
+        />
       </BranchGroupBody>
     );
   }

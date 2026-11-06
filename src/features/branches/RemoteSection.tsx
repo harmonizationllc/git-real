@@ -1,8 +1,10 @@
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import type { BranchList } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setRemoteCollapsed } from "../../lib/store/settingsActions";
 import { BranchGroup, BranchSectionHeader } from "./BranchGroup";
+import { BranchTreeItems, useCollapsedFolders } from "./BranchTree";
+import { buildBranchTree } from "./branchTree";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import groupStyles from "./BranchGroup.module.css";
@@ -23,6 +25,11 @@ export function RemoteSection() {
   const collapsed = useSettings((s) => s.settings.layout.remoteCollapsed);
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
+  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
+  const trees = useMemo(
+    () => shown?.remotes.map((group) => buildBranchTree(group.branches)) ?? [],
+    [shown],
+  );
 
   let body: React.ReactNode = null;
   if (expanded && shown !== undefined) {
@@ -30,7 +37,7 @@ export function RemoteSection() {
       shown.remotes.length === 0 ? (
         <p className={groupStyles.empty}>No remotes</p>
       ) : (
-        shown.remotes.map((group) => (
+        shown.remotes.map((group, i) => (
           <BranchGroup
             key={group.remote}
             heading={group.remote}
@@ -39,9 +46,15 @@ export function RemoteSection() {
             count={group.branches.length}
             onHeadingContextMenu={(x, y) => openHeadingMenu(group.remote, x, y)}
           >
-            {group.branches.map((branch) =>
-              row({ kind: "remote", branch }, `${branch.remote}/${branch.name}`, false),
-            )}
+            <BranchTreeItems
+              nodes={trees[i]}
+              collapsed={collapsedFolders}
+              onToggle={toggleFolder}
+              keyPrefix={`${group.remote}:`}
+              renderBranch={(branch) =>
+                row({ kind: "remote", branch }, `${branch.remote}/${branch.name}`, false)
+              }
+            />
           </BranchGroup>
         ))
       );

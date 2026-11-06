@@ -133,6 +133,26 @@ describe("RemoteSection heading", () => {
   });
 });
 
+// Remote names may contain slashes, so folder keys must not alias across remotes.
+describe("RemoteSection folder keys", () => {
+  it("should collapse a folder in one remote without collapsing the same path in another", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      list({
+        remotes: [
+          { remote: "a", branches: [{ remote: "a", name: "b/c/x", oid: oid("a") }] },
+          { remote: "a/b", branches: [{ remote: "a/b", name: "c/x", oid: oid("b") }] },
+        ],
+      }),
+    );
+    const { user } = renderRemote();
+    const slashed = within(await screen.findByRole("list", { name: "a/b branches" }));
+    const plain = within(screen.getByRole("list", { name: "a branches" }));
+    await user.click(slashed.getByRole("button", { name: "c" }));
+    expect(slashed.getByRole("button", { name: "c" })).toHaveAttribute("aria-expanded", "false");
+    expect(plain.getByRole("button", { name: "c" })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
 // Contract: the toggle stores remoteCollapsed; a collapsed Remote renders only its header row.
 describe("RemoteSection collapse", () => {
   it("should collapse to the header row and store remoteCollapsed true", async () => {
@@ -190,5 +210,44 @@ describe("RemoteSection actions", () => {
     rightClick(remoteRow("origin", "other"));
     await user.click(screen.getByRole("menuitem", { name: "Checkout" }));
     expect(checkoutRemoteBranch).toHaveBeenCalledExactlyOnceWith(1, "origin", "other");
+  });
+});
+
+const rb = (remote: string, name: string) => ({ remote, name, oid: oid("a") });
+const twoRemotes = () =>
+  list({
+    remotes: [
+      { remote: "origin", branches: [rb("origin", "feature/fix-1"), rb("origin", "main")] },
+      { remote: "upstream", branches: [rb("upstream", "feature/fix-1"), rb("upstream", "main")] },
+    ],
+  });
+
+// Contract (GR-54): each remote's branches group into their own folder tree.
+describe("RemoteSection folders", () => {
+  it("should build one tree per remote with independent folder state", async () => {
+    vi.mocked(listBranches).mockResolvedValue(twoRemotes());
+    const { user } = renderRemote();
+    const origin = await screen.findByRole("list", { name: "origin branches" });
+    const upstream = screen.getByRole("list", { name: "upstream branches" });
+    await user.click(within(origin).getByRole("button", { name: "feature" }));
+    expect(within(origin).getByRole("button", { name: "feature" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(upstream).getByRole("button", { name: "feature" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(upstream).getByTitle("refs/remotes/upstream/feature/fix-1")).toHaveTextContent(
+      "fix-1",
+    );
+    expect(within(origin).queryByTitle("refs/remotes/origin/feature/fix-1")).toBeNull();
+  });
+
+  it("should open the remote row menu from a row inside a folder", async () => {
+    vi.mocked(listBranches).mockResolvedValue(twoRemotes());
+    renderRemote();
+    rightClick(await screen.findByTitle("refs/remotes/origin/feature/fix-1"));
+    expect(await screen.findByRole("menuitem", { name: "Checkout" })).toBeInTheDocument();
   });
 });

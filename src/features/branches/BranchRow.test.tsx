@@ -508,6 +508,42 @@ describe("BranchRow worktree badge", () => {
   });
 });
 
+describe("BranchRow label", () => {
+  it("should show a slash-less name as today, with the name as the accessible name", () => {
+    renderRow({ target: local({ name: "main" }) });
+    const button = screen.getByRole("button", { name: "main" });
+    expect(button).toHaveTextContent("main");
+    expect(screen.getAllByText("main")).toHaveLength(1);
+  });
+
+  it("should show only the last segment of a slashed name but keep the full name accessible", () => {
+    renderRow({ target: local({ name: "feature/ui/toolbar" }) });
+    const button = screen.getByRole("button", { name: "feature/ui/toolbar" });
+    expect(button).toHaveAttribute("title", "refs/heads/feature/ui/toolbar");
+    const visible = screen.getByText("toolbar");
+    expect(visible).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByText("feature/ui/toolbar").className).toMatch(/srOnly/);
+  });
+
+  it("should keep the tracking badge in the accessible name after the full name", () => {
+    renderRow({ target: local({ name: "feature/fix-1", tracking: tracking({ ahead: 2 }) }) });
+    expect(screen.getByRole("button", { name: "feature/fix-1 2 ahead" })).toBeInTheDocument();
+  });
+
+  it("should apply the same rule to a remote branch name", () => {
+    renderRow({ target: remote({ name: "feature/fix-1" }) });
+    expect(screen.getByText("fix-1")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "feature/fix-1" })).toBeInTheDocument();
+  });
+
+  it("should hide the full name visually with the shared screen-reader-only recipe", () => {
+    const css = readFileSync("src/features/branches/BranchRow.module.css", "utf8");
+    const rule = declarationsOf(css, "srOnly");
+    expect(rule).toMatch(/position:\s*absolute/);
+    expect(rule).toMatch(/clip-path:\s*inset\(50%\)/);
+  });
+});
+
 // Contract: the refs column rows share the COSMIC recipe, pinned at the CSS source.
 describe("refs row styling", () => {
   const read = (path: string) => readFileSync(path, "utf8");
