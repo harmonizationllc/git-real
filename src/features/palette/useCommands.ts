@@ -73,7 +73,7 @@ export function useCommands(actions: ShellActions): Command[] {
   });
   push({
     id: "showShortcuts",
-    label: "Show keyboard shortcuts",
+    label: "Keyboard shortcuts…",
     group: "Actions",
     shortcutId: "shortcuts",
     run: () => useShell.getState().open({ kind: "shortcuts" }),

@@ -1,9 +1,9 @@
 import { createRef } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../../lib/ipc";
 import { SHORTCUTS, SHORTCUT_GROUPS, formatKeyParts } from "../../lib/shortcuts";
-import { useShell } from "../../lib/store/shell";
+import { renderWithProviders } from "../../test/renderWithProviders";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 
@@ -24,8 +24,10 @@ function setup(onClose = vi.fn()) {
   div.tabIndex = -1;
   document.body.appendChild(div);
   (fallbackFocus as React.MutableRefObject<HTMLElement | null>).current = div;
-  render(<ShortcutsDialog onClose={onClose} fallbackFocus={fallbackFocus} />);
-  return { onClose, fallbackFocus, div };
+  const { unmount } = renderWithProviders(
+    <ShortcutsDialog onClose={onClose} fallbackFocus={fallbackFocus} />,
+  );
+  return { onClose, fallbackFocus, div, unmount };
 }
 
 afterEach(() => {
@@ -138,32 +140,35 @@ describe("ShortcutsDialog backdrop click", () => {
 // Contract: restores focus to fallback on close.
 describe("ShortcutsDialog focus restoration", () => {
   it("restores focus to the fallback element on unmount", () => {
-    const { div } = setup();
-    div.focus();
-    screen.getByRole("dialog").focus();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    // The dialog component calls onClose; after unmount focus should return.
-    // We test that useRestoreFocus is in play via the fallbackFocus prop being accepted.
-    expect(div).toBeInTheDocument();
+    const { div, unmount } = setup();
+    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })[0]).toHaveFocus();
+    unmount();
+    expect(div).toHaveFocus();
   });
 });
 
-// Contract (GR-18): rows show the effective chords, and an unbound row shows Unbound.
-describe("ShortcutsDialog effective bindings", () => {
+// Contract (GR-56): the dialog is the shortcut editor, so every registry row has a chord button.
+describe("ShortcutsDialog editing", () => {
+  it("renders a chord button per registry row and no Customize… button", () => {
+    setup();
+    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(
+      SHORTCUTS.length,
+    );
+    expect(screen.queryByRole("button", { name: "Customize…" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset all to defaults" })).toBeInTheDocument();
+  });
+
   it("rows show effective chords and Unbound", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     await seedSettings({ shortcuts: { bindings: { fetch: "Mod+Alt+F", palette: null } } });
     setup();
     const fetchKbds = shortcutCell("Repository", "Fetch").querySelectorAll("kbd");
     expect([...fetchKbds].map((k) => k.textContent)).toEqual(["Ctrl", "Alt", "F"]);
-    const palette = shortcutCell("Application", "Command palette");
+    const palette = screen.getByRole("button", { name: "Change shortcut for Command palette" });
     expect(palette).toHaveTextContent(/^Unbound$/);
     expect(palette.querySelector("kbd")).toBeNull();
   });
-});
 
-// Contract (GR-18b §3): rows show the learned keycap for the chord's physical key.
-describe("ShortcutsDialog learned keycaps", () => {
   it("rows show learned keycaps on default and custom chords", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     await seedSettings({
@@ -175,14 +180,23 @@ describe("ShortcutsDialog learned keycaps", () => {
     expect(kbds("Repository", "Fetch")).toEqual(["Ctrl", "Alt", "A"]);
     expect(kbds("Application", "Command palette")).toEqual(["Ctrl", "T"]);
   });
-});
 
-// Contract (GR-18): Customize… jumps to the Keyboard shortcuts section of Settings.
-describe("ShortcutsDialog Customize…", () => {
-  it("Customize… opens Settings at the shortcuts section", () => {
-    useShell.setState({ dialog: { kind: "shortcuts" } });
+  it("opens with focus on the first chord button", () => {
     setup();
-    fireEvent.click(screen.getByRole("button", { name: "Customize…" }));
-    expect(useShell.getState().dialog).toEqual({ kind: "settings", section: "shortcuts" });
+    expect(
+      screen.getByRole("button", { name: `Change shortcut for ${SHORTCUTS[0].label}` }),
+    ).toHaveFocus();
+  });
+
+  it("Escape while listening cancels the capture and keeps the dialog open", () => {
+    const { onClose } = setup();
+    const button = screen.getByRole("button", { name: "Change shortcut for Fetch" });
+    fireEvent.click(button);
+    expect(button).toHaveTextContent("Press keys…");
+    fireEvent.keyDown(button, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(button).not.toHaveTextContent("Press keys…");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
