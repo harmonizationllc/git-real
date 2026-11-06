@@ -50,7 +50,7 @@ export function RemoteSection() {
               nodes={trees[i]}
               collapsed={collapsedFolders}
               onToggle={toggleFolder}
-              keyPrefix={`${group.remote}/`}
+              keyPrefix={`${group.remote}:`}
               renderBranch={(branch) =>
                 row({ kind: "remote", branch }, `${branch.remote}/${branch.name}`, false)
               }

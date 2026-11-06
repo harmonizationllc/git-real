@@ -52,13 +52,13 @@ describe("BranchTreeItems", () => {
   });
 
   it("should prefix folder keys so the same path under two remotes stays independent", async () => {
-    const onToggle = renderTree(new Set(["upstream/feature"]), vi.fn(), "origin/");
+    const onToggle = renderTree(new Set(["upstream/feature"]), vi.fn(), "origin:");
     expect(screen.getByRole("button", { name: "feature" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
     await userEvent.click(screen.getByRole("button", { name: "ui" }));
-    expect(onToggle).toHaveBeenCalledExactlyOnceWith("origin/feature/ui");
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith("origin:feature/ui");
   });
 
   it("should keep a nested folder's own state when its parent is collapsed then expanded", () => {
@@ -91,6 +91,13 @@ describe("BranchTreeItems", () => {
     expect(declarationsOf(css, "children")).toContain("padding-left: var(--space-4)");
     expect(css).toMatch(/\.folder\[aria-expanded="true"\]::before\s*\{[^}]*"▾ "/);
     expect(css).toMatch(/\.folder::before\s*\{[^}]*"▸ "/);
+  });
+
+  it("should truncate long folder names with an ellipsis like branch names", () => {
+    const css = readFileSync("src/features/branches/BranchTree.module.css", "utf8");
+    const decls = declarationsOf(css, "folderName");
+    expect(decls).toContain("text-overflow: ellipsis");
+    expect(decls).toContain("white-space: nowrap");
   });
 });
 

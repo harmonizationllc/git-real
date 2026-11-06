@@ -270,5 +270,7 @@ describe("LocalSection folders", () => {
     expect(screen.queryByTitle("refs/heads/feature/fix-1")).toBeNull();
     expect(folder("feature")).toBeInTheDocument();
     expect(toggle()).toHaveTextContent("Local (3)");
+    await user.click(folder("feature"));
+    expect(localRow("feature/fix-1")).toHaveAttribute("aria-current", "true");
   });
 });

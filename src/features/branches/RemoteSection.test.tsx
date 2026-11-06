@@ -133,6 +133,26 @@ describe("RemoteSection heading", () => {
   });
 });
 
+// Remote names may contain slashes, so folder keys must not alias across remotes.
+describe("RemoteSection folder keys", () => {
+  it("should collapse a folder in one remote without collapsing the same path in another", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      list({
+        remotes: [
+          { remote: "a", branches: [{ remote: "a", name: "b/c/x", oid: oid("a") }] },
+          { remote: "a/b", branches: [{ remote: "a/b", name: "c/x", oid: oid("b") }] },
+        ],
+      }),
+    );
+    const { user } = renderRemote();
+    const slashed = within(await screen.findByRole("list", { name: "a/b branches" }));
+    const plain = within(screen.getByRole("list", { name: "a branches" }));
+    await user.click(slashed.getByRole("button", { name: "c" }));
+    expect(slashed.getByRole("button", { name: "c" })).toHaveAttribute("aria-expanded", "false");
+    expect(plain.getByRole("button", { name: "c" })).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
 // Contract: the toggle stores remoteCollapsed; a collapsed Remote renders only its header row.
 describe("RemoteSection collapse", () => {
   it("should collapse to the header row and store remoteCollapsed true", async () => {

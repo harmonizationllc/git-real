@@ -7,7 +7,7 @@ export interface BranchTreeItemsProps<B> {
   /** Collapsed folder keys; a folder's key is `keyPrefix + path`. */
   collapsed: ReadonlySet<string>;
   onToggle(key: string): void;
-  /** Prepended to each folder path to form its key, e.g. "origin/"; default "". */
+  /** Prepended to each folder path to form its key, e.g. "origin:" (a colon cannot appear in a ref name); default "". */
   keyPrefix?: string;
   /** Renders one branch `<li>`; must set its own React key. */
   renderBranch(branch: B): ReactNode;
@@ -28,7 +28,7 @@ export function BranchTreeItems<B>(props: BranchTreeItemsProps<B>): ReactNode {
           aria-expanded={expanded}
           onClick={() => onToggle(key)}
         >
-          {node.name}
+          <span className={styles.folderName}>{node.name}</span>
         </button>
         {expanded && (
           <ul aria-label={`${node.path} branches`} className={styles.children}>
