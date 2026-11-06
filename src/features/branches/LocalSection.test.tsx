@@ -188,3 +188,87 @@ describe("LocalSection New branch…", () => {
     expect(checkoutBranch).toHaveBeenCalledExactlyOnceWith(1, "feature");
   });
 });
+
+const treeList = (over: Partial<BranchList> = {}): BranchList =>
+  list({
+    local: [
+      localBranch("main", true),
+      localBranch("feature/fix-1"),
+      localBranch("feature/fix-2"),
+      localBranch("feature/ui/toolbar"),
+      localBranch("release/1.2"),
+    ],
+    ...over,
+  });
+
+// Contract (GR-54): slash paths group into collapsible folders, expanded by default.
+describe("LocalSection folders", () => {
+  const folder = (name: string) => screen.getByRole("button", { name });
+
+  it("should show the folder tree expanded with the branch count unchanged", async () => {
+    vi.mocked(listBranches).mockResolvedValue(treeList());
+    renderLocal();
+    await waitFor(() => expect(toggle()).toHaveTextContent("Local (5)"));
+    expect(folder("feature")).toHaveAttribute("aria-expanded", "true");
+    const feature = screen.getByRole("list", { name: "feature branches" });
+    // ui folder first, then the loose branches, per the spec's order rule.
+    expect(feature.firstElementChild).toContainElement(folder("ui"));
+    expect(within(feature).getByRole("list", { name: "feature/ui branches" })).toContainElement(
+      localRow("feature/ui/toolbar"),
+    );
+    expect(localRow("feature/fix-1")).toHaveTextContent("fix-1");
+    expect(screen.getByRole("list", { name: "Local branches" }).lastElementChild).toContainElement(
+      localRow("main"),
+    );
+  });
+
+  it("should collapse a folder on click and restore a nested folder's state on re-expand", async () => {
+    vi.mocked(listBranches).mockResolvedValue(treeList());
+    const { user } = renderLocal();
+    await waitFor(() => folder("feature"));
+    await user.click(folder("ui"));
+    await user.click(folder("feature"));
+    expect(screen.queryByTitle("refs/heads/feature/fix-1")).toBeNull();
+    expect(folder("feature")).toHaveAttribute("aria-expanded", "false");
+    await user.click(folder("feature"));
+    expect(localRow("feature/fix-1")).toBeInTheDocument();
+    expect(folder("ui")).toHaveAttribute("aria-expanded", "false");
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("should hide folders without matches under the filter and keep a collapsed folder collapsed", async () => {
+    vi.mocked(listBranches).mockResolvedValue(treeList());
+    const { user } = renderLocal();
+    await waitFor(() => folder("feature"));
+    await user.click(folder("feature"));
+    setFilter("toolbar");
+    await waitFor(() => expect(toggle()).toHaveTextContent("Local (1 of 5)"));
+    expect(folder("feature")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "release" })).toBeNull();
+    expect(screen.queryByTitle("refs/heads/main")).toBeNull();
+    setFilter("");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "release" })).toBeInTheDocument(),
+    );
+    expect(folder("feature")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("should keep the current branch inside its collapsed folder and mark it when expanded", async () => {
+    vi.mocked(listBranches).mockResolvedValue(
+      treeList({
+        head: { kind: "branch", name: "feature/fix-1" },
+        local: [
+          localBranch("main"),
+          localBranch("feature/fix-1", true),
+          localBranch("release/1.2"),
+        ],
+      }),
+    );
+    const { user } = renderLocal();
+    await waitFor(() => expect(localRow("feature/fix-1")).toHaveAttribute("aria-current", "true"));
+    await user.click(folder("feature"));
+    expect(screen.queryByTitle("refs/heads/feature/fix-1")).toBeNull();
+    expect(folder("feature")).toBeInTheDocument();
+    expect(toggle()).toHaveTextContent("Local (3)");
+  });
+});

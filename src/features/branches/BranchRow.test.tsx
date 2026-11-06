@@ -532,7 +532,8 @@ describe("BranchRow label", () => {
 
   it("should apply the same rule to a remote branch name", () => {
     renderRow({ target: remote({ name: "feature/fix-1" }) });
-    expect(screen.getByRole("button", { name: "feature/fix-1" })).toHaveTextContent("fix-1");
+    expect(screen.getByText("fix-1")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "feature/fix-1" })).toBeInTheDocument();
   });
 
   it("should hide the full name visually with the shared screen-reader-only recipe", () => {

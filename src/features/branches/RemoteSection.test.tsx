@@ -192,3 +192,42 @@ describe("RemoteSection actions", () => {
     expect(checkoutRemoteBranch).toHaveBeenCalledExactlyOnceWith(1, "origin", "other");
   });
 });
+
+const rb = (remote: string, name: string) => ({ remote, name, oid: oid("a") });
+const twoRemotes = () =>
+  list({
+    remotes: [
+      { remote: "origin", branches: [rb("origin", "feature/fix-1"), rb("origin", "main")] },
+      { remote: "upstream", branches: [rb("upstream", "feature/fix-1"), rb("upstream", "main")] },
+    ],
+  });
+
+// Contract (GR-54): each remote's branches group into their own folder tree.
+describe("RemoteSection folders", () => {
+  it("should build one tree per remote with independent folder state", async () => {
+    vi.mocked(listBranches).mockResolvedValue(twoRemotes());
+    const { user } = renderRemote();
+    const origin = await screen.findByRole("list", { name: "origin branches" });
+    const upstream = screen.getByRole("list", { name: "upstream branches" });
+    await user.click(within(origin).getByRole("button", { name: "feature" }));
+    expect(within(origin).getByRole("button", { name: "feature" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(upstream).getByRole("button", { name: "feature" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(upstream).getByTitle("refs/remotes/upstream/feature/fix-1")).toHaveTextContent(
+      "fix-1",
+    );
+    expect(within(origin).queryByTitle("refs/remotes/origin/feature/fix-1")).toBeNull();
+  });
+
+  it("should open the remote row menu from a row inside a folder", async () => {
+    vi.mocked(listBranches).mockResolvedValue(twoRemotes());
+    renderRemote();
+    rightClick(await screen.findByTitle("refs/remotes/origin/feature/fix-1"));
+    expect(await screen.findByRole("menuitem", { name: "Checkout" })).toBeInTheDocument();
+  });
+});
