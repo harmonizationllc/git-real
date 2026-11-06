@@ -85,7 +85,10 @@ fn command_spawns_git_without_a_console_window() {
     // runner (and cargo) already share, so the count is 2 or more. Without this
     // the flagged assertion below could pass on a runner that has no console.
     let plain = probe_count(std::process::Command::new(&exe));
-    assert_ne!(plain, 1, "precondition: the test runner must own a console");
+    assert_ne!(
+        plain, 1,
+        "precondition: a plain child must share the runner's console or have none"
+    );
     assert_eq!(
         probe_count(command(&exe)),
         1,
