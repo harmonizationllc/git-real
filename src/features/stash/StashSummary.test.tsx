@@ -108,11 +108,31 @@ describe("StashSummary header", () => {
     expect(useWorkspace.getState().selectedStash[1]).toBeNull();
   });
 
-  it("Close leaves a file opened from the stash alone", async () => {
+  it("Close clears a file opened from the stash", async () => {
     useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: W } } } });
     const { user } = await renderSummary();
     await user.click(screen.getByRole("button", { name: "Close stash details" }));
-    expect(useWorkspace.getState().selected[1]).toEqual({ path: "a.txt", scope: { commit: W } });
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+  });
+
+  it("Close clears a file opened from the stash's untracked commit", async () => {
+    useWorkspace.setState({
+      selected: { 1: { path: "new.txt", scope: { commit: U }, source: "stash" } },
+    });
+    const { user } = await renderSummary();
+    // The untracked oid arrives with the file list; Close before that would not know it.
+    await inDetails().findByRole("heading", { name: /^Untracked/ });
+    await user.click(screen.getByRole("button", { name: "Close stash details" }));
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+  });
+
+  it("Close leaves a working-tree file alone", async () => {
+    const file = { path: "a.txt", scope: "staged" as const };
+    useWorkspace.setState({ selected: { 1: file } });
+    const { user } = await renderSummary();
+    await user.click(screen.getByRole("button", { name: "Close stash details" }));
+    expect(useWorkspace.getState().selected[1]).toBe(file);
   });
 
   it("should request the files for the stash oid", async () => {
