@@ -238,11 +238,13 @@ describe("CommitSummary loading and error", () => {
     await waitFor(() => expect(getCommit).toHaveBeenCalledTimes(2));
   });
 
-  it("should close the panel when Dismiss is clicked", async () => {
+  it("should close the panel and its diff when Dismiss is clicked", async () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: OID } } } });
     vi.mocked(getCommit).mockRejectedValue({ kind: "commitNotFound", message: "No such commit" });
     renderWithProviders(<CommitSummary repoId={1} oid={OID} />);
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
+    expect(useWorkspace.getState().selected[1]).toBeNull();
   });
 });
 

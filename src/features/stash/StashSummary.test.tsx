@@ -85,6 +85,15 @@ describe("StashSummary header", () => {
     expect(await screen.findByRole("heading", { name: "stash@{1}" })).toBeInTheDocument();
   });
 
+  it("Dismiss on the list error clears the stash selection and its diff", async () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: W } } } });
+    vi.mocked(listStashes).mockRejectedValue({ kind: "io", message: "list broke" });
+    const { user } = renderWithProviders(<StashSummary repoId={1} oid={W} />);
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+    expect(useWorkspace.getState().selectedStash[1]).toBeNull();
+  });
+
   it("should show stash@{1}, the message, branch, date and base short id", async () => {
     await renderSummary();
     expect(inDetails().getByText("my work")).toBeInTheDocument();
