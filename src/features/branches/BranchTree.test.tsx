@@ -1,4 +1,4 @@
-import { render, screen, within, renderHook, act } from "@testing-library/react";
+import { cleanup, render, screen, within, renderHook, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
@@ -86,11 +86,25 @@ describe("BranchTreeItems", () => {
     expect(screen.getByText("feature/fix-1")).toBeInTheDocument();
   });
 
-  it("should give folder buttons the disclosure glyph and indent nested lists", () => {
+  it("should indent nested lists and use no disclosure glyph pseudo-elements", () => {
     const css = readFileSync("src/features/branches/BranchTree.module.css", "utf8");
     expect(declarationsOf(css, "children")).toContain("padding-left: var(--space-4)");
-    expect(css).toMatch(/\.folder\[aria-expanded="true"\]::before\s*\{[^}]*"▾ "/);
-    expect(css).toMatch(/\.folder::before\s*\{[^}]*"▸ "/);
+    expect(css).not.toMatch(/\.folder::before/);
+    expect(css).not.toMatch(/\.folder\[aria-expanded="true"\]::before/);
+  });
+
+  it("should show the same decorative folder icon on expanded and collapsed folders", () => {
+    renderTree();
+    const open = screen.getByRole("button", { name: "feature" });
+    const openIcon = open.querySelector("svg");
+    expect(openIcon).toHaveAttribute("aria-hidden", "true");
+    expect(open.textContent?.trim()).toBe("feature");
+    cleanup();
+    renderTree(new Set(["feature"]));
+    const closed = screen.getByRole("button", { name: "feature" });
+    expect(closed).toHaveAttribute("aria-expanded", "false");
+    expect(closed.querySelector("svg")?.outerHTML).toBe(openIcon?.outerHTML);
+    expect(closed.textContent?.trim()).toBe("feature");
   });
 
   it("should truncate long folder names with an ellipsis like branch names", () => {

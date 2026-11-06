@@ -28,6 +28,20 @@ export function BranchTreeItems<B>(props: BranchTreeItemsProps<B>): ReactNode {
           aria-expanded={expanded}
           onClick={() => onToggle(key)}
         >
+          <svg
+            className={styles.folderIcon}
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          >
+            <path d="M2.5 5.5a1 1 0 0 1 1-1h4l2 2h7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z" />
+          </svg>
           <span className={styles.folderName}>{node.name}</span>
         </button>
         {expanded && (

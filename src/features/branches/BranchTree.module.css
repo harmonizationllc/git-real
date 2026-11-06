@@ -29,15 +29,9 @@
   background: var(--color-surface-hover);
 }
 
-/* The caret's alt text is empty, so it stays out of the accessible name. */
-.folder::before {
-  content: "▸ ";
-  content: "▸ " / "";
-}
-
-.folder[aria-expanded="true"]::before {
-  content: "▾ ";
-  content: "▾ " / "";
+.folderIcon {
+  flex: none;
+  margin-right: var(--space-2);
 }
 
 .children {
