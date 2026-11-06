@@ -32,6 +32,7 @@ pub fn clone_with(
     sink: &mut dyn ProgressSink,
 ) -> Result<PathBuf, GitError> {
     let mut cmd = git_cli::command(git);
+    super::ssh::apply_batch_mode(&mut cmd, &super::ssh::SshSetup::detect(None));
     auth::apply(&mut cmd, creds);
     let mut child = cmd
         .args(["clone", "--progress", "--"])

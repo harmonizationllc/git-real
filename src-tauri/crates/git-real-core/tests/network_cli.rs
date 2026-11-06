@@ -26,6 +26,7 @@ if [ "$3" = credential ]; then
 fi
 printf '%s\n' "$@" > "$d/argv.txt"
 printf '%s\n' "${GR_USERNAME-<unset>}" "${GR_TOKEN-<unset>}" > "$d/env.txt"
+printf '%s' "${GIT_SSH_COMMAND-<unset>}" > "$d/ssh.txt"
 prev=
 for a in "$@"; do
   if [ "$prev" = -c ]; then
@@ -120,6 +121,13 @@ fn fetch_runs_fetch_all_without_credentials() {
     assert_eq!(after_workdir(&path), ["fetch", "--all"]);
     assert_eq!(read(&path, "env.txt").unwrap(), "<unset>\n<unset>\n");
     assert_eq!(read(&path, "approve-stdin.txt"), None);
+}
+
+#[test]
+fn fetch_runs_ssh_in_batch_mode() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path).prepare_fetch().unwrap().run(None).unwrap();
+    assert_eq!(read(&path, "ssh.txt").unwrap(), "ssh -o BatchMode=yes");
 }
 
 #[test]

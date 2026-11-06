@@ -19,6 +19,7 @@ pub mod push;
 pub mod push_delete;
 pub mod push_tag;
 pub(crate) mod remotes;
+pub mod ssh;
 
 use std::path::Path;
 
@@ -40,6 +41,7 @@ pub(crate) fn run_network(
     creds: Option<&Credentials>,
 ) -> Result<(), GitError> {
     let mut cmd = git_cli::command(git);
+    ssh::apply_batch_mode(&mut cmd, &ssh::SshSetup::detect(Some(workdir)));
     cmd.arg("-C").arg(workdir);
     auth::apply(&mut cmd, creds);
     cmd.args(args);
