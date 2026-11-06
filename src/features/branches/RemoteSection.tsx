@@ -3,7 +3,7 @@ import type { BranchList } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setRemoteCollapsed } from "../../lib/store/settingsActions";
 import { BranchGroup, BranchSectionHeader } from "./BranchGroup";
-import { BranchTreeItems, useCollapsedFolders } from "./BranchTree";
+import { BranchTreeItems, useCollapsedFolders } from "./BranchTreeItems";
 import { buildBranchTree } from "./branchTree";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";

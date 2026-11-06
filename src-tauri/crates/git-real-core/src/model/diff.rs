@@ -131,9 +131,12 @@ pub struct DiffOptions {
 /// Context-line count that makes every diff hunk span the whole file.
 ///
 /// libgit2 copies `context_lines` into xdiff's `long ctxlen`, which is 32-bit
-/// on Windows, so the value stays below `i32::MAX`. `1 << 30` is far more
-/// lines than any file.
-pub const WHOLE_FILE_CONTEXT: u32 = 1 << 30;
+/// on Windows, and xdiff merges neighbouring hunks when they are closer than
+/// `2 * ctxlen + interhunkctxlen`, also a `long`. So twice this value must
+/// fit an `i32`: `1 << 30` wrapped negative there and split a whole-file diff
+/// into several hunks. `1 << 29` lines of context is still far more than any
+/// file.
+pub const WHOLE_FILE_CONTEXT: u32 = 1 << 29;
 
 impl DiffOptions {
     /// Options for a single hunk holding the whole file, with no line cap.

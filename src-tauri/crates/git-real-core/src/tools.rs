@@ -271,11 +271,6 @@ fn split_windows(cmd: &str) -> Result<Vec<String>, ToolError> {
 /// The `PATHEXT` Windows uses when the variable is unset or empty.
 pub const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
-/// Windows' `CREATE_NO_WINDOW` process creation flag: a console program
-/// started from the GUI gets no console window.
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
 /// The environment program resolution reads: `PATH` and `PATHEXT`.
 ///
 /// It is a value rather than a read of the process environment so tests can
@@ -432,11 +427,7 @@ pub fn open_in_editor_with(
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    git_cli::hide_console_window(&mut command);
     // The child is dropped without waiting: the editor outlives this call.
     command.spawn().map_err(|e| ToolError::Spawn {
         program,

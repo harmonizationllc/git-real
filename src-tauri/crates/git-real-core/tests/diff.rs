@@ -1636,7 +1636,9 @@ fn diff_options_whole_file_values() {
         (o.context_lines, o.max_lines, o.ignore_whitespace),
         (WHOLE_FILE_CONTEXT, usize::MAX, false)
     );
-    assert!(i32::try_from(WHOLE_FILE_CONTEXT).is_ok());
+    // xdiff merges hunks closer than `2 * ctxlen + interhunkctxlen`, computed in
+    // a C `long` that is 32-bit on Windows; the doubled value must fit too.
+    assert!(i32::try_from(2 * u64::from(WHOLE_FILE_CONTEXT)).is_ok());
 }
 
 #[test]
