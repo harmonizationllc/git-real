@@ -53,7 +53,26 @@ pub fn command(git: &Path) -> Command {
     for key in REPO_ENV {
         cmd.env_remove(key);
     }
+    hide_console_window(&mut cmd);
     cmd
+}
+
+/// Windows' `CREATE_NO_WINDOW` process creation flag.
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Spawns `cmd` with no console window on Windows (`CREATE_NO_WINDOW`); a
+/// no-op elsewhere. The app is a windowed binary, so a console-subsystem child
+/// would otherwise get a console of its own. Grandchildren (credential
+/// helpers, difftool commands) inherit the windowless console, and Windows
+/// ignores the flag for GUI executables.
+pub fn hide_console_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
 }
 
 /// The configured path last reported missing, so [`locate`] logs each distinct
