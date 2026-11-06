@@ -89,15 +89,20 @@ describe("BranchTreeItems", () => {
   it("should indent nested lists and use no disclosure glyph pseudo-elements", () => {
     const css = readFileSync("src/features/branches/BranchTree.module.css", "utf8");
     expect(declarationsOf(css, "children")).toContain("padding-left: var(--space-4)");
-    expect(css).not.toMatch(/\.folder::before/);
-    expect(css).not.toMatch(/\.folder\[aria-expanded="true"\]::before/);
+    expect(css).not.toMatch(/\.folder(\[[^\]]*\])?::?before/);
   });
 
   it("should show the same decorative folder icon on expanded and collapsed folders", () => {
     renderTree();
     const open = screen.getByRole("button", { name: "feature" });
     const openIcon = open.querySelector("svg");
+    expect(open.firstElementChild).toBe(openIcon);
     expect(openIcon).toHaveAttribute("aria-hidden", "true");
+    expect(openIcon).toHaveAttribute("viewBox", "0 0 20 20");
+    expect(openIcon).toHaveAttribute("width", "16");
+    expect(openIcon).toHaveAttribute("height", "16");
+    expect(openIcon).toHaveAttribute("fill", "none");
+    expect(openIcon).toHaveAttribute("stroke", "currentColor");
     expect(open.textContent?.trim()).toBe("feature");
     cleanup();
     renderTree(new Set(["feature"]));
