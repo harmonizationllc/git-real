@@ -9,17 +9,19 @@ export function lastSegment(name: string): string {
 }
 
 interface Level<B> {
-  folders: Map<string, { node: Extract<BranchNode<B>, { kind: "folder" }>; level: Level<B> }>;
+  folders: Map<string, { name: string; path: string; level: Level<B> }>;
   branches: BranchNode<B>[];
 }
 
 const newLevel = <B>(): Level<B> => ({ folders: new Map(), branches: [] });
 
 function flatten<B>(level: Level<B>): BranchNode<B>[] {
-  const folders = [...level.folders.values()].map(({ node, level: sub }) => {
-    node.children = flatten(sub);
-    return node;
-  });
+  const folders = [...level.folders.values()].map(({ name, path, level: sub }): BranchNode<B> => ({
+    kind: "folder",
+    name,
+    path,
+    children: flatten(sub),
+  }));
   return [...folders, ...level.branches];
 }
 
@@ -38,10 +40,7 @@ export function buildBranchTree<B extends { name: string }>(
       const path = parts.slice(0, i + 1).join("/");
       let entry = level.folders.get(path);
       if (!entry) {
-        entry = {
-          node: { kind: "folder", name: parts[i], path, children: [] },
-          level: newLevel<B>(),
-        };
+        entry = { name: parts[i], path, level: newLevel<B>() };
         level.folders.set(path, entry);
       }
       level = entry.level;
