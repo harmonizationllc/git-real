@@ -24,6 +24,8 @@ interface WorkspaceState {
   /** The left column's filter query, entered in RefsColumn and read by every section. */
   refsFilter: Record<RepoId, string>;
   select(repoId: RepoId, file: SelectedFile | null): void;
+  /** Clears the selected file when it was opened from one of these commits; null entries are ignored. */
+  clearFileFrom(repoId: RepoId, oids: ReadonlyArray<string | null>): void;
   /** A non-null oid also clears the selected stash. */
   selectCommit(repoId: RepoId, oid: string | null): void;
   /** A non-null oid also clears the selected commit. */
@@ -51,6 +53,12 @@ export const useWorkspace = create<WorkspaceState>()((set) => ({
   centreView: {},
   refsFilter: {},
   select: (repoId, file) => set((state) => ({ selected: { ...state.selected, [repoId]: file } })),
+  clearFileFrom: (repoId, oids) =>
+    set((state) => {
+      const scope = state.selected[repoId]?.scope;
+      if (typeof scope !== "object" || !oids.includes(scope.commit)) return state;
+      return { selected: { ...state.selected, [repoId]: null } };
+    }),
   selectCommit: (repoId, oid) =>
     set((state) => ({
       selectedCommit: { ...state.selectedCommit, [repoId]: oid },

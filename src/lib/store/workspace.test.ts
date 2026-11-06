@@ -534,3 +534,58 @@ describe("clear with a refs filter", () => {
     expect(useWorkspace.getState().refsFilter).toBe(refsFilter);
   });
 });
+
+describe("clearFileFrom", () => {
+  const C = "c".repeat(40);
+  const D = "d".repeat(40);
+  const W = "w".repeat(40);
+
+  it("should clear a file whose scope is one of the commits", () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: C } } } });
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+  });
+
+  it("should match any of several commits and ignore null entries", () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: D } } } });
+    useWorkspace.getState().clearFileFrom(1, [W, null, D]);
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+  });
+
+  it("should leave a file from another commit alone", () => {
+    const file = { path: "a.txt", scope: { commit: D } };
+    useWorkspace.setState({ selected: { 1: file } });
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected[1]).toBe(file);
+  });
+
+  it("should leave a working-tree file alone", () => {
+    const file = { path: "a.txt", scope: "unstaged" as const };
+    useWorkspace.setState({ selected: { 1: file } });
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected[1]).toBe(file);
+  });
+
+  it("should leave other repos untouched", () => {
+    const other = { path: "b.txt", scope: { commit: C } };
+    useWorkspace.setState({
+      selected: { 1: { path: "a.txt", scope: { commit: C } }, 2: other },
+    });
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected[2]).toBe(other);
+  });
+
+  it("should keep the selected record when nothing matches", () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: "staged" } } });
+    const before = useWorkspace.getState().selected;
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected).toBe(before);
+  });
+
+  it("should do nothing for a repo with no selection", () => {
+    useWorkspace.setState({ selected: {} });
+    const before = useWorkspace.getState().selected;
+    useWorkspace.getState().clearFileFrom(1, [C]);
+    expect(useWorkspace.getState().selected).toBe(before);
+  });
+});
