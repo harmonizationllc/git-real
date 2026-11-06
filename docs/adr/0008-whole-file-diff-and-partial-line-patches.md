@@ -21,9 +21,11 @@ line for line, which the old matching three-line context guaranteed.
 ## Decision
 
 - **D1 — Whole-file context.** `DiffOptions::whole_file()` sets `context_lines` to
-  `WHOLE_FILE_CONTEXT = 1 << 30` and lifts the line cap, so libgit2 emits a text file as one
-  hunk. The constant stays below `i32::MAX` because libgit2 copies the context into xdiff's
-  `long ctxlen`, which is 32 bits on Windows; `u32::MAX` would wrap to -1 there.
+  `WHOLE_FILE_CONTEXT = 1 << 29` and lifts the line cap, so libgit2 emits a text file as one
+  hunk. libgit2 copies the context into xdiff's `long ctxlen`, which is 32 bits on Windows,
+  and xdiff merges neighbouring hunks when they are closer than `2 * ctxlen + interhunkctxlen`,
+  so twice the constant must fit an `i32` (`1 << 30` wrapped negative on Windows and split
+  whole-file diffs into several hunks; `u32::MAX` would wrap to -1).
   `DiffOptions::default()` keeps three lines of context and its 10,000-line cap, so core
   callers and their tests are unchanged.
 - **D2 — Same options on both sides of `apply_hunk`.** The viewer's command builds its options
