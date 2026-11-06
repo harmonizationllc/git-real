@@ -4,6 +4,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## Unreleased
 
+- **Keyboard shortcuts dialog**: the Keyboard shortcuts dialog (Ctrl+/ or ⌘/) is now where shortcuts are changed, and the Settings dialog no longer lists them (GR-56).
 - **Branch folders**: Local and Remote branches are grouped into collapsible folders by their slash path, every folder open by default (GR-54).
 - **Whole-file diff**: the diff pane shows the entire file with changes in place, with previous and next change buttons (F7 / Shift+F7).
 - **Right-click staging**: stage, unstage and revert the line under the pointer or the highlighted text, down to the word.

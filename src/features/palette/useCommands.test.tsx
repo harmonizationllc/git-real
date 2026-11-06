@@ -58,7 +58,7 @@ describe("useCommands always-actions", () => {
     expect(labels).toContain("Open repository…");
     expect(labels).toContain("Clone repository…");
     expect(labels).toContain("Open settings");
-    expect(labels).toContain("Show keyboard shortcuts");
+    expect(labels).toContain("Keyboard shortcuts…");
     expect(labels).toContain("Theme: System");
     expect(labels).toContain("Theme: Light");
     expect(labels).toContain("Theme: Dark");
@@ -265,12 +265,12 @@ describe("useCommands always-action run functions", () => {
     expect(useShell.getState().dialog).toMatchObject({ kind: "settings" });
   });
 
-  it("Show keyboard shortcuts run opens the shortcuts dialog", async () => {
+  it("Keyboard shortcuts… run opens the shortcuts dialog", async () => {
     const { result } = renderHookWithProviders(() => useCommands(stubActions()));
     await waitFor(() =>
-      expect(result.current.find((c) => c.label === "Show keyboard shortcuts")).toBeDefined(),
+      expect(result.current.find((c) => c.label === "Keyboard shortcuts…")).toBeDefined(),
     );
-    act(() => result.current.find((c) => c.label === "Show keyboard shortcuts")!.run());
+    act(() => result.current.find((c) => c.label === "Keyboard shortcuts…")!.run());
     expect(useShell.getState().dialog).toMatchObject({ kind: "shortcuts" });
   });
 
