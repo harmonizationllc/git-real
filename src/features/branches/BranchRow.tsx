@@ -2,6 +2,7 @@ import type { DragEvent, KeyboardEvent } from "react";
 import type { LocalBranch, RemoteBranch, Tracking } from "../../lib/ipc";
 import { folderName } from "../linkedWorktrees/worktreePath";
 import styles from "./BranchRow.module.css";
+import { lastSegment } from "./branchTree";
 
 export type BranchTarget =
   { kind: "local"; branch: LocalBranch } | { kind: "remote"; branch: RemoteBranch };
@@ -121,7 +122,16 @@ export function BranchRow({ target, current, drag, onActivate, onContextMenu }: 
         onDoubleClick={onActivate}
         onKeyDown={onKeyDown}
       >
-        <span className={styles.name}>{branch.name}</span>
+        <span className={styles.name}>
+          {branch.name.includes("/") ? (
+            <>
+              <span aria-hidden="true">{lastSegment(branch.name)}</span>
+              <span className={styles.srOnly}>{branch.name}</span>
+            </>
+          ) : (
+            branch.name
+          )}
+        </span>
         {target.kind === "local" && target.branch.tracking !== null && (
           <TrackingBadge tracking={target.branch.tracking} />
         )}
