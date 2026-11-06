@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import type { BranchNode } from "./branchTree";
-import styles from "./BranchTree.module.css";
+import styles from "./BranchTreeItems.module.css";
 
 export interface BranchTreeItemsProps<B> {
   nodes: BranchNode<B>[];

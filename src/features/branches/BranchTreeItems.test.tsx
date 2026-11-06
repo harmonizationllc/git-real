@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { declarationsOf } from "../../test/cssRules";
 import { buildBranchTree } from "./branchTree";
-import { BranchTreeItems, useCollapsedFolders } from "./BranchTree";
+import { BranchTreeItems, useCollapsedFolders } from "./BranchTreeItems";
 
 const names = ["feature/ui/toolbar", "feature/fix-1", "main"];
 const nodes = buildBranchTree(names.map((name) => ({ name })));
@@ -87,7 +87,7 @@ describe("BranchTreeItems", () => {
   });
 
   it("should indent nested lists and use no disclosure glyph pseudo-elements", () => {
-    const css = readFileSync("src/features/branches/BranchTree.module.css", "utf8");
+    const css = readFileSync("src/features/branches/BranchTreeItems.module.css", "utf8");
     expect(declarationsOf(css, "children")).toContain("padding-left: var(--space-4)");
     expect(css).not.toMatch(/\.folder(\[[^\]]*\])?::?before/);
   });
@@ -113,7 +113,7 @@ describe("BranchTreeItems", () => {
   });
 
   it("should truncate long folder names with an ellipsis like branch names", () => {
-    const css = readFileSync("src/features/branches/BranchTree.module.css", "utf8");
+    const css = readFileSync("src/features/branches/BranchTreeItems.module.css", "utf8");
     const decls = declarationsOf(css, "folderName");
     expect(decls).toContain("text-overflow: ellipsis");
     expect(decls).toContain("white-space: nowrap");
