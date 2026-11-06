@@ -61,7 +61,7 @@ function learn(keycaps: ShortcutKeycaps, key: string, keycap: string | null): Sh
 }
 
 /** The extra Navigation rows that describe behaviour without a single chord. */
-export const STATIC_NAVIGATION: readonly { label: string; parts: string[] }[] = [
+const STATIC_NAVIGATION: readonly { label: string; parts: string[] }[] = [
   { label: "Close dialog or menu", parts: ["Escape"] },
   { label: "Move within lists and menus", parts: ["Arrow keys"] },
 ];
@@ -92,7 +92,7 @@ export function ShortcutSettings() {
     setCapture(null);
   };
 
-  /** Escape on Replace or Cancel cancels the conflict, without closing the Settings dialog. */
+  /** Escape on Replace or Cancel cancels the conflict, without closing the Keyboard shortcuts dialog. */
   const onConflictKey = (id: ShortcutId, e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
     e.stopPropagation();

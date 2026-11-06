@@ -52,8 +52,10 @@
   padding: 2px 0;
 }
 
-.keys {
-  text-align: right;
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .actions {

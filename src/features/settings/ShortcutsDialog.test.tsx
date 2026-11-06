@@ -24,8 +24,10 @@ function setup(onClose = vi.fn()) {
   div.tabIndex = -1;
   document.body.appendChild(div);
   (fallbackFocus as React.MutableRefObject<HTMLElement | null>).current = div;
-  renderWithProviders(<ShortcutsDialog onClose={onClose} fallbackFocus={fallbackFocus} />);
-  return { onClose, fallbackFocus, div };
+  const { unmount } = renderWithProviders(
+    <ShortcutsDialog onClose={onClose} fallbackFocus={fallbackFocus} />,
+  );
+  return { onClose, fallbackFocus, div, unmount };
 }
 
 afterEach(() => {
@@ -138,13 +140,10 @@ describe("ShortcutsDialog backdrop click", () => {
 // Contract: restores focus to fallback on close.
 describe("ShortcutsDialog focus restoration", () => {
   it("restores focus to the fallback element on unmount", () => {
-    const { div } = setup();
-    div.focus();
-    screen.getByRole("dialog").focus();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    // The dialog component calls onClose; after unmount focus should return.
-    // We test that useRestoreFocus is in play via the fallbackFocus prop being accepted.
-    expect(div).toBeInTheDocument();
+    const { div, unmount } = setup();
+    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })[0]).toHaveFocus();
+    unmount();
+    expect(div).toHaveFocus();
   });
 });
 

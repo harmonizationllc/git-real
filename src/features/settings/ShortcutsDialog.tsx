@@ -37,7 +37,9 @@ export function ShortcutsDialog({ onClose, fallbackFocus }: ShortcutsDialogProps
         <h2 id={titleId} className={styles.title}>
           Keyboard shortcuts
         </h2>
-        <ShortcutSettings />
+        <div className={styles.body}>
+          <ShortcutSettings />
+        </div>
         <div className={styles.actions}>
           <button data-variant="neutral" type="button" onClick={onClose}>
             Close

@@ -393,6 +393,7 @@ describe("App global shortcuts (GR-14)", () => {
     await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    if (appRoot) expect(appRoot).toHaveFocus();
   });
 
   // CommandPalette component arrives in Cycle 3. This test asserts the shell store state
