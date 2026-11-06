@@ -96,6 +96,30 @@ describe("CommitSummary buttons", () => {
     expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
   });
 
+  it("Close clears a file opened from this commit", async () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: OID } } } });
+    await renderSummary();
+    fireEvent.click(screen.getByRole("button", { name: "Close commit details" }));
+    expect(useWorkspace.getState().selected[1]).toBeNull();
+    expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
+  });
+
+  it("Close leaves a file from another commit alone", async () => {
+    const file = { path: "a.txt", scope: { commit: P1 } };
+    useWorkspace.setState({ selected: { 1: file } });
+    await renderSummary();
+    fireEvent.click(screen.getByRole("button", { name: "Close commit details" }));
+    expect(useWorkspace.getState().selected[1]).toBe(file);
+  });
+
+  it("Close leaves a working-tree file alone", async () => {
+    const file = { path: "a.txt", scope: "unstaged" as const };
+    useWorkspace.setState({ selected: { 1: file } });
+    await renderSummary();
+    fireEvent.click(screen.getByRole("button", { name: "Close commit details" }));
+    expect(useWorkspace.getState().selected[1]).toBe(file);
+  });
+
   it("should keep the selection until Close is clicked", async () => {
     await renderSummary();
     expect(useWorkspace.getState().selectedCommit[1]).toBe(OID);
@@ -214,11 +238,13 @@ describe("CommitSummary loading and error", () => {
     await waitFor(() => expect(getCommit).toHaveBeenCalledTimes(2));
   });
 
-  it("should close the panel when Dismiss is clicked", async () => {
+  it("should close the panel and its diff when Dismiss is clicked", async () => {
+    useWorkspace.setState({ selected: { 1: { path: "a.txt", scope: { commit: OID } } } });
     vi.mocked(getCommit).mockRejectedValue({ kind: "commitNotFound", message: "No such commit" });
     renderWithProviders(<CommitSummary repoId={1} oid={OID} />);
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(useWorkspace.getState().selectedCommit[1]).toBeNull();
+    expect(useWorkspace.getState().selected[1]).toBeNull();
   });
 });
 

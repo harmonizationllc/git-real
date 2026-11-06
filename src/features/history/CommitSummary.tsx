@@ -26,11 +26,14 @@ function Person({ label, who }: { label: string; who: Signature }) {
   );
 }
 
-/** The selected commit's metadata in the sidebar; Close returns the sidebar to the changes. */
+/** The selected commit's metadata in the sidebar; Close returns the sidebar to the changes and closes a diff opened from this commit. */
 export function CommitSummary({ repoId, oid }: CommitSummaryProps) {
   const { commit, error, refetch } = useCommitDetail(repoId, oid);
-  const selectCommit = useWorkspace((s) => s.selectCommit);
-  const close = () => selectCommit(repoId, null);
+  const close = () => {
+    const { clearFileFrom, selectCommit } = useWorkspace.getState();
+    clearFileFrom(repoId, [oid]);
+    selectCommit(repoId, null);
+  };
 
   if (error !== null) {
     return (

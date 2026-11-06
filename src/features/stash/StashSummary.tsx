@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { AppError, RepoId, StashEntry, StashFiles } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
-import { commitOf } from "../diff/model/scope";
 import { shortOid } from "../graph/model/layout";
 import { fullDate } from "../graph/model/relativeTime";
 import { useOperationState } from "../merge/useOperationState";
@@ -22,21 +21,17 @@ export interface StashSummaryProps {
   oid: string;
 }
 
-/** The selected stash in the sidebar; Close returns the sidebar to the changes. */
+/** The selected stash in the sidebar; Close returns the sidebar to the changes and closes a diff opened from this stash. */
 export function StashSummary({ repoId, oid }: StashSummaryProps) {
   const { stashes, error: listError, refetch } = useStashes(repoId);
   const { files, error: filesError, refetch: refetchFiles } = useStashFiles(repoId, oid);
   const entry = stashes?.find((s) => s.oid === oid);
   const untrackedOid = files?.untrackedOid ?? null;
 
-  const close = () => useWorkspace.getState().selectStash(repoId, null);
-
-  /** Clears the stash selection and any file opened from this stash. */
+  /** Clears the stash selection and any file opened from this stash; Close and a vanished stash share it. */
   const vanish = useCallback(() => {
-    const { selected, select, selectStash } = useWorkspace.getState();
-    const scoped = selected[repoId];
-    const from = scoped ? commitOf(scoped.scope) : null;
-    if (from !== null && (from === oid || from === untrackedOid)) select(repoId, null);
+    const { clearFileFrom, selectStash } = useWorkspace.getState();
+    clearFileFrom(repoId, [oid, untrackedOid]);
     selectStash(repoId, null);
   }, [repoId, oid, untrackedOid]);
 
@@ -50,7 +45,7 @@ export function StashSummary({ repoId, oid }: StashSummaryProps) {
   if (listError !== null) {
     return (
       <div className={styles.root}>
-        <RepoError error={listError} path={null} onRetry={refetch} onDismiss={close} />
+        <RepoError error={listError} path={null} onRetry={refetch} onDismiss={vanish} />
       </div>
     );
   }
@@ -69,7 +64,7 @@ export function StashSummary({ repoId, oid }: StashSummaryProps) {
       files={files}
       filesError={filesError}
       onRetryFiles={refetchFiles}
-      onClose={close}
+      onClose={vanish}
     />
   );
 }
