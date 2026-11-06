@@ -69,16 +69,27 @@ function expectNoSave() {
   expect(updateSettings).not.toHaveBeenCalled();
 }
 
-// Contract (spec §6 layout): one table per group, every registry row, no static rows.
+// Contract (GR-56): one table per group, every registry row, the two static Navigation rows, no heading.
 describe("ShortcutSettings layout", () => {
-  it("renders one table per group with every registry row and no static rows", () => {
+  it("renders one table per group with every registry row and the static Navigation rows", () => {
     setup();
     for (const group of SHORTCUT_GROUPS) {
       expect(screen.getByRole("table", { name: group })).toBeInTheDocument();
     }
     expect(screen.getAllByRole("table")).toHaveLength(4);
     expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(16);
-    expect(screen.queryByText("Close dialog or menu")).toBeNull();
+    expect(screen.queryByRole("heading")).toBeNull();
+    const nav = screen.getByRole("table", { name: "Navigation" });
+    for (const [label, part] of [
+      ["Close dialog or menu", "Escape"],
+      ["Move within lists and menus", "Arrow keys"],
+    ]) {
+      const row = within(nav).getByText(label).closest("tr") as HTMLElement;
+      const cells = row.querySelectorAll("td");
+      expect(cells).toHaveLength(3);
+      expect(kbdParts(cells[1] as HTMLElement)).toEqual([part]);
+      expect(within(row).queryAllByRole("button")).toHaveLength(0);
+    }
   });
 
   it("a default row has no Reset button; an overridden row has one with the default in its title", async () => {

@@ -19,7 +19,6 @@ import type { ShortcutId } from "../../lib/shortcuts";
 import { useEffectiveBindings, useKeycaps } from "../../lib/shortcuts/useShortcutKeys";
 import { useSettings } from "../../lib/store/settings";
 import { setShortcuts } from "../../lib/store/settingsActions";
-import { Section } from "./Section";
 import { KeyParts } from "./KeyParts";
 import dialogStyles from "./ShortcutsDialog.module.css";
 import styles from "./SettingsDialog.module.css";
@@ -61,7 +60,13 @@ function learn(keycaps: ShortcutKeycaps, key: string, keycap: string | null): Sh
   return next;
 }
 
-/** The Keyboard shortcuts section: press a chord to rebind a row, resolve conflicts, reset. */
+/** The extra Navigation rows that describe behaviour without a single chord. */
+export const STATIC_NAVIGATION: readonly { label: string; parts: string[] }[] = [
+  { label: "Close dialog or menu", parts: ["Escape"] },
+  { label: "Move within lists and menus", parts: ["Arrow keys"] },
+];
+
+/** The Keyboard shortcuts body: press a chord to rebind a row, resolve conflicts, reset. */
 export function ShortcutSettings() {
   const effective = useEffectiveBindings();
   const overrides = useSettings((s) => s.settings.shortcuts.bindings);
@@ -180,7 +185,7 @@ export function ShortcutSettings() {
   };
 
   return (
-    <Section id="shortcuts" name="Keyboard shortcuts">
+    <>
       {SHORTCUT_GROUPS.map((group) => (
         <table key={group} className={dialogStyles.table}>
           <caption className={dialogStyles.caption}>{group}</caption>
@@ -322,6 +327,16 @@ export function ShortcutSettings() {
                 </Fragment>
               );
             })}
+            {group === "Navigation" &&
+              STATIC_NAVIGATION.map(({ label, parts }) => (
+                <tr key={label}>
+                  <td>{label}</td>
+                  <td>
+                    <KeyParts parts={parts} />
+                  </td>
+                  <td />
+                </tr>
+              ))}
           </tbody>
         </table>
       ))}
@@ -343,6 +358,6 @@ export function ShortcutSettings() {
           Reset all to defaults
         </button>
       </div>
-    </Section>
+    </>
   );
 }
