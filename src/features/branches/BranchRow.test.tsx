@@ -542,6 +542,12 @@ describe("BranchRow label", () => {
     expect(rule).toMatch(/position:\s*absolute/);
     expect(rule).toMatch(/clip-path:\s*inset\(50%\)/);
   });
+
+  it("should make the row the containing block of the hidden name, so it never grows the document", () => {
+    // The absolute sr-only span must be contained by the row, or a long list grows the document and adds a window scrollbar.
+    const css = readFileSync("src/features/branches/BranchRow.module.css", "utf8");
+    expect(declarationsOf(css, "row")).toMatch(/position:\s*relative/);
+  });
 });
 
 // Contract: the refs column rows share the COSMIC recipe, pinned at the CSS source.
