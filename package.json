@@ -55,5 +55,16 @@
     "vite": "^8.0.16",
     "vitest": "^5.0.4",
     "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "eslint": {
+      "minimatch": "^11.0.1"
+    },
+    "@eslint/config-array": {
+      "minimatch": "^11.0.1"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
   }
 }
