@@ -2,14 +2,25 @@
 
 Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of the GitHub release with the same tag; the Release workflow refuses a tag whose section is missing or empty. Keep each paragraph and bullet on one line: GitHub renders a newline inside a release body as a line break.
 
-## Unreleased
+## 0.2.0
 
-- **Keyboard shortcuts dialog**: the Keyboard shortcuts dialog (Ctrl+/ or ⌘/) is now where shortcuts are changed, and the Settings dialog no longer lists them (GR-56).
+Layout and workflow improvements across the left column, the Changes panel and the diff pane, plus Windows and corporate-network fixes.
+
+- **Whole-file diff**: the diff pane shows the entire file with changes in place, with previous and next change buttons (F7 / Shift+F7) (GR-51).
+- **Right-click staging**: stage, unstage and revert the line under the pointer or the highlighted text, down to the word (GR-52).
+- **Changes panel**: Unstaged sits above Staged and both panes are always visible, separated by a draggable divider whose position is remembered (GR-50).
+- **Left column**: branches are split into Local and Remote sections, one filter box covers branches, stashes, worktrees, pull requests and issues, and section headers carry an accent-tinted band (GR-57, GR-58).
 - **Branch folders**: Local and Remote branches are grouped into collapsible folders by their slash path, every folder open by default (GR-54).
-- **Whole-file diff**: the diff pane shows the entire file with changes in place, with previous and next change buttons (F7 / Shift+F7).
-- **Right-click staging**: stage, unstage and revert the line under the pointer or the highlighted text, down to the word.
+- **Set upstream**: a Set upstream… item in the branch context menu picks the remote branch a local branch tracks, or clears a gone upstream (GR-45).
+- **Repository tabs**: drag a tab to reorder the open repositories (GR-43).
+- **Tracking badge**: the ahead/behind badge shows only non-zero counts and an in-sync branch shows a clean row (GR-44).
+- **Keyboard shortcuts dialog**: the Keyboard shortcuts dialog (Ctrl+/ or ⌘/) is now where shortcuts are changed, and the Settings dialog no longer lists them (GR-56).
 - **Removed**: hunk headers and line-number selection in the diff pane.
 - **Fixed**: right-click no longer opens the browser's own menu, whose Reload item closed every repository (GR-53).
+- **Fixed**: Close on commit details, stash details and the error panel also closes the diff that was opened from them (GR-47).
+- **Fixed**: hosting accounts (GitHub, GitLab, Bitbucket, Azure DevOps) verify TLS against the operating system's certificate store, so they work behind TLS-inspecting corporate proxies.
+- **Fixed**: a very long branch list no longer scrolls the whole window; section header labels and buttons are vertically centred.
+- **Fixed (Windows)**: git and ssh run without flashing a console window, ssh never waits on a hidden prompt, and whole-file diffs no longer fail on xdiff's hunk-merge distance (GR-48, GR-55).
 
 ## 0.1.0
 
