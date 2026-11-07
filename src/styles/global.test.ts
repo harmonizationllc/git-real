@@ -160,12 +160,21 @@ describe("section heading and pill helpers", () => {
     expect(block(".gr-section-toggle::before")).toMatch(/content:\s*"▸ "/);
     expect(block('.gr-section-toggle[aria-expanded="true"]::before')).toMatch(/content:\s*"▾ "/);
   });
-  it("styles .gr-section-header as a flex row on the accent tint", () => {
+  it("styles .gr-section-header as a vertically centred flex row on the accent tint", () => {
     const h = block(".gr-section-header");
     expect(h).toMatch(/display:\s*flex/);
-    expect(h).toMatch(/align-items:\s*flex-end/);
+    expect(h).toMatch(/align-items:\s*center/);
     expect(h).toMatch(/gap:\s*6px/);
     expect(h).toMatch(/background:\s*var\(--color-accent-tint\)/);
+  });
+  // Labels in the tinted band are centred vertically; the sub-heading outside it keeps its spacing.
+  it("pads a heading inside a section header equally top and bottom, keeping the base", () => {
+    const inHeader = block(".gr-section-header > .gr-section-heading");
+    expect(inHeader).toMatch(/padding-top:\s*8px/);
+    expect(inHeader).toMatch(/padding-bottom:\s*8px/);
+    // Line-anchored: the compound rule also contains `.gr-section-heading {`.
+    const base = /^\.gr-section-heading \{([^}]*)\}/m.exec(css)?.[1] ?? "";
+    expect(base).toMatch(/padding:\s*12px 10px 4px/);
   });
   it("styles .gr-pill as an 18px pill with a kind per ref type", () => {
     const p = block(".gr-pill");
