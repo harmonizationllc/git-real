@@ -189,3 +189,37 @@ fn a_same_host_redirect_keeps_the_authorization_header() {
     assert!(seen[1].starts_with("get /next"), "{}", seen[1]);
     assert!(seen[1].contains("authorization: bearer t0k"), "{}", seen[1]);
 }
+
+// A TLS-inspecting proxy (e.g. Zscaler) re-signs with a root CA installed only in the OS store;
+// the bundled webpki roots reject it with UnknownIssuer, so verification must use the platform.
+#[test]
+fn trusts_the_platform_certificate_store() {
+    let transport = UreqTransport::new();
+
+    let roots = transport.agent().config().tls_config().root_certs();
+
+    assert!(
+        matches!(roots, ureq::tls::RootCerts::PlatformVerifier),
+        "{roots:?}"
+    );
+}
+
+// ureq builds the rustls client config (root-cert verifier included) on connect, before any
+// server bytes are read; a verifier the build cannot construct panics there instead of erroring.
+#[test]
+fn an_https_connection_that_drops_before_the_handshake_is_unreachable_not_a_panic() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = thread::spawn(move || {
+        let (sock, _) = listener.accept().unwrap();
+        drop(sock);
+    });
+
+    let result = UreqTransport::new().send(&get_req(format!("https://127.0.0.1:{port}/"), &[]));
+
+    server.join().unwrap();
+    assert!(
+        matches!(result, Err(GitError::HostingUnreachable { .. })),
+        "{result:?}"
+    );
+}

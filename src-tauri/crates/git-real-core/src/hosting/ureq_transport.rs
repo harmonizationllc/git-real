@@ -1,6 +1,9 @@
 //! The real [`Transport`]: a blocking `ureq` agent over rustls with a 15 s overall timeout.
 //! Every status comes back as a [`Response`]; the status mapping lives in [`super::http`].
 //!
+//! TLS verifies against the platform certificate store, not ureq's bundled webpki roots: a
+//! TLS-inspecting proxy (e.g. Zscaler) re-signs with a root CA installed only in the OS store.
+//!
 //! Redirects are followed here rather than by ureq: ureq's `SameHost` policy ignores the port,
 //! so it would hand the token to another origin on the same machine. The `Authorization`
 //! header follows a redirect only to the same `scheme://host[:port]`.
@@ -9,6 +12,7 @@ use std::time::Duration;
 
 use ureq::RequestBuilder;
 use ureq::http::Response as HttpResponse;
+use ureq::tls::{RootCerts, TlsConfig};
 
 use super::http::{Method, Request, Response, Transport};
 use crate::error::GitError;
@@ -29,10 +33,20 @@ impl UreqTransport {
             .http_status_as_error(false)
             .user_agent(USER_AGENT)
             .max_redirects(0)
+            .tls_config(
+                TlsConfig::builder()
+                    .root_certs(RootCerts::PlatformVerifier)
+                    .build(),
+            )
             .build();
         Self {
             agent: config.into(),
         }
+    }
+
+    /// The underlying agent, exposed so its configuration can be inspected.
+    pub fn agent(&self) -> &ureq::Agent {
+        &self.agent
     }
 
     fn send_once(&self, req: &Request) -> Result<HttpResponse<ureq::Body>, GitError> {
