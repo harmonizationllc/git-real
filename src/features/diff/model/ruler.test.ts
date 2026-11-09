@@ -35,6 +35,13 @@ describe("rulerMarks", () => {
     ]);
   });
 
+  it("should merge a block whose cell abuts the open mark's", () => {
+    const marks = rulerMarks([block(0, 0, "added"), block(1, 1, "added")], 1000);
+    expect(marks).toEqual([
+      { firstBlock: 0, lastBlock: 1, firstRow: 0, lastRow: 1, kind: "added" },
+    ]);
+  });
+
   it("should mark merged blocks of different kinds as modified", () => {
     const marks = rulerMarks([block(10, 10, "added"), block(12, 12, "removed")], 100000);
     expect(marks).toHaveLength(1);
