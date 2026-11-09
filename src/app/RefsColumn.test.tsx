@@ -284,12 +284,13 @@ describe("RefsColumn measurement", () => {
 // Contract: a handle shows the rendered height, the floor and the maximum, and edits the stored leaf.
 describe("RefsColumn handles", () => {
   it("should give a handle the rendered height, floor and maximum", async () => {
+    await seedSettings({ layout: { tagsCollapsed: false } });
     await renderColumn();
     measure();
     const tags = handle("Resize Tags section");
     expect(tags).toHaveAttribute("aria-valuenow", "150");
     expect(tags).toHaveAttribute("aria-valuemin", "72");
-    expect(tags).toHaveAttribute("aria-valuemax", "150");
+    expect(tags).toHaveAttribute("aria-valuemax", "396");
   });
 
   it("should bound the Local handle by the column, not its content", async () => {
@@ -314,16 +315,19 @@ describe("RefsColumn handles", () => {
     expect(useSettings.getState().settings.layout.branchesHeight).toBe(302);
   });
 
-  it("should cap a handle's maximum at its section's content", async () => {
+  it("should bound an open handle by the column, not its content", async () => {
+    await seedSettings({ layout: { tagsCollapsed: false } });
     await renderColumn();
     measure();
-    expect(handle("Resize Stashes section")).toHaveAttribute("aria-valuemax", "60");
-    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuemax", "150");
+    expect(handle("Resize Stashes section")).toHaveAttribute("aria-valuemax", "384");
+    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuemax", "396");
   });
 
   it("should store nothing when a key press cannot move the handle", async () => {
     await renderColumn();
     measure();
+    // Tags stays collapsed, so its handle is bounded by its 150 px natural height
+    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuemax", "150");
     fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowDown" });
     expect(useSettings.getState().settings.layout.tagsHeight).toBeNull();
     expect(updateSettings).not.toHaveBeenCalled();
@@ -354,6 +358,7 @@ describe("RefsColumn handles", () => {
   });
 
   it("should persist an ArrowUp resize to the section's height leaf", async () => {
+    await seedSettings({ layout: { tagsCollapsed: false } });
     await renderColumn();
     // container 1012: everything fits, so Tags renders at its natural 300
     measureAt(1042, [200, 0, 60, 300, 36, 36, 36]);
@@ -362,7 +367,7 @@ describe("RefsColumn handles", () => {
   });
 
   it("should reset the section to automatic on double-click", async () => {
-    await seedSettings({ layout: { tagsHeight: 120 } });
+    await seedSettings({ layout: { tagsHeight: 120, tagsCollapsed: false } });
     await renderColumn();
     measure();
     fireEvent.doubleClick(handle("Resize Tags section"));
@@ -370,7 +375,7 @@ describe("RefsColumn handles", () => {
   });
 
   it("should render a stored height through fitSections", async () => {
-    await seedSettings({ layout: { tagsHeight: 120 } });
+    await seedSettings({ layout: { tagsHeight: 120, tagsCollapsed: false } });
     await renderColumn();
     measure();
     expect(wrapper("tags").style.height).toBe("120px");
@@ -387,7 +392,7 @@ describe("RefsColumn Local and Remote", () => {
     measureAt(772, [200, 100, 60, 150, 36, 36, 36]);
     expect(wrapper("local").style.height).toBe("318px");
     expect(wrapper("remote").style.height).toBe("100px");
-    expect(handle("Resize Remote section")).toHaveAttribute("aria-valuemax", "100");
+    expect(handle("Resize Remote section")).toHaveAttribute("aria-valuemax", "424");
   });
 
   it("should give the leftover to Remote when Local is collapsed", async () => {
@@ -418,6 +423,7 @@ describe("RefsColumn Local and Remote", () => {
     measureAt(772, [28, 100, 60, 150, 36, 36, 36]);
     expect(wrapper("local").style.height).toBe("28px");
     expect(wrapper("remote").style.height).toBe("390px");
+    expect(handle("Resize Local section")).toHaveAttribute("aria-valuemax", "28");
   });
 
   it("should leave the leftover unassigned when Local and Remote are both collapsed", async () => {
@@ -445,6 +451,63 @@ describe("RefsColumn Local and Remote", () => {
     fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowUp" });
     expect(useSettings.getState().settings.layout.remoteHeight).toBe(284);
     expect(useSettings.getState().settings.layout.branchesHeight).toBeNull();
+  });
+
+  it("should hold a dragged Remote height instead of sharing it back to a stored Local", async () => {
+    await seedSettings({ layout: { branchesHeight: 429, remoteHeight: 156 } });
+    await renderColumn();
+    // container 736 over 167: Tags gives 78, then Local and Remote share 89 by room → 357 and 139
+    measureAt(772, [600, 300, 60, 150, 36, 36, 36]);
+    expect(wrapper("remote").style.height).toBe("139px");
+    fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowDown" });
+    expect(useSettings.getState().settings.layout.remoteHeight).toBe(155);
+    expect(useSettings.getState().settings.layout.branchesHeight).toBeNull();
+    // Local, automatic now, shares the overflow with Tags: 306 and 107
+    expect(wrapper("remote").style.height).toBe("155px");
+    expect(wrapper("local").style.height).toBe("306px");
+    await useSettings.getState().flush();
+    expect(vi.mocked(updateSettings).mock.calls.map(([p]) => p)).toEqual([
+      { layout: { remoteHeight: 155, branchesHeight: null } },
+    ]);
+  });
+
+  it("should keep a stored height that still fits after a drag", async () => {
+    await seedSettings({ layout: { remoteHeight: 156, tagsHeight: 100, tagsCollapsed: false } });
+    await renderColumn();
+    measureAt(772, [600, 300, 60, 150, 36, 36, 36]);
+    fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowDown" });
+    expect(useSettings.getState().settings.layout.remoteHeight).toBe(172);
+    expect(useSettings.getState().settings.layout.tagsHeight).toBe(100);
+    expect(wrapper("remote").style.height).toBe("172px");
+  });
+
+  it("should render a stored height above the content as blank space", async () => {
+    await seedSettings({ layout: { stashesHeight: 200 } });
+    await renderColumn();
+    // container 1036: Stashes 200 over its 60 of content; Local takes the 78 left
+    measureAt(1072, [200, 300, 60, 150, 36, 36, 36]);
+    expect(wrapper("stashes").style.height).toBe("200px");
+    expect(wrapper("local").style.height).toBe("278px");
+  });
+
+  it("should take a stored Local's blank space before clipping another section", async () => {
+    await seedSettings({ layout: { branchesHeight: 429 } });
+    await renderColumn();
+    // container 736: Local 429 over 138 of content; Worktrees' 300 would be clipped without it
+    measureAt(772, [138, 100, 60, 36, 300, 36, 36]);
+    expect(wrapper("worktrees").style.height).toBe("300px");
+    expect(wrapper("local").style.height).toBe("168px");
+  });
+
+  it("should keep a collapsed Tags at its header and its handle inert despite a stored height", async () => {
+    await seedSettings({ layout: { tagsHeight: 120 } });
+    await renderColumn();
+    measureAt(772, [200, 300, 60, 28, 36, 36, 36]);
+    expect(wrapper("tags").style.height).toBe("28px");
+    expect(handle("Resize Tags section")).toHaveAttribute("aria-valuemax", "28");
+    fireEvent.keyDown(handle("Resize Tags section"), { key: "ArrowDown" });
+    expect(useSettings.getState().settings.layout.tagsHeight).toBe(120);
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 });
 

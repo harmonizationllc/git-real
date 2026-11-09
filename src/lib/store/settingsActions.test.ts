@@ -136,6 +136,18 @@ describe("layout setters", () => {
     ]);
   });
 
+  it("setSectionHeights rounds and saves several height leaves in one patch", async () => {
+    actions.setSectionHeights({ remote: 155.4, local: null, tags: 99.6 });
+    expect(settings().layout).toMatchObject({
+      remoteHeight: 155,
+      branchesHeight: null,
+      tagsHeight: 100,
+    });
+    expect(await patches()).toEqual([
+      { layout: { remoteHeight: 155, branchesHeight: null, tagsHeight: 100 } },
+    ]);
+  });
+
   it("setSectionHeight with null clears the leaf back to automatic", async () => {
     actions.setSectionHeight("pullRequests", 150);
     actions.setSectionHeight("pullRequests", null);

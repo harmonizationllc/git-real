@@ -5,6 +5,7 @@ import {
   SECTION_WHOLE_MAX,
   fitSections,
   maxSectionHeight,
+  resizeSection,
   sectionFloor,
   type SectionInput,
 } from "./refsLayout";
@@ -122,28 +123,39 @@ describe("fitSections", () => {
     ]);
   });
 
-  it("should let a stored Branches height squeeze the automatic sections", () => {
-    // prefs 782, over 182; only Tags has room (78) so it drops to 72 and Branches gives 104
+  it("should take stored blank space before any content", () => {
+    // prefs 782, over 182; Local's 300 of blank space (500 stored over 200 content) covers it
     expect(fitSections(600, [fixed(200, 500), auto(60), auto(150), auto(36), auto(36)])).toEqual([
-      396, 60, 72, 36, 36,
+      318, 60, 150, 36, 36,
     ]);
   });
 
-  it("should clamp a fixed height above the content to the content", () => {
-    expect(fitSections(2000, [auto(100), auto(60), fixed(572, 900), auto(36), auto(36)])[2]).toBe(
-      572,
-    );
+  it("should take blank space from every stored section in proportion", () => {
+    // blank 200 and 100, over 32 → 21.33 and 10.67
+    expect(
+      fitSections(600, [fixed(100, 300), auto(60), fixed(100, 200), auto(36), auto(36)]),
+    ).toEqual([279, 60, 189, 36, 36]);
+  });
+
+  it("should shrink the automatic sections once the blank space is gone", () => {
+    // over 132: Local's 100 of blank space first, then Tags' room (78) gives the rest
+    expect(fitSections(450, [fixed(200, 300), auto(60), auto(150), auto(36), auto(36)])).toEqual([
+      200, 60, 118, 36, 36,
+    ]);
+  });
+
+  it("should hold a stored height above the content as blank space when it fits", () => {
+    expect(fitSections(2000, [auto(100), auto(60), fixed(572, 900), auto(36), auto(36)])).toEqual([
+      968, 60, 900, 36, 36,
+    ]);
+    expect(fitSections(2000, [auto(100), auto(60), fixed(28, 300), auto(36), auto(36)])).toEqual([
+      1568, 60, 300, 36, 36,
+    ]);
   });
 
   it("should clamp a fixed height below the floor to the floor", () => {
     expect(fitSections(2000, [auto(100), auto(60), fixed(572, 10), auto(36), auto(36)])[2]).toBe(
       72,
-    );
-  });
-
-  it("should show a collapsed section at its header even with a stored height", () => {
-    expect(fitSections(2000, [auto(100), auto(60), fixed(28, 300), auto(36), auto(36)])[2]).toBe(
-      28,
     );
   });
 
@@ -172,8 +184,11 @@ describe("fitSections absorber", () => {
     expect(fitSections(500, [auto(100), auto(200), auto(60)], 1)).toEqual([100, 340, 60]);
   });
 
-  it("should cap index 0's stored height at its content when it is not the absorber", () => {
-    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], 1)).toEqual([100, 340, 60]);
+  it("should hold index 0's stored height as a true height when it is not the absorber", () => {
+    // 560 fits in 600; the 40 left goes to the absorber at index 1
+    expect(fitSections(600, [fixed(100, 300), auto(200), auto(60)], 1)).toEqual([300, 240, 60]);
+    // in 500, index 0's 200 of blank space is the first thing taken
+    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], 1)).toEqual([240, 200, 60]);
   });
 
   it("should keep the absorber's stored height above its content, only floored", () => {
@@ -192,6 +207,40 @@ describe("fitSections absorber", () => {
 
   it("should still shrink sections in proportion when there is no absorber", () => {
     expect(fitSections(400, [auto(400), auto(400)], null)).toEqual([200, 200]);
+  });
+});
+
+// Contract: a drag stores the dragged height and unpins every other stored section the fit
+// would shrink below its stored height, so the dragged height holds (spec §3.1 step 5).
+describe("resizeSection", () => {
+  // Local content 600 stored 429, Remote content 300 stored 156, in a 600 px column.
+  const column = [fixed(600, 429), fixed(300, 156), auto(60), auto(36), auto(36)];
+
+  it("should store the dragged height and unpin a stored section the fit shrinks", () => {
+    expect(resizeSection(600, column, 0, 1, 256)).toEqual([null, 256, null, null, null]);
+  });
+
+  it("should hold the dragged height once the loser is automatic", () => {
+    const next = column.map((s, i) => ({ ...s, fixed: resizeSection(600, column, 0, 1, 256)[i]! }));
+    expect(fitSections(600, next, 0)).toEqual([212, 256, 60, 36, 36]);
+  });
+
+  it("should unpin a stored section the fit already shrinks when the drag goes the other way", () => {
+    expect(resizeSection(600, column, 0, 1, 100)).toEqual([null, 100, null, null, null]);
+  });
+
+  it("should keep a stored height that still fits", () => {
+    const sections = [auto(600), fixed(300, 156), auto(60), fixed(150, 100), auto(36)];
+    expect(resizeSection(600, sections, 0, 1, 200)).toEqual([null, 200, null, 100, null]);
+  });
+
+  it("should keep a stored height below the floor", () => {
+    const sections = [auto(600), fixed(300, 156), fixed(200, 10), auto(36), auto(36)];
+    expect(resizeSection(600, sections, 0, 1, 200)).toEqual([null, 200, 10, null, null]);
+  });
+
+  it("should change only the dragged entry while unmeasured", () => {
+    expect(resizeSection(0, column, 0, 1, 256)).toEqual([429, 256, null, null, null]);
   });
 });
 
