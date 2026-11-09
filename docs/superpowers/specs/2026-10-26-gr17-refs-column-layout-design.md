@@ -77,18 +77,19 @@ must default); any new dependency.
   `{ natural, fixed }` (`natural` = the measured height of its content,
   `fixed` = the stored height or `null` for automatic) returns one height per
   section:
-  1. `pref = fixed === null ? natural : clamp(fixed, floor, natural)` for
-     the secondary sections: a stored height is a preferred size, never a
-     source of blank space. Branches (index 0) is the exception: its stored
-     height is a true height, `clamp(fixed, floor, ∞)`, because Branches
-     already holds the column's leftover above its content (corrected at the
-     final review on 2026-10-26; the first ruling capped it at its content
-     and snapped the handle whenever the column had spare room).
+  1. `pref = fixed === null ? natural : max(floor, fixed)`: a stored height
+     is a true height for every open section; a collapsed section's stored
+     height is ignored (the component passes `fixed = null`) _(amended
+     2026-11-09: the owner asked for any open section to be pulled open past
+     its content)_.
   2. If `Σ pref ≤ container`: Branches, when automatic, takes the leftover;
      otherwise the leftover stays at the end of the column.
-  3. Otherwise the overflow is taken from the automatic sections in
-     proportion to their room (`pref − floor`), then, if room runs out, from
-     the fixed sections in the same way. Sections at their floor stay there;
+  3. Otherwise the overflow is taken first from the stored sections' blank
+     space (`pref − natural`, where positive), then from the automatic
+     sections in proportion to their room (`pref − floor`), then, if room runs
+     out, from the stored sections' room in the same way _(amended
+     2026-11-09: a stored Local height was clipping Worktrees to show blank
+     space)_. Sections at their floor stay there;
      if the floors alone exceed the container the column scrolls. Heights
      are returned as whole pixels; when the shares fill the container, the
      rounding remainder goes to the last automatic section that is sharing
@@ -100,6 +101,13 @@ must default); any new dependency.
      review)_.
   4. `container ≤ 0` (unmeasured) passes the naturals through, as
      `clampWidths` does for widths.
+  5. `resizeSection(container, sections, absorber, index, px)` returns the
+     stored height of every section after dragging `index` to `px`: the
+     dragged section stores `px`, and every other stored section that the new
+     fit would shrink below `max(floor, fixed)` is unpinned (`null`), so the
+     dragged height holds; the rest are kept _(amended 2026-11-09: dragging
+     Remote with a stored Local height handed most of each pixel back to
+     Local)_.
 - `maxSectionHeight(container, sections, index)` =
   `container − Σ floor(others)`; `Infinity` while unmeasured.
 
@@ -119,11 +127,10 @@ inside a `section` wrapper (`overflow: auto`, inline `height` from
 | `Resize Pull requests section` | Pull requests | `layout.pullRequestsHeight` |
 
 Handle contract: `value` is the rendered height, rounded to whole pixels;
-`min` is the section's floor; `max` is `maxSectionHeight` for Branches and,
-for a secondary section, the smaller of `maxSectionHeight` and the section's
-content height, so a handle under a section that cannot grow (collapsed,
-empty) refuses to move instead of storing a preference that would cap the
-section later; `step` is `KEY_STEP` (16); ArrowDown and
+`min` is the section's floor; `max` is `maxSectionHeight` for every open
+section and the content height for a collapsed one, so a collapsed handle
+refuses to move instead of storing a height that is ignored _(amended
+2026-11-09)_; `step` is `KEY_STEP` (16); ArrowDown and
 ArrowUp move it; double-click resets the stored height to `null`. A change
 that leaves the rendered height where it is, or that arrives before the
 column is measured, stores nothing (ruled at the final review on

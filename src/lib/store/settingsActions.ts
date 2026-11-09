@@ -57,9 +57,20 @@ const HEIGHT_LEAF: Record<ResizableSection, HeightLeaf> = {
   pullRequests: "pullRequestsHeight",
 };
 
+/** Persists refs section heights in one write; null returns a section to automatic. */
+export function setSectionHeights(heights: Partial<Record<ResizableSection, number | null>>): void {
+  const layout: Record<string, number | null> = {};
+  for (const [section, height] of Object.entries(heights) as Array<
+    [ResizableSection, number | null]
+  >) {
+    layout[HEIGHT_LEAF[section]] = height === null ? null : Math.round(height);
+  }
+  setPref({ layout });
+}
+
 /** Persists a refs section's dragged height; null returns it to automatic. */
 export function setSectionHeight(section: ResizableSection, height: number | null): void {
-  setPref({ layout: { [HEIGHT_LEAF[section]]: height === null ? null : Math.round(height) } });
+  setSectionHeights({ [section]: height });
 }
 
 /** Persists the Changes panel's Unstaged pane height; null returns it to the half split. */

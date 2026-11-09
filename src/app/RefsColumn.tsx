@@ -13,9 +13,15 @@ import { TagsPanel } from "../features/tags/TagsPanel";
 import type { RepoId } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
 import { useWorkspace } from "../lib/store/workspace";
-import { setSectionHeight } from "../lib/store/settingsActions";
+import { setSectionHeight, setSectionHeights } from "../lib/store/settingsActions";
 import { KEY_STEP } from "./layout";
-import { REFS_SECTIONS, fitSections, maxSectionHeight, sectionFloor } from "./refsLayout";
+import {
+  REFS_SECTIONS,
+  fitSections,
+  maxSectionHeight,
+  resizeSection,
+  sectionFloor,
+} from "./refsLayout";
 import type { RefsSection, ResizableSection, SectionInput } from "./refsLayout";
 import styles from "./RefsColumn.module.css";
 
@@ -42,8 +48,8 @@ interface Measured {
 
 /**
  * The refs column (spec §3, GR-58): one filter box above Local, Remote, Stashes, Tags, Worktrees,
- * Pull requests and Issues, each sized by its content and fitted to the space below the filter
- * box, with a horizontal handle below each resizable section. An open Local takes the leftover
+ * Pull requests and Issues, each sized by its content, or by its dragged height, and fitted to the space below the
+ * filter box, with a horizontal handle below each resizable section. An open Local takes the leftover
  * height, else an open Remote, else nothing does. Local and Remote share one BranchesProvider.
  */
 export function RefsColumn({
@@ -100,9 +106,18 @@ export function RefsColumn({
     worktrees: layout.worktreesHeight,
     pullRequests: layout.pullRequestsHeight,
   };
+  // A collapsed section shows only its header, so its stored height is ignored.
+  const collapsed: Record<ResizableSection, boolean> = {
+    local: layout.localCollapsed,
+    remote: layout.remoteCollapsed,
+    stashes: false,
+    tags: layout.tagsCollapsed,
+    worktrees: layout.worktreesCollapsed,
+    pullRequests: layout.pullRequestsCollapsed,
+  };
   const inputs: SectionInput[] = REFS_SECTIONS.map((section, i) => ({
     natural: measured.naturals[i] ?? 0,
-    fixed: section === "issues" ? null : stored[section],
+    fixed: section === "issues" || collapsed[section] ? null : stored[section],
   }));
   const heights = fitSections(container, inputs, absorber);
 
@@ -163,20 +178,27 @@ export function RefsColumn({
                   orientation="horizontal"
                   value={ready ? (heights[i] as number) : (stored[section] ?? 0)}
                   min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-                  // A non-absorbing section is capped at its content, so an inert (collapsed or empty)
-                  // one cannot be dragged; the absorber is bounded by the column alone.
+                  // A collapsed section's handle is inert (max = its content); an open one is
+                  // bounded by the column alone, so it can be pulled open past its content.
                   max={
                     ready
-                      ? Math.min(
-                          maxSectionHeight(container, inputs, i),
-                          i === absorber ? Infinity : inputs[i]!.natural,
-                        )
+                      ? collapsed[section]
+                        ? inputs[i]!.natural
+                        : maxSectionHeight(container, inputs, i)
                       : Infinity
                   }
                   step={KEY_STEP}
                   // Nothing is stored before measuring, or when the value would not change.
                   onChange={(px) => {
-                    if (ready && px !== heights[i]) setSectionHeight(section, px);
+                    if (!ready || px === heights[i]) return;
+                    const next = resizeSection(container, inputs, absorber, i, px);
+                    const changes: Partial<Record<ResizableSection, number | null>> = {};
+                    next.forEach((height, j) => {
+                      const other = REFS_SECTIONS[j] as RefsSection;
+                      if (other !== "issues" && height !== inputs[j]!.fixed)
+                        changes[other] = height;
+                    });
+                    setSectionHeights(changes);
                   }}
                   onReset={() => setSectionHeight(section, null)}
                 />

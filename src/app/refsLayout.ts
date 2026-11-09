@@ -31,16 +31,30 @@ export function sectionFloor(natural: number): number {
 }
 
 /**
+ * Takes `min(over, room)` from the members, each giving in proportion to its own room, and
+ * returns what is still over.
+ */
+function shrink(heights: number[], members: number[], rooms: number[], over: number): number {
+  const room = members.reduce((sum, i) => sum + rooms[i], 0);
+  if (room <= 0) return over;
+  const taken = Math.min(over, room);
+  for (const i of members) heights[i] -= (taken * rooms[i]) / room;
+  return over - taken;
+}
+
+/**
  * Shares the column between the sections (spec §3.1). The absorber (default index 0; null for
  * none) takes the leftover; it must be null or an index into `sections` (not range-checked).
- * Each section prefers its content height, or its stored height clamped between its floor and
- * its content; the absorber's stored height is a true height, only floored.
- * Leftover space goes to an automatic absorber; an overflow is taken from the automatic sections
- * in proportion to their room above the floor, then from the fixed ones. Floors are never
- * crossed. Heights are whole pixels: when the shares fill the container, the rounding remainder
- * goes to the last automatic section that is sharing, else to an automatic absorber above its
- * floor, so the heights sum exactly to the container; when no automatic section can take the
- * pixel it stays unassigned. An unmeasured container (<= 0) returns the content heights unchanged.
+ * Each section prefers its content height, or its stored height as a true height, only floored
+ * (so a stored height may exceed the content).
+ * Leftover space goes to an automatic absorber. An overflow is taken in three passes, each in
+ * proportion to the members' room: first the stored sections' blank space (their height above
+ * their content), then the automatic sections' room above their floor, then the stored
+ * sections' room above their floor. Floors are never crossed. Heights are whole pixels: when the
+ * shares fill the container, the rounding remainder goes to the last automatic section that is
+ * sharing, else to an automatic absorber above its floor, so the heights sum exactly to the
+ * container; when no automatic section can take the pixel it stays unassigned. An unmeasured
+ * container (<= 0) returns the content heights unchanged.
  */
 export function fitSections(
   container: number,
@@ -50,22 +64,29 @@ export function fitSections(
   if (container <= 0) return sections.map((s) => s.natural);
   const floors = sections.map((s) => sectionFloor(s.natural));
   const heights = sections.map((s, i) =>
-    s.fixed === null
-      ? s.natural
-      : Math.min(i === absorber ? Infinity : s.natural, Math.max(floors[i], s.fixed)),
+    s.fixed === null ? s.natural : Math.max(floors[i], s.fixed),
   );
   let over = heights.reduce((sum, h) => sum + h, 0) - container;
   if (over <= 0) {
     if (absorber !== null && sections[absorber].fixed === null) heights[absorber] -= over;
   } else {
-    for (const automatic of [true, false]) {
-      const members = sections.flatMap((s, i) => ((s.fixed === null) === automatic ? [i] : []));
-      const room = members.reduce((sum, i) => sum + heights[i] - floors[i], 0);
-      if (room <= 0) continue;
-      const taken = Math.min(over, room);
-      for (const i of members) heights[i] -= (taken * (heights[i] - floors[i])) / room;
-      over -= taken;
-    }
+    const all = sections.map((_, i) => i);
+    const stored = all.filter((i) => sections[i].fixed !== null);
+    const automatic = all.filter((i) => sections[i].fixed === null);
+    const blank = heights.map((h, i) => Math.max(0, h - sections[i].natural));
+    over = shrink(heights, stored, blank, over);
+    over = shrink(
+      heights,
+      automatic,
+      heights.map((h, i) => h - floors[i]),
+      over,
+    );
+    shrink(
+      heights,
+      stored,
+      heights.map((h, i) => h - floors[i]),
+      over,
+    );
   }
   return toWholePixels(container, sections, floors, heights, absorber);
 }
@@ -119,4 +140,26 @@ export function maxSectionHeight(
     container,
   );
   return Math.max(sectionFloor((sections[index] as SectionInput).natural), max);
+}
+
+/**
+ * The stored height of every section after dragging `index` to `px`. A drag stores the dragged
+ * height and unpins every other stored section the new fit would shrink below its stored height,
+ * so the dragged height holds instead of being shared back; a stored height that still fits, or
+ * one already at its floor, is kept (spec §3.1 step 5).
+ */
+export function resizeSection(
+  container: number,
+  sections: SectionInput[],
+  absorber: number | null,
+  index: number,
+  px: number,
+): Array<number | null> {
+  const next = sections.map((s, i) => (i === index ? { ...s, fixed: px } : s));
+  const heights = fitSections(container, next, absorber);
+  return next.map((s, j) =>
+    j !== index && s.fixed !== null && heights[j] < Math.max(sectionFloor(s.natural), s.fixed)
+      ? null
+      : s.fixed,
+  );
 }
