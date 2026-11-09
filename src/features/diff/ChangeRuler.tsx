@@ -21,6 +21,7 @@ export function ChangeRuler({ blocks, rowCount, current, onSelect }: ChangeRuler
             key={`${block.hunkIndex}:${block.firstRow}`}
             type="button"
             tabIndex={-1}
+            data-focus-target
             className={styles.mark}
             data-kind={block.kind}
             aria-label={label}

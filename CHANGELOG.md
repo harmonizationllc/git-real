@@ -2,6 +2,10 @@
 
 Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of the GitHub release with the same tag; the Release workflow refuses a tag whose section is missing or empty. Keep each paragraph and bullet on one line: GitHub renders a newline inside a release body as a line break.
 
+## 0.3.0
+
+- **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the whole file; click a mark to jump to it.
+
 ## 0.2.0
 
 Layout and workflow improvements across the left column, the Changes panel and the diff pane, plus Windows and corporate-network fixes.

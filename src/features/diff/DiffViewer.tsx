@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ReactNode } from "react";
 import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { useToasts } from "../../lib/store/toasts";
 import { domCaretResolver, type CaretResolver } from "./caretResolver";
@@ -39,13 +40,15 @@ export interface DiffViewerProps {
    * count.
    */
   onUserScroll?(): void;
+  /** Rendered beside the scroll container, stretched to its height; the change ruler. */
+  aside?: ReactNode;
   /** Test seam; defaults to resolving carets from the rendered rows. */
   resolveCaret?: CaretResolver;
 }
 
 /** Virtualized rows with a viewer-owned text range, copy and a context-menu target. */
 export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer(
-  { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, resolveCaret },
+  { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, aside, resolveCaret },
   ref,
 ) {
   // Held in state (a callback ref) so the default caret resolver is built once it exists, and in
@@ -177,6 +180,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
           ))}
         </div>
       </div>
+      {aside}
     </section>
   );
 });

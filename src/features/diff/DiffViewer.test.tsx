@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
-import { createRef } from "react";
+import { createRef, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
@@ -70,6 +70,7 @@ interface Over {
   onContextMenu?: ((target: MenuTarget, x: number, y: number) => void) | null;
   onMounted?: () => void;
   onUserScroll?: () => void;
+  aside?: ReactNode;
 }
 
 function setup(over: Over = {}) {
@@ -89,6 +90,7 @@ function setup(over: Over = {}) {
       onMounted={over.onMounted}
       onUserScroll={over.onUserScroll}
       resolveCaret={resolveCaret}
+      aside={over.aside}
     />,
   );
   const scroll = screen.getByTestId("diff-scroll");
@@ -675,5 +677,22 @@ describe("DiffRows range styling", () => {
     expect(declarationsOf(lineCss, "selected")).toMatch(
       /background:\s*var\(--color-line-selected\)/,
     );
+  });
+});
+
+// Contract: an aside (the change ruler) sits beside the scroll container, in a row with it.
+describe("DiffViewer aside", () => {
+  it("should render the aside after the scroll container inside the Diff section", () => {
+    setup({ aside: <div data-testid="aside" /> });
+    const scroll = screen.getByTestId("diff-scroll");
+    const aside = screen.getByTestId("aside");
+    expect(aside.parentElement).toBe(scroll.parentElement);
+    expect(scroll.nextElementSibling).toBe(aside);
+  });
+
+  it("should lay the scroll container and the aside out in a row", () => {
+    const css = readFileSync("src/features/diff/DiffViewer.module.css", "utf8");
+    expect(declarationsOf(css, "root")).toContain("flex-direction: row");
+    expect(declarationsOf(css, "scroll")).toContain("min-width: 0");
   });
 });
