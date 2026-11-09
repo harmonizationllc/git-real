@@ -77,7 +77,7 @@ describe("ChangeRuler", () => {
 });
 
 describe("ChangeRuler styles", () => {
-  const css = readFileSync(new URL("./ChangeRuler.module.css", import.meta.url), "utf8");
+  const css = readFileSync("src/features/diff/ChangeRuler.module.css", "utf8");
 
   it("should give a mark a minimum visible height", () => {
     expect(declarationsOf(css, "mark")).toContain("min-height: 2px");
