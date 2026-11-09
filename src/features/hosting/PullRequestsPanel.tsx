@@ -1,6 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import type { PullRequest, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setPullRequestsCollapsed } from "../../lib/store/settingsActions";
@@ -156,52 +157,54 @@ export function PullRequestsPanel({ repoId, onCreatePullRequest }: PullRequestsP
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          <button
-            type="button"
-            className="gr-section-toggle"
-            aria-expanded={!collapsed}
-            aria-controls={bodyId}
-            onClick={() => setPullRequestsCollapsed(!collapsed)}
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
           >
-            {prCountLabel(
-              listed ? (loaded as PullRequest[]).length : null,
-              list.hasMore,
-              listed && isFiltering(query) ? (prs as PullRequest[]).length : undefined,
-            )}
+            <button
+              type="button"
+              className="gr-section-toggle"
+              aria-expanded={!collapsed}
+              aria-controls={bodyId}
+              onClick={() => setPullRequestsCollapsed(!collapsed)}
+            >
+              {prCountLabel(
+                listed ? (loaded as PullRequest[]).length : null,
+                list.hasMore,
+                listed && isFiltering(query) ? (prs as PullRequest[]).length : undefined,
+              )}
+            </button>
+          </h2>
+          <button
+            data-variant="icon"
+            data-size="sm"
+            type="button"
+            className={styles.create}
+            aria-label="Create pull request"
+            disabled={!onCreatePullRequest}
+            // A disabled button cannot be clicked, so the callback is set here.
+            onClick={() => (onCreatePullRequest as () => void)()}
+          >
+            +
           </button>
-        </h2>
-        <button
-          data-variant="icon"
-          data-size="sm"
-          type="button"
-          className={styles.create}
-          aria-label="Create pull request"
-          disabled={!onCreatePullRequest}
-          // A disabled button cannot be clicked, so the callback is set here.
-          onClick={() => (onCreatePullRequest as () => void)()}
-        >
-          +
-        </button>
-        <button
-          data-variant="icon"
-          data-size="sm"
-          type="button"
-          className={styles.refresh}
-          aria-label="Refresh pull requests"
-          disabled={collapsed || !usable || list.fetching}
-          onClick={list.refetch}
-        >
-          ↻
-        </button>
-      </div>
+          <button
+            data-variant="icon"
+            data-size="sm"
+            type="button"
+            className={styles.refresh}
+            aria-label="Refresh pull requests"
+            disabled={collapsed || !usable || list.fetching}
+            onClick={list.refetch}
+          >
+            ↻
+          </button>
+        </div>
+      </SectionHead>
       {/* Always mounted, so screen readers announce the status when it appears. */}
       <p role="status" className={styles.status}>
         {actions.status}

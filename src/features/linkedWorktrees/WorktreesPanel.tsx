@@ -1,6 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import type { LinkedWorktree, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setWorktreesCollapsed } from "../../lib/store/settingsActions";
@@ -146,49 +147,51 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          <button
-            type="button"
-            className="gr-section-toggle"
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-            onClick={() => setWorktreesCollapsed(!collapsed)}
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
           >
-            {sectionCountLabel("Worktrees", shown.length, list?.length, filtering)}
-          </button>
-        </h2>
-        {!bare && (
-          <>
             <button
               type="button"
-              className={styles.action}
-              aria-label={PRUNE_LABEL}
-              title={stale.length === 0 ? "No stale worktrees" : undefined}
-              disabled={stale.length === 0 || actions.pending}
-              onClick={prune}
+              className="gr-section-toggle"
+              aria-expanded={expanded}
+              aria-controls={bodyId}
+              onClick={() => setWorktreesCollapsed(!collapsed)}
             >
-              Prune
+              {sectionCountLabel("Worktrees", shown.length, list?.length, filtering)}
             </button>
-            <button
-              type="button"
-              className={styles.action}
-              aria-label={ADD_LABEL}
-              title={ADD_LABEL}
-              disabled={actions.pending}
-              onClick={() => setAdding(true)}
-            >
-              +
-            </button>
-          </>
-        )}
-      </div>
+          </h2>
+          {!bare && (
+            <>
+              <button
+                type="button"
+                className={styles.action}
+                aria-label={PRUNE_LABEL}
+                title={stale.length === 0 ? "No stale worktrees" : undefined}
+                disabled={stale.length === 0 || actions.pending}
+                onClick={prune}
+              >
+                Prune
+              </button>
+              <button
+                type="button"
+                className={styles.action}
+                aria-label={ADD_LABEL}
+                title={ADD_LABEL}
+                disabled={actions.pending}
+                onClick={() => setAdding(true)}
+              >
+                +
+              </button>
+            </>
+          )}
+        </div>
+      </SectionHead>
       {actions.error && (
         <RepoError
           error={actions.error}

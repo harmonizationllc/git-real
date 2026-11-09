@@ -1,4 +1,4 @@
-/* A Local or Remote section; the RefsColumn wrapper sizes and scrolls it. */
+/* A Local or Remote section; the RefsColumn wrapper sizes it and scrolls its body. */
 .root {
   display: flex;
   flex-direction: column;

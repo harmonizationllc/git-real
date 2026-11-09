@@ -1,5 +1,6 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import type { Issue, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setIssuesCollapsed } from "../../lib/store/settingsActions";
@@ -171,41 +172,43 @@ export function IssuesPanel({ repoId }: { repoId: RepoId }) {
 
   return (
     <section aria-labelledby={headingId} className={styles.root}>
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          <button
-            type="button"
-            className="gr-section-toggle"
-            aria-expanded={!collapsed}
-            aria-controls={bodyId}
-            onClick={() => setIssuesCollapsed(!collapsed)}
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
           >
-            {issueCountLabel(
-              listed ? (loaded as Issue[]).length : null,
-              list.hasMore,
-              provider,
-              listed && isFiltering(query) ? (issues as Issue[]).length : undefined,
-            )}
+            <button
+              type="button"
+              className="gr-section-toggle"
+              aria-expanded={!collapsed}
+              aria-controls={bodyId}
+              onClick={() => setIssuesCollapsed(!collapsed)}
+            >
+              {issueCountLabel(
+                listed ? (loaded as Issue[]).length : null,
+                list.hasMore,
+                provider,
+                listed && isFiltering(query) ? (issues as Issue[]).length : undefined,
+              )}
+            </button>
+          </h2>
+          <button
+            data-variant="icon"
+            data-size="sm"
+            type="button"
+            className={styles.refresh}
+            aria-label={`Refresh ${issuesNoun(provider)}`}
+            disabled={collapsed || !usable || list.fetching}
+            onClick={refresh}
+          >
+            ↻
           </button>
-        </h2>
-        <button
-          data-variant="icon"
-          data-size="sm"
-          type="button"
-          className={styles.refresh}
-          aria-label={`Refresh ${issuesNoun(provider)}`}
-          disabled={collapsed || !usable || list.fetching}
-          onClick={refresh}
-        >
-          ↻
-        </button>
-      </div>
+        </div>
+      </SectionHead>
       {links.error !== null && (
         <NetworkError
           message={hostingMessage(links.error, provider)}

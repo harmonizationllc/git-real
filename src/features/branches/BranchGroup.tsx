@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { SectionHead } from "../../components/SectionHead";
 import styles from "./BranchGroup.module.css";
 
 export interface BranchGroupBodyProps {
@@ -96,19 +97,21 @@ export function BranchSectionHeader({
   children,
 }: BranchSectionHeaderProps) {
   return (
-    <div className={`gr-section-header ${styles.header}`}>
-      <h2 className={`gr-section-heading ${styles.heading}`}>
-        <button
-          type="button"
-          className="gr-section-toggle"
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          onClick={onToggle}
-        >
-          {label}
-        </button>
-      </h2>
-      {children}
-    </div>
+    <SectionHead>
+      <div className={`gr-section-header ${styles.header}`}>
+        <h2 className={`gr-section-heading ${styles.heading}`}>
+          <button
+            type="button"
+            className="gr-section-toggle"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            onClick={onToggle}
+          >
+            {label}
+          </button>
+        </h2>
+        {children}
+      </div>
+    </SectionHead>
   );
 }

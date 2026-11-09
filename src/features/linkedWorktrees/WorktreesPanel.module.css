@@ -1,4 +1,4 @@
-/* The RefsColumn wrapper sizes and scrolls the section; its handle draws the divider. */
+/* The RefsColumn wrapper sizes the section and scrolls its body; its handle draws the divider. */
 .root {
   composes: root from "../tags/TagsPanel.module.css";
 }

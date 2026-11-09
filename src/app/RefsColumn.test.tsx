@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkoutBranch,
@@ -16,6 +17,7 @@ import {
 import type { BranchList } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
 import { useWorkspace } from "../lib/store/workspace";
+import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
 import { remoteInfo } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
@@ -79,15 +81,22 @@ const column = () => screen.getByTestId("refs-column");
 // The measured container: the sections below the filter box.
 const root = () => screen.getByTestId("refs-sections");
 const wrapper = (s: string) => root().querySelector(`[data-section="${s}"]`) as HTMLElement;
-const content = (s: string) => wrapper(s).firstElementChild as HTMLElement;
+const head = (s: string) => wrapper(s).querySelector("[data-section-head]") as HTMLElement;
+const scroll = (s: string) => wrapper(s).querySelector("[data-section-scroll]") as HTMLElement;
+const content = (s: string) => scroll(s)?.firstElementChild as HTMLElement;
 const handle = (name: string) => screen.getByRole("separator", { name });
 
 // Root 666 (= 636 + 5 handles of 6); naturals for local, remote, stashes, tags, worktrees,
 // pullRequests, issues. Remote reports 0 here (no handle, no space), so every figure below keeps
 // the value it had before the Local/Remote split; the Remote tests stub a non-zero natural.
 const NATURALS = [200, 0, 60, 150, 36, 36, 36];
-const sectionEntries = () =>
-  REFS_SECTIONS.map((s, i) => ({ target: content(s), height: NATURALS[i] as number }));
+// Every head slot reports 0, so a section's natural (head plus content) equals its content.
+const headEntries = (heights: number[] = REFS_SECTIONS.map(() => 0)) =>
+  REFS_SECTIONS.map((s, i) => ({ target: head(s), height: heights[i] as number }));
+const sectionEntries = () => [
+  ...headEntries(),
+  ...REFS_SECTIONS.map((s, i) => ({ target: content(s), height: NATURALS[i] as number })),
+];
 
 function measure() {
   act(() => observer().fire([{ target: root(), height: 666 }, ...sectionEntries()]));
@@ -97,6 +106,7 @@ function measureAt(rootHeight: number, heights: number[]) {
   act(() =>
     observer().fire([
       { target: root(), height: rootHeight },
+      ...headEntries(),
       ...REFS_SECTIONS.map((s, i) => ({ target: content(s), height: heights[i] as number })),
     ]),
   );
@@ -271,13 +281,50 @@ describe("RefsColumn measurement", () => {
     expect(wrapper("tags").style.height).toBe("");
   });
 
-  it("should observe the sections container and the seven content wrappers with one observer and disconnect on unmount", async () => {
+  it("should observe the sections container, the seven head slots and the seven content wrappers with one observer and disconnect on unmount", async () => {
     const { unmount } = await renderColumn();
     expect(StubResizeObserver.instances).toHaveLength(1);
     const targets = observer().observe.mock.calls.map(([t]) => t);
-    expect(targets).toEqual([root(), ...REFS_SECTIONS.map(content)]);
+    expect(targets).toHaveLength(15);
+    expect(new Set(targets)).toEqual(
+      new Set([root(), ...REFS_SECTIONS.map(head), ...REFS_SECTIONS.map(content)]),
+    );
     unmount();
     expect(observer().disconnect).toHaveBeenCalled();
+  });
+
+  it("should add a section's head height to its content when fitting", async () => {
+    await renderColumn();
+    // The same naturals as measure(), with 34 px of head on every section but Remote.
+    act(() =>
+      observer().fire([
+        { target: root(), height: 666 },
+        ...headEntries([34, 0, 34, 34, 34, 34, 34]),
+        ...REFS_SECTIONS.map((s, i) => ({
+          target: content(s),
+          height: [166, 0, 26, 116, 2, 2, 2][i] as number,
+        })),
+      ]),
+    );
+    expect(wrapper("local").style.height).toBe("318px");
+    expect(wrapper("tags").style.height).toBe("150px");
+  });
+
+  it("should set no inline heights while any head slot has not reported", async () => {
+    await renderColumn();
+    const report = (skip: string) =>
+      act(() =>
+        observer().fire([
+          { target: root(), height: 666 },
+          ...headEntries().filter((e) => skip === "" || e.target !== head(skip)),
+          ...REFS_SECTIONS.map((s, i) => ({ target: content(s), height: NATURALS[i] as number })),
+        ]),
+      );
+    report("worktrees");
+    expect(wrapper("tags").style.height).toBe("");
+    // Control: the same batch with every head reported does set heights.
+    report("");
+    expect(wrapper("tags").style.height).toBe("150px");
   });
 });
 
@@ -488,5 +535,79 @@ describe("RefsColumn branch host block", () => {
     measureAt(700, [28, 120, 60, 150, 36, 36, 36]);
     expect(updateSettings).not.toHaveBeenCalled();
     expect(useSettings.getState().settings.layout.remoteHeight).toBeNull();
+  });
+});
+
+// Contract: each section is a fixed head slot above a scrolling body; only the body scrolls.
+describe("RefsColumn fixed headers", () => {
+  it("should give every section a head slot then a scroll element holding one content wrapper", async () => {
+    await renderColumn();
+    for (const s of REFS_SECTIONS) {
+      const children = [...wrapper(s).children];
+      expect(children).toHaveLength(2);
+      expect(children[0]).toHaveAttribute("data-section-head");
+      expect(children[1]).toHaveAttribute("data-section-scroll");
+      expect(children[1]?.children).toHaveLength(1);
+    }
+  });
+
+  it("should render the stashes heading in the head slot, not the scroll element", async () => {
+    await renderColumn();
+    expect(head("stashes")).toBeInTheDocument();
+    expect(scroll("stashes")).toBeInTheDocument();
+    const heading = within(head("stashes")).getByRole("heading", { name: /^Stashes/ });
+    expect(heading).toBeInTheDocument();
+    expect(scroll("stashes").contains(heading)).toBe(false);
+  });
+
+  it.each([
+    ["local", /^Local/],
+    ["tags", /^Tags/],
+    ["worktrees", /^Worktrees/],
+  ])(
+    "should render the %s collapse toggle in the head slot, not the scroll element",
+    async (s, name) => {
+      await renderColumn();
+      expect(head(s)).toBeInTheDocument();
+      expect(scroll(s)).toBeInTheDocument();
+      const toggle = within(head(s)).getByRole("button", { name });
+      expect(toggle).toBeInTheDocument();
+      expect(scroll(s).contains(toggle)).toBe(false);
+    },
+  );
+
+  it("should render New branch… and Create tag… in their head slots", async () => {
+    await renderColumn();
+    expect(head("local")).toBeInTheDocument();
+    expect(head("tags")).toBeInTheDocument();
+    expect(
+      await within(head("local")).findByRole("button", { name: "New branch…" }),
+    ).toBeInTheDocument();
+    expect(within(head("tags")).getByRole("button", { name: "Create tag…" })).toBeInTheDocument();
+  });
+
+  it("should render the Local branches list in Local's scroll element", async () => {
+    await renderColumn();
+    expect(scroll("local")).toBeInTheDocument();
+    expect(within(scroll("local")).getByRole("region", { name: "Local branches" })).toBeVisible();
+  });
+});
+
+// happy-dom applies no stylesheet, so the layout contract is pinned in the CSS source.
+describe("RefsColumn.module.css", () => {
+  const css = readFileSync("src/app/RefsColumn.module.css", "utf8");
+
+  it("should clip the section and not scroll it", () => {
+    expect(declarationsOf(css, "section")).toMatch(/overflow:\s*hidden/);
+    expect(declarationsOf(css, "section")).not.toMatch(/overflow:\s*auto/);
+  });
+
+  it("should not let the head slot shrink", () => {
+    expect(declarationsOf(css, "head")).toMatch(/flex:\s*none/);
+  });
+
+  it("should scroll the body and let it shrink below its content", () => {
+    expect(declarationsOf(css, "scroll")).toMatch(/overflow:\s*auto/);
+    expect(declarationsOf(css, "scroll")).toMatch(/min-height:\s*0/);
   });
 });

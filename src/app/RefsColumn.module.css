@@ -26,9 +26,24 @@
   min-height: 0;
 }
 
-/* A section wrapper; height and flex: none are set inline once the column is measured. */
+/* A section wrapper; height and flex: none are set inline once the column is measured. Its head
+   slot stays in place and only the body below it scrolls. */
 .section {
+  display: flex;
+  flex-direction: column;
   flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The fixed slot the section's header band is portaled into. */
+.head {
+  flex: none;
+}
+
+/* The section's scrolling body. */
+.scroll {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }

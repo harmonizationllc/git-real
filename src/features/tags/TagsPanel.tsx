@@ -1,6 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import { copyText, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, TagEntry } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
@@ -160,37 +161,39 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          <button
-            type="button"
-            className="gr-section-toggle"
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-            onClick={() => setTagsCollapsed(!collapsed)}
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
           >
-            {sectionCountLabel("Tags", shown.length, list?.tags.length, filtering)}
+            <button
+              type="button"
+              className="gr-section-toggle"
+              aria-expanded={expanded}
+              aria-controls={bodyId}
+              onClick={() => setTagsCollapsed(!collapsed)}
+            >
+              {sectionCountLabel("Tags", shown.length, list?.tags.length, filtering)}
+            </button>
+          </h2>
+          <button
+            data-variant="icon"
+            data-size="sm"
+            type="button"
+            className={styles.add}
+            aria-label={CREATE_LABEL}
+            title={addTitle}
+            disabled={head === null || actions.pending}
+            onClick={() => setCreating(true)}
+          >
+            +
           </button>
-        </h2>
-        <button
-          data-variant="icon"
-          data-size="sm"
-          type="button"
-          className={styles.add}
-          aria-label={CREATE_LABEL}
-          title={addTitle}
-          disabled={head === null || actions.pending}
-          onClick={() => setCreating(true)}
-        >
-          +
-        </button>
-      </div>
+        </div>
+      </SectionHead>
       <TagFeedback actions={actions} />
       {copyError && (
         <RepoError
