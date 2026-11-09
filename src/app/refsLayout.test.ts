@@ -88,8 +88,10 @@ describe("fitSections", () => {
     expect(heights[3]).toBeGreaterThanOrEqual(SECTION_MIN);
   });
 
-  it("should clamp a stored height on a small section to its content and show it whole", () => {
-    expect(fitSections(1000, [auto(100), fixed(92, 500)])).toEqual([908, 92]);
+  it("should hold a stored height on a small section as a true height", () => {
+    expect(fitSections(1000, [auto(100), fixed(92, 500)])).toEqual([500, 500]);
+    // a stored height below a small section's content never shrinks it: the floor is its content
+    expect(fitSections(1000, [auto(100), fixed(92, 50)])).toEqual([908, 92]);
   });
 
   it("should give the leftover to an automatic Branches when everything fits", () => {
@@ -202,7 +204,8 @@ describe("fitSections absorber", () => {
 
   it("should leave the leftover unassigned with no absorber", () => {
     expect(fitSections(500, [auto(100), auto(200), auto(60)], null)).toEqual([100, 200, 60]);
-    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], null)).toEqual([100, 200, 60]);
+    // 300 is a true height; the 60 over comes out of its 200 of blank space first → 240
+    expect(fitSections(500, [fixed(100, 300), auto(200), auto(60)], null)).toEqual([240, 200, 60]);
   });
 
   it("should still shrink sections in proportion when there is no absorber", () => {
