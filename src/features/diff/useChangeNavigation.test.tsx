@@ -40,9 +40,9 @@ function setup(firstVisible = 0) {
 describe("useChangeNavigation fixture", () => {
   it("should group the fixture rows into blocks 1-3, 5-6 and 8", () => {
     expect(changeBlocks(diff, buildRows(diff, "unified"))).toEqual([
-      { hunkIndex: 0, firstRow: 1, lastRow: 3 },
-      { hunkIndex: 0, firstRow: 5, lastRow: 6 },
-      { hunkIndex: 0, firstRow: 8, lastRow: 8 },
+      { hunkIndex: 0, firstRow: 1, lastRow: 3, kind: "modified" },
+      { hunkIndex: 0, firstRow: 5, lastRow: 6, kind: "modified" },
+      { hunkIndex: 0, firstRow: 8, lastRow: 8, kind: "added" },
     ]);
   });
 });
@@ -219,5 +219,14 @@ describe("useChangeNavigation change at row 0", () => {
     act(() => result.current.next());
     expect(result.current.current).toBe(0);
     expect(scrollToRow).toHaveBeenCalledExactlyOnceWith(0);
+  });
+});
+
+// Contract: the hook exposes the very blocks it counts, for the change ruler.
+describe("useChangeNavigation blocks", () => {
+  it("should expose the blocks it counts", () => {
+    const { result, rows } = setup();
+    expect(result.current.blocks).toEqual(changeBlocks(diff, rows));
+    expect(result.current.blocks).toHaveLength(result.current.count);
   });
 });
