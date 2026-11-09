@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   copyText,
@@ -655,5 +655,125 @@ describe("TagsPanel sign-in", () => {
     expect(
       await screen.findByRole("dialog", { name: "Sign in to github.com" }),
     ).toBeInTheDocument();
+  });
+});
+
+// Contract: tags are grouped into collapsible folders by slash path, every folder open by default.
+describe("TagsPanel folders", () => {
+  const folderTags = (): TagList =>
+    tagList({
+      tags: [
+        tagEntry("v2", { target: oidOf(2) }),
+        tagEntry("release/v1.0", { target: oidOf(3) }),
+        tagEntry("nightly/2026-11-01", { target: oidOf(4) }),
+        tagEntry("release/v0.9", { target: oidOf(5) }),
+        tagEntry("release/rc/v1.0-rc1", { target: oidOf(6) }),
+        tagEntry("release-notes", { target: oidOf(7) }),
+      ],
+    });
+
+  beforeEach(() => {
+    vi.mocked(listTags).mockResolvedValue(folderTags());
+  });
+
+  const tagListEl = () => screen.getByRole("list", { name: "Tag list" });
+  const expandedFolder = (name: string) => screen.queryByRole("button", { name, expanded: true });
+  const folderButton = (name: string) => screen.getByRole("button", { name });
+  /** The first button of each direct child of a list, as "folder:<text>" or "row:<text>". */
+  const itemsOf = (list: HTMLElement) =>
+    [...list.children].map((li) => {
+      const button = li.querySelector("button") as HTMLButtonElement;
+      const text = (button.textContent ?? "").trim();
+      return button.hasAttribute("aria-expanded") ? `folder:${text}` : `row:${text}`;
+    });
+  const rowNamed = (name: string) => screen.getByText(name).closest("button") as HTMLButtonElement;
+
+  it("should nest tags in folders by slash path, folders first, in backend order", async () => {
+    await renderPanel();
+    expect(expandedFolder("release")).toBeInTheDocument();
+    expect(itemsOf(tagListEl())).toEqual([
+      "folder:release",
+      "folder:nightly",
+      expect.stringMatching(/^row:v2/),
+      expect.stringMatching(/^row:release-notes/),
+    ]);
+    const release = within(tagListEl()).getByRole("list", { name: "release tags" });
+    expect(itemsOf(release)).toEqual([
+      "folder:rc",
+      expect.stringMatching(/^row:v1\.0/),
+      expect.stringMatching(/^row:v0\.9/),
+    ]);
+    const rc = within(release).getByRole("list", { name: "release/rc tags" });
+    expect(itemsOf(rc)).toEqual([expect.stringMatching(/^row:v1\.0-rc1/)]);
+  });
+
+  it("should start every folder expanded", async () => {
+    await renderPanel();
+    for (const name of ["release", "nightly", "rc"]) {
+      expect(folderButton(name)).toHaveAttribute("aria-expanded", "true");
+    }
+  });
+
+  it("should collapse a folder without changing the count or saving a setting", async () => {
+    const { user } = await renderPanel();
+    expect(expandedFolder("release")).toBeInTheDocument();
+    vi.mocked(updateSettings).mockClear();
+    await user.click(folderButton("release"));
+    expect(screen.queryByRole("list", { name: "release tags" })).toBeNull();
+    expect(folderButton("release")).toHaveAttribute("aria-expanded", "false");
+    expect(toggle()).toHaveTextContent("Tags (6)");
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("should keep a collapsed folder collapsed through filtering and clearing the filter", async () => {
+    const { user } = await renderPanel();
+    expect(expandedFolder("release")).toBeInTheDocument();
+    await user.click(folderButton("release"));
+    act(() => useWorkspace.getState().setRefsFilter(1, "v1.0"));
+    expect(folderButton("release")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("v1.0")).toBeNull();
+    act(() => useWorkspace.getState().setRefsFilter(1, ""));
+    expect(folderButton("release")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("v1.0")).toBeNull();
+  });
+
+  it("should render only the matching folder and its row when filtering", async () => {
+    useWorkspace.getState().setRefsFilter(1, "nightly");
+    renderWithProviders(<TagsPanel repoId={1} />);
+    await screen.findByRole("list", { name: "Tag list" });
+    expect(expandedFolder("nightly")).toBeInTheDocument();
+    expect(tagListEl().children).toHaveLength(1);
+    const nightly = within(tagListEl()).getByRole("list", { name: "nightly tags" });
+    expect(nightly.children).toHaveLength(1);
+    expect(within(nightly).getByText("2026-11-01")).toBeInTheDocument();
+  });
+
+  it("should select the target commit when a nested row is clicked", async () => {
+    const { user } = await renderPanel();
+    expect(expandedFolder("release")).toBeInTheDocument();
+    await user.click(rowNamed("v1.0"));
+    expect(useWorkspace.getState().selectedCommit[1]).toBe(oidOf(3));
+  });
+
+  it("should copy the full tag name from a nested row's menu", async () => {
+    const { user } = await renderPanel();
+    expect(expandedFolder("release")).toBeInTheDocument();
+    rightClick(rowNamed("v1.0"));
+    await user.click(menuItem("Copy name"));
+    expect(copyText).toHaveBeenCalledExactlyOnceWith("release/v1.0");
+  });
+
+  it("should drop an emptied folder after its last tag is deleted", async () => {
+    const { user } = await renderPanel();
+    expect(expandedFolder("nightly")).toBeInTheDocument();
+    rightClick(rowNamed("2026-11-01"));
+    await user.click(menuItem("Delete tag…"));
+    vi.mocked(listTags).mockResolvedValue(
+      tagList({ tags: folderTags().tags.filter((t) => t.name !== "nightly/2026-11-01") }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(deleteTag).toHaveBeenCalledExactlyOnceWith(1, "nightly/2026-11-01");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "nightly" })).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

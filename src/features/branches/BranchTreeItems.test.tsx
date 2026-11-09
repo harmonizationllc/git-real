@@ -86,6 +86,27 @@ describe("BranchTreeItems", () => {
     expect(screen.getByText("feature/fix-1")).toBeInTheDocument();
   });
 
+  it("should label a nested list with the listNoun prop", () => {
+    render(
+      <ul aria-label="Tag list">
+        <BranchTreeItems
+          nodes={buildBranchTree([{ name: "release/v1.0" }])}
+          collapsed={new Set()}
+          onToggle={vi.fn()}
+          listNoun="tags"
+          renderBranch={renderBranch}
+        />
+      </ul>,
+    );
+    expect(screen.getByRole("list", { name: "release tags" })).toHaveTextContent("release/v1.0");
+    expect(screen.queryByRole("list", { name: "release branches" })).toBeNull();
+  });
+
+  it("should still label a nested list with branches when listNoun is omitted", () => {
+    renderTree();
+    expect(screen.getByRole("list", { name: "feature branches" })).toBeInTheDocument();
+  });
+
   it("should indent nested lists and use no disclosure glyph pseudo-elements", () => {
     const css = readFileSync("src/features/branches/BranchTreeItems.module.css", "utf8");
     expect(declarationsOf(css, "children")).toContain("padding-left: var(--space-4)");

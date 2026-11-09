@@ -2,7 +2,9 @@
   display: flex;
 }
 
+/* Containing block for the absolute sr-only name, so a long list never grows the document. */
 .row {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: var(--control-h);
@@ -27,6 +29,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.srOnly {
+  composes: srOnly from "../branches/BranchRow.module.css";
 }
 
 .meta {

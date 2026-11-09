@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type { TagEntry } from "../../lib/ipc";
+import { lastSegment } from "../branches/branchTree";
 import { shortOid } from "../graph/model/layout";
 import { fullDate } from "../graph/model/relativeTime";
 import styles from "./TagRow.module.css";
@@ -36,7 +37,16 @@ export function TagRow({ tag, onSelect, onContextMenu }: TagRowProps) {
         onClick={onSelect}
         onKeyDown={onKeyDown}
       >
-        <span className={styles.name}>{tag.name}</span>
+        <span className={styles.name}>
+          {tag.name.includes("/") ? (
+            <>
+              <span aria-hidden="true">{lastSegment(tag.name)}</span>
+              <span className={styles.srOnly}>{tag.name}</span>
+            </>
+          ) : (
+            tag.name
+          )}
+        </span>
         <span className={styles.meta}>
           <code>{shortOid(tag.target)}</code>
           {tag.annotated && (

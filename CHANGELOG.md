@@ -2,6 +2,11 @@
 
 Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of the GitHub release with the same tag; the Release workflow refuses a tag whose section is missing or empty. Keep each paragraph and bullet on one line: GitHub renders a newline inside a release body as a line break.
 
+## 0.3.0
+
+- **Tag folders**: tags are grouped into collapsible folders by their slash path, every folder open by default, the same as branches.
+- **Fixed**: a left-column section's header stays in place while its list scrolls beneath it.
+
 ## 0.2.0
 
 Layout and workflow improvements across the left column, the Changes panel and the diff pane, plus Windows and corporate-network fixes.

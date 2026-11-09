@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
@@ -7,7 +7,9 @@ import type { AppError, RepoId, TagEntry } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setTagsCollapsed } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
+import { BranchTreeItems, useCollapsedFolders } from "../branches/BranchTreeItems";
 import { filterTags, isFiltering } from "../branches/branchFilter";
+import { buildBranchTree } from "../branches/branchTree";
 import { useBranches } from "../branches/useBranches";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { RepoError } from "../repo/RepoError";
@@ -52,7 +54,10 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const filtering = isFiltering(query);
-  const shown = list ? filterTags(list.tags, query) : [];
+  // Memoised, so the folder tree is rebuilt only when the list or the query changes.
+  const shown = useMemo(() => (list ? filterTags(list.tags, query) : []), [list, query]);
+  const tree = useMemo(() => buildBranchTree(shown), [shown]);
+  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
   const head = headCommit(branches);
@@ -139,14 +144,20 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   } else {
     body = (
       <ul aria-label="Tag list" className={styles.list}>
-        {shown.map((tag) => (
-          <TagRow
-            key={tag.name}
-            tag={tag}
-            onSelect={() => useWorkspace.getState().selectCommit(repoId, tag.target)}
-            onContextMenu={(x, y) => setMenu({ x, y, tag })}
-          />
-        ))}
+        <BranchTreeItems
+          nodes={tree}
+          collapsed={collapsedFolders}
+          onToggle={toggleFolder}
+          listNoun="tags"
+          renderBranch={(tag) => (
+            <TagRow
+              key={tag.name}
+              tag={tag}
+              onSelect={() => useWorkspace.getState().selectCommit(repoId, tag.target)}
+              onContextMenu={(x, y) => setMenu({ x, y, tag })}
+            />
+          )}
+        />
       </ul>
     );
   }
