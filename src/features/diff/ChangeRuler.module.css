@@ -1,0 +1,41 @@
+.ruler {
+  flex: none;
+  position: relative;
+  width: 10px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.mark {
+  position: absolute;
+  left: 2px;
+  right: 1px;
+  min-height: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.mark:hover {
+  opacity: 1;
+}
+
+.mark[data-kind="added"] {
+  background: var(--color-added);
+}
+
+.mark[data-kind="removed"] {
+  background: var(--color-removed);
+}
+
+.mark[data-kind="modified"] {
+  background: var(--color-modified);
+}
+
+.mark[aria-current="true"] {
+  opacity: 1;
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
