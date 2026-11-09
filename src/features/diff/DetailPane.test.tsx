@@ -2591,4 +2591,51 @@ describe("DetailPane change ruler", () => {
     });
     expect(screen.getByText("2 of 3")).toBeInTheDocument();
   });
+
+  it("should mark only the clicked block's mark as current", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    fireEvent.click(screen.getByRole("button", { name: /^Change 2 of/ }));
+    expect(screen.getByRole("button", { name: /^Change 2 of/ })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Change 1 of/ })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("should place a mark by the block's share of the split rows", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const diff = rulerDiff();
+    const rows = buildRows(diff, "split");
+    const second = changeBlocks(diff, rows)[1]!;
+    expect(screen.getByRole("button", { name: /^Change 2 of/ }).style.top).toBe(
+      `${(second.firstRow * 100) / rows.length}%`,
+    );
+  });
+
+  it("should rebuild the marks when the view mode changes", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const diff = rulerDiff();
+    const rows = buildRows(diff, "unified");
+    const unified = changeBlocks(diff, rows);
+    const markName = { name: /^Change \d+ of \d+: / };
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "View mode" })).getByRole("radio", {
+        name: "Unified",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", markName)[0]!.style.top).toBe(
+        `${(unified[0]!.firstRow * 100) / rows.length}%`,
+      ),
+    );
+    expect(screen.getAllByRole("button", markName)).toHaveLength(unified.length);
+  });
 });

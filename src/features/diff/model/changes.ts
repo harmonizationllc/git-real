@@ -36,25 +36,27 @@ function blockKind(added: boolean, removed: boolean): BlockKind {
 /** Groups consecutive changed rows (within one hunk) into blocks. */
 export function changeBlocks(diff: FileDiff, rows: DiffRow[]): ChangeBlock[] {
   const blocks: ChangeBlock[] = [];
-  let open: ChangeBlock | null = null;
-  let added = false;
-  let removed = false;
+  // The open block with the flags accumulated over its rows.
+  let open: { block: ChangeBlock; added: boolean; removed: boolean } | null = null;
   rows.forEach((row, i) => {
-    const sides = changedSides(diff, rows, i);
-    if (!sides.added && !sides.removed) {
+    const { added, removed } = changedSides(diff, rows, i);
+    if (!added && !removed) {
       open = null;
-      return;
-    }
-    if (open && open.hunkIndex === row.hunkIndex) {
-      open.lastRow = i;
-      added ||= sides.added;
-      removed ||= sides.removed;
+    } else if (open && open.block.hunkIndex === row.hunkIndex) {
+      open.added ||= added;
+      open.removed ||= removed;
+      open.block.lastRow = i;
+      open.block.kind = blockKind(open.added, open.removed);
     } else {
-      ({ added, removed } = sides);
-      open = { hunkIndex: row.hunkIndex, firstRow: i, lastRow: i, kind: "added" };
-      blocks.push(open);
+      const block = {
+        hunkIndex: row.hunkIndex,
+        firstRow: i,
+        lastRow: i,
+        kind: blockKind(added, removed),
+      };
+      open = { block, added, removed };
+      blocks.push(block);
     }
-    open.kind = blockKind(added, removed);
   });
   return blocks;
 }

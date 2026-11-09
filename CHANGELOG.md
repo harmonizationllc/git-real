@@ -4,7 +4,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## 0.3.0
 
-- **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the whole file; click a mark to jump to it.
+- **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the diff; click a mark to jump to it.
 
 ## 0.2.0
 

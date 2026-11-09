@@ -70,6 +70,36 @@ describe("ChangeRuler", () => {
     for (const m of marks()) expect(m.tabIndex).toBe(-1);
   });
 
+  it("should merge blocks that share a strip cell into one mark that selects the first", () => {
+    const merged: ChangeBlock[] = [
+      { hunkIndex: 0, firstRow: 10, lastRow: 12, kind: "added" },
+      { hunkIndex: 0, firstRow: 14, lastRow: 14, kind: "removed" },
+      { hunkIndex: 1, firstRow: 30000, lastRow: 30000, kind: "added" },
+    ];
+    const onSelect = vi.fn<(index: number) => void>();
+    const { rerender } = render(
+      <ChangeRuler blocks={merged} rowCount={100000} current={null} onSelect={onSelect} />,
+    );
+    expect(marks()).toHaveLength(2);
+    expect(marks()[0]).toHaveAccessibleName("Changes 1–2 of 3: modified");
+    fireEvent.click(marks()[0]!);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(0);
+    rerender(<ChangeRuler blocks={merged} rowCount={100000} current={1} onSelect={onSelect} />);
+    expect(marks()[0]).toHaveAttribute("aria-current", "true");
+  });
+
+  it("should expose the strip as a labelled group", () => {
+    setup();
+    expect(screen.getByRole("group", { name: "Change ruler" })).toBe(
+      screen.getByTestId("change-ruler"),
+    );
+  });
+
+  it("should not take focus on mouse down", () => {
+    setup();
+    expect(fireEvent.mouseDown(marks()[0]!)).toBe(false);
+  });
+
   it("should render nothing without blocks", () => {
     const { container } = setup({ blocks: [] });
     expect(container.firstChild).toBeNull();
@@ -94,6 +124,16 @@ describe("ChangeRuler styles", () => {
         new RegExp(`\\.mark\\[data-kind="${kind}"\\]\\s*\\{[^}]*var\\(--color-${kind}\\)`),
       );
     }
+  });
+
+  it("should clip the strip and reserve room for a minimum-height mark at the bottom", () => {
+    expect(declarationsOf(css, "ruler")).toContain("overflow: hidden");
+    expect(declarationsOf(css, "track")).toContain("bottom: 2px");
+    expect(declarationsOf(css, "track")).toContain("position: absolute");
+  });
+
+  it("should leave room for the current outline at the pane edge", () => {
+    expect(declarationsOf(css, "mark")).toContain("right: 2px");
   });
 
   it("should outline the current mark", () => {

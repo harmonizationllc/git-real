@@ -65,7 +65,10 @@ export function useChangeNavigation(
     if (below > 0) goTo(below - 1);
   }, [blocks, current, goTo, viewer]);
 
-  const onUserScroll = useCallback(() => setState((s) => ({ ...s, current: null })), []);
+  const onUserScroll = useCallback(
+    () => setState((s) => (s.current === null ? s : { ...s, current: null })),
+    [],
+  );
 
   return { count: blocks.length, blocks, current, next, prev, goTo, onUserScroll };
 }

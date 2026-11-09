@@ -230,3 +230,20 @@ describe("useChangeNavigation blocks", () => {
     expect(result.current.blocks).toHaveLength(result.current.count);
   });
 });
+
+// Contract: a scroll with nothing current changes no state, so the viewer is not re-rendered.
+describe("useChangeNavigation scroll with nothing current", () => {
+  it("should keep the same state object on a user scroll when nothing is current", () => {
+    let renders = 0;
+    const rows = buildRows(diff, "unified");
+    const viewer: RefObject<DiffViewerHandle | null> = { current: null };
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useChangeNavigation(diff, rows, viewer);
+    });
+    expect(result.current.current).toBeNull();
+    const before = renders;
+    act(() => result.current.onUserScroll());
+    expect(renders).toBe(before);
+  });
+});
