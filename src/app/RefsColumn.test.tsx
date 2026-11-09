@@ -23,6 +23,7 @@ import { remoteInfo } from "../test/remoteFixtures";
 import { renderWithProviders } from "../test/renderWithProviders";
 import { linkedWorktree } from "../test/worktreeFixtures";
 import { RefsColumn } from "./RefsColumn";
+import styles from "./RefsColumn.module.css";
 import { REFS_SECTIONS } from "./refsLayout";
 
 vi.mock("@tanstack/react-virtual", () => import("../test/mockVirtualizer"));
@@ -586,6 +587,13 @@ describe("RefsColumn fixed headers", () => {
     expect(within(head("tags")).getByRole("button", { name: "Create tag…" })).toBeInTheDocument();
   });
 
+  it("should give every measured content wrapper the content class", async () => {
+    await renderColumn();
+    // Guard: an undefined class name must not make toHaveClass pass vacuously.
+    expect(styles.content).toBeTruthy();
+    for (const s of REFS_SECTIONS) expect(content(s)).toHaveClass(styles.content as string);
+  });
+
   it("should render the Local branches list in Local's scroll element", async () => {
     await renderColumn();
     expect(scroll("local")).toBeInTheDocument();
@@ -596,6 +604,10 @@ describe("RefsColumn fixed headers", () => {
 // happy-dom applies no stylesheet, so the layout contract is pinned in the CSS source.
 describe("RefsColumn.module.css", () => {
   const css = readFileSync("src/app/RefsColumn.module.css", "utf8");
+
+  it("should make the measured content wrapper contain its children's margins", () => {
+    expect(declarationsOf(css, "content")).toMatch(/display:\s*flow-root/);
+  });
 
   it("should clip the section and not scroll it", () => {
     expect(declarationsOf(css, "section")).toMatch(/overflow:\s*hidden/);

@@ -192,6 +192,7 @@ export function RefsColumn({
                     ref={(el) => {
                       contentRefs.current[i] = el;
                     }}
+                    className={styles.content}
                   >
                     <SectionHeadSlot.Provider value={slots[i]}>
                       {panels[section]}

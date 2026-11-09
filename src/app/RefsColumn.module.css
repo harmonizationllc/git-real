@@ -47,3 +47,9 @@
   min-height: 0;
   overflow: auto;
 }
+
+/* The measured content wrapper. It contains its children's margins, so the measured height is
+   the body's real scroll height and a fitted section never scrolls by a collapsed margin. */
+.content {
+  display: flow-root;
+}
