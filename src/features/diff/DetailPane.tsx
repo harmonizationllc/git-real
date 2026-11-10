@@ -42,11 +42,20 @@ export function DetailPane({ repoId }: { repoId: RepoId }) {
   const { status } = useStatus(repoId);
   if (file === null) return null;
   // A conflicted path's working-tree side is edited in place; its staged side keeps the diff.
-  const conflicted =
-    file.scope === "unstaged" &&
-    (status?.entries.some((e) => e.path === file.path && e.conflicted) ?? false);
-  if (conflicted) {
-    return <ConflictEditor key={`conflict:${file.path}`} repoId={repoId} path={file.path} />;
+  const entry =
+    file.scope === "unstaged"
+      ? status?.entries.find((e) => e.path === file.path && e.conflicted)
+      : undefined;
+  if (entry !== undefined) {
+    // Keyed by kind too, so a refetch that turns one kind into another starts the right view afresh.
+    return (
+      <ConflictEditor
+        key={`conflict:${file.path}:${entry.conflict ?? "markers"}`}
+        repoId={repoId}
+        path={file.path}
+        conflict={entry.conflict}
+      />
+    );
   }
   // Keyed so line cap, menu, dialog, action error and scroll offset never leak to another file.
   return <FileDetail key={`${scopeId(file.scope)}:${file.path}`} repoId={repoId} file={file} />;

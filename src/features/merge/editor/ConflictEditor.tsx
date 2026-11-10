@@ -2,7 +2,7 @@ import { Compartment, Transaction, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { openExternalMerge } from "../../../lib/ipc";
-import type { ConflictSide, RepoId } from "../../../lib/ipc";
+import type { ConflictKind, ConflictSide, RepoId } from "../../../lib/ipc";
 import { useWorkspace } from "../../../lib/store/workspace";
 import { useExternalTool } from "../../settings/useExternalTool";
 import { useBranches } from "../../branches/useBranches";
@@ -14,6 +14,7 @@ import { useIntegrationActions } from "../useIntegrationActions";
 import { useOperationState } from "../useOperationState";
 import { ConflictToolbar } from "./ConflictToolbar";
 import { EditorPane } from "./EditorPane";
+import { OneSidedConflict } from "./OneSidedConflict";
 import {
   blockLabels,
   blocksOf,
@@ -41,8 +42,19 @@ const summarize = (state: EditorState): Summary => ({
   canPickAll: blocksOf(state).some((b) => b.state === "unresolved"),
 });
 
-/** Edits a conflicted working-tree file in place: loading, a placeholder, or the editor. */
-export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string }) {
+/**
+ * Edits a conflicted working-tree file in place: loading, a placeholder, or the editor. A
+ * modify/delete conflict has no markers, so it gets the one-sided view instead.
+ */
+export function ConflictEditor({
+  repoId,
+  path,
+  conflict,
+}: {
+  repoId: RepoId;
+  path: string;
+  conflict: ConflictKind | null;
+}) {
   const { bytes, error } = useFileContent(repoId, path, "unstaged", "new", true);
   const { state } = useOperationState(repoId);
   const { branches } = useBranches(repoId);
@@ -65,6 +77,19 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
     }
   };
   const onOpenMergeTool = () => void openMergeTool();
+
+  // Every hook is above: a refetch that changes the kind remounts through DetailPane's key.
+  if (conflict === "deletedByUs" || conflict === "deletedByThem") {
+    return (
+      <OneSidedConflict
+        repoId={repoId}
+        path={path}
+        kind={conflict}
+        labels={labels}
+        onClose={close}
+      />
+    );
+  }
 
   // Bytes already in hand win over a later refetch error, so a flaky refetch keeps the editor.
   if (decoded !== null && typeof decoded !== "string") {

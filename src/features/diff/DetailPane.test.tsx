@@ -36,11 +36,15 @@ const conflictEditorMounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../merge/editor/ConflictEditor", async () => {
   const { useEffect } = await import("react");
   return {
-    ConflictEditor: ({ path }: { path: string }) => {
+    ConflictEditor: ({ path, conflict }: { path: string; conflict: unknown }) => {
       useEffect(() => {
         conflictEditorMounts.count += 1;
       }, []);
-      return <div data-testid="conflict-editor">{path}</div>;
+      return (
+        <div data-testid="conflict-editor" data-conflict={String(conflict)}>
+          {path}
+        </div>
+      );
     },
   };
 });
@@ -2509,6 +2513,52 @@ describe("DetailPane conflict routing", () => {
     select("b.ts", "unstaged");
     await waitFor(() => expect(screen.getByTestId("conflict-editor")).toHaveTextContent("b.ts"));
     expect(conflictEditorMounts.count).toBe(2);
+  });
+
+  it("passes the entry's conflict kind to the ConflictEditor", async () => {
+    provideStatus(statusEntry({ path: "a.ts", conflict: "deletedByUs" }));
+    setup("a.ts", "unstaged");
+    expect(await screen.findByTestId("conflict-editor")).toHaveAttribute(
+      "data-conflict",
+      "deletedByUs",
+    );
+  });
+
+  it("passes null for a marker conflict", async () => {
+    provideStatus(statusEntry({ path: "a.ts", conflict: null }));
+    setup("a.ts", "unstaged");
+    expect(await screen.findByTestId("conflict-editor")).toHaveAttribute("data-conflict", "null");
+  });
+
+  it("remounts the editor when the kind changes", async () => {
+    provideStatus(statusEntry({ path: "a.ts", conflict: "deletedByUs" }));
+    const { queryClient } = setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    expect(conflictEditorMounts.count).toBe(1);
+    provideStatus(statusEntry({ path: "a.ts", conflict: null }));
+    await act(() => queryClient.invalidateQueries());
+    await waitFor(() =>
+      expect(screen.getByTestId("conflict-editor")).toHaveAttribute("data-conflict", "null"),
+    );
+    expect(conflictEditorMounts.count).toBe(2);
+  });
+
+  it("shows the staged diff once the conflict is resolved and the selection moved", async () => {
+    provideStatus(statusEntry({ path: "a.ts", conflict: "deletedByThem" }));
+    const { queryClient } = setup("a.ts", "unstaged");
+    await screen.findByTestId("conflict-editor");
+    // The resolution staged the deletion: the entry is no longer conflicted.
+    provideStatus(
+      statusEntry({ path: "a.ts", worktree: null, index: "deleted", conflicted: false }),
+    );
+    vi.mocked(getFileDiff).mockImplementation((_id, path) =>
+      Promise.resolve(textDiff({ path, change: "deleted" })),
+    );
+    select("a.ts", "staged");
+    await act(() => queryClient.invalidateQueries());
+    expect(await diffRegion()).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-editor")).toBeNull();
+    expect(getFileDiff).toHaveBeenCalledWith(REPO, "a.ts", "staged", false, undefined);
   });
 
   it("renders nothing once the selection is cleared", async () => {
