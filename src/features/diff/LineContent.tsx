@@ -62,25 +62,42 @@ function pieces(
   return out;
 }
 
+/** Consecutive pieces with the same marked state, so one highlighted run renders as one box. */
+function runs(parts: Piece[]): Piece[][] {
+  const out: Piece[][] = [];
+  for (const p of parts) {
+    const last = out[out.length - 1];
+    if (last && last[0].marked === p.marked) last.push(p);
+    else out.push([p]);
+  }
+  return out;
+}
+
+function pieceSpan(p: Piece, key: number) {
+  const classes = [p.className, p.selected ? styles.selected : null].filter(Boolean);
+  const className = classes.length > 0 ? classes.join(" ") : undefined;
+  return (
+    <span key={key} className={className}>
+      {p.text}
+    </span>
+  );
+}
+
 export function LineContent({ text, tokens, ranges, noNewlineAtEof, selected = null }: Props) {
   const parts = text.length === 0 ? [] : pieces(text, tokens, ranges, selected);
   return (
     <code className={styles.code} data-line-text="" data-line-length={text.length}>
       {/* A non-breaking space keeps an empty line at full height. */}
       {parts.length === 0 ? NBSP : null}
-      {parts.map((p, i) => {
-        const classes = [p.className, p.selected ? styles.selected : null].filter(Boolean);
-        const className = classes.length > 0 ? classes.join(" ") : undefined;
-        return p.marked ? (
+      {runs(parts).map((run, i) =>
+        run[0].marked ? (
           <mark key={i} className={styles.word}>
-            <span className={className}>{p.text}</span>
+            {run.map(pieceSpan)}
           </mark>
         ) : (
-          <span key={i} className={className}>
-            {p.text}
-          </span>
-        );
-      })}
+          run.map(pieceSpan)
+        ),
+      )}
       {noNewlineAtEof && (
         <span className={styles.eof} title="No newline at end of file">
           ⏎
