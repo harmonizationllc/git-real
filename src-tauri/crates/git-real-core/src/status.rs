@@ -1,9 +1,11 @@
 //! Working tree status.
 
+use std::collections::HashMap;
+
 use git2::{DiffFile, ErrorCode, Status, StatusOptions};
 
 use crate::error::GitError;
-use crate::model::{ChangeKind, StatusEntry, WorkingTreeStatus};
+use crate::model::{ChangeKind, ConflictKind, StatusEntry, WorkingTreeStatus};
 use crate::repo::RepoSession;
 
 impl RepoSession {
@@ -25,6 +27,21 @@ impl RepoSession {
             .exclude_submodules(false);
 
         let statuses = repo.statuses(Some(&mut opts))?;
+        let mut index = repo.index()?;
+        index.read(true)?;
+        let mut kinds_by_path: HashMap<String, ConflictKind> = HashMap::new();
+        for c in index.conflicts()? {
+            let c = c?;
+            let kind = match (c.our.is_some(), c.their.is_some()) {
+                (false, true) => ConflictKind::DeletedByUs,
+                (true, false) => ConflictKind::DeletedByThem,
+                _ => continue,
+            };
+            if let Some(ancestor) = &c.ancestor {
+                kinds_by_path.insert(String::from_utf8_lossy(&ancestor.path).into_owned(), kind);
+            }
+        }
+
         let mut entries: Vec<StatusEntry> = statuses
             .iter()
             .map(|e| {
@@ -41,12 +58,18 @@ impl RepoSession {
                     .map(|d| file_path(&d.old_file()))
                     .filter(|old| *old != path);
                 let (index, worktree, conflicted) = kinds(e.status());
+                let conflict = if conflicted {
+                    kinds_by_path.get(&path).copied()
+                } else {
+                    None
+                };
                 StatusEntry {
                     path,
                     old_path,
                     index,
                     worktree,
                     conflicted,
+                    conflict,
                 }
             })
             .collect();

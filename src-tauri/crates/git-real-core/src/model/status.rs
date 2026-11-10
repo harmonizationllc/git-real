@@ -13,6 +13,17 @@ pub enum ChangeKind {
     Conflicted,
 }
 
+/// Which side deleted a file in a modify/delete conflict, i.e. whose index
+/// stage is absent while the ancestor and the other side are present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictKind {
+    /// Stage 2 (ours) is absent: we deleted it, they modified it.
+    DeletedByUs,
+    /// Stage 3 (theirs) is absent: they deleted it, we modified it.
+    DeletedByThem,
+}
+
 /// One changed path in the working tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +37,8 @@ pub struct StatusEntry {
     /// Index -> workdir (`Untracked` lives here).
     pub worktree: Option<ChangeKind>,
     pub conflicted: bool,
+    /// `Some` only for a modify/delete conflict; marker conflicts are `None`.
+    pub conflict: Option<ConflictKind>,
 }
 
 /// The working tree status of a repository.

@@ -1674,6 +1674,7 @@ fn discard_paths_nested_repo_fixture_is_reported_as_untracked_dir() {
             index: None,
             worktree: Some(ChangeKind::Untracked),
             conflicted: false,
+            conflict: None,
         }]
     );
 }
