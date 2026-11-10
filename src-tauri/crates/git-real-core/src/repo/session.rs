@@ -36,7 +36,19 @@ impl Drop for RepoSession {
     }
 }
 
+/// Whether `path` is the root of a linked worktree (not the main worktree).
+/// A missing path, a non-repository and a main worktree all answer `false`.
+pub fn is_linked_worktree_path(path: &Path) -> bool {
+    Repository::open(path).is_ok_and(|repo| repo.is_worktree())
+}
+
 impl RepoSession {
+    /// Whether this session was opened on a linked worktree rather than the
+    /// main one.
+    pub fn is_linked_worktree(&self) -> bool {
+        self.repo.is_worktree()
+    }
+
     /// Opens the repository rooted exactly at `path` (no parent discovery).
     pub fn open(path: impl AsRef<Path>) -> Result<Self, GitError> {
         let path = path.as_ref();

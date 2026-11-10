@@ -5,7 +5,9 @@ use std::sync::{Arc, PoisonError};
 
 use git_real_core::git_cli;
 use git_real_core::remote::clone::clone;
-use git_real_core::{GitError, ProgressSink, RecentEntry, RepoSession, RepoSummary};
+use git_real_core::{
+    GitError, ProgressSink, RecentEntry, RepoSession, RepoSummary, is_linked_worktree_path,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -54,8 +56,13 @@ impl GitCliInfo {
 /// Registers the session (reusing the id of an already-open repo) and records it as recent.
 fn register_session(reg: &RepoRegistry, recent: &RecentStore, session: RepoSession) -> OpenedRepo {
     let summary = session.summary();
+    // Linked worktrees are reachable from their main repo's Worktrees view,
+    // so they never enter the Recent list.
+    let linked = session.is_linked_worktree();
     let (id, _) = reg.register_or_find(session);
-    recent.touch(summary.path.clone(), summary.name.clone());
+    if !linked {
+        recent.touch(summary.path.clone(), summary.name.clone());
+    }
     OpenedRepo { id, summary }
 }
 
@@ -99,12 +106,28 @@ pub fn close_repo_inner(reg: &RepoRegistry, id: RepoId) -> Result<(), AppError> 
     }
 }
 
+/// Lists the Recent repositories, first purging linked worktrees stored by
+/// earlier versions so they stop taking slots. Entries whose folder is gone
+/// stay, since `is_linked_worktree_path` is false for them.
 pub fn list_recent_inner(recent: &RecentStore) -> Vec<RecentEntry> {
-    recent.entries()
+    purge_linked_worktrees(recent)
 }
 
 pub fn remove_recent_inner(recent: &RecentStore, path: &str) -> Vec<RecentEntry> {
-    recent.remove(Path::new(path))
+    recent.remove(Path::new(path));
+    purge_linked_worktrees(recent)
+}
+
+/// Removes every stored linked worktree and returns the remaining entries.
+fn purge_linked_worktrees(recent: &RecentStore) -> Vec<RecentEntry> {
+    let (linked, kept): (Vec<_>, Vec<_>) = recent
+        .entries()
+        .into_iter()
+        .partition(|entry| is_linked_worktree_path(&entry.path));
+    for entry in &linked {
+        recent.remove(&entry.path);
+    }
+    kept
 }
 
 pub fn check_git_cli_inner() -> GitCliInfo {

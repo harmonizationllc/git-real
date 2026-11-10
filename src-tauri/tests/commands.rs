@@ -2,6 +2,9 @@
 
 mod common;
 
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
 use git_real_core::git_cli;
 use git_real_lib::commands::remote::NetworkAuth;
 use git_real_lib::commands::repo::{
@@ -11,7 +14,7 @@ use git_real_lib::commands::repo::{
 use git_real_lib::commands::run_blocking;
 use git_real_lib::error::{AppError, AppErrorKind};
 
-fn path_str(path: &std::path::Path) -> &str {
+fn path_str(path: &Path) -> &str {
     path.to_str().expect("utf-8 path")
 }
 
@@ -31,6 +34,114 @@ fn open_registers_and_touches_recent() {
         opened.summary.name,
         path.file_name().unwrap().to_string_lossy()
     );
+}
+
+/// Adds a linked worktree `feat` next to `main` via the git CLI; returns its canonical path.
+fn add_linked_worktree(main: &Path, parent: &Path) -> PathBuf {
+    let wt = parent.join("feat");
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(main)
+        .args(["worktree", "add", "-b", "feat"])
+        .arg(&wt)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    dunce::canonicalize(&wt).unwrap()
+}
+
+#[test]
+fn open_linked_worktree_registers_a_session_but_not_a_recent() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+
+    let opened = open_repo_inner(&reg, &recent, path_str(&wt)).unwrap();
+
+    assert!(reg.get(opened.id).is_some());
+    assert!(recent.entries().is_empty());
+}
+
+#[test]
+fn list_recent_omits_a_stored_linked_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, _reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+    let main = dunce::canonicalize(&main).unwrap();
+
+    recent.touch(wt, "feat".to_owned());
+    recent.touch(main.clone(), "main".to_owned());
+
+    let listed = list_recent_inner(&recent);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].path, main);
+}
+
+#[test]
+fn list_recent_purges_stored_linked_worktrees() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, _reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+    let main = dunce::canonicalize(&main).unwrap();
+
+    recent.touch(wt, "feat".to_owned());
+    recent.touch(main.clone(), "main".to_owned());
+    list_recent_inner(&recent);
+
+    let stored = recent.entries();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].path, main);
+}
+
+#[test]
+fn remove_recent_returns_no_linked_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, _reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let (_dir2, third) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+    let main = dunce::canonicalize(&main).unwrap();
+    let third = dunce::canonicalize(&third).unwrap();
+
+    recent.touch(wt, "feat".to_owned());
+    recent.touch(main.clone(), "main".to_owned());
+    recent.touch(third.clone(), "third".to_owned());
+
+    let left = remove_recent_inner(&recent, path_str(&third));
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].path, main);
+}
+
+#[test]
+fn list_recent_keeps_an_entry_whose_folder_is_gone() {
+    let (_state, _reg, recent) = common::fresh_state();
+    let gone = tempfile::tempdir().unwrap();
+    let path = gone.path().to_path_buf();
+    recent.touch(path.clone(), "gone".to_owned());
+    drop(gone);
+
+    let listed = list_recent_inner(&recent);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].path, path);
 }
 
 // Re-opening the same repo must not create a second session.
@@ -330,7 +441,7 @@ fn check_git_cli_reports_path_when_available() {
 
 #[test]
 fn git_cli_info_from_probe_available() {
-    let path = std::path::PathBuf::from("/usr/bin/git");
+    let path = PathBuf::from("/usr/bin/git");
     let info = GitCliInfo::from_probe(Some(path.clone()), Ok("2.43.0".to_string()));
 
     assert_eq!(
@@ -363,7 +474,7 @@ fn git_cli_info_from_probe_unavailable_no_path() {
 #[test]
 fn git_cli_info_serializes_camel_case() {
     let info = GitCliInfo::from_probe(
-        Some(std::path::PathBuf::from("/usr/bin/git")),
+        Some(PathBuf::from("/usr/bin/git")),
         Ok("2.43.0".to_string()),
     );
 
