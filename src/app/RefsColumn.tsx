@@ -13,15 +13,9 @@ import { TagsPanel } from "../features/tags/TagsPanel";
 import type { RepoId } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
 import { useWorkspace } from "../lib/store/workspace";
-import { setSectionHeight, setSectionHeights } from "../lib/store/settingsActions";
+import { setSectionHeight } from "../lib/store/settingsActions";
 import { KEY_STEP } from "./layout";
-import {
-  REFS_SECTIONS,
-  fitSections,
-  maxSectionHeight,
-  resizeSection,
-  sectionFloor,
-} from "./refsLayout";
+import { REFS_SECTIONS, fitSections, maxSectionHeight, sectionFloor } from "./refsLayout";
 import type { RefsSection, ResizableSection, SectionInput } from "./refsLayout";
 import styles from "./RefsColumn.module.css";
 
@@ -48,9 +42,10 @@ interface Measured {
 
 /**
  * The refs column (spec §3, GR-58): one filter box above Local, Remote, Stashes, Tags, Worktrees,
- * Pull requests and Issues, each sized by its content, or by its dragged height, and fitted to the space below the
- * filter box, with a horizontal handle below each resizable section. An open Local takes the leftover
- * height, else an open Remote, else nothing does. Local and Remote share one BranchesProvider.
+ * Pull requests and Issues, each sized by its content, or by its dragged height, and fitted to
+ * the space below the filter box, with a horizontal handle below each resizable section. An open
+ * Local takes the leftover height, else an open Remote, else nothing does. The section dragged
+ * last keeps its height when the column is full. Local and Remote share one BranchesProvider.
  */
 export function RefsColumn({
   repoId,
@@ -97,7 +92,7 @@ export function RefsColumn({
   const tracks = hasHandle.filter(Boolean).length * SPLIT_HANDLE_WIDTH;
   const container = ready ? (measured.root as number) - tracks : 0;
   const absorber = !layout.localCollapsed ? 0 : !layout.remoteCollapsed ? 1 : null;
-  // Each section passes its own stored height; the absorber's is a true height, only floored.
+  // Each section passes its own stored height, a true height that is only floored.
   const stored: Record<ResizableSection, number | null> = {
     local: layout.branchesHeight,
     remote: layout.remoteHeight,
@@ -119,7 +114,8 @@ export function RefsColumn({
     natural: measured.naturals[i] ?? 0,
     fixed: section === "issues" || collapsed[section] ? null : stored[section],
   }));
-  const heights = fitSections(container, inputs, absorber);
+  const protect = layout.lastResized === null ? null : REFS_SECTIONS.indexOf(layout.lastResized);
+  const heights = fitSections(container, inputs, absorber, protect === -1 ? null : protect);
 
   const panels: Record<RefsSection, ReactNode> = {
     local: <LocalSection />,
@@ -190,15 +186,7 @@ export function RefsColumn({
                   step={KEY_STEP}
                   // Nothing is stored before measuring, or when the value would not change.
                   onChange={(px) => {
-                    if (!ready || px === heights[i]) return;
-                    const next = resizeSection(container, inputs, absorber, i, px);
-                    const changes: Partial<Record<ResizableSection, number | null>> = {};
-                    next.forEach((height, j) => {
-                      const other = REFS_SECTIONS[j] as RefsSection;
-                      if (other !== "issues" && height !== inputs[j]!.fixed)
-                        changes[other] = height;
-                    });
-                    setSectionHeights(changes);
+                    if (ready && px !== heights[i]) setSectionHeight(section, px);
                   }}
                   onReset={() => setSectionHeight(section, null)}
                 />

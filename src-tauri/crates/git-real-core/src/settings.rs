@@ -118,6 +118,7 @@ pub struct LayoutSettings {
     pub local_collapsed: bool,
     pub remote_collapsed: bool,
     pub remote_height: Option<u32>,
+    pub last_resized: Option<RefsSectionKey>,
 }
 
 impl Default for LayoutSettings {
@@ -138,6 +139,7 @@ impl Default for LayoutSettings {
             local_collapsed: false,
             remote_collapsed: false,
             remote_height: None,
+            last_resized: None,
         }
     }
 }
@@ -239,6 +241,18 @@ pub enum CloneUrlForm {
     #[default]
     Https,
     Ssh,
+}
+
+/// A resizable section of the refs column; `layout.lastResized` names the one dragged last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RefsSectionKey {
+    Local,
+    Remote,
+    Stashes,
+    Tags,
+    Worktrees,
+    PullRequests,
 }
 
 /// A partial update of [`Settings`]. An absent section or key keeps the
@@ -387,6 +401,11 @@ pub struct LayoutPatch {
         skip_serializing_if = "Option::is_none"
     )]
     pub remote_height: Option<Option<u32>>,
+    #[serde(
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_resized: Option<Option<RefsSectionKey>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -793,6 +812,7 @@ impl Settings {
                     &mut w,
                 ),
                 remote_height: leaf(v, "layout", "remoteHeight", d.layout.remote_height, &mut w),
+                last_resized: leaf(v, "layout", "lastResized", d.layout.last_resized, &mut w),
             },
             updates: UpdateSettings {
                 check_on_startup: leaf(
@@ -968,6 +988,7 @@ impl Settings {
             set(&mut next.layout.local_collapsed, &p.local_collapsed);
             set(&mut next.layout.remote_collapsed, &p.remote_collapsed);
             set(&mut next.layout.remote_height, &p.remote_height);
+            set(&mut next.layout.last_resized, &p.last_resized);
         }
         if let Some(p) = &patch.updates {
             set(&mut next.updates.check_on_startup, &p.check_on_startup);

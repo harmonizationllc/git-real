@@ -145,6 +145,9 @@ export type DiffMode = "split" | "unified";
 /** Which of a hosted repository's clone URLs the clone dialog fills in. */
 export type CloneUrlForm = "https" | "ssh";
 
+/** A resizable refs-column section; `layout.lastResized` names the one dragged last. */
+export type RefsSectionKey = "local" | "remote" | "stashes" | "tags" | "worktrees" | "pullRequests";
+
 /**
  * Shortcut overrides by shortcut id: a string is a chord, `null` means unbound,
  * an absent id keeps its default. Rust checks the shape only.
@@ -177,6 +180,7 @@ export interface Settings {
     localCollapsed: boolean;
     remoteCollapsed: boolean;
     remoteHeight: number | null;
+    lastResized: RefsSectionKey | null;
   };
   updates: { checkOnStartup: boolean };
   shortcuts: { bindings: ShortcutBindings; keycaps: ShortcutKeycaps };
