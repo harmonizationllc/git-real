@@ -106,18 +106,28 @@ pub fn close_repo_inner(reg: &RepoRegistry, id: RepoId) -> Result<(), AppError> 
     }
 }
 
+/// Lists the Recent repositories, first purging linked worktrees stored by
+/// earlier versions so they stop taking slots. Entries whose folder is gone
+/// stay, since `is_linked_worktree_path` is false for them.
 pub fn list_recent_inner(recent: &RecentStore) -> Vec<RecentEntry> {
-    // Also hides worktrees stored by earlier versions; entries whose folder is
-    // gone stay, since `is_linked_worktree_path` is false for them.
-    recent
-        .entries()
-        .into_iter()
-        .filter(|entry| !is_linked_worktree_path(&entry.path))
-        .collect()
+    purge_linked_worktrees(recent)
 }
 
 pub fn remove_recent_inner(recent: &RecentStore, path: &str) -> Vec<RecentEntry> {
-    recent.remove(Path::new(path))
+    recent.remove(Path::new(path));
+    purge_linked_worktrees(recent)
+}
+
+/// Removes every stored linked worktree and returns the remaining entries.
+fn purge_linked_worktrees(recent: &RecentStore) -> Vec<RecentEntry> {
+    let (linked, kept): (Vec<_>, Vec<_>) = recent
+        .entries()
+        .into_iter()
+        .partition(|entry| is_linked_worktree_path(&entry.path));
+    for entry in &linked {
+        recent.remove(&entry.path);
+    }
+    kept
 }
 
 pub fn check_git_cli_inner() -> GitCliInfo {
