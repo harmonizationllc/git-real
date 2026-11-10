@@ -96,6 +96,9 @@ pub fn build(app: &AppHandle, store: &SettingsStore) -> tauri::Result<WebviewWin
         .decorations(true)
         .visible(false)
         .initialization_script(store.to_init_script())
+        // Tauri's own drag-drop handler replaces WebView2's drop target on Windows, which
+        // silences HTML5 drag events (tab reorder, drag-to-merge). Nothing here uses it.
+        .disable_drag_drop_handler()
         .build()?;
     // A wrong-coloured first frame is better than a window that never shows.
     if let Err(e) = apply_background(&window, settings.appearance.theme, None) {
