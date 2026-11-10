@@ -44,9 +44,10 @@ interface Measured {
 
 /**
  * The refs column (spec §3, GR-58): one filter box above Local, Remote, Stashes, Tags, Worktrees,
- * Pull requests and Issues, each sized by its content and fitted to the space below the filter
- * box, with a horizontal handle below each resizable section. An open Local takes the leftover
- * height, else an open Remote, else nothing does. Local and Remote share one BranchesProvider.
+ * Pull requests and Issues, each sized by its content, or by its dragged height, and fitted to
+ * the space below the filter box, with a horizontal handle below each resizable section. An open
+ * Local takes the leftover height, else an open Remote, else nothing does. The section dragged
+ * last keeps its height when the column is full. Local and Remote share one BranchesProvider.
  * Each panel's header band is portaled into a fixed head slot above the section's scrolling body,
  * so it stays in place while the list scrolls; a section's natural height is head plus body.
  */
@@ -128,7 +129,7 @@ export function RefsColumn({
   const tracks = hasHandle.filter(Boolean).length * SPLIT_HANDLE_WIDTH;
   const container = ready ? (measured.root as number) - tracks : 0;
   const absorber = !layout.localCollapsed ? 0 : !layout.remoteCollapsed ? 1 : null;
-  // Each section passes its own stored height; the absorber's is a true height, only floored.
+  // Each section passes its own stored height, a true height that is only floored.
   const stored: Record<ResizableSection, number | null> = {
     local: layout.branchesHeight,
     remote: layout.remoteHeight,
@@ -137,11 +138,21 @@ export function RefsColumn({
     worktrees: layout.worktreesHeight,
     pullRequests: layout.pullRequestsHeight,
   };
+  // A collapsed section shows only its header, so its stored height is ignored.
+  const collapsed: Record<ResizableSection, boolean> = {
+    local: layout.localCollapsed,
+    remote: layout.remoteCollapsed,
+    stashes: false,
+    tags: layout.tagsCollapsed,
+    worktrees: layout.worktreesCollapsed,
+    pullRequests: layout.pullRequestsCollapsed,
+  };
   const inputs: SectionInput[] = REFS_SECTIONS.map((section, i) => ({
     natural: naturals[i] ?? 0,
-    fixed: section === "issues" ? null : stored[section],
+    fixed: section === "issues" || collapsed[section] ? null : stored[section],
   }));
-  const heights = fitSections(container, inputs, absorber);
+  const protect = layout.lastResized === null ? null : REFS_SECTIONS.indexOf(layout.lastResized);
+  const heights = fitSections(container, inputs, absorber, protect === -1 ? null : protect);
 
   const panels: Record<RefsSection, ReactNode> = {
     local: <LocalSection />,
@@ -206,14 +217,13 @@ export function RefsColumn({
                   orientation="horizontal"
                   value={ready ? (heights[i] as number) : (stored[section] ?? 0)}
                   min={ready ? sectionFloor(inputs[i]!.natural) : 0}
-                  // A non-absorbing section is capped at its content, so an inert (collapsed or empty)
-                  // one cannot be dragged; the absorber is bounded by the column alone.
+                  // A collapsed section's handle is inert (max = its content); an open one is
+                  // bounded by the column alone, so it can be pulled open past its content.
                   max={
                     ready
-                      ? Math.min(
-                          maxSectionHeight(container, inputs, i),
-                          i === absorber ? Infinity : inputs[i]!.natural,
-                        )
+                      ? collapsed[section]
+                        ? inputs[i]!.natural
+                        : maxSectionHeight(container, inputs, i)
                       : Infinity
                   }
                   step={KEY_STEP}

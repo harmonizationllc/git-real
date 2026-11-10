@@ -122,6 +122,7 @@ describe("layout setters", () => {
       remoteHeight: 150,
       worktreesHeight: 88,
       stashesHeight: 90,
+      lastResized: "stashes",
     });
     expect(await patches()).toEqual([
       {
@@ -131,16 +132,21 @@ describe("layout setters", () => {
           remoteHeight: 150,
           worktreesHeight: 88,
           stashesHeight: 90,
+          lastResized: "stashes",
         },
       },
     ]);
   });
 
-  it("setSectionHeight with null clears the leaf back to automatic", async () => {
-    actions.setSectionHeight("pullRequests", 150);
-    actions.setSectionHeight("pullRequests", null);
-    expect(settings().layout.pullRequestsHeight).toBeNull();
-    expect(await patches()).toEqual([{ layout: { pullRequestsHeight: null } }]);
+  it("setSectionHeight with null clears the leaf back to automatic and writes only the leaf", async () => {
+    actions.setSectionHeight("tags", 300);
+    await patches(); // flush so the drag and the reset are sent as separate patches
+    actions.setSectionHeight("tags", null);
+    expect(settings().layout).toMatchObject({ tagsHeight: null, lastResized: "tags" });
+    expect(await patches()).toEqual([
+      { layout: { tagsHeight: 300, lastResized: "tags" } },
+      { layout: { tagsHeight: null } },
+    ]);
   });
 
   it("setChangesUnstagedHeight rounds, saves and clears the leaf", async () => {

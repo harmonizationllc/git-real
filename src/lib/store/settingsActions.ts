@@ -57,9 +57,17 @@ const HEIGHT_LEAF: Record<ResizableSection, HeightLeaf> = {
   pullRequests: "pullRequestsHeight",
 };
 
-/** Persists a refs section's dragged height; null returns it to automatic. */
+/**
+ * Persists a refs section's dragged height and marks it the last one dragged; null returns the
+ * section to automatic and leaves the mark alone.
+ */
 export function setSectionHeight(section: ResizableSection, height: number | null): void {
-  setPref({ layout: { [HEIGHT_LEAF[section]]: height === null ? null : Math.round(height) } });
+  setPref({
+    layout:
+      height === null
+        ? { [HEIGHT_LEAF[section]]: null }
+        : { [HEIGHT_LEAF[section]]: Math.round(height), lastResized: section },
+  });
 }
 
 /** Persists the Changes panel's Unstaged pane height; null returns it to the half split. */

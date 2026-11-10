@@ -7,6 +7,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 - **Tag folders**: tags are grouped into collapsible folders by their slash path, every folder open by default, the same as branches.
 - **Fixed**: a left-column section's header stays in place while its list scrolls beneath it.
 - **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the diff; click a mark to jump to it.
+- **Left-column resizing**: a section dragged to a height stays there instead of handing most of the drag back to another remembered section; a remembered height no longer clips a neighbour to show blank space; any open section can be pulled open past its content.
 
 ## 0.2.0
 
