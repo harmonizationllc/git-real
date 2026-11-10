@@ -4156,3 +4156,29 @@ fn status_tags_a_file_we_deleted_and_they_modified_as_deleted_by_us() {
         .unwrap();
     assert_eq!(e.conflict, Some(ConflictKind::DeletedByUs));
 }
+
+#[test]
+fn status_tags_a_rename_delete_by_its_surviving_path() {
+    if !git_available() {
+        return;
+    }
+    // Git places the ancestor stage at the renamed path, so the surviving
+    // file is tagged like a modify/delete: we deleted, they kept it.
+    let (_d, _p, session) = cli_conflict(
+        |p| {
+            common::run_git_ok(p, &["mv", "README.md", "RENAMED.md"]);
+        },
+        |p| std::fs::remove_file(p.join("README.md")).unwrap(),
+        |_| {},
+    );
+    let status = session.status().unwrap();
+    let e = status
+        .entries
+        .iter()
+        .find(|e| e.path == "RENAMED.md")
+        .unwrap();
+    assert_eq!(
+        (e.conflicted, e.conflict),
+        (true, Some(ConflictKind::DeletedByUs))
+    );
+}
