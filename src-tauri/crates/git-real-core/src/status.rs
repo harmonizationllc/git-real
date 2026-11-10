@@ -30,15 +30,19 @@ impl RepoSession {
         let mut index = repo.index()?;
         index.read(true)?;
         let mut kinds_by_path: HashMap<String, ConflictKind> = HashMap::new();
-        for c in index.conflicts()? {
-            let c = c?;
-            let kind = match (c.our.is_some(), c.their.is_some()) {
-                (false, true) => ConflictKind::DeletedByUs,
-                (true, false) => ConflictKind::DeletedByThem,
-                _ => continue,
-            };
-            if let Some(ancestor) = &c.ancestor {
-                kinds_by_path.insert(String::from_utf8_lossy(&ancestor.path).into_owned(), kind);
+        // The common case has no conflicts; skip the walk entirely.
+        if index.has_conflicts() {
+            for c in index.conflicts()? {
+                let c = c?;
+                let kind = match (c.our.is_some(), c.their.is_some()) {
+                    (false, true) => ConflictKind::DeletedByUs,
+                    (true, false) => ConflictKind::DeletedByThem,
+                    _ => continue,
+                };
+                if let Some(ancestor) = &c.ancestor {
+                    kinds_by_path
+                        .insert(String::from_utf8_lossy(&ancestor.path).into_owned(), kind);
+                }
             }
         }
 
