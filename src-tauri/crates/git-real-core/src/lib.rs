@@ -46,7 +46,7 @@ pub use model::*;
 pub use progress::ProgressSink;
 pub use recent::RecentRepos;
 pub use remote::auth::Credentials;
-pub use repo::RepoSession;
+pub use repo::{RepoSession, is_linked_worktree_path};
 pub use settings::{SETTINGS_VERSION, Settings, SettingsError, SettingsFile, SettingsPatch};
 pub use tools::{
     CommandSyntax, DEFAULT_PATHEXT, DiffRange, EMPTY_TREE, ExternalDiffScope, ToolEnv, ToolError,

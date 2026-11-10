@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use git_real_core::{
     GitError, HeadState, LinkedWorktree, PrunedWorktrees, RepoSession, WorktreeBranch,
+    is_linked_worktree_path,
 };
 use git2::{BranchType, Repository};
 use tempfile::TempDir;
@@ -1107,4 +1108,36 @@ fn listed_worktree_paths_have_no_verbatim_prefix_on_windows() {
             w.path
         );
     }
+}
+
+#[test]
+fn main_worktree_session_is_not_a_linked_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_main_dir, main, _wt_dir, _wt_root, _head) = fixture();
+
+    assert!(!session(&main).is_linked_worktree());
+    assert!(!is_linked_worktree_path(&main));
+}
+
+#[test]
+fn linked_worktree_session_is_a_linked_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_main_dir, main, _wt_dir, wt_root, _head) = fixture();
+    let wt = add_worktree(&main, &wt_root, "feat", "feat");
+
+    assert!(session(&wt).is_linked_worktree());
+    assert!(is_linked_worktree_path(&wt));
+}
+
+#[test]
+fn is_linked_worktree_path_is_false_for_a_missing_or_non_repo_path() {
+    let wt_dir = tempfile::tempdir().unwrap();
+    let wt_root = common::canonical(wt_dir.path());
+
+    assert!(!is_linked_worktree_path(&wt_root.join("nope")));
+    assert!(!is_linked_worktree_path(&wt_root));
 }

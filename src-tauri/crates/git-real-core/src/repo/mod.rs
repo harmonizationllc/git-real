@@ -2,4 +2,4 @@
 
 mod session;
 
-pub use session::RepoSession;
+pub use session::{RepoSession, is_linked_worktree_path};
