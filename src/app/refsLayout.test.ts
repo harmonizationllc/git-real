@@ -223,8 +223,8 @@ describe("fitSections protect", () => {
   });
 
   it("should share the overflow between stored sections when nothing is protected", () => {
-    // rooms 357 and 324 share 357
-    expect(fitSections(600, column, 0, null)).toEqual([242, 226, 60, 36, 36]);
+    // Remote's 96 of blank space goes first (over 357 → 261), then rooms 357 and 228 share 261
+    expect(fitSections(600, column, 0, null)).toEqual([270, 198, 60, 36, 36]);
   });
 
   it("should keep the protected section's blank space while others still have some", () => {

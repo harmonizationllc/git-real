@@ -148,8 +148,14 @@ describe("layout setters", () => {
   it("setSectionHeight with null clears the leaf back to automatic", async () => {
     actions.setSectionHeight("pullRequests", 150);
     actions.setSectionHeight("pullRequests", null);
-    expect(settings().layout.pullRequestsHeight).toBeNull();
-    expect(await patches()).toEqual([{ layout: { pullRequestsHeight: null } }]);
+    // the reset writes only the height leaf; the earlier drag's lastResized stays
+    expect(settings().layout).toMatchObject({
+      pullRequestsHeight: null,
+      lastResized: "pullRequests",
+    });
+    expect(await patches()).toEqual([
+      { layout: { pullRequestsHeight: null, lastResized: "pullRequests" } },
+    ]);
   });
 
   it("setChangesUnstagedHeight rounds, saves and clears the leaf", async () => {
