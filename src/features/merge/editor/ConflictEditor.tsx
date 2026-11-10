@@ -2,11 +2,10 @@ import { Compartment, Transaction, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { openExternalMerge } from "../../../lib/ipc";
-import type { AppError, ConflictSide, RepoId } from "../../../lib/ipc";
+import type { ConflictSide, RepoId } from "../../../lib/ipc";
 import { useWorkspace } from "../../../lib/store/workspace";
 import { useExternalTool } from "../../settings/useExternalTool";
 import { useBranches } from "../../branches/useBranches";
-import { languageFor, loadLanguage } from "../../diff/model/highlight";
 import { HIGHLIGHT_LIMIT } from "../../diff/model/limits";
 import { useFileContent } from "../../diff/useFileContent";
 import { RepoError } from "../../repo/RepoError";
@@ -26,29 +25,10 @@ import {
   type BlockLabels,
 } from "./model/blocks";
 import { parseConflicts } from "./model/markers";
-import { decodeEditable, lineCount, type NotEditable } from "./model/text";
+import { decodeEditable, lineCount, REASONS, reasonFor } from "./model/text";
+import { useEditorLanguage } from "./useEditorLanguage";
 import { useResolutionWriter } from "./useResolutionWriter";
 import styles from "./ConflictEditor.module.css";
-
-const REASONS: Record<NotEditable | "missing", string> = {
-  tooLarge: "It is larger than 2 MB.",
-  notText: "It is not UTF-8 text.",
-  missing: "It is missing from the working tree.",
-};
-
-/** Why the file could not be read for editing, as placeholder copy. */
-function reasonFor(error: AppError): string {
-  switch (error.kind) {
-    case "tooLarge":
-      return REASONS.tooLarge;
-    case "binaryFile":
-      return REASONS.notText;
-    case "pathNotFound":
-      return REASONS.missing;
-    default:
-      return error.message;
-  }
-}
 
 interface Summary {
   remaining: number;
@@ -214,26 +194,7 @@ function EditableConflict({
     });
   }, [labelsComp, ours, theirs]);
 
-  const big = lineCount(source) > HIGHLIGHT_LIMIT;
-  useEffect(() => {
-    const v = viewRef.current as EditorView;
-    const desc = big ? null : languageFor(path);
-    if (desc === null) {
-      // Also drops highlighting when a reload crosses the limit.
-      v.dispatch({ effects: languageComp.reconfigure([]) });
-      return;
-    }
-    let cancelled = false;
-    loadLanguage(desc).then(
-      (support) => {
-        if (!cancelled) v.dispatch({ effects: languageComp.reconfigure(support) });
-      },
-      (e: unknown) => console.error("language load failed", e),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [languageComp, path, big]);
+  useEditorLanguage(viewRef, languageComp, path, lineCount(source) > HIGHLIGHT_LIMIT);
 
   // Reload rule: a disk change replaces the document unless it is the current text or our own echo.
   const onSource = useEffectEvent((next: string) => {

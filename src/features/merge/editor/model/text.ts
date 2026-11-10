@@ -1,5 +1,29 @@
+import type { AppError } from "../../../../lib/ipc";
+
 export const MAX_EDIT_BYTES = 2 * 1024 * 1024;
 export type NotEditable = "tooLarge" | "notText";
+
+/** Placeholder copy for a file that cannot be edited here. */
+export const REASONS: Record<NotEditable | "missing", string> = {
+  tooLarge: "It is larger than 2 MB.",
+  notText: "It is not UTF-8 text.",
+  missing: "It is missing from the working tree.",
+};
+
+/** Why the file could not be read for editing, as placeholder copy. */
+export function reasonFor(error: AppError): string {
+  switch (error.kind) {
+    case "tooLarge":
+      return REASONS.tooLarge;
+    case "binaryFile":
+      return REASONS.notText;
+    case "pathNotFound":
+      return REASONS.missing;
+    default:
+      return error.message;
+  }
+}
+
 export interface EditableText {
   text: string;
   crlf: boolean;
