@@ -16,6 +16,9 @@
 .inner {
   position: relative;
   width: 100%;
+  /* Rows placed past the held height must not extend the scroll range during a scrollbar drag.
+     `clip`, not `hidden`, so this never becomes a scroll container focus or scrollIntoView shift. */
+  overflow: clip;
 }
 
 .item {

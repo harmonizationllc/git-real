@@ -707,6 +707,11 @@ describe("DiffViewer scroll range hold", () => {
     fireEvent.pointerUp(window);
     expect(inner.style.height).toBe("999px");
   });
+
+  it("should clip rows placed past the held height", () => {
+    const css = readFileSync("src/features/diff/DiffViewer.module.css", "utf8");
+    expect(declarationsOf(css, "inner")).toMatch(/overflow:\s*clip;/);
+  });
 });
 
 // Contract: a vertical touch swipe pans the list; the viewer's own range takes mouse and pen drags.
