@@ -85,6 +85,30 @@ describe("LineContent word-diff ranges", () => {
     ]);
     expect(marked).toBe("const1");
   });
+
+  // One rounded box per highlighted run: a range that crosses token boundaries must not be
+  // split into adjacent marks, whose inner corners would notch the highlight.
+  it("should render one mark for a range that spans several tokens", () => {
+    const tokens: Token[] = [
+      { text: "const", className: "tok-keyword" },
+      { text: " b", className: null },
+      { text: " = 1", className: null },
+    ];
+    const { container } = setup("const b = 1", tokens, [{ start: 0, end: 7 }]);
+    const marks = container.querySelectorAll("mark");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent("const b");
+    expect(marks[0].querySelector(".tok-keyword")).toHaveTextContent("const");
+  });
+
+  it("should keep separate marks for ranges that do not touch", () => {
+    const tokens: Token[] = [{ text: "const b = 1", className: "tok-keyword" }];
+    const { container } = setup("const b = 1", tokens, [
+      { start: 0, end: 5 },
+      { start: 10, end: 11 },
+    ]);
+    expect(container.querySelectorAll("mark")).toHaveLength(2);
+  });
 });
 
 // Contract: an empty line keeps its height with a non-breaking space.
