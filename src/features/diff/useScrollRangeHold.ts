@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * True for a primary-button press on `el`'s own scrollbar: the target is `el` itself (never a
@@ -39,9 +39,10 @@ export function useScrollRangeHold(
     height = null;
   }
 
-  // Read at press time, so the hold starts from the latest render's total.
+  // Read at press time, so the hold starts from the latest render's total. A layout effect, so a
+  // press between a commit and the passive-effect flush still sees that commit's total.
   const totalRef = useRef(total);
-  useEffect(() => {
+  useLayoutEffect(() => {
     totalRef.current = total;
   });
 

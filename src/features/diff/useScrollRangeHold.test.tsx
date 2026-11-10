@@ -1,4 +1,5 @@
-import { fireEvent, renderHook } from "@testing-library/react";
+import { createEvent, fireEvent, render, renderHook } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { isScrollbarPress, useScrollRangeHold } from "./useScrollRangeHold";
 
@@ -72,6 +73,32 @@ describe("useScrollRangeHold", () => {
     press(el, 510);
     rerender({ total: 1500, rows });
     expect(result.current).toBe(1100);
+  });
+
+  it("should hold the committed total for a press before passive effects flush", () => {
+    const el = element();
+    let height = 0;
+    function Viewer({ total }: { total: number }) {
+      height = useScrollRangeHold(el, total, rows);
+      return null;
+    }
+    // Presses from a later sibling's layout effect: after this commit, before its passive effects.
+    function Presser({ now }: { now: boolean }) {
+      useLayoutEffect(() => {
+        if (now) el.dispatchEvent(createEvent.pointerDown(el, { clientX: 510, clientY: 50 }));
+      }, [now]);
+      return null;
+    }
+    const tree = (total: number, now: boolean) => (
+      <>
+        <Viewer total={total} />
+        <Presser now={now} />
+      </>
+    );
+    const { rerender } = render(tree(1000, false));
+    rerender(tree(1100, true));
+    rerender(tree(1500, true));
+    expect(height).toBe(1100);
   });
 
   it("should not hold on a press inside the rows", () => {
