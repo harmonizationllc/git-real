@@ -454,7 +454,9 @@ describe("RefsColumn Local and Remote", () => {
   });
 
   it("should hold a dragged Remote height instead of sharing it back to a stored Local", async () => {
-    await seedSettings({ layout: { branchesHeight: 429, remoteHeight: 156 } });
+    await seedSettings({
+      layout: { branchesHeight: 429, remoteHeight: 156, tagsCollapsed: false },
+    });
     await renderColumn();
     // container 736 over 167: Tags gives 78, then Local and Remote share 89 by room → 357 and 139
     measureAt(772, [600, 300, 60, 150, 36, 36, 36]);
@@ -486,7 +488,12 @@ describe("RefsColumn Local and Remote", () => {
 
   it("should render a remembered drag as protected after a restart", async () => {
     await seedSettings({
-      layout: { branchesHeight: 429, remoteHeight: 300, lastResized: "remote" },
+      layout: {
+        branchesHeight: 429,
+        remoteHeight: 300,
+        lastResized: "remote",
+        tagsCollapsed: false,
+      },
     });
     await renderColumn();
     // 429 + 300 + 318 = 1047 in 736: Tags gives 78, Local the other 233
@@ -507,7 +514,7 @@ describe("RefsColumn Local and Remote", () => {
   });
 
   it("should render a stored height above the content as blank space", async () => {
-    await seedSettings({ layout: { stashesHeight: 200 } });
+    await seedSettings({ layout: { stashesHeight: 200, tagsCollapsed: false } });
     await renderColumn();
     // container 1036: Stashes 200 over its 60 of content; Local takes the 78 left
     measureAt(1072, [200, 300, 60, 150, 36, 36, 36]);
