@@ -27,11 +27,11 @@ impl RepoSession {
             .exclude_submodules(false);
 
         let statuses = repo.statuses(Some(&mut opts))?;
-        let mut index = repo.index()?;
-        index.read(true)?;
         let mut kinds_by_path: HashMap<String, ConflictKind> = HashMap::new();
-        // The common case has no conflicts; skip the walk entirely.
-        if index.has_conflicts() {
+        // The common case has no conflicts; then the index is never re-read.
+        if statuses.iter().any(|e| e.status().is_conflicted()) {
+            let mut index = repo.index()?;
+            index.read(true)?;
             for c in index.conflicts()? {
                 let c = c?;
                 let kind = match (c.our.is_some(), c.their.is_some()) {
