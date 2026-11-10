@@ -19,6 +19,7 @@ import type { DiffRow } from "./model/rows";
 import { coveredText, type MenuTarget } from "./model/selection";
 import { SplitRow } from "./SplitRow";
 import { UnifiedRow } from "./UnifiedRow";
+import { useScrollRangeHold } from "./useScrollRangeHold";
 import { useTextRange } from "./useTextRange";
 import styles from "./DiffViewer.module.css";
 
@@ -74,6 +75,8 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
     overscan: 20,
     getItemKey,
   });
+  // Steady under a scrollbar thumb drag, which Chromium loses if the list's height changes.
+  const height = useScrollRangeHold(scrollEl, virtualizer.getTotalSize(), rows);
 
   const resolve = useMemo(
     () => resolveCaret ?? (scrollEl && domCaretResolver(scrollEl)),
@@ -171,7 +174,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
         onScroll={onScroll}
         onContextMenu={onMenu}
       >
-        <div className={styles.inner} style={{ height: virtualizer.getTotalSize() }}>
+        <div className={styles.inner} style={{ height }}>
           {virtualizer.getVirtualItems().map((item) => (
             <div
               key={item.key}

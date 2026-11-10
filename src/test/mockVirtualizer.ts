@@ -22,10 +22,16 @@ export const scrollToIndex =
  * default size) renders every row; a finite size models a scrolled window so "not rendered"
  * differs from "not loaded", and a `start` above 0 models a list scrolled down. `visibleStart`
  * is the first visible row the fake reports as `range.startIndex` (null means `start`), so a
- * test can model overscan rendering rows above the viewport. Tests that change any of them must
- * reset them in beforeEach.
+ * test can model overscan rendering rows above the viewport. `total` is what `getTotalSize`
+ * reports (null means 22 px per row), so a test can model measured rows changing the list's
+ * height. Tests that change any of them must reset them in beforeEach.
  */
-export const mockWindow = { size: Infinity, start: 0, visibleStart: null as number | null };
+export const mockWindow = {
+  size: Infinity,
+  start: 0,
+  visibleStart: null as number | null,
+  total: null as number | null,
+};
 
 /** Renders every row, and calls each option callback the way the real hook would. */
 export function useVirtualizer({ count, getScrollElement, estimateSize, getItemKey }: Options) {
@@ -47,7 +53,7 @@ export function useVirtualizer({ count, getScrollElement, estimateSize, getItemK
       : { startIndex: mockWindow.visibleStart ?? first, endIndex: first + length - 1 };
   return {
     range,
-    getTotalSize: () => count * 22,
+    getTotalSize: () => mockWindow.total ?? count * 22,
     getVirtualItems: () => items,
     measureElement,
     scrollToIndex,
