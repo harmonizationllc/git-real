@@ -5,7 +5,6 @@ import {
   SECTION_WHOLE_MAX,
   fitSections,
   maxSectionHeight,
-  resizeSection,
   sectionFloor,
   type SectionInput,
 } from "./refsLayout";
@@ -213,37 +212,45 @@ describe("fitSections absorber", () => {
   });
 });
 
-// Contract: a drag stores the dragged height and unpins every other stored section the fit
-// would shrink below its stored height, so the dragged height holds (spec §3.1 step 5).
-describe("resizeSection", () => {
-  // Local content 600 stored 429, Remote content 300 stored 156, in a 600 px column.
-  const column = [fixed(600, 429), fixed(300, 156), auto(60), auto(36), auto(36)];
+// Contract: the most recently dragged section (protect) gives space last, so a drag holds up to
+// the column bound and its blank space is not the first thing taken (spec §3.1 step 3).
+describe("fitSections protect", () => {
+  // Local content 600 stored 429, Remote content 300 dragged to 396 (the column bound), 600 px.
+  const column = [fixed(600, 429), fixed(300, 396), auto(60), auto(36), auto(36)];
 
-  it("should store the dragged height and unpin a stored section the fit shrinks", () => {
-    expect(resizeSection(600, column, 0, 1, 256)).toEqual([null, 256, null, null, null]);
+  it("should hold the protected height and take the rest from the other stored section", () => {
+    expect(fitSections(600, column, 0, 1)).toEqual([72, 396, 60, 36, 36]);
   });
 
-  it("should hold the dragged height once the loser is automatic", () => {
-    const next = column.map((s, i) => ({ ...s, fixed: resizeSection(600, column, 0, 1, 256)[i]! }));
-    expect(fitSections(600, next, 0)).toEqual([212, 256, 60, 36, 36]);
+  it("should share the overflow between stored sections when nothing is protected", () => {
+    // rooms 357 and 324 share 357
+    expect(fitSections(600, column, 0, null)).toEqual([242, 226, 60, 36, 36]);
   });
 
-  it("should unpin a stored section the fit already shrinks when the drag goes the other way", () => {
-    expect(resizeSection(600, column, 0, 1, 100)).toEqual([null, 100, null, null, null]);
+  it("should keep the protected section's blank space while others still have some", () => {
+    // Local 429 over 170 (blank 259), Remote dragged to 300 over 112 (blank 188); 655 px, over 432
+    const full = [
+      fixed(170, 429),
+      fixed(112, 300),
+      auto(62),
+      auto(34),
+      auto(194),
+      auto(34),
+      auto(34),
+    ];
+    expect(fitSections(655, full, 0, 1)).toEqual([119, 300, 62, 34, 72, 34, 34]);
+    // unprotected, both blank spaces go first and Worktrees stays whole
+    expect(fitSections(655, full, 0, null)).toEqual([179, 118, 62, 34, 194, 34, 34]);
   });
 
-  it("should keep a stored height that still fits", () => {
-    const sections = [auto(600), fixed(300, 156), auto(60), fixed(150, 100), auto(36)];
-    expect(resizeSection(600, sections, 0, 1, 200)).toEqual([null, 200, null, 100, null]);
+  it("should take the protected section's own room only when nothing else is left", () => {
+    // everyone else at the floor: 72 + 60 + 36 + 36 = 204 leaves 296 for a 396 Remote
+    expect(fitSections(500, column, 0, 1)).toEqual([72, 296, 60, 36, 36]);
   });
 
-  it("should keep a stored height below the floor", () => {
-    const sections = [auto(600), fixed(300, 156), fixed(200, 10), auto(36), auto(36)];
-    expect(resizeSection(600, sections, 0, 1, 200)).toEqual([null, 200, 10, null, null]);
-  });
-
-  it("should change only the dragged entry while unmeasured", () => {
-    expect(resizeSection(0, column, 0, 1, 256)).toEqual([429, 256, null, null, null]);
+  it("should ignore protect on an automatic section", () => {
+    // over 360 shared by automatic rooms 528 and 228
+    expect(fitSections(600, [auto(600), auto(300), auto(60)], 0, 1)).toEqual([349, 191, 60]);
   });
 });
 

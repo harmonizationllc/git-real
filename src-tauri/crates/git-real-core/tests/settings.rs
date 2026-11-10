@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use git_real_core::settings::{
-    CloneUrlForm, DiffMode, SETTINGS_VERSION, Settings, SettingsError, SettingsFile,
-    SettingsFileError, SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
+    CloneUrlForm, DiffMode, RefsSectionKey, SETTINGS_VERSION, Settings, SettingsError,
+    SettingsFile, SettingsFileError, SettingsPatch, Theme, WINDOW_MIN, WindowGeometry,
 };
 use serde_json::{Value, json};
 
@@ -624,6 +624,29 @@ fn left_column_split_leaves_default_and_round_trip() {
     let (back, w) = SettingsFile::parse(&text).unwrap();
     assert_eq!(back, p);
     assert!(w.is_empty(), "{w:?}");
+}
+
+#[test]
+fn last_resized_defaults_to_none_parses_warns_and_patches() {
+    assert_eq!(Settings::default().layout.last_resized, None);
+    let (s, w) = Settings::from_json_lenient(&json!({"layout": {"lastResized": "pullRequests"}}));
+    assert_eq!(s.layout.last_resized, Some(RefsSectionKey::PullRequests));
+    assert!(w.is_empty(), "{w:?}");
+    let (s, w) = Settings::from_json_lenient(&json!({"layout": {"lastResized": "nope"}}));
+    assert_eq!(s.layout.last_resized, None);
+    assert_eq!(fields(&w), vec!["layout.lastResized"]);
+    let set = Settings::default()
+        .apply(&patch(json!({"layout": {"lastResized": "remote"}})))
+        .unwrap();
+    assert_eq!(set.layout.last_resized, Some(RefsSectionKey::Remote));
+    let kept = set
+        .apply(&patch(json!({"layout": {"tagsHeight": 100}})))
+        .unwrap();
+    assert_eq!(kept.layout.last_resized, Some(RefsSectionKey::Remote));
+    let cleared = kept
+        .apply(&patch(json!({"layout": {"lastResized": null}})))
+        .unwrap();
+    assert_eq!(cleared.layout.last_resized, None);
 }
 
 // --- GR-39: worktrees section layout ---

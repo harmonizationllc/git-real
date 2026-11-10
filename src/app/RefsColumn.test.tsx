@@ -461,13 +461,15 @@ describe("RefsColumn Local and Remote", () => {
     expect(wrapper("remote").style.height).toBe("139px");
     fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowDown" });
     expect(useSettings.getState().settings.layout.remoteHeight).toBe(155);
-    expect(useSettings.getState().settings.layout.branchesHeight).toBeNull();
-    // Local, automatic now, shares the overflow with Tags: 306 and 107
+    expect(useSettings.getState().settings.layout.lastResized).toBe("remote");
+    expect(useSettings.getState().settings.layout.branchesHeight).toBe(429);
+    // 429 + 155 + 318 = 902, over 166: Tags gives 78, the stored Local the other 88
     expect(wrapper("remote").style.height).toBe("155px");
-    expect(wrapper("local").style.height).toBe("306px");
+    expect(wrapper("local").style.height).toBe("341px");
+    expect(wrapper("tags").style.height).toBe("72px");
     await useSettings.getState().flush();
     expect(vi.mocked(updateSettings).mock.calls.map(([p]) => p)).toEqual([
-      { layout: { remoteHeight: 155, branchesHeight: null } },
+      { layout: { remoteHeight: 155, lastResized: "remote" } },
     ]);
   });
 
@@ -478,7 +480,30 @@ describe("RefsColumn Local and Remote", () => {
     fireEvent.keyDown(handle("Resize Remote section"), { key: "ArrowDown" });
     expect(useSettings.getState().settings.layout.remoteHeight).toBe(172);
     expect(useSettings.getState().settings.layout.tagsHeight).toBe(100);
+    expect(useSettings.getState().settings.layout.lastResized).toBe("remote");
     expect(wrapper("remote").style.height).toBe("172px");
+  });
+
+  it("should render a remembered drag as protected after a restart", async () => {
+    await seedSettings({
+      layout: { branchesHeight: 429, remoteHeight: 300, lastResized: "remote" },
+    });
+    await renderColumn();
+    // 429 + 300 + 318 = 1047 in 736: Tags gives 78, Local the other 233
+    measureAt(772, [600, 300, 60, 150, 36, 36, 36]);
+    expect(wrapper("remote").style.height).toBe("300px");
+    expect(wrapper("local").style.height).toBe("196px");
+  });
+
+  it("should keep a stored height's blank space when it was the last drag", async () => {
+    await seedSettings({ layout: { stashesHeight: 162, lastResized: "stashes" } });
+    await renderColumn();
+    // 170 + 112 + 162 + 34 + 194 + 68 = 740 in 655 (root 691, six handles), over 85: the automatic
+    // Local (room 98) and Worktrees (room 122) share it → 132.1 and 146.9; Stashes keeps its blank
+    measureAt(691, [170, 112, 62, 34, 194, 34, 34]);
+    expect(wrapper("stashes").style.height).toBe("162px");
+    expect(wrapper("local").style.height).toBe("132px");
+    expect(wrapper("worktrees").style.height).toBe("147px");
   });
 
   it("should render a stored height above the content as blank space", async () => {

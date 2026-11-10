@@ -35,7 +35,8 @@
     "changesUnstagedHeight": null,
     "localCollapsed": false,
     "remoteCollapsed": false,
-    "remoteHeight": null
+    "remoteHeight": null,
+    "lastResized": null
   },
   "updates": {
     "checkOnStartup": true

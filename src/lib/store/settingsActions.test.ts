@@ -122,6 +122,7 @@ describe("layout setters", () => {
       remoteHeight: 150,
       worktreesHeight: 88,
       stashesHeight: 90,
+      lastResized: "stashes",
     });
     expect(await patches()).toEqual([
       {
@@ -131,21 +132,17 @@ describe("layout setters", () => {
           remoteHeight: 150,
           worktreesHeight: 88,
           stashesHeight: 90,
+          lastResized: "stashes",
         },
       },
     ]);
   });
 
-  it("setSectionHeights rounds and saves several height leaves in one patch", async () => {
-    actions.setSectionHeights({ remote: 155.4, local: null, tags: 99.6 });
-    expect(settings().layout).toMatchObject({
-      remoteHeight: 155,
-      branchesHeight: null,
-      tagsHeight: 100,
-    });
-    expect(await patches()).toEqual([
-      { layout: { remoteHeight: 155, branchesHeight: null, tagsHeight: 100 } },
-    ]);
+  it("setSectionHeight(null) resets the leaf without touching lastResized", async () => {
+    actions.setSectionHeight("tags", 300);
+    actions.setSectionHeight("tags", null);
+    expect(settings().layout).toMatchObject({ tagsHeight: null, lastResized: "tags" });
+    expect(await patches()).toEqual([{ layout: { tagsHeight: null, lastResized: "tags" } }]);
   });
 
   it("setSectionHeight with null clears the leaf back to automatic", async () => {

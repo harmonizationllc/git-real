@@ -54,6 +54,7 @@ const defaultSettings: Settings = {
     localCollapsed: false,
     remoteCollapsed: false,
     remoteHeight: null,
+    lastResized: null,
   },
   updates: { checkOnStartup: true },
   shortcuts: { bindings: {}, keycaps: {} },
