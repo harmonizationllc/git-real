@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { declarationsOf } from "../../test/cssRules";
 import { oidOf } from "../../test/graphFixtures";
 import { tagEntry } from "../../test/tagFixtures";
 import type { TagEntry } from "../../lib/ipc";
@@ -45,6 +47,28 @@ describe("TagRow content", () => {
   it("titles the button with the full date of the tag", () => {
     const { button } = renderRow(tagEntry("v1", { time: 1_700_000_000 }));
     expect(button).toHaveAttribute("title", fullDate(1_700_000_000));
+  });
+});
+
+// Contract: a slashed name shows its last segment and keeps the full name for assistive tech.
+describe("TagRow folder names", () => {
+  it("shows the last segment aria-hidden and keeps the full accessible name", () => {
+    const { button } = renderRow(tagEntry("release/v1.0"));
+    expect(within(button).getByText("v1.0")).toHaveAttribute("aria-hidden", "true");
+    expect(button).toHaveAccessibleName(/^release\/v1\.0/);
+  });
+
+  it("shows an unslashed name exactly once", () => {
+    renderRow(tagEntry("v2"));
+    expect(screen.getAllByText("v2")).toHaveLength(1);
+  });
+
+  it("positions the row and reuses the shared sr-only rule", () => {
+    const css = readFileSync("src/features/tags/TagRow.module.css", "utf8");
+    expect(declarationsOf(css, "row")).toMatch(/position:\s*relative/);
+    expect(declarationsOf(css, "srOnly")).toMatch(
+      /composes:\s*srOnly from "\.\.\/branches\/BranchRow\.module\.css"/,
+    );
   });
 });
 

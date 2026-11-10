@@ -1,6 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import type { AppError, RepoId, StashEntry } from "../../lib/ipc";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterStashes, isFiltering } from "../branches/branchFilter";
@@ -122,24 +123,26 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          {sectionCountLabel("Stashes", shown.length, stashes?.length, filtering)}
-        </h2>
-        <StashButton
-          repoId={repoId}
-          variant="icon"
-          className={styles.add}
-          disabled={actions.pending}
-          fallbackFocus={headingRef}
-        />
-      </div>
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
+          >
+            {sectionCountLabel("Stashes", shown.length, stashes?.length, filtering)}
+          </h2>
+          <StashButton
+            repoId={repoId}
+            variant="icon"
+            className={styles.add}
+            disabled={actions.pending}
+            fallbackFocus={headingRef}
+          />
+        </div>
+      </SectionHead>
       <StashFeedback actions={actions} />
       {body}
       <ContextMenu

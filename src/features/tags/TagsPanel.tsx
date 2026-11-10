@@ -1,12 +1,15 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
+import { SectionHead } from "../../components/SectionHead";
 import { copyText, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, TagEntry } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setTagsCollapsed } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
+import { BranchTreeItems, useCollapsedFolders } from "../branches/BranchTreeItems";
 import { filterTags, isFiltering } from "../branches/branchFilter";
+import { buildBranchTree } from "../branches/branchTree";
 import { useBranches } from "../branches/useBranches";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { RepoError } from "../repo/RepoError";
@@ -51,7 +54,10 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const filtering = isFiltering(query);
-  const shown = list ? filterTags(list.tags, query) : [];
+  // Memoised, so the folder tree is rebuilt only when the list or the query changes.
+  const shown = useMemo(() => (list ? filterTags(list.tags, query) : []), [list, query]);
+  const tree = useMemo(() => buildBranchTree(shown), [shown]);
+  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
   const head = headCommit(branches);
@@ -138,14 +144,20 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   } else {
     body = (
       <ul aria-label="Tag list" className={styles.list}>
-        {shown.map((tag) => (
-          <TagRow
-            key={tag.name}
-            tag={tag}
-            onSelect={() => useWorkspace.getState().selectCommit(repoId, tag.target)}
-            onContextMenu={(x, y) => setMenu({ x, y, tag })}
-          />
-        ))}
+        <BranchTreeItems
+          nodes={tree}
+          collapsed={collapsedFolders}
+          onToggle={toggleFolder}
+          listNoun="tags"
+          renderBranch={(tag) => (
+            <TagRow
+              key={tag.name}
+              tag={tag}
+              onSelect={() => useWorkspace.getState().selectCommit(repoId, tag.target)}
+              onContextMenu={(x, y) => setMenu({ x, y, tag })}
+            />
+          )}
+        />
       </ul>
     );
   }
@@ -160,37 +172,39 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
       aria-busy={actions.pending || undefined}
       className={styles.root}
     >
-      <div className={`gr-section-header ${styles.header}`}>
-        <h2
-          id={headingId}
-          ref={headingRef}
-          tabIndex={-1}
-          data-focus-target
-          className={`gr-section-heading ${styles.heading}`}
-        >
-          <button
-            type="button"
-            className="gr-section-toggle"
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-            onClick={() => setTagsCollapsed(!collapsed)}
+      <SectionHead>
+        <div className={`gr-section-header ${styles.header}`}>
+          <h2
+            id={headingId}
+            ref={headingRef}
+            tabIndex={-1}
+            data-focus-target
+            className={`gr-section-heading ${styles.heading}`}
           >
-            {sectionCountLabel("Tags", shown.length, list?.tags.length, filtering)}
+            <button
+              type="button"
+              className="gr-section-toggle"
+              aria-expanded={expanded}
+              aria-controls={bodyId}
+              onClick={() => setTagsCollapsed(!collapsed)}
+            >
+              {sectionCountLabel("Tags", shown.length, list?.tags.length, filtering)}
+            </button>
+          </h2>
+          <button
+            data-variant="icon"
+            data-size="sm"
+            type="button"
+            className={styles.add}
+            aria-label={CREATE_LABEL}
+            title={addTitle}
+            disabled={head === null || actions.pending}
+            onClick={() => setCreating(true)}
+          >
+            +
           </button>
-        </h2>
-        <button
-          data-variant="icon"
-          data-size="sm"
-          type="button"
-          className={styles.add}
-          aria-label={CREATE_LABEL}
-          title={addTitle}
-          disabled={head === null || actions.pending}
-          onClick={() => setCreating(true)}
-        >
-          +
-        </button>
-      </div>
+        </div>
+      </SectionHead>
       <TagFeedback actions={actions} />
       {copyError && (
         <RepoError

@@ -9,13 +9,15 @@ export interface BranchTreeItemsProps<B> {
   onToggle(key: string): void;
   /** Prepended to each folder path to form its key, e.g. "origin:" (a colon cannot appear in a ref name); default "". */
   keyPrefix?: string;
+  /** The plural noun in a nested list's label, `${path} ${listNoun}`; default "branches". */
+  listNoun?: string;
   /** Renders one branch `<li>`; must set its own React key. */
   renderBranch(branch: B): ReactNode;
 }
 
 /** The `<li>` items of one tree level: folder items with their nested `<ul>`, then branch items. */
 export function BranchTreeItems<B>(props: BranchTreeItemsProps<B>): ReactNode {
-  const { nodes, collapsed, onToggle, keyPrefix = "", renderBranch } = props;
+  const { nodes, collapsed, onToggle, keyPrefix = "", listNoun = "branches", renderBranch } = props;
   return nodes.map((node) => {
     if (node.kind === "branch") return renderBranch(node.branch);
     const key = keyPrefix + node.path;
@@ -45,7 +47,7 @@ export function BranchTreeItems<B>(props: BranchTreeItemsProps<B>): ReactNode {
           <span className={styles.folderName}>{node.name}</span>
         </button>
         {expanded && (
-          <ul aria-label={`${node.path} branches`} className={styles.children}>
+          <ul aria-label={`${node.path} ${listNoun}`} className={styles.children}>
             <BranchTreeItems {...props} nodes={node.children} />
           </ul>
         )}
