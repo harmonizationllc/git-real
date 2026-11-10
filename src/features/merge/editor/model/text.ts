@@ -1,5 +1,46 @@
+import type { AppError } from "../../../../lib/ipc";
+
 export const MAX_EDIT_BYTES = 2 * 1024 * 1024;
 export type NotEditable = "tooLarge" | "notText";
+
+/** Placeholder copy for a file that cannot be edited here. */
+const REASONS: Record<NotEditable | "missing", string> = {
+  tooLarge: "It is larger than 2 MB.",
+  notText: "It is not UTF-8 text.",
+  missing: "It is missing from the working tree.",
+};
+
+/** Why the file could not be read for editing, as placeholder copy. */
+function reasonFor(error: AppError): string {
+  switch (error.kind) {
+    case "tooLarge":
+      return REASONS.tooLarge;
+    case "binaryFile":
+      return REASONS.notText;
+    case "pathNotFound":
+      return REASONS.missing;
+    default:
+      return error.message;
+  }
+}
+
+/**
+ * The placeholder copy for a file that has loaded but cannot be edited, or null while it loads or
+ * when it is editable. Bytes already in hand win over a later refetch error.
+ */
+export function placeholderReason(
+  decoded: EditableText | NotEditable | null,
+  error: AppError | null,
+): string | null {
+  if (decoded !== null) return typeof decoded === "string" ? REASONS[decoded] : null;
+  return error === null ? null : reasonFor(error);
+}
+
+/** The file's last path segment, as the editors name it in copy. */
+export function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 export interface EditableText {
   text: string;
   crlf: boolean;

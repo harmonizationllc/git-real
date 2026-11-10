@@ -11,7 +11,7 @@ import {
   resolveConflicts,
   writeResolution,
 } from "../../../lib/ipc";
-import type { BranchList, OperationState } from "../../../lib/ipc";
+import type { BranchList, ConflictKind, OperationState } from "../../../lib/ipc";
 import { useShell } from "../../../lib/store/shell";
 import { useToasts } from "../../../lib/store/toasts";
 import { queryKeys } from "../../../lib/query/keys";
@@ -91,13 +91,21 @@ const writeToDisk = (text: string) => {
 const tick = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 function setup(
-  opts: { path?: string; text?: string; bytes?: ArrayBuffer; state?: OperationState } = {},
+  opts: {
+    path?: string;
+    text?: string;
+    bytes?: ArrayBuffer;
+    state?: OperationState;
+    conflict?: ConflictKind | null;
+  } = {},
 ) {
-  const { path = PATH, text = TWO, state = mergeState } = opts;
+  const { path = PATH, text = TWO, state = mergeState, conflict = null } = opts;
   if (opts.bytes) disk = opts.bytes;
   else writeToDisk(text);
   vi.mocked(getOperationState).mockResolvedValue(state);
-  const view = renderWithProviders(<ConflictEditor repoId={REPO} path={path} />);
+  const view = renderWithProviders(
+    <ConflictEditor repoId={REPO} path={path} conflict={conflict} />,
+  );
   return view;
 }
 
@@ -147,19 +155,19 @@ afterEach(() => {
 describe("ConflictEditor loading", () => {
   it("shows Loading {name}… with role status", () => {
     vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} />);
+    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} conflict={null} />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading conflict.zzz…");
   });
 
   it("shows only Close in the toolbar while loading", () => {
     vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} />);
+    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} conflict={null} />);
     expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Close"]);
   });
 
   it("does not mount the editor while loading", () => {
     vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} />);
+    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} conflict={null} />);
     expect(screen.queryByRole("textbox", { name: "Conflict editor" })).toBeNull();
   });
 
@@ -856,7 +864,7 @@ describe("ConflictEditor Close", () => {
 
   it("Close clears the selection while loading", () => {
     vi.mocked(getFileContent).mockReturnValue(new Promise(() => undefined));
-    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} />);
+    renderWithProviders(<ConflictEditor repoId={REPO} path={PATH} conflict={null} />);
     useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
     click(btn("Close"));
     expect(useWorkspace.getState().selected[REPO]).toBeNull();
@@ -935,5 +943,27 @@ describe("ConflictEditor external merge tool (GR-14)", () => {
     });
     // Button should reset to idle after failure.
     await screen.findByRole("button", { name: "Open in merge tool" });
+  });
+});
+
+// Contract (modify/delete): the conflict kind picks the marker editor or the one-sided view.
+describe("ConflictEditor routing by conflict kind", () => {
+  it("renders the marker editor when conflict is null", async () => {
+    setup({ conflict: null });
+    expect(await screen.findByRole("textbox", { name: "Conflict editor" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete file" })).toBeNull();
+  });
+
+  it("renders the one-sided view for deletedByThem with merge labels", async () => {
+    setup({ conflict: "deletedByThem", state: mergeState });
+    expect(await screen.findByText("Deleted on feature, modified on main.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark resolved" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Conflict editor" })).toBeNull();
+    expect(await screen.findByRole("textbox", { name: "Surviving file" })).toBeInTheDocument();
+  });
+
+  it("renders the one-sided view for deletedByUs with rebase labels", async () => {
+    setup({ conflict: "deletedByUs", state: rebaseState });
+    expect(await screen.findByText("Deleted on main, modified on topic.")).toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ const entry = (over: Partial<StatusEntry> = {}): StatusEntry => ({
   index: null,
   worktree: "modified",
   conflicted: false,
+  conflict: null,
   ...over,
 });
 

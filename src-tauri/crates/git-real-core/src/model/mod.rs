@@ -37,5 +37,5 @@ pub use remote::{
 };
 pub use repo::RepoSummary;
 pub use stash::{StashEntry, StashFiles, StashOutcome};
-pub use status::{ChangeKind, StatusEntry, WorkingTreeStatus};
+pub use status::{ChangeKind, ConflictKind, StatusEntry, WorkingTreeStatus};
 pub use tag::{TagEntry, TagList};

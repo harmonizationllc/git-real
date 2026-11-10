@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   AppError,
   AppErrorKind,
@@ -15,6 +15,7 @@ import type {
   PullMode,
   PushTarget,
   RemoteInfo,
+  ConflictKind,
   ConflictSide,
   FastForwardCheck,
   MergeMode,
@@ -73,14 +74,22 @@ describe("worktree DTO shapes", () => {
       index: "renamed",
       worktree: null,
       conflicted: false,
+      conflict: "deletedByUs",
     };
     expect(Object.keys(entry).sort()).toEqual([
+      "conflict",
       "conflicted",
       "index",
       "oldPath",
       "path",
       "worktree",
     ]);
+  });
+
+  it("should type ConflictKind as the two deleting sides", () => {
+    const kind: ConflictKind = "deletedByThem";
+    expect(kind).toBe("deletedByThem");
+    expectTypeOf<ConflictKind>().toEqualTypeOf<"deletedByUs" | "deletedByThem">();
   });
 
   it("should accept a WorkingTreeStatus carrying every field", () => {

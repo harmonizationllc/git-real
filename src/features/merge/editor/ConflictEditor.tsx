@@ -2,11 +2,10 @@ import { Compartment, Transaction, type EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { openExternalMerge } from "../../../lib/ipc";
-import type { AppError, ConflictSide, RepoId } from "../../../lib/ipc";
+import type { ConflictKind, ConflictSide, RepoId } from "../../../lib/ipc";
 import { useWorkspace } from "../../../lib/store/workspace";
 import { useExternalTool } from "../../settings/useExternalTool";
 import { useBranches } from "../../branches/useBranches";
-import { languageFor, loadLanguage } from "../../diff/model/highlight";
 import { HIGHLIGHT_LIMIT } from "../../diff/model/limits";
 import { useFileContent } from "../../diff/useFileContent";
 import { RepoError } from "../../repo/RepoError";
@@ -15,6 +14,7 @@ import { useIntegrationActions } from "../useIntegrationActions";
 import { useOperationState } from "../useOperationState";
 import { ConflictToolbar } from "./ConflictToolbar";
 import { EditorPane } from "./EditorPane";
+import { OneSidedConflict } from "./OneSidedConflict";
 import {
   blockLabels,
   blocksOf,
@@ -26,29 +26,10 @@ import {
   type BlockLabels,
 } from "./model/blocks";
 import { parseConflicts } from "./model/markers";
-import { decodeEditable, lineCount, type NotEditable } from "./model/text";
+import { decodeEditable, fileName, lineCount, placeholderReason } from "./model/text";
+import { useEditorLanguage } from "./useEditorLanguage";
 import { useResolutionWriter } from "./useResolutionWriter";
 import styles from "./ConflictEditor.module.css";
-
-const REASONS: Record<NotEditable | "missing", string> = {
-  tooLarge: "It is larger than 2 MB.",
-  notText: "It is not UTF-8 text.",
-  missing: "It is missing from the working tree.",
-};
-
-/** Why the file could not be read for editing, as placeholder copy. */
-function reasonFor(error: AppError): string {
-  switch (error.kind) {
-    case "tooLarge":
-      return REASONS.tooLarge;
-    case "binaryFile":
-      return REASONS.notText;
-    case "pathNotFound":
-      return REASONS.missing;
-    default:
-      return error.message;
-  }
-}
 
 interface Summary {
   remaining: number;
@@ -61,15 +42,26 @@ const summarize = (state: EditorState): Summary => ({
   canPickAll: blocksOf(state).some((b) => b.state === "unresolved"),
 });
 
-/** Edits a conflicted working-tree file in place: loading, a placeholder, or the editor. */
-export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string }) {
+/**
+ * Edits a conflicted working-tree file in place: loading, a placeholder, or the editor. A
+ * modify/delete conflict has no markers, so it gets the one-sided view instead.
+ */
+export function ConflictEditor({
+  repoId,
+  path,
+  conflict,
+}: {
+  repoId: RepoId;
+  path: string;
+  conflict: ConflictKind | null;
+}) {
   const { bytes, error } = useFileContent(repoId, path, "unstaged", "new", true);
   const { state } = useOperationState(repoId);
   const { branches } = useBranches(repoId);
   const integration = useIntegrationActions(repoId);
   const labels = sideLabels(state, headName(branches?.head));
   const decoded = useMemo(() => (bytes === undefined ? null : decodeEditable(bytes)), [bytes]);
-  const name = path.slice(path.lastIndexOf("/") + 1);
+  const name = fileName(path);
   const close = () => useWorkspace.getState().select(repoId, null);
 
   // The external merge tool, shared by the loading, placeholder and editable toolbars. Unset opens
@@ -85,6 +77,21 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
     }
   };
   const onOpenMergeTool = () => void openMergeTool();
+
+  // The marker editor's hooks above still run here (hooks stay above the first return); the
+  // file-content query is shared by key with OneSidedConflict, so nothing is fetched twice.
+  // A refetch that changes the kind remounts through DetailPane's key.
+  if (conflict === "deletedByUs" || conflict === "deletedByThem") {
+    return (
+      <OneSidedConflict
+        repoId={repoId}
+        path={path}
+        kind={conflict}
+        labels={labels}
+        onClose={close}
+      />
+    );
+  }
 
   // Bytes already in hand win over a later refetch error, so a flaky refetch keeps the editor.
   if (decoded !== null && typeof decoded !== "string") {
@@ -116,9 +123,7 @@ export function ConflictEditor({ repoId, path }: { repoId: RepoId; path: string 
       onClose={close}
     />
   );
-  let reason: string | null = null;
-  if (decoded !== null) reason = REASONS[decoded];
-  else if (error !== null) reason = reasonFor(error);
+  const reason = placeholderReason(decoded, error);
   if (reason === null) {
     return (
       <div className={styles.root}>
@@ -214,26 +219,7 @@ function EditableConflict({
     });
   }, [labelsComp, ours, theirs]);
 
-  const big = lineCount(source) > HIGHLIGHT_LIMIT;
-  useEffect(() => {
-    const v = viewRef.current as EditorView;
-    const desc = big ? null : languageFor(path);
-    if (desc === null) {
-      // Also drops highlighting when a reload crosses the limit.
-      v.dispatch({ effects: languageComp.reconfigure([]) });
-      return;
-    }
-    let cancelled = false;
-    loadLanguage(desc).then(
-      (support) => {
-        if (!cancelled) v.dispatch({ effects: languageComp.reconfigure(support) });
-      },
-      (e: unknown) => console.error("language load failed", e),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [languageComp, path, big]);
+  useEditorLanguage(viewRef, languageComp, path, lineCount(source) > HIGHLIGHT_LIMIT);
 
   // Reload rule: a disk change replaces the document unless it is the current text or our own echo.
   const onSource = useEffectEvent((next: string) => {

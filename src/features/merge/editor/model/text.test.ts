@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MAX_EDIT_BYTES, decodeEditable, encodeForDisk, lineCount } from "./text";
+import {
+  MAX_EDIT_BYTES,
+  decodeEditable,
+  encodeForDisk,
+  fileName,
+  lineCount,
+  placeholderReason,
+} from "./text";
 
 const bytes = (s: string): ArrayBuffer => new TextEncoder().encode(s).buffer as ArrayBuffer;
 
@@ -64,5 +71,47 @@ describe("lineCount", () => {
   });
   it("should count the empty text as one line", () => {
     expect(lineCount("")).toBe(1);
+  });
+});
+
+// Contract: the file's last path segment, as the editors name it in copy.
+describe("fileName", () => {
+  it("should return the last path segment", () => {
+    expect(fileName("deep/dir/image.png")).toBe("image.png");
+  });
+
+  it("should return a top-level path unchanged", () => {
+    expect(fileName("README.md")).toBe("README.md");
+  });
+});
+
+// Contract: decoded bytes win over an error; null while loading or when the text is editable.
+describe("placeholderReason", () => {
+  it("should be null while nothing has loaded", () => {
+    expect(placeholderReason(null, null)).toBeNull();
+  });
+
+  it("should be null for editable text", () => {
+    expect(placeholderReason({ text: "x", crlf: false }, null)).toBeNull();
+  });
+
+  it("should give the copy for bytes that cannot be edited", () => {
+    expect(placeholderReason("tooLarge", null)).toBe("It is larger than 2 MB.");
+    expect(placeholderReason("notText", null)).toBe("It is not UTF-8 text.");
+  });
+
+  it("should give the error's copy when there are no bytes", () => {
+    expect(placeholderReason(null, { kind: "pathNotFound", message: "nope" })).toBe(
+      "It is missing from the working tree.",
+    );
+  });
+
+  it("should prefer bytes in hand over a later refetch error", () => {
+    expect(
+      placeholderReason({ text: "x", crlf: false }, { kind: "io", message: "flaky" }),
+    ).toBeNull();
+    expect(placeholderReason("notText", { kind: "io", message: "flaky" })).toBe(
+      "It is not UTF-8 text.",
+    );
   });
 });

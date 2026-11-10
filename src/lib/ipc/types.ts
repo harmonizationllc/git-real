@@ -202,12 +202,17 @@ export type ExternalDiffScope =
 export type ChangeKind =
   "added" | "modified" | "deleted" | "renamed" | "typeChange" | "untracked" | "conflicted";
 
+/** Which side deleted a file in a modify/delete conflict. */
+export type ConflictKind = "deletedByUs" | "deletedByThem";
+
 export interface StatusEntry {
   path: string;
   oldPath: string | null;
   index: ChangeKind | null;
   worktree: ChangeKind | null;
   conflicted: boolean;
+  /** Set only for a modify/delete conflict; `null` for marker conflicts and clean entries. */
+  conflict: ConflictKind | null;
 }
 
 export interface WorkingTreeStatus {

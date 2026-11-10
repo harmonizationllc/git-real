@@ -26,6 +26,7 @@ export const statusEntry = (path: string, over: Partial<StatusEntry> = {}): Stat
   index: null,
   worktree: "modified",
   conflicted: false,
+  conflict: null,
   ...over,
 });
 

@@ -14,6 +14,7 @@ const entry = (over: Partial<StatusEntry>): StatusEntry => ({
   index: null,
   worktree: null,
   conflicted: false,
+  conflict: null,
   ...over,
 });
 const status = (entries: StatusEntry[]): WorkingTreeStatus => ({ entries, headUnborn: false });

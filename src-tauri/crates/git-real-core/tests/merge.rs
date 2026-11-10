@@ -10,7 +10,7 @@ use common::git_available;
 use std::path::{Path, PathBuf};
 
 use git_real_core::{
-    ChangeKind, CommitMessage, ConflictSide, FastForwardCheck, GitError, MergeMode,
+    ChangeKind, CommitMessage, ConflictKind, ConflictSide, FastForwardCheck, GitError, MergeMode,
     OperationOutcome, OperationState, RebaseAction, RebaseCommit, RebaseStep, RepoSession,
     Signature,
 };
@@ -4122,4 +4122,63 @@ fn resolve_keeps_a_symlink_side_as_a_symlink() {
     let entry = index.get_path(Path::new("ln"), 0).expect("staged");
     assert_eq!(entry.mode, 0o120000);
     assert_eq!(repo.find_blob(entry.id).expect("blob").content(), b"theirs");
+}
+
+#[test]
+fn status_tags_a_file_they_deleted_and_we_modified_as_deleted_by_them() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = modify_delete_conflict();
+    let status = session.status().unwrap();
+    let e = status
+        .entries
+        .iter()
+        .find(|e| e.path == "README.md")
+        .unwrap();
+    assert_eq!(
+        (e.conflicted, e.conflict),
+        (true, Some(ConflictKind::DeletedByThem))
+    );
+}
+
+#[test]
+fn status_tags_a_file_we_deleted_and_they_modified_as_deleted_by_us() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _p, session) = delete_modify_conflict();
+    let status = session.status().unwrap();
+    let e = status
+        .entries
+        .iter()
+        .find(|e| e.path == "README.md")
+        .unwrap();
+    assert_eq!(e.conflict, Some(ConflictKind::DeletedByUs));
+}
+
+#[test]
+fn status_tags_a_rename_delete_by_its_surviving_path() {
+    if !git_available() {
+        return;
+    }
+    // Git places the ancestor stage at the renamed path, so the surviving
+    // file is tagged like a modify/delete: we deleted, they kept it.
+    let (_d, _p, session) = cli_conflict(
+        |p| {
+            common::run_git_ok(p, &["mv", "README.md", "RENAMED.md"]);
+        },
+        |p| std::fs::remove_file(p.join("README.md")).unwrap(),
+        |_| {},
+    );
+    let status = session.status().unwrap();
+    let e = status
+        .entries
+        .iter()
+        .find(|e| e.path == "RENAMED.md")
+        .unwrap();
+    assert_eq!(
+        (e.conflicted, e.conflict),
+        (true, Some(ConflictKind::DeletedByUs))
+    );
 }

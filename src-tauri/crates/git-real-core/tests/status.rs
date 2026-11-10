@@ -1,6 +1,8 @@
 mod common;
 
-use git_real_core::{ChangeKind, GitError, RepoSession, StatusEntry, WorkingTreeStatus};
+use git_real_core::{
+    ChangeKind, ConflictKind, GitError, RepoSession, StatusEntry, WorkingTreeStatus,
+};
 
 fn status_of(path: &std::path::Path) -> WorkingTreeStatus {
     RepoSession::open(path)
@@ -53,6 +55,7 @@ fn status_untracked_file() {
             index: None,
             worktree: Some(ChangeKind::Untracked),
             conflicted: false,
+            conflict: None,
         }]
     );
 }
@@ -149,6 +152,7 @@ fn status_staged_rename() {
             index: Some(ChangeKind::Renamed),
             worktree: None,
             conflicted: false,
+            conflict: None,
         }]
     );
 }
@@ -200,6 +204,21 @@ fn status_non_conflicted_entry_has_conflicted_false() {
     assert!(!entry(&status, "README.md").conflicted);
 }
 
+#[test]
+fn status_marker_conflict_has_no_conflict_kind() {
+    let (_dir, path) = common::temp_repo_with_conflict();
+    let status = status_of(&path);
+    let e = entry(&status, "README.md");
+    assert_eq!((e.conflicted, e.conflict), (true, None));
+}
+
+#[test]
+fn status_non_conflicted_entry_has_no_conflict_kind() {
+    let (_dir, path) = common::temp_repo_with_commit();
+    common::write_file(&path, "README.md", "# changed\n");
+    assert_eq!(entry(&status_of(&path), "README.md").conflict, None);
+}
+
 // --- ordering ---
 
 #[test]
@@ -226,13 +245,37 @@ fn status_serializes_camel_case() {
         index: Some(ChangeKind::TypeChange),
         worktree: None,
         conflicted: false,
+        conflict: None,
     };
     let value = serde_json::to_value(&e).unwrap();
     let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
     keys.sort();
     assert_eq!(
         keys,
-        vec!["conflicted", "index", "oldPath", "path", "worktree"]
+        vec![
+            "conflict",
+            "conflicted",
+            "index",
+            "oldPath",
+            "path",
+            "worktree"
+        ]
+    );
+}
+
+#[test]
+fn status_serializes_conflict_kind_camel_case() {
+    let e = StatusEntry {
+        path: "a.txt".into(),
+        old_path: None,
+        index: None,
+        worktree: Some(ChangeKind::Conflicted),
+        conflicted: true,
+        conflict: Some(ConflictKind::DeletedByThem),
+    };
+    assert_eq!(
+        serde_json::to_value(&e).unwrap()["conflict"],
+        "deletedByThem"
     );
 }
 
@@ -271,6 +314,7 @@ fn status_staged_rename_then_edited() {
             index: Some(ChangeKind::Renamed),
             worktree: Some(ChangeKind::Modified),
             conflicted: false,
+            conflict: None,
         }]
     );
 }
@@ -289,6 +333,7 @@ fn status_unstaged_rename() {
             index: None,
             worktree: Some(ChangeKind::Renamed),
             conflicted: false,
+            conflict: None,
         }]
     );
 }
@@ -462,6 +507,7 @@ fn working_tree_status_deserializes_from_camel_case_json() {
                     index: Some(ChangeKind::Renamed),
                     worktree: Some(ChangeKind::TypeChange),
                     conflicted: false,
+                    conflict: None,
                 },
                 StatusEntry {
                     path: "c.txt".into(),
@@ -469,6 +515,7 @@ fn working_tree_status_deserializes_from_camel_case_json() {
                     index: None,
                     worktree: Some(ChangeKind::Conflicted),
                     conflicted: true,
+                    conflict: None,
                 },
             ],
             head_unborn: true,
@@ -516,6 +563,7 @@ fn status_staged_rename_with_edit_is_renamed() {
             index: Some(ChangeKind::Renamed),
             worktree: None,
             conflicted: false,
+            conflict: None,
         }]
     );
 }
@@ -540,6 +588,7 @@ fn status_unstaged_rename_with_edit_is_renamed() {
             index: None,
             worktree: Some(ChangeKind::Renamed),
             conflicted: false,
+            conflict: None,
         }]
     );
 }
