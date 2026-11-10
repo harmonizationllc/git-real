@@ -26,7 +26,7 @@ import {
   type BlockLabels,
 } from "./model/blocks";
 import { parseConflicts } from "./model/markers";
-import { decodeEditable, lineCount, REASONS, reasonFor } from "./model/text";
+import { decodeEditable, fileName, lineCount, placeholderReason } from "./model/text";
 import { useEditorLanguage } from "./useEditorLanguage";
 import { useResolutionWriter } from "./useResolutionWriter";
 import styles from "./ConflictEditor.module.css";
@@ -61,7 +61,7 @@ export function ConflictEditor({
   const integration = useIntegrationActions(repoId);
   const labels = sideLabels(state, headName(branches?.head));
   const decoded = useMemo(() => (bytes === undefined ? null : decodeEditable(bytes)), [bytes]);
-  const name = path.slice(path.lastIndexOf("/") + 1);
+  const name = fileName(path);
   const close = () => useWorkspace.getState().select(repoId, null);
 
   // The external merge tool, shared by the loading, placeholder and editable toolbars. Unset opens
@@ -78,7 +78,9 @@ export function ConflictEditor({
   };
   const onOpenMergeTool = () => void openMergeTool();
 
-  // Every hook is above: a refetch that changes the kind remounts through DetailPane's key.
+  // The marker editor's hooks above still run here (hooks stay above the first return); the
+  // file-content query is shared by key with OneSidedConflict, so nothing is fetched twice.
+  // A refetch that changes the kind remounts through DetailPane's key.
   if (conflict === "deletedByUs" || conflict === "deletedByThem") {
     return (
       <OneSidedConflict
@@ -121,9 +123,7 @@ export function ConflictEditor({
       onClose={close}
     />
   );
-  let reason: string | null = null;
-  if (decoded !== null) reason = REASONS[decoded];
-  else if (error !== null) reason = reasonFor(error);
+  const reason = placeholderReason(decoded, error);
   if (reason === null) {
     return (
       <div className={styles.root}>

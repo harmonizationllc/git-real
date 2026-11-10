@@ -24,6 +24,23 @@ export function reasonFor(error: AppError): string {
   }
 }
 
+/**
+ * The placeholder copy for a file that has loaded but cannot be edited, or null while it loads or
+ * when it is editable. Bytes already in hand win over a later refetch error.
+ */
+export function placeholderReason(
+  decoded: EditableText | NotEditable | null,
+  error: AppError | null,
+): string | null {
+  if (decoded !== null) return typeof decoded === "string" ? REASONS[decoded] : null;
+  return error === null ? null : reasonFor(error);
+}
+
+/** The file's last path segment, as the editors name it in copy. */
+export function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 export interface EditableText {
   text: string;
   crlf: boolean;

@@ -142,9 +142,9 @@ describe("OneSidedConflict actions", () => {
     await surviving();
     useWorkspace.getState().select(REPO, { path: PATH, scope: "unstaged" });
     click(btn("Delete file"));
-    await waitFor(() => expect(resolveConflicts).toHaveBeenCalledOnce());
-    expect(resolveConflicts).toHaveBeenCalledWith(REPO, [PATH], "ours");
     await waitFor(() => expect(useWorkspace.getState().selected[REPO] ?? null).toBeNull());
+    expect(resolveConflicts).toHaveBeenCalledExactlyOnceWith(REPO, [PATH], "ours");
+    expect(stagePaths).not.toHaveBeenCalled();
   });
 
   it("disables both buttons while an action is pending", async () => {

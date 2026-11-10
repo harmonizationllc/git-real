@@ -9,7 +9,7 @@ import { RepoError } from "../../repo/RepoError";
 import { ConflictToolbar } from "./ConflictToolbar";
 import { EditorPane } from "./EditorPane";
 import type { BlockLabels } from "./model/blocks";
-import { decodeEditable, lineCount, REASONS, reasonFor } from "./model/text";
+import { decodeEditable, fileName, lineCount, placeholderReason } from "./model/text";
 import { useEditorLanguage } from "./useEditorLanguage";
 import { useOneSidedResolution } from "./useOneSidedResolution";
 import styles from "./ConflictEditor.module.css";
@@ -38,7 +38,7 @@ export function OneSidedConflict({ repoId, path, kind, labels, onClose }: OneSid
   const { bytes, error } = useFileContent(repoId, path, "unstaged", "new", true);
   const decoded = useMemo(() => (bytes === undefined ? null : decodeEditable(bytes)), [bytes]);
   const resolution = useOneSidedResolution(repoId, path, kind);
-  const name = path.slice(path.lastIndexOf("/") + 1);
+  const name = fileName(path);
   const { deleter, modifier } = sidesOf(kind, labels);
 
   const keep = async () => {
@@ -63,9 +63,7 @@ export function OneSidedConflict({ repoId, path, kind, labels, onClose }: OneSid
       </div>
     );
   } else {
-    let reason: string | null = null;
-    if (decoded !== null) reason = REASONS[decoded];
-    else if (error !== null) reason = reasonFor(error);
+    const reason = placeholderReason(decoded, error);
     body =
       reason === null ? (
         <div className={styles.empty}>
