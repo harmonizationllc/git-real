@@ -2,11 +2,12 @@ import { useCallback, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import type { FileDiff } from "../../lib/ipc";
 import type { DiffViewerHandle } from "./DiffViewer";
-import { changeBlocks } from "./model/changes";
+import { changeBlocks, type ChangeBlock } from "./model/changes";
 import type { DiffRow } from "./model/rows";
 
 export interface ChangeNavigation {
   count: number;
+  blocks: ChangeBlock[];
   current: number | null;
   next(): void;
   prev(): void;
@@ -64,7 +65,10 @@ export function useChangeNavigation(
     if (below > 0) goTo(below - 1);
   }, [blocks, current, goTo, viewer]);
 
-  const onUserScroll = useCallback(() => setState((s) => ({ ...s, current: null })), []);
+  const onUserScroll = useCallback(
+    () => setState((s) => (s.current === null ? s : { ...s, current: null })),
+    [],
+  );
 
-  return { count: blocks.length, current, next, prev, goTo, onUserScroll };
+  return { count: blocks.length, blocks, current, next, prev, goTo, onUserScroll };
 }

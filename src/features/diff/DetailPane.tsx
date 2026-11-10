@@ -13,6 +13,7 @@ import { useStatus } from "../worktree/useStatus";
 import { useWorktreeActions, type UseWorktreeActions } from "../worktree/useWorktreeActions";
 import { BinaryPlaceholder } from "./BinaryPlaceholder";
 import { DiffToolbar } from "./DiffToolbar";
+import { ChangeRuler } from "./ChangeRuler";
 import { DiffViewer, type DiffViewerHandle } from "./DiffViewer";
 import { FileHeader } from "./FileHeader";
 import { ImageDiff } from "./ImageDiff";
@@ -306,6 +307,14 @@ function TextDiff({
         highlight={highlight}
         onMounted={() => nav.goTo(0)}
         onUserScroll={nav.onUserScroll}
+        aside={
+          <ChangeRuler
+            blocks={nav.blocks}
+            rowCount={rows.length}
+            current={nav.current}
+            onSelect={nav.goTo}
+          />
+        }
         {...(editable && {
           // A second right-click replaces the open menu.
           onContextMenu: (target: MenuTarget, x: number, y: number) =>

@@ -19,7 +19,9 @@ import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { BlameView } from "../history/BlameView";
 import { DECODED_REASON, DetailPane, PENDING_REASON, WHITESPACE_REASON } from "./DetailPane";
+import { changeBlocks } from "./model/changes";
 import { FULL_DIFF_LINES } from "./model/limits";
+import { buildRows } from "./model/rows";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -2537,5 +2539,103 @@ describe("DetailPane passes scope and isStash to the header (GR-14)", () => {
     // If scope is not passed, FileHeader cannot know to hide Open in editor.
     // This test will fail until DetailPane passes scope and isStash to FileHeader.
     expect(screen.queryByRole("button", { name: "Open in editor" })).toBeNull();
+  });
+});
+
+// Split rows: ctx0, modified1, ctx2, added3, ctx4, removed5, ctx6, giving three change blocks.
+const rulerDiff = (path = "a.ts") =>
+  fileDiff(
+    [
+      hunk([
+        L("context", "c0", 1, 1),
+        L("deletion", "old", 2, null),
+        L("addition", "new", null, 2),
+        L("context", "c1", 3, 3),
+        L("addition", "extra", null, 4),
+        L("context", "c2", 4, 5),
+        L("deletion", "gone", 5, null),
+        L("context", "c3", 6, 6),
+      ]),
+    ],
+    { path },
+  );
+
+// Contract: the change ruler marks every block and a click jumps to it like the toolbar does.
+describe("DetailPane change ruler", () => {
+  const blocks = () => {
+    const diff = rulerDiff();
+    return changeBlocks(diff, buildRows(diff, "split"));
+  };
+
+  beforeEach(() => {
+    vi.mocked(getFileDiff).mockImplementation((_id, path) => Promise.resolve(rulerDiff(path)));
+  });
+
+  it("should show one ruler mark per change block", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const marks = screen.getAllByRole("button", { name: /^Change \d+ of \d+: / });
+    expect(blocks()).toHaveLength(3);
+    expect(marks).toHaveLength(blocks().length);
+  });
+
+  it("should jump to a block and make it current when its mark is clicked", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    scrollToIndex.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /^Change 2 of/ }));
+    expect(scrollToIndex).toHaveBeenLastCalledWith(Math.max(0, blocks()[1]!.firstRow - 3), {
+      align: "start",
+    });
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+  });
+
+  it("should mark only the clicked block's mark as current", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    fireEvent.click(screen.getByRole("button", { name: /^Change 2 of/ }));
+    expect(screen.getByRole("button", { name: /^Change 2 of/ })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Change 1 of/ })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("should place a mark by the block's share of the split rows", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const diff = rulerDiff();
+    const rows = buildRows(diff, "split");
+    const second = changeBlocks(diff, rows)[1]!;
+    expect(screen.getByRole("button", { name: /^Change 2 of/ }).style.top).toBe(
+      `${(second.firstRow * 100) / rows.length}%`,
+    );
+  });
+
+  it("should rebuild the marks when the view mode changes", async () => {
+    setup();
+    await diffRegion();
+    await screen.findByText("1 of 3");
+    const diff = rulerDiff();
+    const rows = buildRows(diff, "unified");
+    const unified = changeBlocks(diff, rows);
+    const markName = { name: /^Change \d+ of \d+: / };
+    fireEvent.click(
+      within(screen.getByRole("radiogroup", { name: "View mode" })).getByRole("radio", {
+        name: "Unified",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", markName)[0]!.style.top).toBe(
+        `${(unified[0]!.firstRow * 100) / rows.length}%`,
+      ),
+    );
+    expect(screen.getAllByRole("button", markName)).toHaveLength(unified.length);
   });
 });
