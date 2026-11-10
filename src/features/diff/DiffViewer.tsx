@@ -10,9 +10,11 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
+import { useSettings } from "../../lib/store/settings";
 import { useToasts } from "../../lib/store/toasts";
 import { domCaretResolver, type CaretResolver } from "./caretResolver";
 import type { HighlightMap } from "./model/highlight";
+import { rowHeightEstimate } from "./model/rowHeight";
 import type { DiffRow } from "./model/rows";
 import { coveredText, type MenuTarget } from "./model/selection";
 import { SplitRow } from "./SplitRow";
@@ -62,10 +64,13 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   }, []);
   // Keyed by row so measured heights follow their rows across mode switches and refetches.
   const getItemKey = useCallback((i: number) => rows[i].key, [rows]);
+  // Exact for a single-line row, so measuring one never changes the list's height.
+  const diffFontSize = useSettings((s) => s.settings.appearance.diffFontSize);
+  const estimateSize = useCallback(() => rowHeightEstimate(diffFontSize), [diffFontSize]);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => elRef.current,
-    estimateSize: () => 22,
+    estimateSize,
     overscan: 20,
     getItemKey,
   });

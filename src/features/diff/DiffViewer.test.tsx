@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
+import { useSettings } from "../../lib/store/settings";
 import { useToasts } from "../../lib/store/toasts";
 import { declarationsOf } from "../../test/cssRules";
 import type { CaretHit, CaretResolver } from "./caretResolver";
@@ -636,7 +637,7 @@ describe("DiffViewer virtualizer options", () => {
     const options = calls[calls.length - 1][0];
     const { getItemKey } = options;
     if (!getItemKey) throw new Error("DiffViewer passed no getItemKey");
-    return { count: options.count, getItemKey };
+    return { count: options.count, getItemKey, estimateSize: options.estimateSize };
   };
 
   it.each<DiffMode>(["unified", "split"])(
@@ -656,6 +657,22 @@ describe("DiffViewer virtualizer options", () => {
     const { getItemKey, count } = lastOptions();
     expect(count).toBe(split.length);
     expect(getItemKey(1)).toBe(split[1].key);
+  });
+
+  it("should estimate rows from the diff font size", () => {
+    const { unmount } = setup({ diff: twoHunks, mode: "unified" });
+    expect(lastOptions().estimateSize(0)).toBe(18);
+    unmount();
+    const original = useSettings.getState().settings;
+    useSettings.setState({
+      settings: { ...original, appearance: { ...original.appearance, diffFontSize: 16 } },
+    });
+    try {
+      setup({ diff: twoHunks, mode: "unified" });
+      expect(lastOptions().estimateSize(0)).toBe(22);
+    } finally {
+      useSettings.setState({ settings: original });
+    }
   });
 });
 
