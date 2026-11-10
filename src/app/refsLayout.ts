@@ -46,13 +46,12 @@ function shrink(heights: number[], members: number[], rooms: number[], over: num
  * Shares the column between the sections (spec §3.1). The absorber (default index 0; null for
  * none) takes the leftover; it must be null or an index into `sections` (not range-checked).
  * Each section prefers its content height, or its stored height as a true height, only floored
- * (so a stored height may exceed the content).
- * Leftover space goes to an automatic absorber. An overflow is taken in four passes, each in
- * proportion to the members' room: first the blank space (height above content) of the stored
- * sections other than `protect`, then the automatic sections' room above their floor, then the
- * room above their floor of the stored sections other than `protect`, and last `protect` alone
- * (the section dragged last, which keeps its height until nothing else can give). Floors are
- * never crossed. Heights are whole pixels: when the
+ * (so a stored height may exceed the content). Leftover space goes to an automatic absorber. An
+ * overflow is taken in four passes, each in proportion to the members' room: first the blank space
+ * (height above content) of the stored sections other than `protect`, then the automatic
+ * sections' room above their floor, then the room above their floor of the stored sections other
+ * than `protect`, and last `protect` alone (the section dragged last, which keeps its height
+ * until nothing else can give). Floors are never crossed. Heights are whole pixels: when the
  * shares fill the container, the rounding remainder goes to the last automatic section that is
  * sharing, else to an automatic absorber above its floor, so the heights sum exactly to the
  * container; when no automatic section can take the pixel it stays unassigned. An unmeasured
