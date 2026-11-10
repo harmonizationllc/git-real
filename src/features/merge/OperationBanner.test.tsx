@@ -66,6 +66,7 @@ function provide(opts: {
     index: null,
     worktree: "conflicted",
     conflicted: true,
+    conflict: null,
   }));
   const status: WorkingTreeStatus = { entries, headUnborn: false } as WorkingTreeStatus;
   vi.mocked(useStatus).mockReturnValue({
@@ -482,9 +483,30 @@ describe("OperationBanner conflict gating details", () => {
       status: {
         headUnborn: false,
         entries: [
-          { path: "a", oldPath: null, index: null, worktree: "conflicted", conflicted: true },
-          { path: "b", oldPath: null, index: null, worktree: "modified", conflicted: false },
-          { path: "c", oldPath: null, index: "added", worktree: null, conflicted: false },
+          {
+            path: "a",
+            oldPath: null,
+            index: null,
+            worktree: "conflicted",
+            conflicted: true,
+            conflict: null,
+          },
+          {
+            path: "b",
+            oldPath: null,
+            index: null,
+            worktree: "modified",
+            conflicted: false,
+            conflict: null,
+          },
+          {
+            path: "c",
+            oldPath: null,
+            index: "added",
+            worktree: null,
+            conflicted: false,
+            conflict: null,
+          },
         ],
       } as WorkingTreeStatus,
       isLoading: false,
@@ -501,7 +523,14 @@ describe("OperationBanner conflict gating details", () => {
       status: {
         headUnborn: false,
         entries: [
-          { path: "b", oldPath: null, index: null, worktree: "modified", conflicted: false },
+          {
+            path: "b",
+            oldPath: null,
+            index: null,
+            worktree: "modified",
+            conflicted: false,
+            conflict: null,
+          },
         ],
       } as WorkingTreeStatus,
       isLoading: false,

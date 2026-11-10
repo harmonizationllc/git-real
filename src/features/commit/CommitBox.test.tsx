@@ -47,6 +47,7 @@ const entry = (over: Partial<StatusEntry>): StatusEntry => ({
   index: null,
   worktree: null,
   conflicted: false,
+  conflict: null,
   ...over,
 });
 const staged: WorkingTreeStatus = { entries: [entry({ index: "modified" })], headUnborn: false };

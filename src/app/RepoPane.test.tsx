@@ -244,7 +244,14 @@ describe("RepoPane", () => {
   it("should show the selected file's diff in the detail pane", async () => {
     vi.mocked(getStatus).mockResolvedValue({
       entries: [
-        { path: "a.txt", oldPath: null, index: null, worktree: "modified", conflicted: false },
+        {
+          path: "a.txt",
+          oldPath: null,
+          index: null,
+          worktree: "modified",
+          conflicted: false,
+          conflict: null,
+        },
       ],
       headUnborn: false,
     });
@@ -271,7 +278,14 @@ describe("RepoPane", () => {
   it("should reset panel-local state when the active tab changes", async () => {
     vi.mocked(getStatus).mockResolvedValue({
       entries: [
-        { path: "a.txt", oldPath: null, index: null, worktree: "modified", conflicted: false },
+        {
+          path: "a.txt",
+          oldPath: null,
+          index: null,
+          worktree: "modified",
+          conflicted: false,
+          conflict: null,
+        },
       ],
       headUnborn: false,
     });
@@ -362,7 +376,14 @@ describe("RepoPane commit box state per tab", () => {
   it("does not carry a commit failure to another tab", async () => {
     vi.mocked(getStatus).mockResolvedValue({
       entries: [
-        { path: "a.txt", oldPath: null, index: "modified", worktree: null, conflicted: false },
+        {
+          path: "a.txt",
+          oldPath: null,
+          index: "modified",
+          worktree: null,
+          conflicted: false,
+          conflict: null,
+        },
       ],
       headUnborn: false,
     });

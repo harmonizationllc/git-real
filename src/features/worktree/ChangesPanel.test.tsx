@@ -61,6 +61,7 @@ const entry = (over: Partial<StatusEntry> & { path: string }): StatusEntry => ({
   index: null,
   worktree: null,
   conflicted: false,
+  conflict: null,
   ...over,
 });
 const unstaged = (path: string, worktree: ChangeKind = "modified") => entry({ path, worktree });

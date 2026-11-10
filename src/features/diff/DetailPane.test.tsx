@@ -2402,6 +2402,7 @@ describe("DetailPane conflict routing", () => {
     index: null,
     worktree: "conflicted",
     conflicted: true,
+    conflict: null,
     ...over,
   });
   const provideStatus = (...entries: StatusEntry[]) =>

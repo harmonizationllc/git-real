@@ -15,7 +15,16 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 }));
 
 const status: WorkingTreeStatus = {
-  entries: [{ path: "a.txt", oldPath: null, index: null, worktree: "modified", conflicted: false }],
+  entries: [
+    {
+      path: "a.txt",
+      oldPath: null,
+      index: null,
+      worktree: "modified",
+      conflicted: false,
+      conflict: null,
+    },
+  ],
   headUnborn: false,
 };
 
