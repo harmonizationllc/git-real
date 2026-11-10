@@ -33,6 +33,72 @@ fn open_registers_and_touches_recent() {
     );
 }
 
+/// Adds a linked worktree `feat` next to `main` via the git CLI; returns its canonical path.
+fn add_linked_worktree(main: &std::path::Path, parent: &std::path::Path) -> std::path::PathBuf {
+    let wt = parent.join("feat");
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(main)
+        .args(["worktree", "add", "-b", "feat"])
+        .arg(&wt)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    dunce::canonicalize(&wt).unwrap()
+}
+
+#[test]
+fn open_linked_worktree_registers_a_session_but_not_a_recent() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+
+    let opened = open_repo_inner(&reg, &recent, path_str(&wt)).unwrap();
+
+    assert!(reg.get(opened.id).is_some());
+    assert!(recent.entries().is_empty());
+}
+
+#[test]
+fn list_recent_hides_a_stored_linked_worktree() {
+    if !common::git_available() {
+        return;
+    }
+    let (_state, _reg, recent) = common::fresh_state();
+    let (_dir, main) = common::temp_repo_with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let wt = add_linked_worktree(&main, parent.path());
+    let main = dunce::canonicalize(&main).unwrap();
+
+    recent.touch(wt, "feat".to_owned());
+    recent.touch(main.clone(), "main".to_owned());
+
+    let listed = list_recent_inner(&recent);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].path, main);
+}
+
+#[test]
+fn list_recent_keeps_an_entry_whose_folder_is_gone() {
+    let (_state, _reg, recent) = common::fresh_state();
+    let gone = tempfile::tempdir().unwrap();
+    let path = gone.path().to_path_buf();
+    recent.touch(path.clone(), "gone".to_owned());
+    drop(gone);
+
+    let listed = list_recent_inner(&recent);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].path, path);
+}
+
 // Re-opening the same repo must not create a second session.
 #[test]
 fn open_same_repo_twice_returns_same_id() {
