@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
 import { entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
+import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useToasts } from "../../lib/store/toasts";
 import { useBranches } from "../branches/useBranches";
 import { useOperationState } from "../merge/useOperationState";
@@ -38,6 +39,17 @@ export interface SyncActions {
   confirmForcePush(): void;
   cancelForcePush(): void;
 }
+
+/** Network failures that come from the push itself, not from reaching the remote. */
+const PUSH_OUTCOMES: ReadonlySet<string> = new Set([
+  "pushRejectedNonFastForward",
+  "leaseStale",
+  "remoteRejected",
+]);
+
+/** A failure a background fetch would hit too (connectivity or auth), so it pauses auto-fetch. */
+export const pausesAutoFetch = (error: AppError): boolean =>
+  error.kind === "networkFailed" && !PUSH_OUTCOMES.has(error.network?.kind ?? "");
 
 /** Errors the set-upstream dialog can fix in place, so it stays open with them. */
 const DIALOG_ERRORS = new Set(["invalidBranchName", "remoteNotFound"]);
@@ -82,10 +94,17 @@ export function useSyncActions(repoId: RepoId): SyncActions {
 
   const autoFetchState = () => useAutoFetchState.getState();
 
-  /** A pushed branch may mean the remote works again; a failed push pauses auto-fetch. */
+  /** A manual action's failure pauses auto-fetch when a background fetch would hit it too. */
+  const recordFailure = (result: NetworkResult<unknown>) => {
+    if (result.status === "failed" && pausesAutoFetch(result.error)) {
+      autoFetchState().recordFailure(repoId);
+    }
+  };
+
+  /** A pushed branch may mean the remote works again. */
   const recordPush = (result: NetworkResult<unknown>) => {
     if (result.status === "ok") autoFetchState().resume(repoId);
-    if (result.status === "failed") autoFetchState().recordFailure(repoId);
+    recordFailure(result);
   };
 
   /** A completed push of `local`, announced as a success toast. */
@@ -96,7 +115,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (gates.fetch !== null) return;
     void start("fetch", (c) => fetchAll(repoId, c)).then((result) => {
       report(result);
-      if (result.status === "failed") autoFetchState().recordFailure(repoId);
+      recordFailure(result);
       if (result.status === "ok") {
         autoFetchState().recordFetched(repoId, Date.now());
         useToasts.getState().notify({ text: "Fetch complete", variant: "success" });
@@ -123,7 +142,13 @@ export function useSyncActions(repoId: RepoId): SyncActions {
         useToasts.getState().notify({
           text: `Auto-fetch failed: ${networkMessage(result.error).title}`,
           variant: "error",
-          action: { label: "Fetch", run: () => latestFetch.current() },
+          action: {
+            label: "Fetch",
+            // A toast can outlive its tab; fetch only while the repo is still open.
+            run: () => {
+              if (useRepoTabs.getState().tabs.some((t) => t.id === repoId)) latestFetch.current();
+            },
+          },
         });
       });
   };
@@ -132,7 +157,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (gates.pull !== null) return;
     void start("pull", (c) => pullBranch(repoId, mode ?? defaultMode, c)).then((result) => {
       report(result);
-      if (result.status === "failed") autoFetchState().recordFailure(repoId);
+      recordFailure(result);
       // A pull fetched whether it completed or stopped on conflicts.
       if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
       // A pull that stops on conflicts is surfaced by the OperationBanner, not a toast.

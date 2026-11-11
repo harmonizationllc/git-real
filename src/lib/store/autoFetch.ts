@@ -11,7 +11,7 @@ export interface AutoFetchEntry {
   requested: number;
 }
 
-interface AutoFetchState {
+export interface AutoFetchState {
   repos: Record<RepoId, AutoFetchEntry>;
   /** A trigger source (checkout, remote edit, set upstream) asks the focused pane to fetch. */
   request(repoId: RepoId): void;

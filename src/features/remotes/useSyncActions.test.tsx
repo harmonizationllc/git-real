@@ -14,7 +14,8 @@ import { authError, networkError, remoteInfo, trackedList } from "../../test/rem
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { queryKeys } from "../../lib/query/keys";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
-import { useSyncActions } from "./useSyncActions";
+import { useRepoTabs } from "../../lib/store/repoTabs";
+import { pausesAutoFetch, useSyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -39,6 +40,7 @@ function deferred() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useAutoFetchState.setState({ repos: {} });
   vi.mocked(listBranches).mockResolvedValue(trackedList(origin));
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
@@ -617,9 +619,16 @@ describe("useSyncActions autoFetch", () => {
   const entry = () => useAutoFetchState.getState().repos[1];
 
   beforeEach(() => {
-    useAutoFetchState.setState({ repos: {} });
     useToasts.setState({ toasts: [] });
+    useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   });
+
+  /** Opens repo 1 as a tab, as the app does before mounting its pane. */
+  const openRepoTab = () =>
+    useRepoTabs.getState().openTab({
+      id: 1,
+      summary: { path: "/r/1", name: "r1", headBranch: "main", isBare: false },
+    });
 
   /** Runs one auto-fetch that fails on auth and waits until it has settled. */
   async function failOnAuth() {
@@ -674,6 +683,7 @@ describe("useSyncActions autoFetch", () => {
   });
 
   it("should run the manual fetch when the toast's Fetch action runs", async () => {
+    openRepoTab();
     await failOnAuth();
     vi.mocked(fetchAll).mockResolvedValue(undefined);
     act(() => useToasts.getState().toasts[0]?.action?.run());
@@ -713,5 +723,90 @@ describe("useSyncActions autoFetch", () => {
     act(() => result.current.fetch());
     await waitFor(() => expect(entry()?.paused).toBe(true));
     expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should not run the toast's Fetch action once the repo's tab has closed", async () => {
+    openRepoTab();
+    await failOnAuth();
+    useRepoTabs.getState().closeTab(1);
+    await act(async () => useToasts.getState().toasts[0]?.action?.run());
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(fetchAll).toHaveBeenCalledOnce();
+  });
+
+  it("should not pause after a push is rejected as non-fast-forward", async () => {
+    vi.mocked(push).mockRejectedValue(networkError("pushRejectedNonFastForward"));
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(result.current.message).not.toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
+  it("should not pause after a pull races an operation", async () => {
+    vi.mocked(pull).mockRejectedValue({ kind: "operationInProgress", message: "merge running" });
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(result.current.message).not.toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
+  it("should pause after a push fails because the host is unreachable", async () => {
+    vi.mocked(push).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+  });
+
+  it("should pause after a pull fails because the host is unreachable", async () => {
+    vi.mocked(pull).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+  });
+
+  it("should record the fetch time after a pull stops on conflicts", async () => {
+    vi.mocked(pull).mockResolvedValue("conflicts");
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should record nothing when a manual action's sign-in is cancelled", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => result.current.prompt?.cancel());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()).toBeUndefined();
+  });
+
+  it("should stay silent and unpaused when an autoFetch is cancelled", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const { result } = await setup();
+    // Captured while ungated: the prompt the manual fetch opens makes this run resolve cancelled.
+    const staleAutoFetch = result.current.autoFetch;
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => staleAutoFetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledOnce());
+    act(() => result.current.prompt?.cancel());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    expect(entry()).toBeUndefined();
+  });
+});
+
+describe("pausesAutoFetch", () => {
+  it("is true for connectivity and auth failures", () => {
+    expect(pausesAutoFetch(networkError("hostUnreachable"))).toBe(true);
+    expect(pausesAutoFetch(authError())).toBe(true);
+  });
+
+  it("is false for rejected pushes and non-network errors", () => {
+    for (const kind of ["pushRejectedNonFastForward", "leaseStale", "remoteRejected"] as const) {
+      expect(pausesAutoFetch(networkError(kind))).toBe(false);
+    }
+    expect(pausesAutoFetch({ kind: "operationInProgress", message: "m" })).toBe(false);
   });
 });
