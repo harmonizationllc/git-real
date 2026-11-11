@@ -26,6 +26,9 @@ use thiserror::Error;
 /// Smallest and largest diff font size, in px.
 pub const DIFF_FONT_MIN: u32 = 10;
 pub const DIFF_FONT_MAX: u32 = 24;
+/// Smallest and largest auto-fetch interval, in minutes.
+pub const AUTO_FETCH_INTERVAL_MIN: u32 = 1;
+pub const AUTO_FETCH_INTERVAL_MAX: u32 = 60;
 /// Narrowest refs panel, in px.
 pub const REFS_MIN: u32 = 160;
 /// Shortest a refs section can be dragged, in px.
@@ -46,6 +49,7 @@ pub struct Settings {
     pub tools: ToolSettings,
     pub appearance: AppearanceSettings,
     pub diff: DiffSettings,
+    pub fetch: FetchSettings,
     pub layout: LayoutSettings,
     pub updates: UpdateSettings,
     pub shortcuts: ShortcutSettings,
@@ -140,6 +144,22 @@ impl Default for LayoutSettings {
             remote_collapsed: false,
             remote_height: None,
             last_resized: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FetchSettings {
+    pub auto: bool,
+    pub interval_minutes: u32,
+}
+
+impl Default for FetchSettings {
+    fn default() -> Self {
+        Self {
+            auto: true,
+            interval_minutes: 5,
         }
     }
 }
@@ -273,6 +293,8 @@ pub struct SettingsPatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<DiffPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub fetch: Option<FetchPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<LayoutPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updates: Option<UpdatesPatch>,
@@ -345,6 +367,15 @@ pub struct DiffPatch {
     pub mode: Option<DiffMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_whitespace: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FetchPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -520,6 +551,13 @@ impl Settings {
             "appearance.diffFontSize",
             warnings,
         );
+        self.fetch.interval_minutes = bounded(
+            self.fetch.interval_minutes,
+            AUTO_FETCH_INTERVAL_MIN,
+            AUTO_FETCH_INTERVAL_MAX,
+            "fetch.intervalMinutes",
+            warnings,
+        );
         self.layout.refs_width = bounded(
             self.layout.refs_width,
             REFS_MIN,
@@ -652,12 +690,13 @@ fn bounded(
 
 // --- Load mode ----------------------------------------------------------------
 
-const SECTIONS: [&str; 9] = [
+const SECTIONS: [&str; 10] = [
     "git",
     "clone",
     "tools",
     "appearance",
     "diff",
+    "fetch",
     "layout",
     "updates",
     "shortcuts",
@@ -727,6 +766,16 @@ impl Settings {
                     "diff",
                     "ignoreWhitespace",
                     d.diff.ignore_whitespace,
+                    &mut w,
+                ),
+            },
+            fetch: FetchSettings {
+                auto: leaf(v, "fetch", "auto", d.fetch.auto, &mut w),
+                interval_minutes: leaf(
+                    v,
+                    "fetch",
+                    "intervalMinutes",
+                    d.fetch.interval_minutes,
                     &mut w,
                 ),
             },
@@ -962,6 +1011,10 @@ impl Settings {
         if let Some(p) = &patch.diff {
             set(&mut next.diff.mode, &p.mode);
             set(&mut next.diff.ignore_whitespace, &p.ignore_whitespace);
+        }
+        if let Some(p) = &patch.fetch {
+            set(&mut next.fetch.auto, &p.auto);
+            set(&mut next.fetch.interval_minutes, &p.interval_minutes);
         }
         if let Some(p) = &patch.layout {
             set(&mut next.layout.refs_width, &p.refs_width);
