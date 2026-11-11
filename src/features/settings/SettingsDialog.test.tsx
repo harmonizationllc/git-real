@@ -151,6 +151,28 @@ describe("SettingsDialog Fetch", () => {
     expect(screen.getByRole("spinbutton", { name: "Every" })).toBeDisabled();
   });
 
+  it("an interval edit is saved after 300 ms", async () => {
+    await setup();
+    const input = screen.getByRole("spinbutton", { name: "Every" });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.change(input, { target: { value: "12" } });
+    expect(updateSettings).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    vi.useRealTimers();
+    expect(updateSettings).toHaveBeenCalledWith({ fetch: { intervalMinutes: 12 } });
+    await act(() => useSettings.getState().flush());
+  });
+
+  it("turning auto-fetch off drops an unsent invalid interval draft", async () => {
+    await setup();
+    const input = screen.getByRole("spinbutton", { name: "Every" });
+    fireEvent.change(input, { target: { value: "99" } });
+    expect(input).toHaveValue(99);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Fetch automatically" }));
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue(5);
+  });
+
   it("interval applies in-range values on change and clamps on blur", async () => {
     await setup();
     const input = screen.getByRole("spinbutton", { name: "Every" });

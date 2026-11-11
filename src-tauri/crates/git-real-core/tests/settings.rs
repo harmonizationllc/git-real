@@ -271,6 +271,17 @@ fn lenient_null_on_non_nullable_leaf_falls_back() {
 }
 
 #[test]
+fn lenient_fetch_wrong_types_fall_back_to_defaults() {
+    let (s, warnings) =
+        Settings::from_json_lenient(&json!({"fetch": {"auto": "yes", "intervalMinutes": "5"}}));
+    assert!(s.fetch.auto);
+    assert_eq!(s.fetch.interval_minutes, 5);
+    let mut got = fields(&warnings);
+    got.sort_unstable();
+    assert_eq!(got, vec!["fetch.auto", "fetch.intervalMinutes"]);
+}
+
+#[test]
 fn lenient_wrong_type_falls_back_per_field() {
     for bad in [json!(240.5), json!("240")] {
         let (s, warnings) = Settings::from_json_lenient(&json!({

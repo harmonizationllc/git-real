@@ -212,11 +212,14 @@ function FetchSettings() {
   const everyId = useId();
   const [draft, setDraft] = useState(String(minutes));
 
+  // Re-sync from the store when it changes, and when the field is disabled (no blur will come).
   const [prevMinutes, setPrevMinutes] = useState(minutes);
-  if (prevMinutes !== minutes) {
-    setPrevMinutes(minutes);
+  const [prevAuto, setPrevAuto] = useState(auto);
+  if (prevMinutes !== minutes || (prevAuto && !auto)) {
     setDraft(String(minutes));
   }
+  if (prevMinutes !== minutes) setPrevMinutes(minutes);
+  if (prevAuto !== auto) setPrevAuto(auto);
 
   const onChange = (raw: string) => {
     setDraft(raw);
