@@ -468,6 +468,27 @@ describe("useSyncActions messages", () => {
     await act(async () => d.resolve());
   });
 
+  it("should keep the message when a manual action is refused because another run is in flight", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll)
+      .mockRejectedValueOnce(networkError("hostUnreachable", { verb: "fetch" }))
+      .mockReturnValueOnce(d.promise);
+    const { result } = await setup();
+    await act(async () => result.current.fetch());
+    await waitFor(() => expect(result.current.message?.title).toBe("Could not reach the remote"));
+    await waitFor(() => expect(result.current.gates.fetch).toBeNull());
+    // An auto-fetch (which leaves the message) and a pull in one tick: the pull is refused.
+    act(() => {
+      result.current.autoFetch();
+      result.current.pull();
+    });
+    expect(pull).not.toHaveBeenCalled();
+    expect(result.current.message?.title).toBe("Could not reach the remote");
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(result.current.message?.title).toBe("Could not reach the remote");
+  });
+
   it("should show no message when the sign-in is cancelled", async () => {
     vi.mocked(push).mockRejectedValue(authError());
     const { result } = await setup();

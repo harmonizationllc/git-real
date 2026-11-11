@@ -48,16 +48,19 @@ export function useAutoFetch(
   }, [auto, ready, attempt]);
 
   // The toast's Fetch asked this repo for the manual fetch: run each request once, as soon as the
-  // pane is ready. Level-triggered from the store, so a request made before this pane mounted (the
-  // toast activates the tab and requests in one click) or while it loaded still runs.
+  // fetch gate is open (loaded, and no network action running; `fetch()` would skip otherwise and
+  // the request would be lost). Level-triggered from the store, so a request made before this pane
+  // mounted (the toast activates the tab and requests in one click) or while it was gated still
+  // runs once the gate clears.
+  const fetchGate = sync.gates.fetch;
   useEffect(() => {
-    if (!ready) return;
+    if (syncRef.current.gates.fetch !== null) return;
     const store = useAutoFetchState.getState();
     const entry = entryFor(store, repoId);
     if (entry.manualRequested <= entry.manualHandled) return;
     store.handleManual(repoId);
     syncRef.current.fetch();
-  }, [ready, manualRequested, repoId]);
+  }, [fetchGate, manualRequested, repoId]);
 
   // A trigger source asked this repo to fetch; `forget` dropping the count is not a request.
   useEffect(

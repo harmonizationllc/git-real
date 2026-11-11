@@ -94,12 +94,16 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     }
   };
 
-  /** Runs one network action as `verb`: clears the last message and reports the verb until it settles. */
+  /**
+   * Runs one network action as `verb`: clears the last message and reports the verb until it
+   * settles. A run of this instance already in flight means the network gate refuses this one as
+   * busy, so the message (which may be that run's) is left alone.
+   */
   const start = <T>(
     verb: SyncVerb,
     action: (credentials: Credentials | null) => Promise<T>,
   ): Promise<NetworkResult<T>> => {
-    setMessage(null);
+    if (runs.current === 0) setMessage(null);
     return track(verb, () => network.run(action));
   };
 

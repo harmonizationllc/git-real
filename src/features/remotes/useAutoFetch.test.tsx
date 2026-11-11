@@ -286,6 +286,25 @@ describe("useAutoFetch manual requests", () => {
     expect(sync.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("holds a manual request made while a network action runs until the gate clears", () => {
+    const busy = {
+      fetch: "Another network operation is running",
+      pull: "Another network operation is running",
+      push: "Another network operation is running",
+      forcePush: "Another network operation is running",
+    } as SyncActions["gates"];
+    const { rerender } = renderHook(({ gates }) => useAutoFetch(1, { ...sync, gates }), {
+      initialProps: { gates: busy },
+    });
+    act(() => store().requestManual(1));
+    expect(sync.fetch).not.toHaveBeenCalled();
+    expect(store().repos[1]).toMatchObject({ manualRequested: 1, manualHandled: 0 });
+    rerender({ gates: OPEN_GATES as SyncActions["gates"] });
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+    rerender({ gates: { ...OPEN_GATES } as SyncActions["gates"] });
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+  });
+
   // The toast activates the tab and requests in one click, before this pane has mounted.
   it("runs a manual request made before the pane mounted", () => {
     store().requestManual(1);
