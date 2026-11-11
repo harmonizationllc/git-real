@@ -2,6 +2,7 @@ import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addRemote, removeRemote, updateRemote } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
+import { entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useRemoteActions } from "./useRemoteActions";
 
@@ -166,5 +167,34 @@ describe("useRemoteActions invalidation", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await act(() => result.current.remove("a"));
     expect(spy).not.toHaveBeenCalledWith({ queryKey: ["repo", 2] });
+  });
+});
+
+// Contract: adding or editing a remote may make fetch work again, so it clears a pause and asks
+// the focused pane to auto-fetch; removing one does neither.
+describe("useRemoteActions auto-fetch", () => {
+  beforeEach(() => {
+    useAutoFetchState.setState({ repos: {} });
+    useAutoFetchState.getState().recordFailure(1);
+  });
+
+  const entry = () => entryFor(useAutoFetchState.getState(), 1);
+
+  it("resumes and requests an auto-fetch after add", async () => {
+    const { result } = renderHookWithProviders(() => useRemoteActions(1));
+    await act(() => result.current.add("up", "/srv/up.git", null));
+    expect(entry()).toMatchObject({ paused: false, requested: 1 });
+  });
+
+  it("resumes and requests an auto-fetch after update", async () => {
+    const { result } = renderHookWithProviders(() => useRemoteActions(1));
+    await act(() => result.current.update("up", "upstream", "/srv/u.git", null));
+    expect(entry()).toMatchObject({ paused: false, requested: 1 });
+  });
+
+  it("requests nothing after remove", async () => {
+    const { result } = renderHookWithProviders(() => useRemoteActions(1));
+    await act(() => result.current.remove("up"));
+    expect(entry()).toMatchObject({ paused: true, requested: 0 });
   });
 });

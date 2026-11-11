@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { checkoutCommit, resetToCommit } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useCommitActions } from "./useCommitActions";
 import type { CommitRequest } from "./useCommitActions";
@@ -176,5 +177,26 @@ describe("useCommitActions state", () => {
     await run(() => result.current, { action: "checkout", oid });
     await run(() => result.current, { action: "checkout", oid });
     await waitFor(() => expect(result.current.error).toBeNull());
+  });
+});
+
+// Contract: a successful commit checkout asks the focused pane to auto-fetch; a reset does not.
+describe("useCommitActions auto-fetch requests", () => {
+  beforeEach(() => {
+    useAutoFetchState.setState({ repos: {} });
+  });
+
+  const requested = () => useAutoFetchState.getState().repos[1]?.requested ?? 0;
+
+  it("requests an auto-fetch after a successful commit checkout", async () => {
+    const { result } = renderHookWithProviders(() => useCommitActions(1));
+    await run(() => result.current, { action: "checkout", oid });
+    expect(requested()).toBe(1);
+  });
+
+  it("requests nothing after a reset", async () => {
+    const { result } = renderHookWithProviders(() => useCommitActions(1));
+    await run(() => result.current, { action: "reset", oid, mode: "hard" });
+    expect(requested()).toBe(0);
   });
 });
