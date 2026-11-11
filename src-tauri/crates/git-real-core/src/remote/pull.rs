@@ -54,6 +54,7 @@ impl Pull {
             &["fetch", &self.remote],
             &self.urls,
             creds,
+            false,
         )
     }
 }

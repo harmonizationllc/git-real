@@ -116,7 +116,29 @@ fn fetch_inner_updates_the_tracking_refs() {
     let fx = fx();
     let theirs = push_from_other(&fx, "b.txt", "b\n");
     let (reg, id) = registered(&fx.path);
-    fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap();
+    fetch_inner(
+        &reg,
+        id,
+        NetworkAuth::Accounts(common::empty_store()),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        tip(&fx.path, &format!("refs/remotes/origin/{}", fx.head)),
+        theirs
+    );
+}
+
+// The auto-fetch path: the same fetch with every prompt disabled still updates the refs.
+#[test]
+fn a_non_interactive_fetch_inner_updates_the_tracking_refs() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = fx();
+    let theirs = push_from_other(&fx, "c.txt", "c\n");
+    let (reg, id) = registered(&fx.path);
+    fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store()), true).unwrap();
     assert_eq!(
         tip(&fx.path, &format!("refs/remotes/origin/{}", fx.head)),
         theirs
@@ -127,7 +149,13 @@ fn fetch_inner_updates_the_tracking_refs() {
 fn fetch_inner_without_remotes_is_no_remotes() {
     let (_d, path) = common::temp_repo_with_commit();
     let (reg, id) = registered(&path);
-    let err = fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap_err();
+    let err = fetch_inner(
+        &reg,
+        id,
+        NetworkAuth::Accounts(common::empty_store()),
+        false,
+    )
+    .unwrap_err();
     assert_eq!((err.kind, err.network), (AppErrorKind::NoRemotes, None));
 }
 
@@ -403,7 +431,7 @@ fn credentials_never_appear_in_an_app_error() {
     let (reg, id) = registered(&fx.path);
     let creds = Credentials::new("http://127.0.0.1:1", "me", TOKEN).unwrap();
     let errors = [
-        fetch_inner(&reg, id, NetworkAuth::Explicit(&creds)).unwrap_err(),
+        fetch_inner(&reg, id, NetworkAuth::Explicit(&creds), false).unwrap_err(),
         pull_inner(&reg, id, PullMode::Merge, NetworkAuth::Explicit(&creds)).unwrap_err(),
         push_inner(
             &reg,
@@ -444,7 +472,13 @@ fn tag_and_remote_branch_pushes_take_credentials_and_map_network_failures() {
         &["push", "-q", "origin", "HEAD:refs/heads/gone-soon"],
     );
     let (reg, id) = registered(&fx.path);
-    fetch_inner(&reg, id, NetworkAuth::Accounts(common::empty_store())).unwrap();
+    fetch_inner(
+        &reg,
+        id,
+        NetworkAuth::Accounts(common::empty_store()),
+        false,
+    )
+    .unwrap();
     push_tag_inner(
         &reg,
         id,
@@ -785,6 +819,7 @@ fn remote_commands_report_unknown_repo() {
             &reg,
             MISSING_ID,
             NetworkAuth::Accounts(common::empty_store()),
+            false,
         )
         .unwrap_err()
         .kind,

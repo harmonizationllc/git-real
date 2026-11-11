@@ -47,6 +47,7 @@ impl RefFetch {
             &["fetch", "--no-tags", &self.source, &self.refspec],
             &self.urls,
             creds,
+            false,
         )
     }
 }

@@ -1111,7 +1111,7 @@ fn fetch_with_account_auth_still_runs_when_the_keychain_cannot_be_read() {
     });
     fx.connect();
     push_branch_to_bare(&fx.bare, "feature");
-    fetch_inner(&fx.reg, fx.id, NetworkAuth::Accounts(&fx.store)).unwrap();
+    fetch_inner(&fx.reg, fx.id, NetworkAuth::Accounts(&fx.store), false).unwrap();
     assert!(ref_oid(&fx.path, "refs/remotes/origin/feature").is_some());
 }
 
@@ -1123,7 +1123,7 @@ fn fetch_with_account_auth_updates_tracking_refs_through_the_rewritten_url() {
     let fx = hosted();
     fx.connect();
     push_branch_to_bare(&fx.bare, "feature");
-    fetch_inner(&fx.reg, fx.id, NetworkAuth::new(None, &fx.store)).unwrap();
+    fetch_inner(&fx.reg, fx.id, NetworkAuth::new(None, &fx.store), false).unwrap();
     assert!(ref_oid(&fx.path, "refs/remotes/origin/feature").is_some());
 }
 

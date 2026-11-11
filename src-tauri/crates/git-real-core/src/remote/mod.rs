@@ -32,6 +32,12 @@ use auth::Credentials;
 /// operation. A non-zero exit is `NetworkFailed`; after a successful run with
 /// credentials that [`Credentials::approves`], each of `urls` on their origin is
 /// approved.
+///
+/// `non_interactive` (the background auto-fetch) forbids every prompt for this
+/// one process: the user's credential helper is told not to interact
+/// (`credential.interactive=false`, `GCM_INTERACTIVE=never`), ssh-askpass is
+/// refused (`SSH_ASKPASS_REQUIRE=never`) and ssh runs in batch mode even when
+/// `SSH_ASKPASS` is set. An explicit ssh command is still respected.
 pub(crate) fn run_network(
     git: &Path,
     workdir: &Path,
@@ -39,10 +45,21 @@ pub(crate) fn run_network(
     args: &[&str],
     urls: &[String],
     creds: Option<&Credentials>,
+    non_interactive: bool,
 ) -> Result<(), GitError> {
     let mut cmd = git_cli::command(git);
-    ssh::apply_batch_mode(&mut cmd, &ssh::SshSetup::detect(Some(workdir)));
+    let setup = ssh::SshSetup::detect(Some(workdir));
+    if non_interactive {
+        ssh::apply_batch_mode_non_interactive(&mut cmd, &setup);
+        cmd.env("GCM_INTERACTIVE", "never")
+            .env("SSH_ASKPASS_REQUIRE", "never");
+    } else {
+        ssh::apply_batch_mode(&mut cmd, &setup);
+    }
     cmd.arg("-C").arg(workdir);
+    if non_interactive {
+        cmd.args(["-c", "credential.interactive=false"]);
+    }
     auth::apply(&mut cmd, creds);
     cmd.args(args);
     let output = git_cli::capture(&mut cmd)?;
@@ -98,5 +115,5 @@ pub(crate) fn run_push(
 ) -> Result<(), GitError> {
     let mut argv = vec!["push", remote];
     argv.extend_from_slice(args);
-    run_network(git, workdir, "push", &argv, urls, creds)
+    run_network(git, workdir, "push", &argv, urls, creds, false)
 }

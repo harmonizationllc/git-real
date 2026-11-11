@@ -58,3 +58,15 @@ pub fn apply_batch_mode(cmd: &mut Command, setup: &SshSetup) {
         cmd.env("GIT_SSH_COMMAND", BATCH_MODE_SSH_COMMAND);
     }
 }
+
+/// [`apply_batch_mode`] for a run that must never prompt (a background
+/// auto-fetch): an `SSH_ASKPASS` GUI prompt does not count as the user's
+/// choice, so only an explicit ssh command (`GIT_SSH`, `GIT_SSH_COMMAND`,
+/// `core.sshCommand`) is left alone.
+pub fn apply_batch_mode_non_interactive(cmd: &mut Command, setup: &SshSetup) {
+    let without_askpass = SshSetup {
+        ssh_askpass_env: false,
+        ..*setup
+    };
+    apply_batch_mode(cmd, &without_askpass);
+}

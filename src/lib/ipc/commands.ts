@@ -409,9 +409,16 @@ export function deleteRemoteTag(
   return invoke<void>("delete_remote_tag", { id, remote, name, credentials });
 }
 
-/** `git fetch --all`. Not named `fetch`, which would shadow the global. */
-export function fetchAll(id: RepoId, credentials: Credentials | null = null): Promise<void> {
-  return invoke<void>("fetch", { id, credentials });
+/**
+ * `git fetch --all`. Not named `fetch`, which would shadow the global. `nonInteractive` (the
+ * auto-fetch) forbids every prompt: the user's credential helper, GUI askpass and ssh.
+ */
+export function fetchAll(
+  id: RepoId,
+  credentials: Credentials | null = null,
+  options?: { nonInteractive?: boolean },
+): Promise<void> {
+  return invoke<void>("fetch", { id, credentials, nonInteractive: options?.nonInteractive });
 }
 
 /** `git fetch <remote>`: one remote only. */

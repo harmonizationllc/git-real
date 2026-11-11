@@ -1047,6 +1047,14 @@ describe("remote command wrappers", () => {
     expect(calls).toEqual([{ cmd: "fetch", args: { id: 2, credentials: creds } }]);
   });
 
+  it("fetchAll sends nonInteractive for the auto-fetch", async () => {
+    const calls = mockWith(null);
+    await fetchAll(2, null, { nonInteractive: true });
+    expect(calls).toEqual([
+      { cmd: "fetch", args: { id: 2, credentials: null, nonInteractive: true } },
+    ]);
+  });
+
   // GR-12 follow-up W3: a single-remote fetch with the pinned command name and camelCase args.
   it("fetchRemote sends fetch_remote with id, remote and null credentials", async () => {
     const calls = mockWith(null);
