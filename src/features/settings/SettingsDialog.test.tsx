@@ -88,7 +88,16 @@ describe("SettingsDialog sections", () => {
   it("renders the sections in order with their headings", async () => {
     await setup();
     const names = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(names).toEqual(["Appearance", "Diff", "Clone", "Tools", "Git", "File", "About"]);
+    expect(names).toEqual([
+      "Appearance",
+      "Diff",
+      "Clone",
+      "Tools",
+      "Git",
+      "Fetch",
+      "File",
+      "About",
+    ]);
   });
 
   it("renders with role=dialog and heading Settings", async () => {
@@ -118,6 +127,41 @@ describe("SettingsDialog Theme", () => {
     vi.useRealTimers();
     expect(updateSettings).toHaveBeenCalledWith({ appearance: { theme: "dark" } });
     await act(() => useSettings.getState().flush());
+  });
+});
+
+// Contract: Fetch section toggles auto-fetch and edits the interval like Font size.
+describe("SettingsDialog Fetch", () => {
+  it("Fetch automatically reflects the store and saves on toggle", async () => {
+    await setup();
+    const box = screen.getByRole("checkbox", { name: "Fetch automatically" });
+    expect(box).toBeChecked();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.click(box);
+    expect(box).not.toBeChecked();
+    vi.advanceTimersByTime(300);
+    vi.useRealTimers();
+    expect(updateSettings).toHaveBeenCalledWith({ fetch: { auto: false } });
+    await act(() => useSettings.getState().flush());
+  });
+
+  it("interval field is disabled when auto-fetch is off", async () => {
+    await seedSettings({ fetch: { auto: false } });
+    await setup();
+    expect(screen.getByRole("spinbutton", { name: "Every" })).toBeDisabled();
+  });
+
+  it("interval applies in-range values on change and clamps on blur", async () => {
+    await setup();
+    const input = screen.getByRole("spinbutton", { name: "Every" });
+    expect(input).toHaveValue(5);
+    fireEvent.change(input, { target: { value: "10" } });
+    expect(prefs().fetch.intervalMinutes).toBe(10);
+    fireEvent.change(input, { target: { value: "99" } });
+    expect(prefs().fetch.intervalMinutes).toBe(10);
+    fireEvent.blur(input);
+    expect(prefs().fetch.intervalMinutes).toBe(60);
+    expect(input).toHaveValue(60);
   });
 });
 

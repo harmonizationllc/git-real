@@ -14,8 +14,20 @@ import {
 import type { Settings, ThemePref } from "../../lib/ipc";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../../lib/query/keys";
-import { DIFF_FONT_MAX, DIFF_FONT_MIN, useSettings } from "../../lib/store/settings";
-import { setDiffFontFamily, setDiffFontSize, setTheme } from "../../lib/store/settingsActions";
+import {
+  AUTO_FETCH_INTERVAL_MAX,
+  AUTO_FETCH_INTERVAL_MIN,
+  DIFF_FONT_MAX,
+  DIFF_FONT_MIN,
+  useSettings,
+} from "../../lib/store/settings";
+import {
+  setAutoFetch,
+  setAutoFetchInterval,
+  setDiffFontFamily,
+  setDiffFontSize,
+  setTheme,
+} from "../../lib/store/settingsActions";
 import { useShell } from "../../lib/store/shell";
 import type { SettingsSection } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
@@ -85,6 +97,7 @@ export function SettingsDialog({ section, onClose, fallbackFocus }: SettingsDial
         <CloneSettings />
         <ToolsSettings />
         <GitSettings />
+        <FetchSettings />
         <FileSettings />
         <AboutSettings />
         <div className={styles.actions}>
@@ -189,6 +202,68 @@ function DiffSettings() {
       <pre aria-label="Diff font sample" className={styles.sample}>
         {"- const total = a + b;\n+ const total = add(a, b);"}
       </pre>
+    </Section>
+  );
+}
+
+function FetchSettings() {
+  const auto = useSettings((s) => s.settings.fetch.auto);
+  const minutes = useSettings((s) => s.settings.fetch.intervalMinutes);
+  const everyId = useId();
+  const [draft, setDraft] = useState(String(minutes));
+
+  const [prevMinutes, setPrevMinutes] = useState(minutes);
+  if (prevMinutes !== minutes) {
+    setPrevMinutes(minutes);
+    setDraft(String(minutes));
+  }
+
+  const onChange = (raw: string) => {
+    setDraft(raw);
+    const n = Number(raw);
+    // In-range integers apply at once; anything else waits for blur, as the font size does.
+    if (
+      raw !== "" &&
+      Number.isInteger(n) &&
+      n >= AUTO_FETCH_INTERVAL_MIN &&
+      n <= AUTO_FETCH_INTERVAL_MAX
+    ) {
+      setAutoFetchInterval(n);
+    }
+  };
+
+  const commit = () => {
+    const n = Number(draft);
+    if (draft !== "" && !Number.isNaN(n)) setAutoFetchInterval(n);
+    setDraft(String(useSettings.getState().settings.fetch.intervalMinutes));
+  };
+
+  return (
+    <Section id="fetch" name="Fetch">
+      <label className={styles.radio}>
+        <input type="checkbox" checked={auto} onChange={(e) => setAutoFetch(e.target.checked)} />
+        Fetch automatically
+      </label>
+      <div className={styles.field}>
+        <label htmlFor={everyId}>Every</label>
+        <span className={styles.sizeRow}>
+          <input
+            id={everyId}
+            type="number"
+            min={AUTO_FETCH_INTERVAL_MIN}
+            max={AUTO_FETCH_INTERVAL_MAX}
+            step={1}
+            disabled={!auto}
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+            }}
+          />
+          <span aria-hidden="true">minutes</span>
+        </span>
+      </div>
     </Section>
   );
 }

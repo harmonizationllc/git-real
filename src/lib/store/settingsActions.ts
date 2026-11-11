@@ -2,6 +2,8 @@ import type { LayoutColumn } from "../../app/layout";
 import type { ResizableSection } from "../../app/refsLayout";
 import type { CloneUrlForm, DiffMode, SettingsPatch, Settings, ThemePref } from "../ipc";
 import {
+  AUTO_FETCH_INTERVAL_MAX,
+  AUTO_FETCH_INTERVAL_MIN,
   DIFF_FONT_MAX,
   DIFF_FONT_MIN,
   REFS_DEFAULT,
@@ -26,6 +28,20 @@ export function setDiffFontSize(size: number): void {
   if (Number.isNaN(size)) return;
   const diffFontSize = Math.min(DIFF_FONT_MAX, Math.max(DIFF_FONT_MIN, Math.round(size)));
   setPref({ appearance: { diffFontSize } });
+}
+
+export function setAutoFetch(auto: boolean): void {
+  setPref({ fetch: { auto } });
+}
+
+/** Rounds and clamps to AUTO_FETCH_INTERVAL_MIN..AUTO_FETCH_INTERVAL_MAX; NaN is ignored. */
+export function setAutoFetchInterval(minutes: number): void {
+  if (Number.isNaN(minutes)) return;
+  const intervalMinutes = Math.min(
+    AUTO_FETCH_INTERVAL_MAX,
+    Math.max(AUTO_FETCH_INTERVAL_MIN, Math.round(minutes)),
+  );
+  setPref({ fetch: { intervalMinutes } });
 }
 
 export function setDiffMode(mode: DiffMode): void {

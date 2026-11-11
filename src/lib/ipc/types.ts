@@ -164,6 +164,7 @@ export interface Settings {
   tools: { editor: string | null; diffTool: string | null; mergeTool: string | null };
   appearance: { theme: ThemePref; diffFontFamily: string | null; diffFontSize: number };
   diff: { mode: DiffMode; ignoreWhitespace: boolean };
+  fetch: { auto: boolean; intervalMinutes: number };
   layout: {
     refsWidth: number;
     sidebarWidth: number;

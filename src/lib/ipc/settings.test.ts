@@ -38,6 +38,7 @@ const defaultSettings: Settings = {
   tools: { editor: null, diffTool: null, mergeTool: null },
   appearance: { theme: "system", diffFontFamily: null, diffFontSize: 13 },
   diff: { mode: "split", ignoreWhitespace: false },
+  fetch: { auto: true, intervalMinutes: 5 },
   layout: {
     refsWidth: 240,
     sidebarWidth: 320,
