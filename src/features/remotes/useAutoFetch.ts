@@ -31,11 +31,11 @@ export function useAutoFetch(repoId: RepoId, sync: Pick<SyncActions, "autoFetch"
     if (auto) attempt();
   }, [auto, attempt]);
 
-  // A trigger source asked this repo to fetch.
+  // A trigger source asked this repo to fetch; `forget` dropping the count is not a request.
   useEffect(
     () =>
       useAutoFetchState.subscribe((next, prev) => {
-        if (entryFor(next, repoId).requested !== entryFor(prev, repoId).requested) attempt();
+        if (entryFor(next, repoId).requested > entryFor(prev, repoId).requested) attempt();
       }),
     [repoId, attempt],
   );

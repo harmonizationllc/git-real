@@ -28,12 +28,18 @@ export interface UseBranchActions {
   clearError(): void;
 }
 
-/** Requests whose success asks for an auto-fetch. */
-const FETCH_AFTER: ReadonlySet<BranchRequest["action"]> = new Set([
-  "checkout",
-  "checkoutRemote",
-  "setUpstream",
-]);
+/** Whether the request's success asks for an auto-fetch: a checkout, or setting (not unsetting) an upstream. */
+function fetchesAfter(req: BranchRequest): boolean {
+  switch (req.action) {
+    case "checkout":
+    case "checkoutRemote":
+      return true;
+    case "setUpstream":
+      return req.upstream !== null;
+    default:
+      return false;
+  }
+}
 
 function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
   switch (req.action) {
@@ -59,9 +65,10 @@ export function useBranchActions(repoId: RepoId): UseBranchActions {
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);
       }),
-    // A new HEAD or upstream may be behind its remote, so the focused pane is asked to fetch.
+    // A new HEAD or a newly set upstream may be behind its remote, so the focused pane is
+    // asked to fetch; unsetting an upstream leaves nothing to compare against.
     onSuccess: (_data, req) => {
-      if (FETCH_AFTER.has(req.action)) useAutoFetchState.getState().request(repoId);
+      if (fetchesAfter(req)) useAutoFetchState.getState().request(repoId);
     },
     // Returning the promise keeps `pending` true until the refetch is triggered. Runs on
     // failure too, since a failed switch or create may have partly applied.

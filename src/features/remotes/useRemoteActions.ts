@@ -50,7 +50,7 @@ export function useRemoteActions(repoId: RepoId): UseRemoteActions {
 
   const run = async (
     action: () => Promise<unknown>,
-    wakesAutoFetch: boolean,
+    { wakesAutoFetch = false }: { wakesAutoFetch?: boolean } = {},
   ): Promise<AppError | null> => {
     setBusy((n) => n + 1);
     try {
@@ -64,10 +64,11 @@ export function useRemoteActions(repoId: RepoId): UseRemoteActions {
   };
 
   return {
-    add: (name, url, pushUrl) => run(() => addRemote(repoId, name, url, pushUrl), true),
+    add: (name, url, pushUrl) =>
+      run(() => addRemote(repoId, name, url, pushUrl), { wakesAutoFetch: true }),
     update: (name, newName, url, pushUrl) =>
-      run(() => updateRemote(repoId, name, newName, url, pushUrl), true),
-    remove: (name) => run(() => removeRemote(repoId, name), false),
+      run(() => updateRemote(repoId, name, newName, url, pushUrl), { wakesAutoFetch: true }),
+    remove: (name) => run(() => removeRemote(repoId, name)),
     pending: busy > 0,
   };
 }

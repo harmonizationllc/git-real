@@ -129,11 +129,19 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     latestFetch.current = fetch;
   });
 
+  // Set synchronously, so two triggers in one tick (or StrictMode's double mount) start one
+  // fetch; `gates` and `lastFetchedAt` only catch up after a render or on completion.
+  const autoFetching = useRef(false);
   const autoFetch = () => {
+    if (autoFetching.current) return;
     if (gates.fetch !== null || entryFor(autoFetchState(), repoId).paused) return;
+    autoFetching.current = true;
     setRunning("fetch");
     void network
       .run((c) => fetchAll(repoId, c), { prompt: false })
+      .finally(() => {
+        autoFetching.current = false;
+      })
       .then((result) => {
         setRunning(null);
         if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());

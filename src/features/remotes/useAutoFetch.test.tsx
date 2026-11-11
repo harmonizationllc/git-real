@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COOLDOWN_MS, useAutoFetchState } from "../../lib/store/autoFetch";
-import { setAutoFetch } from "../../lib/store/settingsActions";
+import { setAutoFetch, setAutoFetchInterval } from "../../lib/store/settingsActions";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
 import { useAutoFetch } from "./useAutoFetch";
 
@@ -134,12 +134,53 @@ describe("useAutoFetch", () => {
     expect(sync.autoFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("re-arms the interval when the configured interval changes", () => {
+    mount();
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    advance(2 * MINUTE);
+    act(() => setAutoFetchInterval(1));
+    advance(1 * MINUTE);
+    expect(sync.autoFetch).toHaveBeenCalledTimes(2);
+    advance(1 * MINUTE);
+    expect(sync.autoFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("fetches once when the setting is turned off and on while a tick is due", () => {
+    mount();
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    act(() => setAutoFetch(false));
+    advance(10 * MINUTE);
+    act(() => setAutoFetch(true));
+    expect(sync.autoFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips a tick inside the cooldown", () => {
+    const fetchedAt = Date.now();
+    store().recordFetched(1, fetchedAt);
+    mount();
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+    advance(5 * MINUTE - 1_000);
+    // The wall clock jumps back (suspend, NTP): the tick lands 1 s after the last fetch.
+    vi.setSystemTime(fetchedAt);
+    advance(1_000);
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+  });
+
   it("stops the timer and ignores focus when the setting is turned off", () => {
     mount();
     expect(sync.autoFetch).toHaveBeenCalledTimes(1);
     act(() => setAutoFetch(false));
     advance(10 * MINUTE);
     focusWindow();
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fetch when the repo's entry is forgotten", () => {
+    makeDue();
+    store().request(1);
+    mount();
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    act(() => store().forget(1));
     expect(sync.autoFetch).toHaveBeenCalledTimes(1);
   });
 

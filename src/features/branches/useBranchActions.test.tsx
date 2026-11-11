@@ -388,6 +388,12 @@ describe("useBranchActions auto-fetch requests", () => {
     expect(requested()).toBe(1);
   });
 
+  it("requests nothing after unsetting the upstream", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "setUpstream", name: "dev", upstream: null });
+    expect(requested()).toBe(0);
+  });
+
   it("requests nothing after a failed checkout", async () => {
     vi.mocked(checkoutBranch).mockRejectedValue({ kind: "checkoutFailed", message: "dirty" });
     const { result } = renderHookWithProviders(() => useBranchActions(1));

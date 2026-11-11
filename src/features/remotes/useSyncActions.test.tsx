@@ -661,6 +661,24 @@ describe("useSyncActions autoFetch", () => {
     expect(fetchAll).not.toHaveBeenCalled();
   });
 
+  it("should run one fetch when called twice in the same tick", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => {
+      result.current.autoFetch();
+      result.current.autoFetch();
+    });
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    expect(fetchAll).toHaveBeenCalledOnce();
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    // The guard is released once the fetch settles.
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+  });
+
   it("should skip while a network action is already running", async () => {
     const d = deferred();
     vi.mocked(fetchAll).mockReturnValue(d.promise);
