@@ -35,8 +35,9 @@ use auth::Credentials;
 ///
 /// `non_interactive` (the background auto-fetch) forbids every prompt for this
 /// one process: the user's credential helper is told not to interact
-/// (`credential.interactive=false`, `GCM_INTERACTIVE=never`), ssh-askpass is
-/// refused (`SSH_ASKPASS_REQUIRE=never`) and ssh runs in batch mode even when
+/// (`credential.interactive=false`, `GCM_INTERACTIVE=never`), git's own askpass
+/// chain is skipped (`GIT_ASKPASS` set empty), ssh-askpass is refused
+/// (`SSH_ASKPASS_REQUIRE=never`) and ssh runs in batch mode even when
 /// `SSH_ASKPASS` is set. An explicit ssh command is still respected.
 pub(crate) fn run_network(
     git: &Path,
@@ -51,8 +52,12 @@ pub(crate) fn run_network(
     let setup = ssh::SshSetup::detect(Some(workdir));
     if non_interactive {
         ssh::apply_batch_mode_non_interactive(&mut cmd, &setup);
+        // An empty GIT_ASKPASS makes git skip its whole askpass chain (GIT_ASKPASS,
+        // core.askPass, SSH_ASKPASS) for an HTTPS prompt; GIT_TERMINAL_PROMPT=0 only stops
+        // the terminal fallback after it.
         cmd.env("GCM_INTERACTIVE", "never")
-            .env("SSH_ASKPASS_REQUIRE", "never");
+            .env("SSH_ASKPASS_REQUIRE", "never")
+            .env("GIT_ASKPASS", "");
     } else {
         ssh::apply_batch_mode(&mut cmd, &setup);
     }

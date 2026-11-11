@@ -27,7 +27,7 @@ fi
 printf '%s\n' "$@" > "$d/argv.txt"
 printf '%s\n' "${GR_USERNAME-<unset>}" "${GR_TOKEN-<unset>}" > "$d/env.txt"
 printf '%s' "${GIT_SSH_COMMAND-<unset>}" > "$d/ssh.txt"
-printf '%s\n' "${GCM_INTERACTIVE-<unset>}" "${SSH_ASKPASS_REQUIRE-<unset>}" "${GIT_TERMINAL_PROMPT-<unset>}" > "$d/prompt-env.txt"
+printf '%s\n' "${GCM_INTERACTIVE-<unset>}" "${SSH_ASKPASS_REQUIRE-<unset>}" "${GIT_TERMINAL_PROMPT-<unset>}" "${GIT_ASKPASS-<unset>}" > "$d/prompt-env.txt"
 prev=
 for a in "$@"; do
   if [ "$prev" = -c ]; then
@@ -1092,8 +1092,9 @@ fn a_non_interactive_fetch_disables_every_prompt_for_that_process() {
     );
     assert_eq!(
         read(&path, "prompt-env.txt").unwrap(),
-        "never\nnever\n0\n",
-        "GCM_INTERACTIVE, SSH_ASKPASS_REQUIRE, GIT_TERMINAL_PROMPT"
+        "never\nnever\n0\n\n",
+        "GCM_INTERACTIVE, SSH_ASKPASS_REQUIRE, GIT_TERMINAL_PROMPT, GIT_ASKPASS (set and empty, \
+         so git skips the GIT_ASKPASS/core.askPass/SSH_ASKPASS chain)"
     );
     assert_eq!(
         read(&path, "ssh.txt").unwrap(),
@@ -1127,9 +1128,11 @@ fn an_interactive_fetch_is_unchanged() {
     assert_eq!(
         read(&path, "prompt-env.txt").unwrap(),
         format!(
-            "{}\n{}\n0\n",
+            "{}\n{}\n0\n{}\n",
             std::env::var("GCM_INTERACTIVE").unwrap_or_else(|_| "<unset>".into()),
             std::env::var("SSH_ASKPASS_REQUIRE").unwrap_or_else(|_| "<unset>".into()),
+            // Inherited untouched: `<unset>` unless the host itself sets it.
+            std::env::var("GIT_ASKPASS").unwrap_or_else(|_| "<unset>".into()),
         )
     );
 }

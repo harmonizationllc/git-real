@@ -411,7 +411,10 @@ export function deleteRemoteTag(
 
 /**
  * `git fetch --all`. Not named `fetch`, which would shadow the global. `nonInteractive` (the
- * auto-fetch) forbids every prompt: the user's credential helper, GUI askpass and ssh.
+ * auto-fetch) forbids every prompt for that git process: the credential helper is told not to
+ * interact (`credential.interactive=false`, `GCM_INTERACTIVE=never`), git's askpass chain is
+ * skipped (`GIT_ASKPASS` set empty), ssh-askpass is refused (`SSH_ASKPASS_REQUIRE=never`) and
+ * ssh runs in batch mode unless the user set an explicit ssh command.
  */
 export function fetchAll(
   id: RepoId,
