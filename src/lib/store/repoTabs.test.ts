@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { OpenedRepo } from "../ipc";
+import { useAutoFetchState } from "./autoFetch";
 import { useRepoTabs } from "./repoTabs";
 
 function repo(id: number, path = `/r/${id}`, headBranch: string | null = "main"): OpenedRepo {
@@ -141,6 +142,14 @@ describe("closeTab", () => {
     const before = useRepoTabs.getState();
     useRepoTabs.getState().closeTab(1);
     expect(useRepoTabs.getState()).toBe(before);
+  });
+
+  it("closeTab forgets the repo's auto-fetch state", () => {
+    useAutoFetchState.setState({ repos: {} });
+    openAll(1);
+    useAutoFetchState.getState().recordFetched(1, 5);
+    useRepoTabs.getState().closeTab(1);
+    expect(useAutoFetchState.getState().repos).not.toHaveProperty("1");
   });
 });
 

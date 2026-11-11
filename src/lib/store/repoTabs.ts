@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { OpenedRepo, RepoId, RepoSummary } from "../ipc";
+import { useAutoFetchState } from "./autoFetch";
 
 export interface RepoTab {
   id: RepoId;
@@ -38,7 +39,8 @@ export const useRepoTabs = create<RepoTabsState>()((set) => ({
         activeId: existing.id,
       };
     }),
-  closeTab: (id) =>
+  closeTab: (id) => {
+    useAutoFetchState.getState().forget(id);
     set((state) => {
       const index = state.tabs.findIndex((t) => t.id === id);
       if (index === -1) return state;
@@ -46,7 +48,8 @@ export const useRepoTabs = create<RepoTabsState>()((set) => ({
       if (state.activeId !== id) return { tabs };
       const neighbour = state.tabs[index - 1] ?? state.tabs[index + 1];
       return { tabs, activeId: neighbour?.id ?? null };
-    }),
+    });
+  },
   moveTab: (id, toIndex) =>
     set((state) => {
       const from = state.tabs.findIndex((t) => t.id === id);
