@@ -146,7 +146,7 @@ describe("useNetworkAction credential prompt", () => {
     const outcome = start(result.current.run, action);
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     act(() => result.current.prompt?.cancel());
-    await expect(outcome).resolves.toEqual({ status: "cancelled" });
+    await expect(outcome).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     await waitFor(() => expect(result.current.prompt).toBeNull());
   });
 
@@ -378,13 +378,15 @@ describe("useNetworkAction concurrent prompts", () => {
     const outcome = start(result.current.run, first);
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     const shown = result.current.prompt;
+    let refused!: Promise<NetworkResult<string>>;
     act(() => {
-      void result.current.run(second);
+      refused = result.current.run(second);
     });
+    await expect(refused).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     expect(second).not.toHaveBeenCalled();
     expect(result.current.prompt).toBe(shown);
     act(() => result.current.prompt?.cancel());
-    await expect(outcome).resolves.toEqual({ status: "cancelled" });
+    await expect(outcome).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     expect(second).not.toHaveBeenCalled();
   });
 
@@ -399,7 +401,7 @@ describe("useNetworkAction concurrent prompts", () => {
       a = result.current.run(first);
       b = result.current.run(second);
     });
-    await expect(b).resolves.toEqual({ status: "cancelled" });
+    await expect(b).resolves.toEqual({ status: "cancelled", reason: "busy" });
     await waitFor(() => expect(first).toHaveBeenCalledOnce());
     expect(second).not.toHaveBeenCalled();
     await act(async () => d.resolve("first"));

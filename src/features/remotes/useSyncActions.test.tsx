@@ -875,6 +875,24 @@ describe("useSyncActions autoFetch", () => {
     expect(useToasts.getState().toasts).toHaveLength(0);
   });
 
+  it("should not pause when a manual run is refused because another run is in flight", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    vi.mocked(pull).mockRejectedValue(networkError("pushRejectedNonFastForward"));
+    const { result } = await setup();
+    act(() => {
+      result.current.autoFetch();
+      result.current.pull();
+    });
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(pull).not.toHaveBeenCalled();
+    expect(entry()?.paused ?? false).toBe(false);
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
   it("should not toast when an autoFetch is cancelled", async () => {
     vi.mocked(fetchAll).mockRejectedValue(authError());
     const { result } = await setup();

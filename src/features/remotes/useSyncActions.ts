@@ -111,11 +111,12 @@ export function useSyncActions(repoId: RepoId): SyncActions {
 
   /**
    * A manual action's failure pauses auto-fetch when a background fetch would hit it too; so does
-   * a cancelled sign-in, since the background fetch cannot sign in either.
+   * a declined sign-in, since the background fetch cannot sign in either. A run refused because
+   * another is in flight (`busy`) says nothing about the remote.
    */
   const recordFailure = (result: NetworkResult<unknown>) => {
     if (
-      result.status === "cancelled" ||
+      (result.status === "cancelled" && result.reason === "prompt") ||
       (result.status === "failed" && pausesAutoFetch(result.error))
     ) {
       autoFetchState().recordFailure(repoId);
