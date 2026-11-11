@@ -20,6 +20,10 @@
     "mode": "split",
     "ignoreWhitespace": false
   },
+  "fetch": {
+    "auto": true,
+    "intervalMinutes": 5
+  },
   "layout": {
     "refsWidth": 240,
     "sidebarWidth": 320,

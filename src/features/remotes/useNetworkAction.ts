@@ -14,11 +14,21 @@ export interface CredentialPrompt {
   cancel(): void;
 }
 
+/**
+ * `cancelled` says why: `prompt` when the user declined the credential dialog (or a run was
+ * started while it was open), `busy` when another run of this instance was already in flight.
+ */
 export type NetworkResult<T> =
-  { status: "ok"; value: T } | { status: "failed"; error: AppError } | { status: "cancelled" };
+  | { status: "ok"; value: T }
+  | { status: "failed"; error: AppError }
+  | { status: "cancelled"; reason: "prompt" | "busy" };
 
 export interface UseNetworkAction {
-  run<T>(action: (credentials: Credentials | null) => Promise<T>): Promise<NetworkResult<T>>;
+  /** `prompt: false` resolves an HTTPS auth failure as failed instead of asking for credentials. */
+  run<T>(
+    action: (credentials: Credentials | null) => Promise<T>,
+    options?: { prompt?: boolean },
+  ): Promise<NetworkResult<T>>;
   /** A run of this instance is in flight (prompt included), or any network action of the repo runs. */
   pending: boolean;
   prompt: CredentialPrompt | null;
@@ -49,6 +59,9 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
   const [prompt, setPrompt] = useState<CredentialPrompt | null>(null);
   // Read synchronously by run(): the prompt state lags a render.
   const asking = useRef(false);
+  // Set synchronously, so two runs in one tick (a manual and an auto fetch, or StrictMode's double
+  // mount) start one action; `pending` only catches up after a render.
+  const inFlight = useRef(false);
   // Counted here: `isPending` lags a tick, and the prompt wait is not a mutation.
   const [busy, setBusy] = useState(0);
   const elsewhere = useIsMutating({ mutationKey: mutationKeys.network(repoId) }) > 0;
@@ -86,9 +99,12 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
 
   const run = async <T>(
     action: (credentials: Credentials | null) => Promise<T>,
+    options: { prompt?: boolean } = {},
   ): Promise<NetworkResult<T>> => {
-    // One prompt at a time: a run started while it is open is ignored.
-    if (asking.current) return { status: "cancelled" };
+    // One run at a time, prompt included: a run started while another is in flight is ignored.
+    if (asking.current) return { status: "cancelled", reason: "prompt" };
+    if (inFlight.current) return { status: "cancelled", reason: "busy" };
+    inFlight.current = true;
     setBusy((n) => n + 1);
     try {
       let credentials: Credentials | null = null;
@@ -99,12 +115,13 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
         } catch (e) {
           const error = e as AppError;
           const origin = promptOrigin(error);
-          if (origin === null) return { status: "failed", error };
+          if (origin === null || options.prompt === false) return { status: "failed", error };
           credentials = await ask(origin, credentials !== null);
-          if (credentials === null) return { status: "cancelled" };
+          if (credentials === null) return { status: "cancelled", reason: "prompt" };
         }
       }
     } finally {
+      inFlight.current = false;
       setBusy((n) => n - 1);
     }
   };

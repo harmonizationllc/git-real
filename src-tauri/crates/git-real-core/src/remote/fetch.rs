@@ -31,8 +31,18 @@ impl Fetch {
     }
 
     /// Runs `git -C <workdir> fetch --all` (or `fetch <remote>`); pruning follows the user's
-    /// `fetch.prune`.
+    /// `fetch.prune`. Interactive: [`Fetch::run_with`] with `non_interactive` false.
     pub fn run(&self, creds: Option<&Credentials>) -> Result<(), GitError> {
+        self.run_with(creds, false)
+    }
+
+    /// [`Fetch::run`]; with `non_interactive`, no credential helper, GUI or ssh prompt may
+    /// appear (see `run_network`), for the background auto-fetch.
+    pub fn run_with(
+        &self,
+        creds: Option<&Credentials>,
+        non_interactive: bool,
+    ) -> Result<(), GitError> {
         let target = self.remote.as_deref().unwrap_or("--all");
         run_network(
             &self.git,
@@ -41,6 +51,7 @@ impl Fetch {
             &["fetch", target],
             &self.urls,
             creds,
+            non_interactive,
         )
     }
 }

@@ -62,6 +62,11 @@ describe("defaults", () => {
     const m = await load();
     expect([m.DIFF_FONT_MIN, m.DIFF_FONT_MAX, m.DIFF_FONT_DEFAULT]).toEqual([10, 24, 13]);
     expect([m.REFS_DEFAULT, m.SIDEBAR_DEFAULT]).toEqual([240, 320]);
+    expect([
+      m.AUTO_FETCH_INTERVAL_MIN,
+      m.AUTO_FETCH_INTERVAL_MAX,
+      m.AUTO_FETCH_INTERVAL_DEFAULT,
+    ]).toEqual([1, 60, 5]);
   });
 });
 

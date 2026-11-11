@@ -409,9 +409,19 @@ export function deleteRemoteTag(
   return invoke<void>("delete_remote_tag", { id, remote, name, credentials });
 }
 
-/** `git fetch --all`. Not named `fetch`, which would shadow the global. */
-export function fetchAll(id: RepoId, credentials: Credentials | null = null): Promise<void> {
-  return invoke<void>("fetch", { id, credentials });
+/**
+ * `git fetch --all`. Not named `fetch`, which would shadow the global. `nonInteractive` (the
+ * auto-fetch) forbids every prompt for that git process: the credential helper is told not to
+ * interact (`credential.interactive=false`, `GCM_INTERACTIVE=never`), git's askpass chain is
+ * skipped (`GIT_ASKPASS` set empty), ssh-askpass is refused (`SSH_ASKPASS_REQUIRE=never`) and
+ * ssh runs in batch mode unless the user set an explicit ssh command.
+ */
+export function fetchAll(
+  id: RepoId,
+  credentials: Credentials | null = null,
+  options?: { nonInteractive?: boolean },
+): Promise<void> {
+  return invoke<void>("fetch", { id, credentials, nonInteractive: options?.nonInteractive });
 }
 
 /** `git fetch <remote>`: one remote only. */

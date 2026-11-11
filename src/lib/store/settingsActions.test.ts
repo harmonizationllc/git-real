@@ -72,6 +72,26 @@ describe("appearance setters", () => {
   });
 });
 
+describe("fetch setters", () => {
+  it("setAutoFetch patches fetch.auto", async () => {
+    actions.setAutoFetch(false);
+    expect(settings().fetch.auto).toBe(false);
+    expect(await patches()).toEqual([{ fetch: { auto: false } }]);
+  });
+
+  it("setAutoFetchInterval rounds and clamps to 1..60 and ignores NaN", async () => {
+    actions.setAutoFetchInterval(0);
+    expect(settings().fetch.intervalMinutes).toBe(1);
+    actions.setAutoFetchInterval(75);
+    expect(settings().fetch.intervalMinutes).toBe(60);
+    actions.setAutoFetchInterval(4.6);
+    expect(settings().fetch.intervalMinutes).toBe(5);
+    actions.setAutoFetchInterval(Number.NaN);
+    expect(settings().fetch.intervalMinutes).toBe(5);
+    expect(await patches()).toEqual([{ fetch: { intervalMinutes: 5 } }]);
+  });
+});
+
 describe("diff setters", () => {
   it("setDiffMode and setIgnoreWhitespace set the diff section", async () => {
     actions.setDiffMode("unified");

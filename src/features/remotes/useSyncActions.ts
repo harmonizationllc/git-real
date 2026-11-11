@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
+import { entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
+import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useSettings } from "../../lib/store/settings";
 import { useToasts } from "../../lib/store/toasts";
 import { useBranches } from "../branches/useBranches";
 import { useOperationState } from "../merge/useOperationState";
@@ -21,6 +24,10 @@ export interface SyncActions {
   /** The verb this instance is running, for the busy label. */
   running: SyncVerb | null;
   fetch(): void;
+  /**
+   * Fetches with every prompt disabled; a failure pauses auto-fetch and toasts once per streak.
+   */
+  autoFetch(): void;
   /** Pulls in `mode`, or in the repo's default mode. */
   pull(mode?: PullMode): void;
   push(): void;
@@ -35,6 +42,17 @@ export interface SyncActions {
   confirmForcePush(): void;
   cancelForcePush(): void;
 }
+
+/** Network failures that come from the push itself, not from reaching the remote. */
+const PUSH_OUTCOMES: ReadonlySet<string> = new Set([
+  "pushRejectedNonFastForward",
+  "leaseStale",
+  "remoteRejected",
+]);
+
+/** A failure a background fetch would hit too (connectivity or auth), so it pauses auto-fetch. */
+export const pausesAutoFetch = (error: AppError): boolean =>
+  error.kind === "networkFailed" && !PUSH_OUTCOMES.has(error.network?.kind ?? "");
 
 /** Errors the set-upstream dialog can fix in place, so it stays open with them. */
 const DIALOG_ERRORS = new Set(["invalidBranchName", "remoteNotFound"]);
@@ -61,20 +79,58 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   const upstreamRemote =
     tracking === null ? null : remoteOfUpstream(tracking.upstream, remoteNames);
 
-  /** Runs one network action as `verb`: clears the last message and reports the verb until it settles. */
-  const start = async <T>(
+  // Runs of this instance in flight. The label follows the first and clears with the last: a run
+  // the network gate refuses (another is in flight) settles at once and must not clear it.
+  const runs = useRef(0);
+  const track = async <T>(
+    verb: SyncVerb,
+    go: () => Promise<NetworkResult<T>>,
+  ): Promise<NetworkResult<T>> => {
+    if (runs.current++ === 0) setRunning(verb);
+    try {
+      return await go();
+    } finally {
+      if (--runs.current === 0) setRunning(null);
+    }
+  };
+
+  /**
+   * Runs one network action as `verb`: clears the last message and reports the verb until it
+   * settles. A run of this instance already in flight means the network gate refuses this one as
+   * busy, so the message (which may be that run's) is left alone.
+   */
+  const start = <T>(
     verb: SyncVerb,
     action: (credentials: Credentials | null) => Promise<T>,
   ): Promise<NetworkResult<T>> => {
-    setMessage(null);
-    setRunning(verb);
-    const result = await network.run(action);
-    setRunning(null);
-    return result;
+    if (runs.current === 0) setMessage(null);
+    return track(verb, () => network.run(action));
   };
 
   const report = (result: NetworkResult<unknown>) => {
     if (result.status === "failed") setMessage(networkMessage(result.error));
+  };
+
+  const autoFetchState = () => useAutoFetchState.getState();
+
+  /**
+   * A manual action's failure pauses auto-fetch when a background fetch would hit it too; so does
+   * a declined sign-in, since the background fetch cannot sign in either. A run refused because
+   * another is in flight (`busy`) says nothing about the remote.
+   */
+  const recordFailure = (result: NetworkResult<unknown>) => {
+    if (
+      (result.status === "cancelled" && result.reason === "prompt") ||
+      (result.status === "failed" && pausesAutoFetch(result.error))
+    ) {
+      autoFetchState().recordFailure(repoId);
+    }
+  };
+
+  /** A pushed branch may mean the remote works again. */
+  const recordPush = (result: NetworkResult<unknown>) => {
+    if (result.status === "ok") autoFetchState().resume(repoId);
+    recordFailure(result);
   };
 
   /** A completed push of `local`, announced as a success toast. */
@@ -85,9 +141,45 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (gates.fetch !== null) return;
     void start("fetch", (c) => fetchAll(repoId, c)).then((result) => {
       report(result);
+      recordFailure(result);
       if (result.status === "ok") {
+        autoFetchState().recordFetched(repoId, Date.now());
         useToasts.getState().notify({ text: "Fetch complete", variant: "success" });
       }
+    });
+  };
+
+  // Two calls in one tick start one fetch: the network gate refuses a run while one is in flight.
+  // The pause is not checked here: useAutoFetch skips paused triggers, except the interval's
+  // silent retry, which runs while paused so a dead network is noticed coming back.
+  const autoFetch = () => {
+    if (gates.fetch !== null) return;
+    void track("fetch", () =>
+      network.run((c) => fetchAll(repoId, c, { nonInteractive: true }), { prompt: false }),
+    ).then((result) => {
+      if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
+      if (result.status !== "failed") return;
+      // Once per streak: a failure while already paused stays silent.
+      const wasPaused = entryFor(autoFetchState(), repoId).paused;
+      autoFetchState().recordFailure(repoId);
+      if (wasPaused) return;
+      // A late failure for a closed tab, or after auto-fetch was turned off, is not announced.
+      const tab = useRepoTabs.getState().tabs.find((t) => t.id === repoId);
+      if (tab === undefined || !useSettings.getState().settings.fetch.auto) return;
+      useToasts.getState().notify({
+        text: `Auto-fetch failed (${tab.summary.name}): ${networkMessage(result.error).title}`,
+        variant: "error",
+        action: {
+          label: "Fetch",
+          // The toast outlives this instance (the pane remounts per tab): bring the repo's tab to
+          // the front and let its mounted pane run the manual fetch. Both are no-ops for a
+          // closed tab: `activate` ignores unknown ids and no pane of the repo is mounted.
+          run: () => {
+            useRepoTabs.getState().activate(repoId);
+            useAutoFetchState.getState().requestManual(repoId);
+          },
+        },
+      });
     });
   };
 
@@ -95,6 +187,9 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (gates.pull !== null) return;
     void start("pull", (c) => pullBranch(repoId, mode ?? defaultMode, c)).then((result) => {
       report(result);
+      recordFailure(result);
+      // A pull fetched whether it completed or stopped on conflicts.
+      if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
       // A pull that stops on conflicts is surfaced by the OperationBanner, not a toast.
       if (result.status === "ok" && result.value === "completed") {
         useToasts.getState().notify({ text: "Pull complete", variant: "success" });
@@ -112,6 +207,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
           setPublishTo({ remotes: remoteNames, branch: local });
         } else {
           report(result);
+          recordPush(result);
           if (result.status === "ok") toastPushed(local);
         }
       },
@@ -130,6 +226,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       }
       setPublishTo(null);
       report(result);
+      recordPush(result);
       if (result.status === "ok") toastPushed(local);
     });
   };
@@ -147,6 +244,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       (result) => {
         setForcePush(null);
         report(result);
+        recordPush(result);
         if (result.status === "ok") toastPushed(local);
       },
     );
@@ -158,6 +256,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     upstreamRemote,
     running,
     fetch,
+    autoFetch,
     pull,
     push,
     requestForcePush,

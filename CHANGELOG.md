@@ -4,6 +4,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## 0.3.0
 
+- **Auto-fetch**: the focused repo is fetched automatically on open, tab switch, checkout, window focus and every 5 minutes (Settings → Fetch). A failure shows one error notice with a Fetch button; the automatic path never asks for credentials.
 - **Tag folders**: tags are grouped into collapsible folders by their slash path, every folder open by default, the same as branches.
 - **Fixed**: a left-column section's header stays in place while its list scrolls beneath it.
 - **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the diff; click a mark to jump to it.

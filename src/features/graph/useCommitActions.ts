@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { checkoutCommit, resetToCommit, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, ResetMode } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
 
 export type CommitRequest =
   { action: "checkout"; oid: string } | { action: "reset"; oid: string; mode: ResetMode };
@@ -27,6 +28,10 @@ export function useCommitActions(repoId: RepoId): UseCommitActions {
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);
       }),
+    // A detached HEAD may be behind its remote, so the focused pane is asked to fetch.
+    onSuccess: (_data, req) => {
+      if (req.action === "checkout") useAutoFetchState.getState().request(repoId);
+    },
     // Runs on failure too, since a failed checkout or reset may have partly applied.
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.repo(repoId) }),
   });

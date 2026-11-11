@@ -13,7 +13,10 @@ import type { OperationState, Tracking } from "../../lib/ipc";
 import { authError, networkError, remoteInfo, trackedList } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { queryKeys } from "../../lib/query/keys";
-import { useSyncActions } from "./useSyncActions";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
+import { useRepoTabs } from "../../lib/store/repoTabs";
+import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
+import { pausesAutoFetch, useSyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -38,6 +41,7 @@ function deferred() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useAutoFetchState.setState({ repos: {} });
   vi.mocked(listBranches).mockResolvedValue(trackedList(origin));
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
@@ -464,6 +468,27 @@ describe("useSyncActions messages", () => {
     await act(async () => d.resolve());
   });
 
+  it("should keep the message when a manual action is refused because another run is in flight", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll)
+      .mockRejectedValueOnce(networkError("hostUnreachable", { verb: "fetch" }))
+      .mockReturnValueOnce(d.promise);
+    const { result } = await setup();
+    await act(async () => result.current.fetch());
+    await waitFor(() => expect(result.current.message?.title).toBe("Could not reach the remote"));
+    await waitFor(() => expect(result.current.gates.fetch).toBeNull());
+    // An auto-fetch (which leaves the message) and a pull in one tick: the pull is refused.
+    act(() => {
+      result.current.autoFetch();
+      result.current.pull();
+    });
+    expect(pull).not.toHaveBeenCalled();
+    expect(result.current.message?.title).toBe("Could not reach the remote");
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(result.current.message?.title).toBe("Could not reach the remote");
+  });
+
   it("should show no message when the sign-in is cancelled", async () => {
     vi.mocked(push).mockRejectedValue(authError());
     const { result } = await setup();
@@ -608,5 +633,312 @@ describe("useSyncActions completion toasts (GR-14)", () => {
     const texts = useToasts.getState().toasts.map((t) => t.text);
     const pushed = texts.find((t) => t.startsWith("Pushed "));
     expect(pushed).toBeTruthy();
+  });
+});
+
+// Contract: autoFetch fetches without a prompt and toasts its failures; the sync actions feed the auto-fetch store.
+describe("useSyncActions autoFetch", () => {
+  const entry = () => useAutoFetchState.getState().repos[1];
+
+  beforeEach(() => {
+    useToasts.setState({ toasts: [] });
+    useRepoTabs.setState(useRepoTabs.getInitialState(), true);
+    useSettings.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  /** Opens repo 1 as a tab, as the app does before mounting its pane. */
+  const openRepoTab = () =>
+    useRepoTabs.getState().openTab({
+      id: 1,
+      summary: { path: "/r/1", name: "r1", headBranch: "main", isBare: false },
+    });
+
+  /** Opens repo 1's tab, runs one auto-fetch that fails on auth and waits until it has settled. */
+  async function failOnAuth() {
+    openRepoTab();
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const view = await setup();
+    act(() => view.result.current.autoFetch());
+    await waitFor(() => expect(useToasts.getState().toasts).toHaveLength(1));
+    await waitFor(() => expect(view.result.current.running).toBeNull());
+    return view;
+  }
+
+  it("should run a non-interactive fetchAll with null credentials, report running fetch, and record the fetch time on success", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null, { nonInteractive: true });
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()?.lastFetchedAt).toEqual(expect.any(Number));
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should skip while gated", async () => {
+    vi.mocked(listRemotes).mockResolvedValue([]);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.fetch).toBe("No remotes configured"));
+    act(() => result.current.autoFetch());
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("should run one fetch when called twice in the same tick", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => {
+      result.current.autoFetch();
+      result.current.autoFetch();
+    });
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    expect(fetchAll).toHaveBeenCalledOnce();
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    // The guard is released once the fetch settles.
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+  });
+
+  it("should skip while a network action is already running", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    act(() => result.current.autoFetch());
+    expect(fetchAll).toHaveBeenCalledOnce();
+    await act(async () => d.resolve());
+  });
+
+  it("should toast Auto-fetch failed naming the repo, with a Fetch action, pause, and not open a prompt, on an auth failure", async () => {
+    const { result } = await failOnAuth();
+    const [toast] = useToasts.getState().toasts;
+    expect(toast).toMatchObject({
+      text: "Auto-fetch failed (r1): Sign-in required",
+      variant: "error",
+    });
+    expect(toast?.action?.label).toBe("Fetch");
+    expect(entry()?.paused).toBe(true);
+    expect(result.current.prompt).toBeNull();
+    expect(result.current.message).toBeNull();
+  });
+
+  it("should activate the repo's tab and request a manual fetch when the toast's Fetch action runs", async () => {
+    await failOnAuth();
+    useRepoTabs.getState().openTab({
+      id: 2,
+      summary: { path: "/r/2", name: "r2", headBranch: "main", isBare: false },
+    });
+    expect(useRepoTabs.getState().activeId).toBe(2);
+    act(() => useToasts.getState().toasts[0]?.action?.run());
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    expect(entry()?.manualRequested).toBe(1);
+    // The mounted pane of the activated tab runs the fetch, not the toast.
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(fetchAll).toHaveBeenCalledOnce();
+  });
+
+  it("should change no tab when the toast's Fetch action runs after the repo's tab closed", async () => {
+    await failOnAuth();
+    useRepoTabs.getState().openTab({
+      id: 2,
+      summary: { path: "/r/2", name: "r2", headBranch: "main", isBare: false },
+    });
+    useRepoTabs.getState().closeTab(1);
+    act(() => useToasts.getState().toasts[0]?.action?.run());
+    expect(useRepoTabs.getState().activeId).toBe(2);
+    // The bump lands, but no pane of repo 1 is mounted to act on it.
+    expect(entry()?.manualRequested).toBe(1);
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(fetchAll).toHaveBeenCalledOnce();
+  });
+
+  it("should keep trying while paused, without a second toast", async () => {
+    const { result } = await failOnAuth();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(1);
+    expect(entry()?.paused).toBe(true);
+  });
+
+  it("should clear the pause when an attempt while paused succeeds", async () => {
+    const { result } = await failOnAuth();
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(entry()?.paused).toBe(false));
+    expect(entry()?.lastFetchedAt).toEqual(expect.any(Number));
+    expect(useToasts.getState().toasts).toHaveLength(1);
+  });
+
+  it("should record the failure but not toast when the repo's tab closed before the fetch failed", async () => {
+    openRepoTab();
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise.then(() => Promise.reject(authError())));
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    useRepoTabs.getState().closeTab(1);
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    expect(entry()?.paused).toBe(true);
+  });
+
+  it("should record the failure but not toast when auto-fetch was turned off before the fetch failed", async () => {
+    openRepoTab();
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise.then(() => Promise.reject(authError())));
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, fetch: { ...DEFAULT_SETTINGS.fetch, auto: false } },
+    });
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    expect(entry()?.paused).toBe(true);
+  });
+
+  it("should record the fetch time after a manual fetch succeeds", async () => {
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should record the fetch time after a pull completes", async () => {
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should resume after a push succeeds", async () => {
+    useAutoFetchState.getState().recordFailure(1);
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(entry()?.paused).toBe(false));
+  });
+
+  it("should pause silently after a manual fetch fails", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should not pause after a push is rejected as non-fast-forward", async () => {
+    vi.mocked(push).mockRejectedValue(networkError("pushRejectedNonFastForward"));
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(result.current.message).not.toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
+  it("should not pause after a pull races an operation", async () => {
+    vi.mocked(pull).mockRejectedValue({ kind: "operationInProgress", message: "merge running" });
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(result.current.message).not.toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
+  it("should pause after a push fails because the host is unreachable", async () => {
+    vi.mocked(push).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+  });
+
+  it("should pause after a pull fails because the host is unreachable", async () => {
+    vi.mocked(pull).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+  });
+
+  it("should record the fetch time after a pull stops on conflicts", async () => {
+    vi.mocked(pull).mockResolvedValue("conflicts");
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should pause silently when a manual fetch's sign-in is cancelled", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => result.current.prompt?.cancel());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()?.paused).toBe(true);
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should pause silently when a manual pull's or push's sign-in is cancelled", async () => {
+    vi.mocked(pull).mockRejectedValue(authError());
+    vi.mocked(push).mockRejectedValue(authError());
+    const { result } = await setup();
+    for (const run of [() => result.current.pull(), () => result.current.push()]) {
+      useAutoFetchState.setState({ repos: {} });
+      await waitFor(() => expect(result.current.gates.push).toBeNull());
+      act(run);
+      await waitFor(() => expect(result.current.prompt).not.toBeNull());
+      act(() => result.current.prompt?.cancel());
+      await waitFor(() => expect(result.current.running).toBeNull());
+      expect(entry()?.paused).toBe(true);
+    }
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should not pause when a manual run is refused because another run is in flight", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    vi.mocked(pull).mockRejectedValue(networkError("pushRejectedNonFastForward"));
+    const { result } = await setup();
+    act(() => {
+      result.current.autoFetch();
+      result.current.pull();
+    });
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(pull).not.toHaveBeenCalled();
+    expect(entry()?.paused ?? false).toBe(false);
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()?.paused ?? false).toBe(false);
+  });
+
+  it("should not toast when an autoFetch is cancelled", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const { result } = await setup();
+    // Captured while ungated: the run the manual fetch has in flight makes this one resolve cancelled.
+    const staleAutoFetch = result.current.autoFetch;
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.prompt).not.toBeNull());
+    act(() => staleAutoFetch());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledOnce());
+    act(() => result.current.prompt?.cancel());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+});
+
+describe("pausesAutoFetch", () => {
+  it("is true for connectivity and auth failures", () => {
+    expect(pausesAutoFetch(networkError("hostUnreachable"))).toBe(true);
+    expect(pausesAutoFetch(authError())).toBe(true);
+  });
+
+  it("is false for rejected pushes and non-network errors", () => {
+    for (const kind of ["pushRejectedNonFastForward", "leaseStale", "remoteRejected"] as const) {
+      expect(pausesAutoFetch(networkError(kind))).toBe(false);
+    }
+    expect(pausesAutoFetch({ kind: "operationInProgress", message: "m" })).toBe(false);
   });
 });

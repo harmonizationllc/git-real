@@ -59,10 +59,17 @@ impl<'a> NetworkAuth<'a> {
     }
 }
 
-pub fn fetch_inner(reg: &RepoRegistry, id: RepoId, auth: NetworkAuth<'_>) -> Result<(), AppError> {
+/// `git fetch --all`. `non_interactive` (the auto-fetch) forbids every prompt, including the
+/// user's own credential helper and ssh-askpass.
+pub fn fetch_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    auth: NetworkAuth<'_>,
+    non_interactive: bool,
+) -> Result<(), AppError> {
     let fetch = with_session(reg, id, |s| s.prepare_fetch())?;
     fetch
-        .run(auth.resolve(fetch.urls()).as_ref())
+        .run_with(auth.resolve(fetch.urls()).as_ref(), non_interactive)
         .map_err(AppError::from)
 }
 
@@ -142,11 +149,16 @@ pub async fn fetch(
     hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     credentials: Option<CredentialsArg>,
+    non_interactive: Option<bool>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
+    let non_interactive = non_interactive.unwrap_or(false);
     let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
-    run_blocking(move || fetch_inner(&reg, id, NetworkAuth::new(credentials.as_ref(), &hosting)))
-        .await
+    run_blocking(move || {
+        let auth = NetworkAuth::new(credentials.as_ref(), &hosting);
+        fetch_inner(&reg, id, auth, non_interactive)
+    })
+    .await
 }
 
 #[tauri::command]

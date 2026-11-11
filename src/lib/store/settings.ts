@@ -6,6 +6,9 @@ import { useToasts } from "./toasts";
 export const DIFF_FONT_MIN = 10;
 export const DIFF_FONT_MAX = 24;
 export const DIFF_FONT_DEFAULT = 13;
+export const AUTO_FETCH_INTERVAL_MIN = 1;
+export const AUTO_FETCH_INTERVAL_MAX = 60;
+export const AUTO_FETCH_INTERVAL_DEFAULT = 5;
 export const REFS_DEFAULT = 240;
 export const SIDEBAR_DEFAULT = 320;
 
@@ -19,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tools: { editor: null, diffTool: null, mergeTool: null },
   appearance: { theme: "system", diffFontFamily: null, diffFontSize: DIFF_FONT_DEFAULT },
   diff: { mode: "split", ignoreWhitespace: false },
+  fetch: { auto: true, intervalMinutes: AUTO_FETCH_INTERVAL_DEFAULT },
   layout: {
     refsWidth: REFS_DEFAULT,
     sidebarWidth: SIDEBAR_DEFAULT,

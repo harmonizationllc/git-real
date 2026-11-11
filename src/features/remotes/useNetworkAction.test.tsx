@@ -146,7 +146,7 @@ describe("useNetworkAction credential prompt", () => {
     const outcome = start(result.current.run, action);
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     act(() => result.current.prompt?.cancel());
-    await expect(outcome).resolves.toEqual({ status: "cancelled" });
+    await expect(outcome).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     await waitFor(() => expect(result.current.prompt).toBeNull());
   });
 
@@ -168,6 +168,19 @@ describe("useNetworkAction credential prompt", () => {
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     act(() => result.current.prompt?.submit("me", "tok"));
     await expect(outcome).resolves.toEqual({ status: "failed", error: other });
+  });
+
+  it("should resolve failed with the auth error and open no prompt when prompt is false", async () => {
+    const error = authError();
+    const action = vi.fn<Action>().mockRejectedValue(error);
+    const { result } = renderHookWithProviders(() => useNetworkAction(1));
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.run(action, { prompt: false });
+    });
+    expect(outcome).toEqual({ status: "failed", error });
+    expect(result.current.prompt).toBeNull();
+    expect(action).toHaveBeenCalledOnce();
   });
 });
 
@@ -365,14 +378,40 @@ describe("useNetworkAction concurrent prompts", () => {
     const outcome = start(result.current.run, first);
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     const shown = result.current.prompt;
+    let refused!: Promise<NetworkResult<string>>;
     act(() => {
-      void result.current.run(second);
+      refused = result.current.run(second);
     });
+    await expect(refused).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     expect(second).not.toHaveBeenCalled();
     expect(result.current.prompt).toBe(shown);
     act(() => result.current.prompt?.cancel());
-    await expect(outcome).resolves.toEqual({ status: "cancelled" });
+    await expect(outcome).resolves.toEqual({ status: "cancelled", reason: "prompt" });
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it("should run one action when two runs start in the same tick; the second resolves cancelled", async () => {
+    const d = deferred();
+    const first = vi.fn<Action>().mockReturnValue(d.promise);
+    const second = vi.fn<Action>().mockResolvedValue("second");
+    const { result } = renderHookWithProviders(() => useNetworkAction(1));
+    let a!: Promise<NetworkResult<string>>;
+    let b!: Promise<NetworkResult<string>>;
+    act(() => {
+      a = result.current.run(first);
+      b = result.current.run(second);
+    });
+    await expect(b).resolves.toEqual({ status: "cancelled", reason: "busy" });
+    await waitFor(() => expect(first).toHaveBeenCalledOnce());
+    expect(second).not.toHaveBeenCalled();
+    await act(async () => d.resolve("first"));
+    await expect(a).resolves.toEqual({ status: "ok", value: "first" });
+    // Released once the first run settles.
+    let c: unknown;
+    await act(async () => {
+      c = await result.current.run(second);
+    });
+    expect(c).toEqual({ status: "ok", value: "second" });
   });
 });
 

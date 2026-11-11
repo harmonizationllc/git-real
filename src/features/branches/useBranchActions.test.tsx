@@ -9,6 +9,7 @@ import {
   setBranchUpstream,
 } from "../../lib/ipc";
 import type { AppError } from "../../lib/ipc";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useBranchActions } from "./useBranchActions";
 import type { UseBranchActions } from "./useBranchActions";
@@ -357,5 +358,59 @@ describe("useBranchActions setUpstream", () => {
       upstream: "origin/x",
     });
     expect(out).toEqual(missing);
+  });
+});
+
+// Contract: a successful checkout or set upstream asks the focused pane to auto-fetch.
+describe("useBranchActions auto-fetch requests", () => {
+  beforeEach(() => {
+    useAutoFetchState.setState({ repos: {} });
+    vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
+  });
+
+  const requested = () => useAutoFetchState.getState().repos[1]?.requested ?? 0;
+
+  it("requests an auto-fetch after a successful checkout", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkout", name: "dev" });
+    expect(requested()).toBe(1);
+  });
+
+  it("requests an auto-fetch after a successful remote checkout", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkoutRemote", remote: "origin", name: "dev" });
+    expect(requested()).toBe(1);
+  });
+
+  it("requests an auto-fetch after a successful set upstream", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "setUpstream", name: "dev", upstream: "origin/dev" });
+    expect(requested()).toBe(1);
+  });
+
+  it("requests nothing after unsetting the upstream", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "setUpstream", name: "dev", upstream: null });
+    expect(requested()).toBe(0);
+  });
+
+  it("requests nothing after a failed checkout", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue({ kind: "checkoutFailed", message: "dirty" });
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkout", name: "dev" });
+    expect(requested()).toBe(0);
+  });
+
+  it("requests nothing after create, rename or delete", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, {
+      action: "create",
+      name: "topic",
+      startPoint: null,
+      checkout: true,
+    });
+    await run(() => result.current, { action: "rename", oldName: "topic", newName: "t2" });
+    await run(() => result.current, { action: "delete", name: "t2", force: false });
+    expect(requested()).toBe(0);
   });
 });

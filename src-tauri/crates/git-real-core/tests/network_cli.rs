@@ -27,6 +27,7 @@ fi
 printf '%s\n' "$@" > "$d/argv.txt"
 printf '%s\n' "${GR_USERNAME-<unset>}" "${GR_TOKEN-<unset>}" > "$d/env.txt"
 printf '%s' "${GIT_SSH_COMMAND-<unset>}" > "$d/ssh.txt"
+printf '%s\n' "${GCM_INTERACTIVE-<unset>}" "${SSH_ASKPASS_REQUIRE-<unset>}" "${GIT_TERMINAL_PROMPT-<unset>}" "${GIT_ASKPASS-<unset>}" > "$d/prompt-env.txt"
 prev=
 for a in "$@"; do
   if [ "$prev" = -c ]; then
@@ -1060,5 +1061,89 @@ fn fetch_and_push_report_the_urls_they_use() {
             .urls()
             .to_vec(),
         want
+    );
+}
+
+// ---------- auto-fetch: non-interactive fetch ----------
+
+/// The ssh command the stand-in should see on a non-interactive run: batch
+/// mode, unless the host set an explicit ssh command (`SSH_ASKPASS` alone does
+/// not count, a non-interactive run overrides it).
+fn expected_non_interactive_ssh(path: &Path) -> String {
+    let setup = git_real_core::remote::ssh::SshSetup::detect(Some(path));
+    if setup.git_ssh_env || setup.git_ssh_command_env || setup.core_ssh_command {
+        std::env::var("GIT_SSH_COMMAND").unwrap_or_else(|_| "<unset>".to_string())
+    } else {
+        "ssh -o BatchMode=yes".to_string()
+    }
+}
+
+#[test]
+fn a_non_interactive_fetch_disables_every_prompt_for_that_process() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run_with(None, true)
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        ["-c", "credential.interactive=false", "fetch", "--all"]
+    );
+    assert_eq!(
+        read(&path, "prompt-env.txt").unwrap(),
+        "never\nnever\n0\n\n",
+        "GCM_INTERACTIVE, SSH_ASKPASS_REQUIRE, GIT_TERMINAL_PROMPT, GIT_ASKPASS (set and empty, \
+         so git skips the GIT_ASKPASS/core.askPass/SSH_ASKPASS chain)"
+    );
+    assert_eq!(
+        read(&path, "ssh.txt").unwrap(),
+        expected_non_interactive_ssh(&path)
+    );
+}
+
+#[test]
+fn a_non_interactive_fetch_with_credentials_puts_the_switch_before_the_helper() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run_with(Some(&creds()), true)
+        .unwrap();
+    let mut want: Vec<String> = vec!["-c".into(), "credential.interactive=false".into()];
+    want.extend(auth_args("https://example.test"));
+    want.extend(["fetch".to_owned(), "--all".to_owned()]);
+    assert_eq!(after_workdir(&path), want);
+}
+
+#[test]
+fn an_interactive_fetch_is_unchanged() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path)
+        .prepare_fetch()
+        .unwrap()
+        .run_with(None, false)
+        .unwrap();
+    assert_eq!(after_workdir(&path), ["fetch", "--all"]);
+    assert_eq!(
+        read(&path, "prompt-env.txt").unwrap(),
+        format!(
+            "{}\n{}\n0\n{}\n",
+            std::env::var("GCM_INTERACTIVE").unwrap_or_else(|_| "<unset>".into()),
+            std::env::var("SSH_ASKPASS_REQUIRE").unwrap_or_else(|_| "<unset>".into()),
+            // Inherited untouched: `<unset>` unless the host itself sets it.
+            std::env::var("GIT_ASKPASS").unwrap_or_else(|_| "<unset>".into()),
+        )
+    );
+}
+
+#[test]
+fn run_is_an_interactive_run_with() {
+    let (_d, _b, path, _h) = fixture();
+    session(&path).prepare_fetch().unwrap().run(None).unwrap();
+    assert!(
+        !read(&path, "argv.txt")
+            .unwrap()
+            .contains("credential.interactive")
     );
 }

@@ -65,7 +65,15 @@ impl Push {
             args.push(lease);
         }
         args.extend([self.remote.as_str(), refspec.as_str()]);
-        run_network(&self.git, &self.workdir, "push", &args, &self.urls, creds)
+        run_network(
+            &self.git,
+            &self.workdir,
+            "push",
+            &args,
+            &self.urls,
+            creds,
+            false,
+        )
     }
 }
 

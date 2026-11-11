@@ -212,6 +212,34 @@ fn lenient_clamps_font_size_and_widths() {
 }
 
 #[test]
+fn fetch_defaults_are_on_every_five_minutes() {
+    let s = Settings::default();
+    assert!(s.fetch.auto);
+    assert_eq!(s.fetch.interval_minutes, 5);
+}
+
+#[test]
+fn lenient_clamps_fetch_interval() {
+    let (s, warnings) = Settings::from_json_lenient(&json!({"fetch": {"intervalMinutes": 999}}));
+    assert_eq!(s.fetch.interval_minutes, 60);
+    assert_eq!(fields(&warnings), vec!["fetch.intervalMinutes"]);
+    let (s, warnings) = Settings::from_json_lenient(&json!({"fetch": {"intervalMinutes": 0}}));
+    assert_eq!(s.fetch.interval_minutes, 1);
+    assert_eq!(fields(&warnings), vec!["fetch.intervalMinutes"]);
+}
+
+#[test]
+fn patch_applies_fetch_and_clamps() {
+    let next = Settings::default()
+        .apply(&patch(
+            json!({"fetch": {"auto": false, "intervalMinutes": 75}}),
+        ))
+        .unwrap();
+    assert!(!next.fetch.auto);
+    assert_eq!(next.fetch.interval_minutes, 60);
+}
+
+#[test]
 fn lenient_u32_overflow_and_negative_fall_back() {
     for bad in [json!(4_294_967_296_u64), json!(-5)] {
         let (s, warnings) = Settings::from_json_lenient(&json!({
@@ -240,6 +268,17 @@ fn lenient_null_on_non_nullable_leaf_falls_back() {
     }));
     assert_eq!(s.diff.mode, DiffMode::Split);
     assert_eq!(fields(&warnings), vec!["diff.mode"]);
+}
+
+#[test]
+fn lenient_fetch_wrong_types_fall_back_to_defaults() {
+    let (s, warnings) =
+        Settings::from_json_lenient(&json!({"fetch": {"auto": "yes", "intervalMinutes": "5"}}));
+    assert!(s.fetch.auto);
+    assert_eq!(s.fetch.interval_minutes, 5);
+    let mut got = fields(&warnings);
+    got.sort_unstable();
+    assert_eq!(got, vec!["fetch.auto", "fetch.intervalMinutes"]);
 }
 
 #[test]

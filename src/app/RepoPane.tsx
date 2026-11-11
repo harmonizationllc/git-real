@@ -14,6 +14,7 @@ import { RemotesDialog } from "../features/remotes/RemotesDialog";
 import type { RemotesTarget } from "../features/remotes/remotesTarget";
 import { SyncMessage } from "../features/remotes/SyncMessage";
 import { SyncToolbar } from "../features/remotes/SyncToolbar";
+import { useAutoFetch } from "../features/remotes/useAutoFetch";
 import { useSyncActions } from "../features/remotes/useSyncActions";
 import { StashSummary } from "../features/stash/StashSummary";
 import { ChangesPanel } from "../features/worktree/ChangesPanel";
@@ -57,6 +58,7 @@ export function RepoPane({ tab }: { tab: RepoTab }): React.JSX.Element {
   const showHistory = useWorkspace((s) => s.showHistory);
   const [picker, setPicker] = useState(false);
   const sync = useSyncActions(tab.id);
+  useAutoFetch(tab.id, sync);
   const rootRef = useRef<HTMLElement>(null);
   // The open remotes dialog, tagged with the tab that opened it: switching tabs drops it during
   // render, so it never mounts for another repo and does not reappear on the way back.

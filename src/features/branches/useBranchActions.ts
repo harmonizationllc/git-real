@@ -10,6 +10,7 @@ import {
 } from "../../lib/ipc";
 import type { AppError, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
 
 export type BranchRequest =
   | { action: "create"; name: string; startPoint: string | null; checkout: boolean }
@@ -25,6 +26,19 @@ export interface UseBranchActions {
   pending: boolean;
   error: AppError | null;
   clearError(): void;
+}
+
+/** Whether the request's success asks for an auto-fetch: a checkout, or setting (not unsetting) an upstream. */
+function fetchesAfter(req: BranchRequest): boolean {
+  switch (req.action) {
+    case "checkout":
+    case "checkoutRemote":
+      return true;
+    case "setUpstream":
+      return req.upstream !== null;
+    default:
+      return false;
+  }
 }
 
 function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
@@ -51,6 +65,11 @@ export function useBranchActions(repoId: RepoId): UseBranchActions {
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);
       }),
+    // A new HEAD or a newly set upstream may be behind its remote, so the focused pane is
+    // asked to fetch; unsetting an upstream leaves nothing to compare against.
+    onSuccess: (_data, req) => {
+      if (fetchesAfter(req)) useAutoFetchState.getState().request(repoId);
+    },
     // Returning the promise keeps `pending` true until the refetch is triggered. Runs on
     // failure too, since a failed switch or create may have partly applied.
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.repo(repoId) }),
