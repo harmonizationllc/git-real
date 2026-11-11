@@ -37,6 +37,7 @@ import type { BranchList } from "../lib/ipc";
 import { queryKeys } from "../lib/query/keys";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { EMPTY_DRAFT, useCommitDraft } from "../lib/store/commitDraft";
+import { useAutoFetchState } from "../lib/store/autoFetch";
 import { useSettings } from "../lib/store/settings";
 import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
@@ -151,6 +152,7 @@ class StubResizeObserver {
 beforeEach(async () => {
   vi.resetAllMocks();
   await resetSettings();
+  useAutoFetchState.setState({ repos: {} });
   StubResizeObserver.instances = [];
   bannerMounts.length = 0;
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
@@ -205,6 +207,31 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   setActiveBindings(resolveBindings({}));
+});
+
+describe("RepoPane auto-fetch", () => {
+  it("fetches once with null credentials when the pane mounts", async () => {
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(1));
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
+  });
+
+  it("fetches the newly focused repo when the pane is remounted for another tab", async () => {
+    const first = renderWithProviders(<RepoPane tab={tab(1)} />);
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null));
+    first.unmount();
+    renderWithProviders(<RepoPane tab={tab(2)} />);
+    await waitFor(() => expect(fetchAll).toHaveBeenLastCalledWith(2, null));
+    expect(fetchAll).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fetch on mount when auto-fetch is off", async () => {
+    await seedSettings({ fetch: { auto: false } });
+    renderWithProviders(<RepoPane tab={tab(1)} />);
+    await screen.findByRole("region", { name: "Changes" });
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
 });
 
 // Contract: header as before, then a body with the changes panel and the detail pane.
@@ -1372,6 +1399,7 @@ describe("RepoPane issues", () => {
   });
 
   it("should not fetch, pull or push on Ctrl+Shift+I", async () => {
+    await seedSettings({ fetch: { auto: false } });
     vi.mocked(hostingRepoContext).mockResolvedValue(repoContext());
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("button", { name: "Link issue" });
@@ -1394,6 +1422,11 @@ describe("RepoPane issues", () => {
 // Contract: the header carries the sync toolbar, and Ctrl/Cmd+Shift+F, L and P run fetch, pull
 // and push through it, under the same dialog guard as the file history shortcut.
 describe("RepoPane sync toolbar and shortcuts", () => {
+  // These tests are about the manual actions, so the mount fetch stays out of their counts.
+  beforeEach(async () => {
+    await seedSettings({ fetch: { auto: false } });
+  });
+
   const press = (init: KeyboardEventInit) => fireEvent.keyDown(window, init);
   const ctrlShift = (key: string): KeyboardEventInit => ({ ctrlKey: true, shiftKey: true, key });
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { RepoId } from "../../lib/ipc";
 import { dueNow, entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
 import { useSettings } from "../../lib/store/settings";
+import { LOADING } from "./syncCopy";
 import type { SyncActions } from "./useSyncActions";
 
 /**
@@ -9,7 +10,7 @@ import type { SyncActions } from "./useSyncActions";
  * request from a trigger source, when the window regains focus, and on the interval while focused.
  * Whether a fetch may run (cooldown, pause, busy gates) is left to `dueNow` and `autoFetch`.
  */
-export function useAutoFetch(repoId: RepoId, sync: Pick<SyncActions, "autoFetch">): void {
+export function useAutoFetch(repoId: RepoId, sync: Pick<SyncActions, "autoFetch" | "gates">): void {
   const auto = useSettings((s) => s.settings.fetch.auto);
   const intervalMinutes = useSettings((s) => s.settings.fetch.intervalMinutes);
   const lastFetchedAt = useAutoFetchState((s) => s.repos[repoId]?.lastFetchedAt ?? null);
@@ -26,10 +27,13 @@ export function useAutoFetch(repoId: RepoId, sync: Pick<SyncActions, "autoFetch"
     syncRef.current.autoFetch();
   }, [repoId]);
 
-  // Mount (the repo became focused), and the setting turning on.
+  // The pane has loaded its remotes and branches; before that autoFetch would skip silently.
+  const ready = sync.gates.fetch !== LOADING;
+
+  // The repo became focused and loaded, and the setting turning on.
   useEffect(() => {
-    if (auto) attempt();
-  }, [auto, attempt]);
+    if (auto && ready) attempt();
+  }, [auto, ready, attempt]);
 
   // A trigger source asked this repo to fetch; `forget` dropping the count is not a request.
   useEffect(

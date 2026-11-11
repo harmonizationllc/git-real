@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { useShell } from "../lib/store/shell";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useAutoFetchState } from "../lib/store/autoFetch";
+import { DEFAULT_SETTINGS, useSettings } from "../lib/store/settings";
 import { queryClient } from "../lib/query/client";
 import {
   checkGitCli,
@@ -71,6 +73,8 @@ beforeEach(() => {
   useRepoTabs.setState(useRepoTabs.getInitialState(), true);
   useWorkspace.setState(useWorkspace.getInitialState(), true);
   useCommitDraft.setState({ drafts: {} });
+  useAutoFetchState.setState({ repos: {} });
+  useSettings.setState({ settings: DEFAULT_SETTINGS });
   useToasts.setState({ toasts: [] });
   useShell.setState({ dialog: null, repoActions: null });
   queryClient.clear();
@@ -164,6 +168,14 @@ describe("App repo pane", () => {
     await user.click(screen.getByRole("tab", { name: "alpha" }));
     expect(screen.getByRole("heading", heading("alpha"))).toBeInTheDocument();
     expect(screen.queryByRole("heading", heading("beta"))).toBeNull();
+  });
+
+  it("switching tabs fetches only the repo that became active", async () => {
+    const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(2, null));
+    expect(fetchAll).not.toHaveBeenCalledWith(1, null);
+    await user.click(screen.getByRole("tab", { name: "alpha" }));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null));
   });
 
   it('detached head renders "detached HEAD"', () => {
@@ -350,6 +362,10 @@ describe("App clone dialog", () => {
 // Contract: each tab owns its sync state; a message shown on one tab is gone on another.
 describe("App sync state per tab", () => {
   it("should not show a sync message from tab A after switching to tab B", async () => {
+    // About the manual Fetch button, so the mount fetch (and its own Fetch toast) stays off.
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, fetch: { ...DEFAULT_SETTINGS.fetch, auto: false } },
+    });
     vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable", { verb: "fetch" }));
     const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
     await user.click(screen.getByRole("tab", { name: "alpha" }));

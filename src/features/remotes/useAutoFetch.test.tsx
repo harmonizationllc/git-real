@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COOLDOWN_MS, useAutoFetchState } from "../../lib/store/autoFetch";
 import { setAutoFetch, setAutoFetchInterval } from "../../lib/store/settingsActions";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
+import { LOADING } from "./syncCopy";
 import { useAutoFetch } from "./useAutoFetch";
+import type { SyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -12,7 +14,8 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 
 const MINUTE = 60_000;
 const store = () => useAutoFetchState.getState();
-const sync = { autoFetch: vi.fn() };
+const OPEN_GATES = { fetch: null, pull: null, push: null, forcePush: null };
+const sync = { autoFetch: vi.fn(), gates: OPEN_GATES as SyncActions["gates"] };
 
 function mount() {
   return renderHook(() => useAutoFetch(1, sync));
@@ -51,6 +54,23 @@ afterEach(() => {
 describe("useAutoFetch", () => {
   it("fetches once on mount", () => {
     mount();
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the gates to load before the mount fetch", () => {
+    const loading = {
+      fetch: LOADING,
+      pull: LOADING,
+      push: LOADING,
+      forcePush: LOADING,
+    } as SyncActions["gates"];
+    const { rerender } = renderHook(({ gates }) => useAutoFetch(1, { ...sync, gates }), {
+      initialProps: { gates: loading },
+    });
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+    rerender({ gates: OPEN_GATES as SyncActions["gates"] });
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    rerender({ gates: { ...OPEN_GATES } as SyncActions["gates"] });
     expect(sync.autoFetch).toHaveBeenCalledTimes(1);
   });
 
