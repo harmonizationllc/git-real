@@ -53,6 +53,9 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
   const [prompt, setPrompt] = useState<CredentialPrompt | null>(null);
   // Read synchronously by run(): the prompt state lags a render.
   const asking = useRef(false);
+  // Set synchronously, so two runs in one tick (a manual and an auto fetch, or StrictMode's double
+  // mount) start one action; `pending` only catches up after a render.
+  const inFlight = useRef(false);
   // Counted here: `isPending` lags a tick, and the prompt wait is not a mutation.
   const [busy, setBusy] = useState(0);
   const elsewhere = useIsMutating({ mutationKey: mutationKeys.network(repoId) }) > 0;
@@ -92,8 +95,9 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
     action: (credentials: Credentials | null) => Promise<T>,
     options: { prompt?: boolean } = {},
   ): Promise<NetworkResult<T>> => {
-    // One prompt at a time: a run started while it is open is ignored.
-    if (asking.current) return { status: "cancelled" };
+    // One run at a time, prompt included: a run started while another is in flight is ignored.
+    if (asking.current || inFlight.current) return { status: "cancelled" };
+    inFlight.current = true;
     setBusy((n) => n + 1);
     try {
       let credentials: Credentials | null = null;
@@ -110,6 +114,7 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
         }
       }
     } finally {
+      inFlight.current = false;
       setBusy((n) => n - 1);
     }
   };

@@ -210,22 +210,24 @@ afterEach(() => {
 });
 
 describe("RepoPane auto-fetch", () => {
-  it("fetches once with null credentials when the pane mounts", async () => {
+  it("fetches once, non-interactively with null credentials, when the pane mounts", async () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(1));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null, { nonInteractive: true });
   });
 
   it("fetches the newly focused repo when the pane is remounted for another tab", async () => {
     const first = renderWithProviders(<RepoPane tab={tab(1)} />);
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null, { nonInteractive: true }));
     first.unmount();
     renderWithProviders(<RepoPane tab={tab(2)} />);
-    await waitFor(() => expect(fetchAll).toHaveBeenLastCalledWith(2, null));
+    await waitFor(() =>
+      expect(fetchAll).toHaveBeenLastCalledWith(2, null, { nonInteractive: true }),
+    );
     expect(fetchAll).toHaveBeenCalledTimes(2);
   });
 

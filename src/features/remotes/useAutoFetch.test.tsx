@@ -15,7 +15,13 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 const MINUTE = 60_000;
 const store = () => useAutoFetchState.getState();
 const OPEN_GATES = { fetch: null, pull: null, push: null, forcePush: null };
-const sync = { autoFetch: vi.fn(), gates: OPEN_GATES as SyncActions["gates"] };
+const sync = { autoFetch: vi.fn(), fetch: vi.fn(), gates: OPEN_GATES as SyncActions["gates"] };
+const LOADING_GATES = {
+  fetch: LOADING,
+  pull: LOADING,
+  push: LOADING,
+  forcePush: LOADING,
+} as SyncActions["gates"];
 
 function mount() {
   return renderHook(() => useAutoFetch(1, sync));
@@ -93,11 +99,32 @@ describe("useAutoFetch", () => {
     expect(sync.autoFetch).not.toHaveBeenCalled();
   });
 
-  it("skips every trigger while paused", () => {
+  it("skips the mount, request and focus triggers while paused", () => {
     store().recordFailure(1);
     mount();
     act(() => store().request(1));
     focusWindow();
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps attempting silently on the interval while paused", () => {
+    store().recordFailure(1);
+    mount();
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+    advance(5 * MINUTE);
+    expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    advance(5 * MINUTE);
+    expect(sync.autoFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("still honours the cooldown on a paused tick", () => {
+    const fetchedAt = Date.now();
+    store().recordFetched(1, fetchedAt);
+    store().recordFailure(1);
+    mount();
+    advance(5 * MINUTE - 1_000);
+    vi.setSystemTime(fetchedAt);
+    advance(1_000);
     expect(sync.autoFetch).not.toHaveBeenCalled();
   });
 
@@ -211,6 +238,73 @@ describe("useAutoFetch", () => {
     advance(10 * MINUTE);
     focusWindow();
     act(() => store().request(1));
+    act(() => store().requestManual(1));
     expect(sync.autoFetch).toHaveBeenCalledTimes(1);
+    expect(sync.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// Contract (toast's Fetch action): a manual request runs the pane's manual fetch, own repo only.
+describe("useAutoFetch manual requests", () => {
+  beforeEach(() => {
+    // Inside the cooldown, so the mount trigger stays quiet.
+    store().recordFetched(1, Date.now());
+  });
+
+  it("runs the manual fetch, not the auto-fetch, on a manual request for this repo", () => {
+    mount();
+    act(() => store().requestManual(1));
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+    expect(sync.autoFetch).not.toHaveBeenCalled();
+  });
+
+  it("ignores a manual request for another repo", () => {
+    mount();
+    act(() => store().requestManual(2));
+    expect(sync.fetch).not.toHaveBeenCalled();
+  });
+
+  it("runs each manual request once, across rerenders", () => {
+    const { rerender } = mount();
+    act(() => store().requestManual(1));
+    rerender();
+    rerender();
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+    act(() => store().requestManual(1));
+    expect(sync.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds a manual request made while loading until the gates load", () => {
+    const { rerender } = renderHook(({ gates }) => useAutoFetch(1, { ...sync, gates }), {
+      initialProps: { gates: LOADING_GATES },
+    });
+    act(() => store().requestManual(1));
+    expect(sync.fetch).not.toHaveBeenCalled();
+    rerender({ gates: OPEN_GATES as SyncActions["gates"] });
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+    rerender({ gates: { ...OPEN_GATES } as SyncActions["gates"] });
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  // The toast activates the tab and requests in one click, before this pane has mounted.
+  it("runs a manual request made before the pane mounted", () => {
+    store().requestManual(1);
+    mount();
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs a manual request while paused and while the setting is off", async () => {
+    await seedSettings({ fetch: { auto: false } });
+    store().recordFailure(1);
+    mount();
+    act(() => store().requestManual(1));
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run a manual request again after the entry is forgotten", () => {
+    mount();
+    act(() => store().requestManual(1));
+    act(() => store().forget(1));
+    expect(sync.fetch).toHaveBeenCalledTimes(1);
   });
 });

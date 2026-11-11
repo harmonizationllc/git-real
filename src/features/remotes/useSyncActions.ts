@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
 import { entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useSettings } from "../../lib/store/settings";
 import { useToasts } from "../../lib/store/toasts";
 import { useBranches } from "../branches/useBranches";
 import { useOperationState } from "../merge/useOperationState";
@@ -23,7 +24,9 @@ export interface SyncActions {
   /** The verb this instance is running, for the busy label. */
   running: SyncVerb | null;
   fetch(): void;
-  /** Fetches without a credential prompt; a failure pauses auto-fetch and toasts. */
+  /**
+   * Fetches with every prompt disabled; a failure pauses auto-fetch and toasts once per streak.
+   */
   autoFetch(): void;
   /** Pulls in `mode`, or in the repo's default mode. */
   pull(mode?: PullMode): void;
@@ -76,16 +79,28 @@ export function useSyncActions(repoId: RepoId): SyncActions {
   const upstreamRemote =
     tracking === null ? null : remoteOfUpstream(tracking.upstream, remoteNames);
 
+  // Runs of this instance in flight. The label follows the first and clears with the last: a run
+  // the network gate refuses (another is in flight) settles at once and must not clear it.
+  const runs = useRef(0);
+  const track = async <T>(
+    verb: SyncVerb,
+    go: () => Promise<NetworkResult<T>>,
+  ): Promise<NetworkResult<T>> => {
+    if (runs.current++ === 0) setRunning(verb);
+    try {
+      return await go();
+    } finally {
+      if (--runs.current === 0) setRunning(null);
+    }
+  };
+
   /** Runs one network action as `verb`: clears the last message and reports the verb until it settles. */
-  const start = async <T>(
+  const start = <T>(
     verb: SyncVerb,
     action: (credentials: Credentials | null) => Promise<T>,
   ): Promise<NetworkResult<T>> => {
     setMessage(null);
-    setRunning(verb);
-    const result = await network.run(action);
-    setRunning(null);
-    return result;
+    return track(verb, () => network.run(action));
   };
 
   const report = (result: NetworkResult<unknown>) => {
@@ -94,9 +109,15 @@ export function useSyncActions(repoId: RepoId): SyncActions {
 
   const autoFetchState = () => useAutoFetchState.getState();
 
-  /** A manual action's failure pauses auto-fetch when a background fetch would hit it too. */
+  /**
+   * A manual action's failure pauses auto-fetch when a background fetch would hit it too; so does
+   * a cancelled sign-in, since the background fetch cannot sign in either.
+   */
   const recordFailure = (result: NetworkResult<unknown>) => {
-    if (result.status === "failed" && pausesAutoFetch(result.error)) {
+    if (
+      result.status === "cancelled" ||
+      (result.status === "failed" && pausesAutoFetch(result.error))
+    ) {
       autoFetchState().recordFailure(repoId);
     }
   };
@@ -123,42 +144,38 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     });
   };
 
-  // The toast's Fetch action outlives this render, so it runs the latest fetch.
-  const latestFetch = useRef<() => void>(() => {});
-  useEffect(() => {
-    latestFetch.current = fetch;
-  });
-
-  // Set synchronously, so two triggers in one tick (or StrictMode's double mount) start one
-  // fetch; `gates` and `lastFetchedAt` only catch up after a render or on completion.
-  const autoFetching = useRef(false);
+  // Two calls in one tick start one fetch: the network gate refuses a run while one is in flight.
+  // The pause is not checked here: useAutoFetch skips paused triggers, except the interval's
+  // silent retry, which runs while paused so a dead network is noticed coming back.
   const autoFetch = () => {
-    if (autoFetching.current) return;
-    if (gates.fetch !== null || entryFor(autoFetchState(), repoId).paused) return;
-    autoFetching.current = true;
-    setRunning("fetch");
-    void network
-      .run((c) => fetchAll(repoId, c), { prompt: false })
-      .finally(() => {
-        autoFetching.current = false;
-      })
-      .then((result) => {
-        setRunning(null);
-        if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
-        if (result.status !== "failed") return;
-        autoFetchState().recordFailure(repoId);
-        useToasts.getState().notify({
-          text: `Auto-fetch failed: ${networkMessage(result.error).title}`,
-          variant: "error",
-          action: {
-            label: "Fetch",
-            // A toast can outlive its tab; fetch only while the repo is still open.
-            run: () => {
-              if (useRepoTabs.getState().tabs.some((t) => t.id === repoId)) latestFetch.current();
-            },
+    if (gates.fetch !== null) return;
+    void track("fetch", () =>
+      network.run((c) => fetchAll(repoId, c, { nonInteractive: true }), { prompt: false }),
+    ).then((result) => {
+      if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
+      if (result.status !== "failed") return;
+      // Once per streak: a failure while already paused stays silent.
+      const wasPaused = entryFor(autoFetchState(), repoId).paused;
+      autoFetchState().recordFailure(repoId);
+      if (wasPaused) return;
+      // A late failure for a closed tab, or after auto-fetch was turned off, is not announced.
+      const tab = useRepoTabs.getState().tabs.find((t) => t.id === repoId);
+      if (tab === undefined || !useSettings.getState().settings.fetch.auto) return;
+      useToasts.getState().notify({
+        text: `Auto-fetch failed (${tab.summary.name}): ${networkMessage(result.error).title}`,
+        variant: "error",
+        action: {
+          label: "Fetch",
+          // The toast outlives this instance (the pane remounts per tab): bring the repo's tab to
+          // the front and let its mounted pane run the manual fetch. Both are no-ops for a
+          // closed tab: `activate` ignores unknown ids and no pane of the repo is mounted.
+          run: () => {
+            useRepoTabs.getState().activate(repoId);
+            useAutoFetchState.getState().requestManual(repoId);
           },
-        });
+        },
       });
+    });
   };
 
   const pull = (mode?: PullMode) => {

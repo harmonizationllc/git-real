@@ -171,18 +171,49 @@ describe("App repo pane", () => {
   });
 
   it("switching tabs fetches only the repo that became active", async () => {
+    const auto = { nonInteractive: true };
     const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(2, null));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(2, null, auto));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(fetchAll).not.toHaveBeenCalledWith(1, null);
+    expect(vi.mocked(fetchAll).mock.calls.filter(([id]) => id === 1)).toEqual([]);
     await user.click(screen.getByRole("tab", { name: "alpha" }));
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null));
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null, auto));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    expect(vi.mocked(fetchAll).mock.calls.filter(([id]) => id === 2)).toEqual([[2, null]]);
+    expect(vi.mocked(fetchAll).mock.calls.filter(([id]) => id === 2)).toEqual([[2, null, auto]]);
+  });
+
+  it("the auto-fetch error toast's Fetch activates its repo's tab and fetches it only there", async () => {
+    // Each fetch with the repo that was active when it ran.
+    const calls: [number, number | null, unknown][] = [];
+    let failAlpha = true;
+    vi.mocked(fetchAll).mockImplementation(async (id, _credentials, options) => {
+      calls.push([id, useRepoTabs.getState().activeId, options]);
+      if (id === 1 && failAlpha) throw networkError("hostUnreachable", { verb: "fetch" });
+    });
+    const alphaCalls = () => calls.filter(([id]) => id === 1);
+    const { user } = renderApp(repo(1, "alpha"));
+    const text = await screen.findByText("Auto-fetch failed (alpha): Could not reach the remote");
+    const toast = text.parentElement as HTMLElement;
+    failAlpha = false;
+    act(() => useRepoTabs.getState().openTab(repo(2, "beta")));
+    await screen.findByRole("heading", heading("beta"));
+    await waitFor(() => expect(calls.some(([id]) => id === 2)).toBe(true));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    // While beta was active, alpha fetched nothing beyond the auto-fetch that failed.
+    expect(alphaCalls()).toEqual([[1, 1, { nonInteractive: true }]]);
+    await user.click(within(toast).getByRole("button", { name: "Fetch" }));
+    expect(await screen.findByRole("heading", heading("alpha"))).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "alpha" })).toHaveAttribute("aria-selected", "true");
+    // The manual fetch (no options), run by alpha's own pane once it is active.
+    await waitFor(() => expect(alphaCalls()).toHaveLength(2));
+    expect(alphaCalls()[1]).toEqual([1, 1, undefined]);
+    expect(await screen.findByText("Fetch complete")).toBeInTheDocument();
   });
 
   it('detached head renders "detached HEAD"', () => {

@@ -15,6 +15,7 @@ import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { queryKeys } from "../../lib/query/keys";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { DEFAULT_SETTINGS, useSettings } from "../../lib/store/settings";
 import { pausesAutoFetch, useSyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -621,6 +622,7 @@ describe("useSyncActions autoFetch", () => {
   beforeEach(() => {
     useToasts.setState({ toasts: [] });
     useRepoTabs.setState(useRepoTabs.getInitialState(), true);
+    useSettings.setState({ settings: DEFAULT_SETTINGS });
   });
 
   /** Opens repo 1 as a tab, as the app does before mounting its pane. */
@@ -630,8 +632,9 @@ describe("useSyncActions autoFetch", () => {
       summary: { path: "/r/1", name: "r1", headBranch: "main", isBare: false },
     });
 
-  /** Runs one auto-fetch that fails on auth and waits until it has settled. */
+  /** Opens repo 1's tab, runs one auto-fetch that fails on auth and waits until it has settled. */
   async function failOnAuth() {
+    openRepoTab();
     vi.mocked(fetchAll).mockRejectedValue(authError());
     const view = await setup();
     act(() => view.result.current.autoFetch());
@@ -640,13 +643,13 @@ describe("useSyncActions autoFetch", () => {
     return view;
   }
 
-  it("should run fetchAll with null credentials, report running fetch, and record the fetch time on success", async () => {
+  it("should run a non-interactive fetchAll with null credentials, report running fetch, and record the fetch time on success", async () => {
     const d = deferred();
     vi.mocked(fetchAll).mockReturnValue(d.promise);
     const { result } = await setup();
     act(() => result.current.autoFetch());
     await waitFor(() => expect(result.current.running).toBe("fetch"));
-    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null, { nonInteractive: true });
     await act(async () => d.resolve());
     await waitFor(() => expect(result.current.running).toBeNull());
     expect(entry()?.lastFetchedAt).toEqual(expect.any(Number));
@@ -690,30 +693,95 @@ describe("useSyncActions autoFetch", () => {
     await act(async () => d.resolve());
   });
 
-  it("should toast Auto-fetch failed with a Fetch action, pause, and not open a prompt, on an auth failure", async () => {
+  it("should toast Auto-fetch failed naming the repo, with a Fetch action, pause, and not open a prompt, on an auth failure", async () => {
     const { result } = await failOnAuth();
     const [toast] = useToasts.getState().toasts;
-    expect(toast).toMatchObject({ text: "Auto-fetch failed: Sign-in required", variant: "error" });
+    expect(toast).toMatchObject({
+      text: "Auto-fetch failed (r1): Sign-in required",
+      variant: "error",
+    });
     expect(toast?.action?.label).toBe("Fetch");
     expect(entry()?.paused).toBe(true);
     expect(result.current.prompt).toBeNull();
     expect(result.current.message).toBeNull();
   });
 
-  it("should run the manual fetch when the toast's Fetch action runs", async () => {
-    openRepoTab();
+  it("should activate the repo's tab and request a manual fetch when the toast's Fetch action runs", async () => {
     await failOnAuth();
-    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    useRepoTabs.getState().openTab({
+      id: 2,
+      summary: { path: "/r/2", name: "r2", headBranch: "main", isBare: false },
+    });
+    expect(useRepoTabs.getState().activeId).toBe(2);
     act(() => useToasts.getState().toasts[0]?.action?.run());
-    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(entry()?.paused).toBe(false));
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    expect(entry()?.manualRequested).toBe(1);
+    // The mounted pane of the activated tab runs the fetch, not the toast.
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(fetchAll).toHaveBeenCalledOnce();
   });
 
-  it("should toast once per streak: a second failure while paused is not attempted", async () => {
+  it("should change no tab when the toast's Fetch action runs after the repo's tab closed", async () => {
+    await failOnAuth();
+    useRepoTabs.getState().openTab({
+      id: 2,
+      summary: { path: "/r/2", name: "r2", headBranch: "main", isBare: false },
+    });
+    useRepoTabs.getState().closeTab(1);
+    act(() => useToasts.getState().toasts[0]?.action?.run());
+    expect(useRepoTabs.getState().activeId).toBe(2);
+    // The bump lands, but no pane of repo 1 is mounted to act on it.
+    expect(entry()?.manualRequested).toBe(1);
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(fetchAll).toHaveBeenCalledOnce();
+  });
+
+  it("should keep trying while paused, without a second toast", async () => {
     const { result } = await failOnAuth();
     act(() => result.current.autoFetch());
-    expect(fetchAll).toHaveBeenCalledOnce();
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.running).toBeNull());
     expect(useToasts.getState().toasts).toHaveLength(1);
+    expect(entry()?.paused).toBe(true);
+  });
+
+  it("should clear the pause when an attempt while paused succeeds", async () => {
+    const { result } = await failOnAuth();
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(entry()?.paused).toBe(false));
+    expect(entry()?.lastFetchedAt).toEqual(expect.any(Number));
+    expect(useToasts.getState().toasts).toHaveLength(1);
+  });
+
+  it("should record the failure but not toast when the repo's tab closed before the fetch failed", async () => {
+    openRepoTab();
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise.then(() => Promise.reject(authError())));
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    useRepoTabs.getState().closeTab(1);
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    expect(entry()?.paused).toBe(true);
+  });
+
+  it("should record the failure but not toast when auto-fetch was turned off before the fetch failed", async () => {
+    openRepoTab();
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise.then(() => Promise.reject(authError())));
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, fetch: { ...DEFAULT_SETTINGS.fetch, auto: false } },
+    });
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    expect(entry()?.paused).toBe(true);
   });
 
   it("should record the fetch time after a manual fetch succeeds", async () => {
@@ -741,15 +809,6 @@ describe("useSyncActions autoFetch", () => {
     act(() => result.current.fetch());
     await waitFor(() => expect(entry()?.paused).toBe(true));
     expect(useToasts.getState().toasts).toHaveLength(0);
-  });
-
-  it("should not run the toast's Fetch action once the repo's tab has closed", async () => {
-    openRepoTab();
-    await failOnAuth();
-    useRepoTabs.getState().closeTab(1);
-    await act(async () => useToasts.getState().toasts[0]?.action?.run());
-    await act(async () => new Promise((r) => setTimeout(r, 20)));
-    expect(fetchAll).toHaveBeenCalledOnce();
   });
 
   it("should not pause after a push is rejected as non-fast-forward", async () => {
@@ -789,20 +848,37 @@ describe("useSyncActions autoFetch", () => {
     await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
   });
 
-  it("should record nothing when a manual action's sign-in is cancelled", async () => {
+  it("should pause silently when a manual fetch's sign-in is cancelled", async () => {
     vi.mocked(fetchAll).mockRejectedValue(authError());
     const { result } = await setup();
     act(() => result.current.fetch());
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
     act(() => result.current.prompt?.cancel());
     await waitFor(() => expect(result.current.running).toBeNull());
-    expect(entry()).toBeUndefined();
+    expect(entry()?.paused).toBe(true);
+    expect(useToasts.getState().toasts).toHaveLength(0);
   });
 
-  it("should stay silent and unpaused when an autoFetch is cancelled", async () => {
+  it("should pause silently when a manual pull's or push's sign-in is cancelled", async () => {
+    vi.mocked(pull).mockRejectedValue(authError());
+    vi.mocked(push).mockRejectedValue(authError());
+    const { result } = await setup();
+    for (const run of [() => result.current.pull(), () => result.current.push()]) {
+      useAutoFetchState.setState({ repos: {} });
+      await waitFor(() => expect(result.current.gates.push).toBeNull());
+      act(run);
+      await waitFor(() => expect(result.current.prompt).not.toBeNull());
+      act(() => result.current.prompt?.cancel());
+      await waitFor(() => expect(result.current.running).toBeNull());
+      expect(entry()?.paused).toBe(true);
+    }
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should not toast when an autoFetch is cancelled", async () => {
     vi.mocked(fetchAll).mockRejectedValue(authError());
     const { result } = await setup();
-    // Captured while ungated: the prompt the manual fetch opens makes this run resolve cancelled.
+    // Captured while ungated: the run the manual fetch has in flight makes this one resolve cancelled.
     const staleAutoFetch = result.current.autoFetch;
     act(() => result.current.fetch());
     await waitFor(() => expect(result.current.prompt).not.toBeNull());
@@ -811,7 +887,6 @@ describe("useSyncActions autoFetch", () => {
     act(() => result.current.prompt?.cancel());
     await waitFor(() => expect(result.current.running).toBeNull());
     expect(useToasts.getState().toasts).toHaveLength(0);
-    expect(entry()).toBeUndefined();
   });
 });
 

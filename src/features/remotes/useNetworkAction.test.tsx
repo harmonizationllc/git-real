@@ -387,6 +387,30 @@ describe("useNetworkAction concurrent prompts", () => {
     await expect(outcome).resolves.toEqual({ status: "cancelled" });
     expect(second).not.toHaveBeenCalled();
   });
+
+  it("should run one action when two runs start in the same tick; the second resolves cancelled", async () => {
+    const d = deferred();
+    const first = vi.fn<Action>().mockReturnValue(d.promise);
+    const second = vi.fn<Action>().mockResolvedValue("second");
+    const { result } = renderHookWithProviders(() => useNetworkAction(1));
+    let a!: Promise<NetworkResult<string>>;
+    let b!: Promise<NetworkResult<string>>;
+    act(() => {
+      a = result.current.run(first);
+      b = result.current.run(second);
+    });
+    await expect(b).resolves.toEqual({ status: "cancelled" });
+    await waitFor(() => expect(first).toHaveBeenCalledOnce());
+    expect(second).not.toHaveBeenCalled();
+    await act(async () => d.resolve("first"));
+    await expect(a).resolves.toEqual({ status: "ok", value: "first" });
+    // Released once the first run settles.
+    let c: unknown;
+    await act(async () => {
+      c = await result.current.run(second);
+    });
+    expect(c).toEqual({ status: "ok", value: "second" });
+  });
 });
 
 // Contract: a prompt can help only for an HTTPS auth failure with a known origin.
