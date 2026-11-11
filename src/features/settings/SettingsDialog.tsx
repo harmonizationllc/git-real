@@ -252,6 +252,7 @@ function FetchSettings() {
         <span className={styles.sizeRow}>
           <input
             id={everyId}
+            aria-label="Every N minutes"
             type="number"
             min={AUTO_FETCH_INTERVAL_MIN}
             max={AUTO_FETCH_INTERVAL_MAX}

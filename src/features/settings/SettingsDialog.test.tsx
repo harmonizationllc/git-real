@@ -148,12 +148,12 @@ describe("SettingsDialog Fetch", () => {
   it("interval field is disabled when auto-fetch is off", async () => {
     await seedSettings({ fetch: { auto: false } });
     await setup();
-    expect(screen.getByRole("spinbutton", { name: "Every" })).toBeDisabled();
+    expect(screen.getByRole("spinbutton", { name: "Every N minutes" })).toBeDisabled();
   });
 
   it("an interval edit is saved after 300 ms", async () => {
     await setup();
-    const input = screen.getByRole("spinbutton", { name: "Every" });
+    const input = screen.getByRole("spinbutton", { name: "Every N minutes" });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.change(input, { target: { value: "12" } });
     expect(updateSettings).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe("SettingsDialog Fetch", () => {
 
   it("turning auto-fetch off drops an unsent invalid interval draft", async () => {
     await setup();
-    const input = screen.getByRole("spinbutton", { name: "Every" });
+    const input = screen.getByRole("spinbutton", { name: "Every N minutes" });
     fireEvent.change(input, { target: { value: "99" } });
     expect(input).toHaveValue(99);
     fireEvent.click(screen.getByRole("checkbox", { name: "Fetch automatically" }));
@@ -175,7 +175,7 @@ describe("SettingsDialog Fetch", () => {
 
   it("interval applies in-range values on change and clamps on blur", async () => {
     await setup();
-    const input = screen.getByRole("spinbutton", { name: "Every" });
+    const input = screen.getByRole("spinbutton", { name: "Every N minutes" });
     expect(input).toHaveValue(5);
     fireEvent.change(input, { target: { value: "10" } });
     expect(prefs().fetch.intervalMinutes).toBe(10);
