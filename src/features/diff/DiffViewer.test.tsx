@@ -1,11 +1,12 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
-import { createRef, type ReactNode } from "react";
+import { cloneElement, createRef, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copyText, type DiffMode, type FileDiff } from "../../lib/ipc";
 import { fileDiff, hunk, L, threePairDiff } from "../../test/diffFixtures";
 import { mockWindow, scrollToIndex } from "../../test/mockVirtualizer";
+import { useSettings } from "../../lib/store/settings";
 import { useToasts } from "../../lib/store/toasts";
 import { declarationsOf } from "../../test/cssRules";
 import type { CaretHit, CaretResolver } from "./caretResolver";
@@ -79,7 +80,7 @@ function setup(over: Over = {}) {
   const rows = over.rows ?? buildRows(diff, mode);
   const onContextMenu = over.onContextMenu === null ? undefined : (over.onContextMenu ?? vi.fn());
   const ref = createRef<DiffViewerHandle>();
-  const view = render(
+  const viewer = (
     <DiffViewer
       ref={ref}
       diff={diff}
@@ -91,8 +92,12 @@ function setup(over: Over = {}) {
       onUserScroll={over.onUserScroll}
       resolveCaret={resolveCaret}
       aside={over.aside}
-    />,
+    />
   );
+  const view = render(viewer);
+  /** Re-renders `ui`, or the same viewer with the same props when called bare. A clone, since
+   * React skips rendering an element it has already rendered. */
+  const rerender = (ui: ReactElement = cloneElement(viewer)) => view.rerender(ui);
   const scroll = screen.getByTestId("diff-scroll");
   const rect = {
     top: 0,
@@ -108,7 +113,7 @@ function setup(over: Over = {}) {
   scroll.setPointerCapture = vi.fn();
   scroll.releasePointerCapture = vi.fn();
   scroll.scrollBy = vi.fn() as unknown as typeof scroll.scrollBy;
-  return { ...view, ref, rows, scroll, onContextMenu };
+  return { ...view, rerender, ref, rows, scroll, onContextMenu };
 }
 
 /** The row element (unified row or split row) inside the virtual item for `index`. */
@@ -636,7 +641,7 @@ describe("DiffViewer virtualizer options", () => {
     const options = calls[calls.length - 1][0];
     const { getItemKey } = options;
     if (!getItemKey) throw new Error("DiffViewer passed no getItemKey");
-    return { count: options.count, getItemKey };
+    return { count: options.count, getItemKey, estimateSize: options.estimateSize };
   };
 
   it.each<DiffMode>(["unified", "split"])(
@@ -656,6 +661,56 @@ describe("DiffViewer virtualizer options", () => {
     const { getItemKey, count } = lastOptions();
     expect(count).toBe(split.length);
     expect(getItemKey(1)).toBe(split[1].key);
+  });
+
+  it("should estimate rows from the diff font size", () => {
+    const { unmount } = setup({ diff: twoHunks, mode: "unified" });
+    expect(lastOptions().estimateSize(0)).toBe(18);
+    unmount();
+    const original = useSettings.getState().settings;
+    useSettings.setState({
+      settings: { ...original, appearance: { ...original.appearance, diffFontSize: 16 } },
+    });
+    try {
+      setup({ diff: twoHunks, mode: "unified" });
+      expect(lastOptions().estimateSize(0)).toBe(22);
+    } finally {
+      useSettings.setState({ settings: original });
+    }
+  });
+});
+
+// Contract: from a press on the scrollbar until its release, the list's height stays put, so a
+// Chromium thumb drag keeps its motion while rows are measured beneath it.
+describe("DiffViewer scroll range hold", () => {
+  beforeEach(() => {
+    mockWindow.total = null;
+  });
+
+  it("should hold the inner height from a scrollbar press until release", () => {
+    const { rows, rerender } = setup({ diff: twoHunks, mode: "unified" });
+    const scroll = screen.getByTestId("diff-scroll");
+    const inner = scroll.firstElementChild as HTMLElement;
+    Object.defineProperty(scroll, "clientWidth", { value: 500 });
+    Object.defineProperty(scroll, "clientHeight", { value: 300 });
+    expect(inner.style.height).toBe(`${rows.length * 22}px`);
+    fireEvent.pointerDown(scroll, {
+      clientX: 510,
+      clientY: 50,
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+    });
+    mockWindow.total = 999;
+    rerender();
+    expect(inner.style.height).toBe(`${rows.length * 22}px`);
+    fireEvent.pointerUp(window);
+    expect(inner.style.height).toBe("999px");
+  });
+
+  it("should clip rows placed past the held height", () => {
+    const css = readFileSync("src/features/diff/DiffViewer.module.css", "utf8");
+    expect(declarationsOf(css, "inner")).toMatch(/overflow:\s*clip;/);
   });
 });
 
