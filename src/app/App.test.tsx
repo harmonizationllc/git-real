@@ -173,9 +173,16 @@ describe("App repo pane", () => {
   it("switching tabs fetches only the repo that became active", async () => {
     const { user } = renderApp(repo(1, "alpha"), repo(2, "beta"));
     await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(2, null));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(fetchAll).not.toHaveBeenCalledWith(1, null);
     await user.click(screen.getByRole("tab", { name: "alpha" }));
     await waitFor(() => expect(fetchAll).toHaveBeenCalledWith(1, null));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(vi.mocked(fetchAll).mock.calls.filter(([id]) => id === 2)).toEqual([[2, null]]);
   });
 
   it('detached head renders "detached HEAD"', () => {

@@ -214,6 +214,9 @@ describe("RepoPane auto-fetch", () => {
     renderWithProviders(<RepoPane tab={tab(1)} />);
     await screen.findByRole("region", { name: "Changes" });
     await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
     expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
   });
 
