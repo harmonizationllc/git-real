@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchAll, pull as pullBranch, push as pushBranch } from "../../lib/ipc";
 import type { AppError, Credentials, PullMode, RepoId } from "../../lib/ipc";
+import { entryFor, useAutoFetchState } from "../../lib/store/autoFetch";
 import { useToasts } from "../../lib/store/toasts";
 import { useBranches } from "../branches/useBranches";
 import { useOperationState } from "../merge/useOperationState";
@@ -21,6 +22,8 @@ export interface SyncActions {
   /** The verb this instance is running, for the busy label. */
   running: SyncVerb | null;
   fetch(): void;
+  /** Fetches without a credential prompt; a failure pauses auto-fetch and toasts. */
+  autoFetch(): void;
   /** Pulls in `mode`, or in the repo's default mode. */
   pull(mode?: PullMode): void;
   push(): void;
@@ -77,6 +80,14 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (result.status === "failed") setMessage(networkMessage(result.error));
   };
 
+  const autoFetchState = () => useAutoFetchState.getState();
+
+  /** A pushed branch may mean the remote works again; a failed push pauses auto-fetch. */
+  const recordPush = (result: NetworkResult<unknown>) => {
+    if (result.status === "ok") autoFetchState().resume(repoId);
+    if (result.status === "failed") autoFetchState().recordFailure(repoId);
+  };
+
   /** A completed push of `local`, announced as a success toast. */
   const toastPushed = (local: string) =>
     useToasts.getState().notify({ text: `Pushed ${local}`, variant: "success" });
@@ -85,16 +96,45 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     if (gates.fetch !== null) return;
     void start("fetch", (c) => fetchAll(repoId, c)).then((result) => {
       report(result);
+      if (result.status === "failed") autoFetchState().recordFailure(repoId);
       if (result.status === "ok") {
+        autoFetchState().recordFetched(repoId, Date.now());
         useToasts.getState().notify({ text: "Fetch complete", variant: "success" });
       }
     });
+  };
+
+  // The toast's Fetch action outlives this render, so it runs the latest fetch.
+  const latestFetch = useRef<() => void>(() => {});
+  useEffect(() => {
+    latestFetch.current = fetch;
+  });
+
+  const autoFetch = () => {
+    if (gates.fetch !== null || entryFor(autoFetchState(), repoId).paused) return;
+    setRunning("fetch");
+    void network
+      .run((c) => fetchAll(repoId, c), { prompt: false })
+      .then((result) => {
+        setRunning(null);
+        if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
+        if (result.status !== "failed") return;
+        autoFetchState().recordFailure(repoId);
+        useToasts.getState().notify({
+          text: `Auto-fetch failed: ${networkMessage(result.error).title}`,
+          variant: "error",
+          action: { label: "Fetch", run: () => latestFetch.current() },
+        });
+      });
   };
 
   const pull = (mode?: PullMode) => {
     if (gates.pull !== null) return;
     void start("pull", (c) => pullBranch(repoId, mode ?? defaultMode, c)).then((result) => {
       report(result);
+      if (result.status === "failed") autoFetchState().recordFailure(repoId);
+      // A pull fetched whether it completed or stopped on conflicts.
+      if (result.status === "ok") autoFetchState().recordFetched(repoId, Date.now());
       // A pull that stops on conflicts is surfaced by the OperationBanner, not a toast.
       if (result.status === "ok" && result.value === "completed") {
         useToasts.getState().notify({ text: "Pull complete", variant: "success" });
@@ -112,6 +152,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
           setPublishTo({ remotes: remoteNames, branch: local });
         } else {
           report(result);
+          recordPush(result);
           if (result.status === "ok") toastPushed(local);
         }
       },
@@ -130,6 +171,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       }
       setPublishTo(null);
       report(result);
+      recordPush(result);
       if (result.status === "ok") toastPushed(local);
     });
   };
@@ -147,6 +189,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
       (result) => {
         setForcePush(null);
         report(result);
+        recordPush(result);
         if (result.status === "ok") toastPushed(local);
       },
     );
@@ -158,6 +201,7 @@ export function useSyncActions(repoId: RepoId): SyncActions {
     upstreamRemote,
     running,
     fetch,
+    autoFetch,
     pull,
     push,
     requestForcePush,

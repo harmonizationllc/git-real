@@ -18,7 +18,11 @@ export type NetworkResult<T> =
   { status: "ok"; value: T } | { status: "failed"; error: AppError } | { status: "cancelled" };
 
 export interface UseNetworkAction {
-  run<T>(action: (credentials: Credentials | null) => Promise<T>): Promise<NetworkResult<T>>;
+  /** `prompt: false` resolves an HTTPS auth failure as failed instead of asking for credentials. */
+  run<T>(
+    action: (credentials: Credentials | null) => Promise<T>,
+    options?: { prompt?: boolean },
+  ): Promise<NetworkResult<T>>;
   /** A run of this instance is in flight (prompt included), or any network action of the repo runs. */
   pending: boolean;
   prompt: CredentialPrompt | null;
@@ -86,6 +90,7 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
 
   const run = async <T>(
     action: (credentials: Credentials | null) => Promise<T>,
+    options: { prompt?: boolean } = {},
   ): Promise<NetworkResult<T>> => {
     // One prompt at a time: a run started while it is open is ignored.
     if (asking.current) return { status: "cancelled" };
@@ -99,7 +104,7 @@ export function useNetworkAction(repoId: RepoId): UseNetworkAction {
         } catch (e) {
           const error = e as AppError;
           const origin = promptOrigin(error);
-          if (origin === null) return { status: "failed", error };
+          if (origin === null || options.prompt === false) return { status: "failed", error };
           credentials = await ask(origin, credentials !== null);
           if (credentials === null) return { status: "cancelled" };
         }

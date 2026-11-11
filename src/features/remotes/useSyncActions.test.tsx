@@ -13,6 +13,7 @@ import type { OperationState, Tracking } from "../../lib/ipc";
 import { authError, networkError, remoteInfo, trackedList } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { queryKeys } from "../../lib/query/keys";
+import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { useSyncActions } from "./useSyncActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -608,5 +609,109 @@ describe("useSyncActions completion toasts (GR-14)", () => {
     const texts = useToasts.getState().toasts.map((t) => t.text);
     const pushed = texts.find((t) => t.startsWith("Pushed "));
     expect(pushed).toBeTruthy();
+  });
+});
+
+// Contract: autoFetch fetches without a prompt and toasts its failures; the sync actions feed the auto-fetch store.
+describe("useSyncActions autoFetch", () => {
+  const entry = () => useAutoFetchState.getState().repos[1];
+
+  beforeEach(() => {
+    useAutoFetchState.setState({ repos: {} });
+    useToasts.setState({ toasts: [] });
+  });
+
+  /** Runs one auto-fetch that fails on auth and waits until it has settled. */
+  async function failOnAuth() {
+    vi.mocked(fetchAll).mockRejectedValue(authError());
+    const view = await setup();
+    act(() => view.result.current.autoFetch());
+    await waitFor(() => expect(useToasts.getState().toasts).toHaveLength(1));
+    await waitFor(() => expect(view.result.current.running).toBeNull());
+    return view;
+  }
+
+  it("should run fetchAll with null credentials, report running fetch, and record the fetch time on success", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => result.current.autoFetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    expect(fetchAll).toHaveBeenCalledExactlyOnceWith(1, null);
+    await act(async () => d.resolve());
+    await waitFor(() => expect(result.current.running).toBeNull());
+    expect(entry()?.lastFetchedAt).toEqual(expect.any(Number));
+    expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+
+  it("should skip while gated", async () => {
+    vi.mocked(listRemotes).mockResolvedValue([]);
+    const { result } = renderHookWithProviders(() => useSyncActions(1));
+    await waitFor(() => expect(result.current.gates.fetch).toBe("No remotes configured"));
+    act(() => result.current.autoFetch());
+    expect(fetchAll).not.toHaveBeenCalled();
+  });
+
+  it("should skip while a network action is already running", async () => {
+    const d = deferred();
+    vi.mocked(fetchAll).mockReturnValue(d.promise);
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(result.current.running).toBe("fetch"));
+    act(() => result.current.autoFetch());
+    expect(fetchAll).toHaveBeenCalledOnce();
+    await act(async () => d.resolve());
+  });
+
+  it("should toast Auto-fetch failed with a Fetch action, pause, and not open a prompt, on an auth failure", async () => {
+    const { result } = await failOnAuth();
+    const [toast] = useToasts.getState().toasts;
+    expect(toast).toMatchObject({ text: "Auto-fetch failed: Sign-in required", variant: "error" });
+    expect(toast?.action?.label).toBe("Fetch");
+    expect(entry()?.paused).toBe(true);
+    expect(result.current.prompt).toBeNull();
+    expect(result.current.message).toBeNull();
+  });
+
+  it("should run the manual fetch when the toast's Fetch action runs", async () => {
+    await failOnAuth();
+    vi.mocked(fetchAll).mockResolvedValue(undefined);
+    act(() => useToasts.getState().toasts[0]?.action?.run());
+    await waitFor(() => expect(fetchAll).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(entry()?.paused).toBe(false));
+  });
+
+  it("should toast once per streak: a second failure while paused is not attempted", async () => {
+    const { result } = await failOnAuth();
+    act(() => result.current.autoFetch());
+    expect(fetchAll).toHaveBeenCalledOnce();
+    expect(useToasts.getState().toasts).toHaveLength(1);
+  });
+
+  it("should record the fetch time after a manual fetch succeeds", async () => {
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should record the fetch time after a pull completes", async () => {
+    const { result } = await setup();
+    act(() => result.current.pull());
+    await waitFor(() => expect(entry()?.lastFetchedAt).toEqual(expect.any(Number)));
+  });
+
+  it("should resume after a push succeeds", async () => {
+    useAutoFetchState.getState().recordFailure(1);
+    const { result } = await setup();
+    act(() => result.current.push());
+    await waitFor(() => expect(entry()?.paused).toBe(false));
+  });
+
+  it("should pause silently after a manual fetch fails", async () => {
+    vi.mocked(fetchAll).mockRejectedValue(networkError("hostUnreachable"));
+    const { result } = await setup();
+    act(() => result.current.fetch());
+    await waitFor(() => expect(entry()?.paused).toBe(true));
+    expect(useToasts.getState().toasts).toHaveLength(0);
   });
 });

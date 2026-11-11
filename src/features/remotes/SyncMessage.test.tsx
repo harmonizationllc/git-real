@@ -12,6 +12,7 @@ function fakeSync(over: Partial<SyncActions> = {}): SyncActions {
     upstreamRemote: "origin",
     running: null,
     fetch: vi.fn(),
+    autoFetch: vi.fn(),
     pull: vi.fn(),
     push: vi.fn(),
     requestForcePush: vi.fn(),

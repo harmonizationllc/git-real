@@ -169,6 +169,19 @@ describe("useNetworkAction credential prompt", () => {
     act(() => result.current.prompt?.submit("me", "tok"));
     await expect(outcome).resolves.toEqual({ status: "failed", error: other });
   });
+
+  it("should resolve failed with the auth error and open no prompt when prompt is false", async () => {
+    const error = authError();
+    const action = vi.fn<Action>().mockRejectedValue(error);
+    const { result } = renderHookWithProviders(() => useNetworkAction(1));
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.run(action, { prompt: false });
+    });
+    expect(outcome).toEqual({ status: "failed", error });
+    expect(result.current.prompt).toBeNull();
+    expect(action).toHaveBeenCalledOnce();
+  });
 });
 
 // Contract: every attempt refreshes the repo's queries on settle, success or failure.
