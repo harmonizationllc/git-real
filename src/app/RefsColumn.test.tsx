@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -16,6 +16,7 @@ import {
 } from "../lib/ipc";
 import type { BranchList } from "../lib/ipc";
 import { useSettings } from "../lib/store/settings";
+import { useToasts } from "../lib/store/toasts";
 import { useWorkspace } from "../lib/store/workspace";
 import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
@@ -591,23 +592,22 @@ describe("RefsColumn Local and Remote", () => {
   });
 });
 
-// Contract (spec: Panel errors and dialogs): the branch banner and dialogs are hosted once, at
-// column level directly above Local and outside the measured sections.
+// Contract (spec: Panel errors and dialogs): the branch dialogs are hosted once, at column level
+// directly above Local and outside the measured sections; a branch action failure is a toast.
 describe("RefsColumn branch host block", () => {
-  it("should render an action error once above Local, outside the measured sections", async () => {
+  it("should toast an action error instead of rendering a banner in the column", async () => {
+    useToasts.setState({ toasts: [] });
     vi.mocked(checkoutBranch).mockRejectedValue({
       kind: "checkoutFailed",
       message: "error: Your local changes would be overwritten",
     });
     const { user } = await renderColumn();
     await user.dblClick(await screen.findByTitle("refs/heads/feature"));
-    const alert = await screen.findByRole("alert");
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(root()).not.toContainElement(alert);
-    expect(alert.compareDocumentPosition(root()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // collapsing Local leaves the banner in place
-    await user.click(within(wrapper("local")).getByRole("button", { name: /^Local \(/ }));
-    expect(screen.getByRole("alert")).toBe(alert);
+    await waitFor(() => expect(useToasts.getState().toasts).toHaveLength(1));
+    expect(useToasts.getState().toasts[0].text).toBe(
+      "error: Your local changes would be overwritten",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("should open the create dialog from New branch… in the Local header", async () => {

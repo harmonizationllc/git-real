@@ -104,6 +104,19 @@ describe("LocalSection heading", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading branches…");
   });
 
+  it("should show a plain Couldn't load branches placeholder in the body when the list fails", async () => {
+    vi.mocked(listBranches).mockRejectedValue({ kind: "io", message: "list exploded" });
+    renderLocal();
+    const placeholder = await screen.findByText("Couldn't load branches");
+    expect(placeholder.tagName).toBe("P");
+    expect(placeholder.className).toMatch(/empty/);
+    expect(placeholder).not.toHaveAttribute("role");
+    expect(screen.queryByRole("status")).toBeNull();
+    const heading = screen.getByRole("button", { name: "Local" });
+    const body = document.getElementById(heading.getAttribute("aria-controls") as string);
+    expect(body).toContainElement(placeholder);
+  });
+
   it("should show the unborn row in the body", async () => {
     vi.mocked(listBranches).mockResolvedValue(
       list({ head: { kind: "unborn", name: "main" }, local: [] }),
