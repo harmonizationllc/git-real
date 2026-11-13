@@ -394,4 +394,13 @@ describe("usePrActions auto-stash toast", () => {
     await act(() => result.current.checkout(pr7()));
     expect(toastAutoStash).not.toHaveBeenCalled();
   });
+
+  it("does not toast when the checkout is rejected", async () => {
+    vi.mocked(hostingCheckoutPullRequest).mockRejectedValue(
+      networkError("hostUnreachable", { verb: "fetch" }),
+    );
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    expect(toastAutoStash).not.toHaveBeenCalled();
+  });
 });

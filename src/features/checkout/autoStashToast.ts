@@ -14,11 +14,11 @@ const files = (n: number, adjective: string): string =>
 
 /** Exported for tests: the toast's text, variant, stickiness and details for a report. */
 export function autoStashNotice(report: AutoStash, target: string): AutoStashNotice {
-  const on = `\`${target}\``;
+  const on = target;
   switch (report.reapply) {
     case "applied":
       return {
-        text: `Stashed ${files(report.files, "changed")} and reapplied them on ${on}.`,
+        text: `Stashed ${files(report.files, "changed")} and reapplied ${report.files === 1 ? "it" : "them"} on ${on}.`,
         variant: "success",
         sticky: false,
         details: null,

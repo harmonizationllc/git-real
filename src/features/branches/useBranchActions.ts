@@ -8,7 +8,7 @@ import {
   setBranchUpstream,
   toAppError,
 } from "../../lib/ipc";
-import type { AppError, CheckoutOutcome, CreatedBranch, RepoId } from "../../lib/ipc";
+import type { AppError, AutoStash, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { toastAutoStash } from "../checkout/autoStashToast";
@@ -42,44 +42,41 @@ function fetchesAfter(req: BranchRequest): boolean {
   }
 }
 
-/** What a request resolves with: a create its branch and report, a checkout its report. */
-type BranchResult = CreatedBranch | CheckoutOutcome | void;
-
-/** Toasts the auto-stash report of a successful request that switched branches. */
-function toastSwitch(req: BranchRequest, data: BranchResult): void {
-  switch (req.action) {
-    case "create":
-      if (req.checkout) toastAutoStash((data as CreatedBranch).autoStash, req.name);
-      return;
-    case "checkout":
-    case "checkoutRemote":
-      toastAutoStash((data as CheckoutOutcome).autoStash, req.name);
-      return;
-    default:
-      return;
-  }
+/** What a request leaves to report: the auto-stash of a switch and the name switched to; null otherwise. */
+interface SwitchReport {
+  autoStash: AutoStash | null;
+  target: string;
 }
 
-function execute(repoId: RepoId, req: BranchRequest): Promise<BranchResult> {
+async function execute(repoId: RepoId, req: BranchRequest): Promise<SwitchReport | null> {
   switch (req.action) {
-    case "create":
-      return createBranch(repoId, req.name, req.startPoint, req.checkout);
+    case "create": {
+      const created = await createBranch(repoId, req.name, req.startPoint, req.checkout);
+      return req.checkout ? { autoStash: created.autoStash, target: req.name } : null;
+    }
     case "rename":
-      return renameBranch(repoId, req.oldName, req.newName);
+      await renameBranch(repoId, req.oldName, req.newName);
+      return null;
     case "delete":
-      return deleteBranch(repoId, req.name, req.force);
-    case "checkout":
-      return checkoutBranch(repoId, req.name);
-    case "checkoutRemote":
-      return checkoutRemoteBranch(repoId, req.remote, req.name);
+      await deleteBranch(repoId, req.name, req.force);
+      return null;
+    case "checkout": {
+      const outcome = await checkoutBranch(repoId, req.name);
+      return { autoStash: outcome.autoStash, target: req.name };
+    }
+    case "checkoutRemote": {
+      const outcome = await checkoutRemoteBranch(repoId, req.remote, req.name);
+      return { autoStash: outcome.autoStash, target: req.name };
+    }
     case "setUpstream":
-      return setBranchUpstream(repoId, req.name, req.upstream);
+      await setBranchUpstream(repoId, req.name, req.upstream);
+      return null;
   }
 }
 
 export function useBranchActions(repoId: RepoId): UseBranchActions {
   const queryClient = useQueryClient();
-  const mutation = useMutation<BranchResult, AppError, BranchRequest>({
+  const mutation = useMutation<SwitchReport | null, AppError, BranchRequest>({
     mutationFn: (req) =>
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);
@@ -88,7 +85,7 @@ export function useBranchActions(repoId: RepoId): UseBranchActions {
     // asked to fetch; unsetting an upstream leaves nothing to compare against.
     onSuccess: (data, req) => {
       if (fetchesAfter(req)) useAutoFetchState.getState().request(repoId);
-      toastSwitch(req, data);
+      if (data !== null) toastAutoStash(data.autoStash, data.target);
     },
     // Returning the promise keeps `pending` true until the refetch is triggered. Runs on
     // failure too, since a failed switch or create may have partly applied.

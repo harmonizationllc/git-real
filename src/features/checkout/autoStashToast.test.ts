@@ -12,7 +12,7 @@ beforeEach(() => {
 describe("autoStashNotice", () => {
   it("should report applied as a success toast that times out", () => {
     expect(autoStashNotice({ files: 3, reapply: "applied", detail: null }, "feature/x")).toEqual({
-      text: "Stashed 3 changed files and reapplied them on `feature/x`.",
+      text: "Stashed 3 changed files and reapplied them on feature/x.",
       variant: "success",
       sticky: false,
       details: null,
@@ -21,7 +21,7 @@ describe("autoStashNotice", () => {
 
   it("should report conflicts as a sticky error toast", () => {
     expect(autoStashNotice({ files: 3, reapply: "conflicts", detail: null }, "feature/x")).toEqual({
-      text: "Switched to `feature/x`, but reapplying your 3 stashed files hit conflicts. Resolve them, then drop the stash.",
+      text: "Switched to feature/x, but reapplying your 3 stashed files hit conflicts. Resolve them, then drop the stash.",
       variant: "error",
       sticky: true,
       details: null,
@@ -32,7 +32,7 @@ describe("autoStashNotice", () => {
     expect(
       autoStashNotice({ files: 3, reapply: "appliedNotDropped", detail: null }, "feature/x"),
     ).toEqual({
-      text: "Reapplied your 3 stashed files on `feature/x`; the stash could not be dropped and is still listed.",
+      text: "Reapplied your 3 stashed files on feature/x; the stash could not be dropped and is still listed.",
       variant: "info",
       sticky: false,
       details: null,
@@ -43,7 +43,7 @@ describe("autoStashNotice", () => {
     expect(
       autoStashNotice({ files: 3, reapply: "kept", detail: "error: boom" }, "feature/x"),
     ).toEqual({
-      text: "Switched to `feature/x`, but your 3 changed files could not be reapplied. They are in the stash list.",
+      text: "Switched to feature/x, but your 3 changed files could not be reapplied. They are in the stash list.",
       variant: "error",
       sticky: true,
       details: "error: boom",
@@ -52,10 +52,10 @@ describe("autoStashNotice", () => {
 
   it("should use the singular for one file", () => {
     expect(autoStashNotice({ files: 1, reapply: "applied", detail: null }, "main").text).toBe(
-      "Stashed 1 changed file and reapplied them on `main`.",
+      "Stashed 1 changed file and reapplied it on main.",
     );
     expect(autoStashNotice({ files: 1, reapply: "conflicts", detail: null }, "main").text).toBe(
-      "Switched to `main`, but reapplying your 1 stashed file hit conflicts. Resolve them, then drop the stash.",
+      "Switched to main, but reapplying your 1 stashed file hit conflicts. Resolve them, then drop the stash.",
     );
   });
 });
@@ -71,7 +71,7 @@ describe("toastAutoStash", () => {
     toastAutoStash({ files: 2, reapply: "kept", detail: "boom" }, "x");
     expect(useToasts.getState().toasts).toEqual([
       expect.objectContaining({
-        text: "Switched to `x`, but your 2 changed files could not be reapplied. They are in the stash list.",
+        text: "Switched to x, but your 2 changed files could not be reapplied. They are in the stash list.",
         details: "boom",
         variant: "error",
         sticky: true,
