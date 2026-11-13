@@ -8,7 +8,7 @@ use common::git_available;
 
 use std::path::{Path, PathBuf};
 
-use git_real_core::{GitError, RepoSession};
+use git_real_core::{AutoStash, AutoStashReapply, GitError, RepoSession};
 use git2::{BranchType, Repository};
 
 /// Repo with one commit, local identity, signing off.
@@ -141,7 +141,14 @@ fn checkout_with_a_conflicting_dirty_file_auto_stashes_and_succeeds() {
     }
     let (_d, _p, session, _head) = dirty_conflict_fixture();
     let out = session.checkout_branch("b").unwrap();
-    assert!(out.auto_stash.is_some(), "{out:?}");
+    assert_eq!(
+        out.auto_stash,
+        Some(AutoStash {
+            files: 1,
+            reapply: AutoStashReapply::Applied,
+            detail: None
+        })
+    );
 }
 
 #[test]
@@ -331,8 +338,13 @@ fn checkout_remote_with_a_conflicting_dirty_file_auto_stashes_and_succeeds() {
     let out = session
         .checkout_remote_branch("origin", "remote-only")
         .unwrap();
-    assert!(out.auto_stash.is_some(), "{out:?}");
+    // The fixture's one-line README differs on both sides, so the pop conflicts.
+    assert_eq!(
+        out.auto_stash.map(|a| a.reapply),
+        Some(AutoStashReapply::Conflicts)
+    );
     assert_eq!(head_ref(&path), "remote-only");
+    assert_eq!(session.list_stashes().unwrap().len(), 1);
 }
 
 #[test]

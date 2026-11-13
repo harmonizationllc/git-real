@@ -542,6 +542,30 @@ fn a_conflicting_dirty_tree_is_auto_stashed_across_a_reset() {
 }
 
 #[test]
+fn an_untracked_collision_blocks_reset_too_and_moves_nothing() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, head) = fx();
+    pr_head(&bare, 7, "a.txt", "a\n", false);
+    let session = RepoSession::open(&path).unwrap();
+    let fetch = fetch_pr(&session, 7);
+    session.checkout_fetch_head(&fetch, 7, false).unwrap();
+    let local = common::commit_file(&path, "l.txt", "local\n", "local commit");
+    common::run_git_ok(&path, &["switch", &head]);
+    pr_head(&bare, 7, "f.txt", "added by the pr\n", false);
+    let fetch = fetch_pr(&session, 7);
+    common::write_file(&path, "f.txt", "mine\n");
+
+    let err = session.checkout_fetch_head(&fetch, 7, true).unwrap_err();
+
+    assert!(matches!(err, GitError::CheckoutFailed { .. }), "{err:?}");
+    assert_eq!(ref_oid(&path, "refs/heads/pr/7"), Some(local.to_string()));
+    assert_eq!(common::head_branch_name(&path), head);
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
+#[test]
 fn pr_checkout_reports_the_auto_stash() {
     if !common::git_available() {
         return;

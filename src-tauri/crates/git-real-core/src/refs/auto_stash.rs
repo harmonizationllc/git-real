@@ -33,8 +33,16 @@ impl RepoSession {
         {
             return Err(refused);
         }
+        let before = self.stash_tip();
         if self.stash_push(Some(&stash_message(label)), false).is_err() {
-            return Err(refused);
+            // git can record the stash and then fail resetting the tree; put
+            // any entry it made back before reporting the refusal.
+            return Err(match self.stash_tip() {
+                Some(made) if Some(made) != before => {
+                    self.restore_stash(&made.to_string(), refused)
+                }
+                _ => refused,
+            });
         }
         let Some(oid) = self.stash_tip() else {
             return Err(refused);
@@ -64,10 +72,11 @@ impl RepoSession {
         }))
     }
 
-    /// Pops the auto-stash back onto the unchanged tree and returns `err`; if
-    /// that pop fails, the stash stays and `err` becomes `CheckoutFailedStashKept`.
+    /// Pops the auto-stash back onto the unchanged tree and returns `err`.
+    /// Unless that pop applies and drops cleanly the stash is still listed, so
+    /// `err` becomes `CheckoutFailedStashKept`.
     fn restore_stash(&self, oid: &str, err: GitError) -> GitError {
-        if self.stash_pop(0, oid).is_ok() {
+        if let Ok(StashOutcome::Applied) = self.stash_pop(0, oid) {
             return err;
         }
         match err {
