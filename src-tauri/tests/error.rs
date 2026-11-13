@@ -135,7 +135,16 @@ fn app_error_kind_for_each_git_error_variant() {
                 stderr: "hook says no".into(),
             },
             AppErrorKind::CheckoutFailedStashKept,
-            Some("hook says no Your changes are in the stash list."),
+            Some("hook says no. Your changes are in the stash list."),
+        ),
+        (
+            GitError::CheckoutFailedStashKept {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "fatal: hook says no.".into(),
+            },
+            AppErrorKind::CheckoutFailedStashKept,
+            Some("fatal: hook says no. Your changes are in the stash list."),
         ),
         (GitError::NoRemotes, AppErrorKind::NoRemotes, None),
         (GitError::NoUpstream, AppErrorKind::NoUpstream, None),

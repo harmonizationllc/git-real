@@ -72,9 +72,12 @@ impl RepoSession {
         }))
     }
 
-    /// Pops the auto-stash back onto the unchanged tree and returns `err`.
-    /// Unless that pop applies and drops cleanly the stash is still listed, so
-    /// `err` becomes `CheckoutFailedStashKept`.
+    /// Pops the auto-stash back and returns `err`. Usually that is onto the
+    /// unchanged tree, since the refused switch moved nothing; when a
+    /// `post-checkout` hook fails after HEAD has already moved, it is onto the
+    /// new HEAD. Either way no edits are lost: unless the pop applies and
+    /// drops cleanly the stash is still listed, so `err` becomes
+    /// `CheckoutFailedStashKept`.
     fn restore_stash(&self, oid: &str, err: GitError) -> GitError {
         if let Ok(StashOutcome::Applied) = self.stash_pop(0, oid) {
             return err;

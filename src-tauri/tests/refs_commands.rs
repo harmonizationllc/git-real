@@ -102,15 +102,6 @@ fn create_branch_inner_with_checkout_returns_the_branch_marked_as_head() {
     let (_d, _p, reg, id, _head) = open_fixture();
     let created = create_branch_inner(&reg, id, "topic", None, true).unwrap();
     assert!(created.branch.is_head);
-}
-
-#[test]
-fn create_branch_inner_with_checkout_returns_the_branch_and_no_stash() {
-    if !common::git_available() {
-        return;
-    }
-    let (_d, _p, reg, id, _head) = open_fixture();
-    let created = create_branch_inner(&reg, id, "topic", None, true).unwrap();
     assert_eq!(created.branch.name, "topic");
     assert_eq!(created.auto_stash, None);
 }

@@ -240,10 +240,15 @@ impl From<GitError> for AppError {
                 code,
                 stdout,
                 stderr,
-            } => format!(
-                "{} Your changes are in the stash list.",
-                cli_failure_message("switch", *code, stdout, stderr)
-            ),
+            } => {
+                let text = cli_failure_message("switch", *code, stdout, stderr);
+                let joint = if text.ends_with(['.', '!', '?']) {
+                    " "
+                } else {
+                    ". "
+                };
+                format!("{text}{joint}Your changes are in the stash list.")
+            }
             GitError::NetworkFailed {
                 verb,
                 code,

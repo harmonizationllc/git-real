@@ -81,6 +81,29 @@ fn readme(path: &Path) -> String {
     std::fs::read_to_string(path.join("README.md")).unwrap()
 }
 
+// --- the first switch is refused for another reason ---
+
+#[test]
+fn a_first_switch_refused_without_a_collision_is_returned_unchanged() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session, head) = collision_fixture();
+    behave(
+        &path,
+        "switch-1",
+        "echo 'fatal: invalid reference: ghost' >&2; exit 128\n",
+    );
+    let err = session.checkout_branch("b").unwrap_err();
+    assert!(
+        matches!(&err, GitError::CheckoutFailed { stderr, .. } if stderr.contains("invalid reference: ghost")),
+        "{err:?}"
+    );
+    assert_eq!(common::head_branch_name(&path), head);
+    assert_eq!(readme(&path), DIRTY);
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
 // --- the switch after the stash is refused ---
 
 #[test]
