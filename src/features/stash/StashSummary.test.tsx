@@ -355,6 +355,17 @@ describe("StashSummary actions", () => {
     );
   });
 
+  it("toasts a failed Pop with git's message and leaves Pop enabled", async () => {
+    vi.mocked(stashPop).mockRejectedValue({ kind: "operationFailed", message: "pop said no" });
+    const { user } = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    await user.click(pop);
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({ text: "pop said no", variant: "error" });
+    await waitFor(() => expect(pop).toBeEnabled());
+  });
+
   it("toasts the stale message on staleStash", async () => {
     vi.mocked(stashApply).mockRejectedValue({ kind: "staleStash", message: "raw" });
     const { user } = await renderSummary();

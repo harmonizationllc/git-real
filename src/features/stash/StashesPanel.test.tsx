@@ -393,7 +393,6 @@ describe("StashesPanel drop", () => {
   });
 });
 
-// Contract: conflict notices, stale and git errors surface in the panel.
 // Contract: conflict notices, stale and git errors surface as toasts.
 describe("StashesPanel feedback", () => {
   async function applyWith(index = 0) {
@@ -435,6 +434,16 @@ describe("StashesPanel feedback", () => {
       variant: "error",
     });
     await waitFor(() => expect(listStashes).toHaveBeenCalledTimes(2));
+  });
+
+  it("toasts a failed Pop with git's message", async () => {
+    vi.mocked(stashPop).mockRejectedValue({ kind: "operationFailed", message: "pop said no" });
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    rightClick(row(0));
+    await user.click(menuItem("Pop"));
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({ text: "pop said no", variant: "error" });
   });
 
   it("toasts git's message on operationFailed", async () => {

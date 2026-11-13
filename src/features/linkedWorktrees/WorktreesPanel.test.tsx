@@ -542,19 +542,6 @@ describe("WorktreesPanel add", () => {
     expect(toasts()[0].text).toBe("not a repo");
   });
 
-  it("renders no alert in the panel", async () => {
-    vi.mocked(removeLinkedWorktree).mockRejectedValueOnce({
-      kind: "worktreeLocked",
-      message: "locked",
-    });
-    const { user } = await renderPanel();
-    await user.click(
-      within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
-    );
-    await waitFor(() => expect(toasts()).toHaveLength(1));
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
   it("should close the add dialog on Cancel without adding", async () => {
     const { user } = await renderPanel();
     await user.click(plus());

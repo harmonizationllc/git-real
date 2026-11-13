@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
@@ -8,12 +8,12 @@ import { filterStashes, isFiltering } from "../branches/branchFilter";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { useNow } from "../graph/useNow";
 import { useOperationState } from "../merge/useOperationState";
-import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { useStatus } from "../worktree/useStatus";
 import { StashButton } from "./StashButton";
 import { StashRow } from "./StashRow";
 import styles from "./StashesPanel.module.css";
-import { displayError, stashRef } from "./stashCopy";
+import { stashRef, toastStashError } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashes } from "./useStashes";
@@ -46,25 +46,11 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   const filtering = isFiltering(query);
   const shown = stashes ? filterStashes(stashes, query) : [];
 
-  // A load failure with nothing to show toasts once per error object, so a failed Retry (a new
-  // error) toasts again. `refetch` is read through an effect event, not listed as a dependency.
-  const toastLoadFailure = useEffectEvent((error: AppError) =>
-    toastError(
-      { ...error, message: `Couldn't load stashes: ${error.message}` },
-      { retry: refetch },
-    ),
-  );
-  const loadFailed = stashes === undefined && listError !== null;
-  useEffect(() => {
-    if (loadFailed) toastLoadFailure(listError);
-  }, [loadFailed, listError]);
+  const loadFailed = useLoadFailureToast("stashes", stashes !== undefined, listError, refetch);
 
-  // The failure is toasted here, from the resolved result; a notice the action raised was already
-  // toasted by the hook.
+  // A notice an action raised was already toasted by the hook; the failure is toasted here.
   const run = (action: () => Promise<AppError | null>) => {
-    void action().then((e) => {
-      if (e !== null) toastError(displayError(e));
-    });
+    void action().then(toastStashError);
   };
 
   const menuItems = (entry: StashEntry): MenuItem[] => [

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
@@ -9,6 +9,7 @@ import { useWorkspace } from "../../lib/store/workspace";
 import { filterWorktrees, isFiltering } from "../branches/branchFilter";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { AddWorktreeDialog } from "./AddWorktreeDialog";
 import { WorktreeRow } from "./WorktreeRow";
@@ -56,18 +57,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   const bare = list !== undefined && list.length === 0;
   const stale = (list ?? []).filter(isStale).map((w) => w.path);
 
-  // A load failure with nothing to show toasts once per error object, so a failed Retry (a new
-  // error) toasts again. `refetch` is read through an effect event, not listed as a dependency.
-  const toastLoadFailure = useEffectEvent((error: AppError) =>
-    toastError(
-      { ...error, message: `Couldn't load worktrees: ${error.message}` },
-      { retry: refetch },
-    ),
-  );
-  const loadFailed = list === undefined && listError !== null;
-  useEffect(() => {
-    if (loadFailed) toastLoadFailure(listError);
-  }, [loadFailed, listError]);
+  const loadFailed = useLoadFailureToast("worktrees", list !== undefined, listError, refetch);
 
   /** Toasts an action's resolved failure; null (success) shows nothing. */
   const report = (error: AppError | null) => {

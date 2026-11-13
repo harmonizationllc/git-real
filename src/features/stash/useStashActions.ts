@@ -15,16 +15,16 @@ export interface StashNotice {
 type StashTarget = Pick<StashEntry, "index" | "oid">;
 
 /** What a pop resolves: the failure, or the notice a StashSummary needs to block a second Pop. */
-export interface StashPopResult {
+export interface StashRunResult {
   error: AppError | null;
   notice: StashNotice | null;
 }
 
-/** Each action resolves with the AppError or null and never rejects (pop: a StashPopResult). */
+/** Each action resolves with the AppError or null and never rejects (pop: a StashRunResult). */
 export interface UseStashActions {
   push(message: string | null, includeUntracked: boolean): Promise<AppError | null>;
   apply(entry: StashTarget): Promise<AppError | null>;
-  pop(entry: StashTarget): Promise<StashPopResult>;
+  pop(entry: StashTarget): Promise<StashRunResult>;
   drop(entry: StashTarget): Promise<AppError | null>;
   pending: boolean;
 }
@@ -76,17 +76,17 @@ export function useStashActions(repoId: RepoId): UseStashActions {
   });
 
   /** Toasts the notice of an apply or pop; the call site toasts the failure. */
-  const run = (req: StashRequest): Promise<StashPopResult> => {
+  const run = (req: StashRequest): Promise<StashRunResult> => {
     setBusy((n) => n + 1);
     return mutateAsync(req)
       .then(
-        (notice): StashPopResult => {
+        (notice): StashRunResult => {
           if (notice !== null) {
             useToasts.getState().notify({ text: noticeText(notice), variant: "info" });
           }
           return { error: null, notice };
         },
-        (error: AppError): StashPopResult => ({ error, notice: null }),
+        (error: AppError): StashRunResult => ({ error, notice: null }),
       )
       .finally(() => setBusy((n) => n - 1));
   };

@@ -1,4 +1,5 @@
 import type { AppError } from "../../lib/ipc";
+import { toastError } from "../remotes/toastError";
 import type { StashNotice } from "./useStashActions";
 
 export const stashRef = (index: number): string => `stash@{${index}}`;
@@ -37,4 +38,9 @@ export function displayError(error: AppError): AppError {
 export function stashSubject(message: string): string {
   const prefix = /^(?:WIP on|On) (?:\(no branch\)|[^ :]+): /.exec(message);
   return prefix ? message.slice(prefix[0].length) : message;
+}
+
+/** Toasts a stash action's resolved failure with the app's wording; null (success) shows nothing. */
+export function toastStashError(error: AppError | null): void {
+  if (error !== null) toastError(displayError(error));
 }

@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
@@ -27,6 +19,7 @@ import type { MessageAction } from "../remotes/networkMessage";
 import { removeRemoteCopy } from "../remotes/remoteCopy";
 import type { RemotesTarget } from "../remotes/remotesTarget";
 import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import { useRemoteActions } from "../remotes/useRemoteActions";
 import { useOpenRepo } from "../repo/useOpenRepo";
@@ -152,18 +145,7 @@ export function BranchesProvider({
       : branchId(menu.target);
   const ff = useCanFastForward(repoId, menuBranch);
 
-  // A load failure toasts once per error object, so a failed Retry (a new error) toasts again.
-  // `refetch` is not stable across renders, so it is read through an effect event rather than
-  // listed as a dependency; the closure it hands to Retry stays valid (it calls the query's own).
-  const toastLoadFailure = useEffectEvent((error: AppError) =>
-    toastError(
-      { ...error, message: `Couldn't load branches: ${error.message}` },
-      { retry: refetch },
-    ),
-  );
-  useEffect(() => {
-    if (listError !== null) toastLoadFailure(listError);
-  }, [listError]);
+  const loadFailed = useLoadFailureToast("branches", branches !== undefined, listError, refetch);
 
   /** Runs a network failure's suggested action. */
   const onAction = (kind: MessageAction) => {
@@ -480,7 +462,7 @@ export function BranchesProvider({
     filtering: isFiltering(query),
     loading: branches === undefined && listError === null,
     // A failed background refetch keeps the cached list; only a missing list shows the placeholder.
-    loadFailed: branches === undefined && listError !== null,
+    loadFailed,
     pending,
     rootRef,
     row,

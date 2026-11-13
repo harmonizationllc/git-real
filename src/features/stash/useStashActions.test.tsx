@@ -107,14 +107,23 @@ describe("useStashActions", () => {
     expect(toasts()[0]).toMatchObject({ variant: "info" });
   });
 
-  it('"applied" toasts nothing', async () => {
+  it('pop resolving "applied" toasts nothing and resolves no notice', async () => {
     const { result } = renderHookWithProviders(() => useStashActions(1));
     let outcome: unknown = null;
     await act(async () => {
       outcome = await result.current.pop(entry);
-      await result.current.apply(entry);
     });
     expect(outcome).toEqual({ error: null, notice: null });
+    expect(toasts()).toEqual([]);
+  });
+
+  it('apply resolving "applied" toasts nothing and resolves null', async () => {
+    const { result } = renderHookWithProviders(() => useStashActions(1));
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.apply(entry);
+    });
+    expect(outcome).toBeNull();
     expect(toasts()).toEqual([]);
   });
 

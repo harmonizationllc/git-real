@@ -5,12 +5,11 @@ import { useWorkspace } from "../../lib/store/workspace";
 import { shortOid } from "../graph/model/layout";
 import { fullDate } from "../graph/model/relativeTime";
 import { useOperationState } from "../merge/useOperationState";
-import { toastError } from "../remotes/toastError";
 import { RepoError } from "../repo/RepoError";
 import { useStatus } from "../worktree/useStatus";
 import { StashFileGroup } from "./StashFileGroup";
 import styles from "./StashSummary.module.css";
-import { POP_KEPT_TITLE, displayError, stashRef, stashSubject } from "./stashCopy";
+import { POP_KEPT_TITLE, stashRef, stashSubject, toastStashError } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashFiles } from "./useStashFiles";
@@ -92,15 +91,13 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
   // The failure is toasted here, from the resolved result; the hook toasts the notice.
   const run = (action: () => Promise<AppError | null>) => {
     setPopKept(false);
-    void action().then((e) => {
-      if (e !== null) toastError(displayError(e));
-    });
+    void action().then(toastStashError);
   };
 
   const pop = () => {
     setPopKept(false);
     void actions.pop(entry).then(({ error, notice }) => {
-      if (error !== null) toastError(displayError(error));
+      toastStashError(error);
       setPopKept(notice?.kind === "popKept");
     });
   };

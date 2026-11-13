@@ -2930,12 +2930,16 @@ describe("BranchesPanel toasts", () => {
     expect(toasts()).toHaveLength(1);
   });
 
-  it("keeps the loaded list and toasts when a background refetch fails", async () => {
+  it("neither toasts nor replaces the list when a background refetch fails", async () => {
     const { user } = await renderPanel();
     vi.mocked(listBranches).mockRejectedValue({ kind: "io", message: "list exploded" });
     // A successful checkout invalidates the repo's queries, refetching the list.
     await user.dblClick(localRow("feature"));
-    expect((await oneToast()).text).toBe("Couldn't load branches: list exploded");
+    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(toasts()).toEqual([]);
     expect(localRow("feature")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load branches")).toBeNull();
   });

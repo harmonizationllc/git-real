@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
@@ -13,6 +13,7 @@ import { buildBranchTree } from "../branches/branchTree";
 import { useBranches } from "../branches/useBranches";
 import { CredentialDialog } from "../remotes/CredentialDialog";
 import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { CreateTagDialog } from "./CreateTagDialog";
 import { TagRow } from "./TagRow";
 import styles from "./TagsPanel.module.css";
@@ -61,15 +62,7 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const head = headCommit(branches);
   const remotes = list?.remotes ?? [];
 
-  // A load failure with nothing to show toasts once per error object, so a failed Retry (a new
-  // error) toasts again. `refetch` is read through an effect event, not listed as a dependency.
-  const toastLoadFailure = useEffectEvent((error: AppError) =>
-    toastError({ ...error, message: `Couldn't load tags: ${error.message}` }, { retry: refetch }),
-  );
-  const loadFailed = list === undefined && listError !== null;
-  useEffect(() => {
-    if (loadFailed) toastLoadFailure(listError);
-  }, [loadFailed, listError]);
+  const loadFailed = useLoadFailureToast("tags", list !== undefined, listError, refetch);
 
   // The failure is toasted here, from the resolved result; no push failure offers an action
   // (the panel has no remotes access), but the toast still carries git's output as Details.
