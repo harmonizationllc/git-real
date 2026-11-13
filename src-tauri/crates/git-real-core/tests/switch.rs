@@ -323,30 +323,37 @@ fn checkout_remote_rejects_an_invalid_branch_name() {
 }
 
 #[test]
-fn checkout_remote_blocked_by_a_dirty_file_fails_with_checkout_failed() {
-    if !git_available() {
-        return;
-    }
-    let (_d, _path, session) = blocked_remote_fixture();
-    let err = session
-        .checkout_remote_branch("origin", "remote-only")
-        .unwrap_err();
-    assert!(matches!(err, GitError::CheckoutFailed { .. }));
-}
-
-#[test]
-fn checkout_remote_blocked_by_a_dirty_file_creates_no_local_branch() {
+fn checkout_remote_with_a_conflicting_dirty_file_auto_stashes_and_succeeds() {
     if !git_available() {
         return;
     }
     let (_d, path, session) = blocked_remote_fixture();
-    let _ = session.checkout_remote_branch("origin", "remote-only");
+    let out = session
+        .checkout_remote_branch("origin", "remote-only")
+        .unwrap();
+    assert!(out.auto_stash.is_some(), "{out:?}");
+    assert_eq!(head_ref(&path), "remote-only");
+}
+
+#[test]
+fn checkout_remote_with_a_conflicting_dirty_file_creates_the_tracking_branch() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session) = blocked_remote_fixture();
+    session
+        .checkout_remote_branch("origin", "remote-only")
+        .unwrap();
     let repo = Repository::open(&path).unwrap();
-    assert!(repo.find_branch("remote-only", BranchType::Local).is_err());
+    assert!(repo.find_branch("remote-only", BranchType::Local).is_ok());
+    assert_eq!(
+        config_string(&path, "branch.remote-only.remote").as_deref(),
+        Some("origin")
+    );
 }
 
 /// `origin/remote-only` changes README.md while the working tree has an
-/// uncommitted edit to it, so git must refuse the switch.
+/// uncommitted edit to it, so git refuses the plain switch.
 fn blocked_remote_fixture() -> ((tempfile::TempDir, tempfile::TempDir), PathBuf, RepoSession) {
     let (d, b, path, _bare, _head) = remote_fixture(false);
     common::branch_with_commit(&path, "remote-only", "README.md", "# remote\n");
@@ -381,7 +388,10 @@ fn create_and_checkout_returns_the_branch_marked_as_head() {
         return;
     }
     let (_d, _p, session, _head) = fixture();
-    let branch = session.create_and_checkout_branch("topic", None).unwrap();
+    let branch = session
+        .create_and_checkout_branch("topic", None)
+        .unwrap()
+        .branch;
     assert_eq!(branch.name, "topic");
     assert!(branch.is_head);
 }
@@ -395,14 +405,17 @@ fn create_and_checkout_honours_the_start_point() {
     let tip = common::branch_with_commit(&path, "b2", "other.txt", "o\n");
     let branch = session
         .create_and_checkout_branch("topic", Some("b2"))
-        .unwrap();
+        .unwrap()
+        .branch;
     assert_eq!(branch.oid, tip.to_string());
 }
 
+/// `b2` adds `f.txt` and the tree holds an untracked `f.txt`, which git
+/// refuses to overwrite (tracked edits would be auto-stashed instead).
 fn refused_switch_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
     let (d, path, session, head) = fixture();
-    common::branch_with_commit(&path, "b2", "README.md", "# changed on b2\n");
-    std::fs::write(path.join("README.md"), "# dirty edit\n").unwrap();
+    common::branch_with_commit(&path, "b2", "f.txt", "on b2\n");
+    std::fs::write(path.join("f.txt"), "mine\n").unwrap();
     (d, path, session, head)
 }
 
@@ -570,6 +583,9 @@ fn should_accept_checking_out_the_commit_head_is_already_on() {
     assert_eq!(repo.head().unwrap().target().unwrap(), second);
 }
 
+/// HEAD on `second`; `first` has an `f.txt` that `second` deleted, and the
+/// tree holds an untracked `f.txt`, which git refuses to overwrite (tracked
+/// edits would be auto-stashed instead).
 fn dirty_commit_fixture() -> (
     tempfile::TempDir,
     PathBuf,
@@ -577,13 +593,17 @@ fn dirty_commit_fixture() -> (
     git2::Oid,
     git2::Oid,
 ) {
-    let (d, path, session, first, second) = two_commit_fixture();
-    std::fs::write(path.join("README.md"), "# dirty edit\n").unwrap();
+    let (d, path, _session, _head) = fixture();
+    let first = common::commit_file(&path, "f.txt", "tracked\n", "first");
+    std::fs::remove_file(path.join("f.txt")).unwrap();
+    let second = common::commit_all(&path, "second");
+    std::fs::write(path.join("f.txt"), "mine\n").unwrap();
+    let session = RepoSession::open(&path).unwrap();
     (d, path, session, first, second)
 }
 
 #[test]
-fn should_fail_with_gits_stderr_when_a_dirty_file_blocks_a_commit_checkout() {
+fn should_fail_with_gits_stderr_when_an_untracked_file_blocks_a_commit_checkout() {
     if !git_available() {
         return;
     }
@@ -598,7 +618,7 @@ fn should_fail_with_gits_stderr_when_a_dirty_file_blocks_a_commit_checkout() {
 }
 
 #[test]
-fn should_keep_head_unchanged_when_a_dirty_file_blocks_a_commit_checkout() {
+fn should_keep_head_unchanged_when_an_untracked_file_blocks_a_commit_checkout() {
     if !git_available() {
         return;
     }

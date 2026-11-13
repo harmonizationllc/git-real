@@ -160,8 +160,8 @@ fn checkout_local_runs_a_plain_switch_in_the_workdir() {
 #[test]
 fn create_and_checkout_switches_to_the_new_branch_by_name() {
     let (_d, _b, path, session) = fixture();
-    let branch = session.create_and_checkout_branch("topic", None).unwrap();
-    assert!(branch.is_head);
+    let created = session.create_and_checkout_branch("topic", None).unwrap();
+    assert!(created.branch.is_head);
     assert_eq!(after_workdir(&path), ["switch", "topic"]);
 }
 

@@ -11,7 +11,8 @@ use git2::{Branch, BranchType, Commit, ErrorCode, Repository};
 use crate::error::GitError;
 use crate::git_cli;
 use crate::model::{
-    BranchList, CheckoutOutcome, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking,
+    BranchList, CheckoutOutcome, CreatedBranch, HeadState, LocalBranch, RemoteBranch, RemoteGroup,
+    Tracking,
 };
 use crate::remote::push_delete::PushDelete;
 use crate::remote::remotes::Direction;
@@ -204,30 +205,38 @@ impl RepoSession {
         Ok(())
     }
 
-    /// Creates `name` and switches to it, all or nothing: when git refuses the
-    /// switch (a dirty tree, a hook) the new branch is deleted again and the
-    /// `CheckoutFailed` error is returned.
+    /// Creates `name` and switches to it, all or nothing: tracked local
+    /// changes that would block the switch are auto-stashed; when git still
+    /// refuses (an untracked file, a hook) the new branch is deleted again and
+    /// the switch error is returned.
     pub fn create_and_checkout_branch(
         &self,
         name: &str,
         start_point: Option<&str>,
-    ) -> Result<LocalBranch, GitError> {
+    ) -> Result<CreatedBranch, GitError> {
         let commit = self.new_branch_target(name, start_point)?;
         let git = git_cli::locate()?;
         let workdir = self.workdir()?;
         let repo = self.repo();
         let mut branch = repo.branch(name, &commit, false)?;
-        if let Err(e) = switch::run(&git, workdir, switch::SwitchTarget::Local(name)) {
-            // The switch error is the one worth reporting.
-            let _ = branch.delete();
-            return Err(e);
-        }
-        Ok(LocalBranch {
-            name: name.to_owned(),
-            oid: commit.id().to_string(),
-            is_head: true,
-            tracking: None,
-            worktree: None,
+        let auto_stash =
+            match self.switch_auto_stash(&git, workdir, switch::SwitchTarget::Local(name), name) {
+                Ok(auto_stash) => auto_stash,
+                Err(e) => {
+                    // The switch error is the one worth reporting.
+                    let _ = branch.delete();
+                    return Err(e);
+                }
+            };
+        Ok(CreatedBranch {
+            branch: LocalBranch {
+                name: name.to_owned(),
+                oid: commit.id().to_string(),
+                is_head: true,
+                tracking: None,
+                worktree: None,
+            },
+            auto_stash,
         })
     }
 
@@ -249,8 +258,13 @@ impl RepoSession {
 
     /// Checks out `<remote>/<name>`: switches to the local branch `name` when
     /// one exists (whatever its upstream), otherwise creates it tracking the
-    /// remote branch.
-    pub fn checkout_remote_branch(&self, remote: &str, name: &str) -> Result<(), GitError> {
+    /// remote branch. Tracked local changes that would block the switch are
+    /// auto-stashed.
+    pub fn checkout_remote_branch(
+        &self,
+        remote: &str,
+        name: &str,
+    ) -> Result<CheckoutOutcome, GitError> {
         let upstream = self.remote_branch_ref(remote, name)?;
         let git = git_cli::locate()?;
         let workdir = self.workdir()?;
@@ -268,7 +282,8 @@ impl RepoSession {
             }
             Err(e) => return Err(e),
         };
-        switch::run(&git, workdir, target)
+        self.switch_auto_stash(&git, workdir, target, name)
+            .map(|auto_stash| CheckoutOutcome { auto_stash })
     }
 
     /// Validates a remote branch deletion and returns the push to run after

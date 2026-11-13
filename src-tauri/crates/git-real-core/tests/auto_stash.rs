@@ -237,3 +237,120 @@ fn installed_git_prints_both_collision_phrases() {
         "{stderr}"
     );
 }
+
+// --- checkout_remote_branch ---
+
+/// A fetched `origin/remote-only` that changes README.md's first line, no
+/// local branch of that name, and a dirty last line in the tree.
+fn remote_collision_fixture() -> ((tempfile::TempDir, tempfile::TempDir), PathBuf, RepoSession) {
+    let (d, path) = common::temp_repo_with_commit();
+    common::configure_identity(&path);
+    common::commit_file(&path, "README.md", BASE, "base");
+    let head = common::head_branch_name(&path);
+    let (b, bare) = common::temp_bare_clone(&path);
+    common::add_remote_and_fetch(&path, &bare, &head);
+    common::branch_with_commit(&path, "remote-only", "README.md", ON_B);
+    common::push_branch(&path, "remote-only");
+    common::fetch_remote(&path, "origin");
+    Repository::open(&path)
+        .unwrap()
+        .find_branch("remote-only", git2::BranchType::Local)
+        .unwrap()
+        .delete()
+        .unwrap();
+    std::fs::write(path.join("README.md"), DIRTY).unwrap();
+    let session = RepoSession::open(&path).unwrap();
+    ((d, b), path, session)
+}
+
+#[test]
+fn remote_checkout_auto_stashes() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session) = remote_collision_fixture();
+    let out = session
+        .checkout_remote_branch("origin", "remote-only")
+        .unwrap();
+    assert_eq!(out.auto_stash.unwrap().reapply, AutoStashReapply::Applied);
+    assert_eq!(common::head_branch_name(&path), "remote-only");
+    assert_eq!(read(&path, "README.md"), MERGED);
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
+// --- create_and_checkout_branch ---
+
+#[test]
+fn create_and_checkout_from_a_colliding_start_point_auto_stashes() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = collision_fixture();
+    let created = session
+        .create_and_checkout_branch("topic", Some("b"))
+        .unwrap();
+    assert_eq!(created.branch.name, "topic");
+    assert!(created.branch.is_head);
+    assert_eq!(
+        created.auto_stash.unwrap().reapply,
+        AutoStashReapply::Applied
+    );
+    assert_eq!(common::head_branch_name(&path), "topic");
+    assert_eq!(read(&path, "README.md"), MERGED);
+}
+
+#[test]
+fn create_and_checkout_without_collision_reports_none() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _p, session, _head) = fixture();
+    assert_eq!(
+        session
+            .create_and_checkout_branch("topic", None)
+            .unwrap()
+            .auto_stash,
+        None
+    );
+}
+
+// --- checkout_commit ---
+
+#[test]
+fn detach_auto_stashes_with_the_short_oid_label() {
+    if !common::git_available() {
+        return;
+    }
+    // The pop conflicts, so the stash stays and its message can be read.
+    let (_d, path, session, _head) = collision_fixture_diverged();
+    let b_oid = Repository::open(&path)
+        .unwrap()
+        .refname_to_id("refs/heads/b")
+        .unwrap()
+        .to_string();
+    let out = session.checkout_commit(&b_oid).unwrap();
+    assert_eq!(out.auto_stash.unwrap().reapply, AutoStashReapply::Conflicts);
+    assert!(Repository::open(&path).unwrap().head_detached().unwrap());
+    let stashes = session.list_stashes().unwrap();
+    assert!(
+        stashes[0]
+            .message
+            .contains(&format!("switching to {}", &b_oid[..7])),
+        "{}",
+        stashes[0].message
+    );
+}
+
+#[test]
+fn detach_without_collision_reports_none() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = fixture_with_branch_file("b", "other.txt", "b\n");
+    let b_oid = Repository::open(&path)
+        .unwrap()
+        .refname_to_id("refs/heads/b")
+        .unwrap()
+        .to_string();
+    assert_eq!(session.checkout_commit(&b_oid).unwrap().auto_stash, None);
+}

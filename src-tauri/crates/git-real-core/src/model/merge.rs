@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{CommitMessage, Signature};
+use super::{AutoStash, CommitMessage, Signature};
 
 /// How `merge_branch` integrates a branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,8 +71,12 @@ pub enum OperationOutcome {
     rename_all_fields = "camelCase"
 )]
 pub enum CheckoutPrOutcome {
-    /// HEAD is on `branch`, which contains the pull request's head.
-    CheckedOut { branch: String },
+    /// HEAD is on `branch`, which contains the pull request's head; `auto_stash`
+    /// reports local changes stashed to get past git's refusal.
+    CheckedOut {
+        branch: String,
+        auto_stash: Option<AutoStash>,
+    },
     /// `branch` has commits the head does not contain; nothing changed. Checking out
     /// again with `reset` moves it.
     NeedsReset { branch: String },
