@@ -6,7 +6,20 @@ use std::path::Path;
 use crate::error::GitError;
 use crate::git_cli;
 
+/// The phrase of git's refusal when tracked local changes would be overwritten.
+pub(crate) const TRACKED_COLLISION: &str =
+    "Your local changes to the following files would be overwritten";
+/// The phrase of git's refusal when untracked files would be overwritten.
+pub(crate) const UNTRACKED_COLLISION: &str = "untracked working tree files would be overwritten";
+
+/// True only for a refusal caused solely by tracked local changes.
+#[allow(dead_code)] // consumed by the auto-stash switch in the next commit
+pub(crate) fn is_tracked_collision(stderr: &str) -> bool {
+    stderr.contains(TRACKED_COLLISION) && !stderr.contains(UNTRACKED_COLLISION)
+}
+
 /// What `git switch` moves HEAD to. Names must already be validated.
+#[derive(Clone, Copy)]
 pub(crate) enum SwitchTarget<'a> {
     /// `git switch <name>`
     Local(&'a str),
@@ -46,4 +59,33 @@ pub(crate) fn run(git: &Path, workdir: &Path, target: SwitchTarget<'_>) -> Resul
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracked_only_refusal_is_a_collision() {
+        let stderr = "error: Your local changes to the following files would be overwritten by checkout:\n\tREADME.md\nPlease commit your changes or stash them before you switch branches.\nAborting\n";
+        assert!(is_tracked_collision(stderr));
+    }
+
+    #[test]
+    fn untracked_only_refusal_is_not() {
+        let stderr = "error: The following untracked working tree files would be overwritten by checkout:\n\tf.txt\nPlease move or remove them before you switch branches.\nAborting\n";
+        assert!(!is_tracked_collision(stderr));
+    }
+
+    #[test]
+    fn tracked_plus_untracked_refusal_is_not() {
+        let stderr = "error: Your local changes to the following files would be overwritten by checkout:\n\tt.txt\nerror: The following untracked working tree files would be overwritten by checkout:\n\tf.txt\nAborting\n";
+        assert!(!is_tracked_collision(stderr));
+    }
+
+    #[test]
+    fn other_stderr_is_not() {
+        assert!(!is_tracked_collision("fatal: invalid reference: ghost\n"));
+        assert!(!is_tracked_collision(""));
+    }
 }
