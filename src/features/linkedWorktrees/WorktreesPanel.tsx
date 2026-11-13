@@ -1,14 +1,14 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
-import type { LinkedWorktree, RepoId } from "../../lib/ipc";
+import type { AppError, LinkedWorktree, RepoId } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setWorktreesCollapsed } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
 import { filterWorktrees, isFiltering } from "../branches/branchFilter";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
-import { RepoError } from "../repo/RepoError";
+import { toastError } from "../remotes/toastError";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { AddWorktreeDialog } from "./AddWorktreeDialog";
 import { WorktreeRow } from "./WorktreeRow";
@@ -56,8 +56,28 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   const bare = list !== undefined && list.length === 0;
   const stale = (list ?? []).filter(isStale).map((w) => w.path);
 
+  // A load failure with nothing to show toasts once per error object, so a failed Retry (a new
+  // error) toasts again. `refetch` is read through an effect event, not listed as a dependency.
+  const toastLoadFailure = useEffectEvent((error: AppError) =>
+    toastError(
+      { ...error, message: `Couldn't load worktrees: ${error.message}` },
+      { retry: refetch },
+    ),
+  );
+  const loadFailed = list === undefined && listError !== null;
+  useEffect(() => {
+    if (loadFailed) toastLoadFailure(listError);
+  }, [loadFailed, listError]);
+
+  /** Toasts an action's resolved failure; null (success) shows nothing. */
+  const report = (error: AppError | null) => {
+    if (error !== null) toastError(error);
+  };
+
+  const openPath = (path: string) => void opener.open(path).then(report);
+
   const open = (w: LinkedWorktree) => {
-    if (openTitle(w) === undefined) void opener.open(w.path);
+    if (openTitle(w) === undefined) openPath(w.path);
   };
 
   const menuItems = (w: LinkedWorktree): MenuItem[] => [
@@ -79,45 +99,31 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
   ];
 
   // The final confirmation: only this closes tabs. A dirty worktree (changed since the check)
-  // reopens the force step; any other failure shows inline and the settle invalidation refreshes.
+  // reopens the force step; any other failure toasts and the settle invalidation refreshes.
   const remove = async (c: Confirm) => {
     setConfirm(null);
-    opener.clearError();
     const e = await actions.remove(c.path, c.force);
-    if (e === null || e.kind !== "worktreeDirty") return;
-    actions.clearError();
-    setConfirm({ path: c.path, force: true });
+    if (e?.kind === "worktreeDirty") setConfirm({ path: c.path, force: true });
+    else report(e);
   };
 
   // The first step checks dirtiness before anything closes, so cancelling the force step keeps
-  // the tab and its draft. A check failure shows inline and stops.
+  // the tab and its draft. A check failure toasts and stops.
   const confirmFirst = async (path: string) => {
     setConfirm(null);
-    opener.clearError();
     const dirty = await actions.checkDirty(path);
     if (dirty === false) return remove({ path, force: false });
     if (dirty === true) setConfirm({ path, force: true });
-    // Otherwise an AppError: already shown inline through actions.error, nothing more to do.
+    else report(dirty);
   };
 
-  const prune = () => {
-    opener.clearError();
-    void actions.prune(stale);
-  };
+  const prune = () => void actions.prune(stale).then(report);
 
   let body: React.ReactNode;
   if (!expanded) {
     body = null;
-  } else if (listError !== null) {
-    body = (
-      <RepoError
-        error={listError}
-        path={null}
-        variant="panel"
-        onRetry={refetch}
-        onDismiss={refetch}
-      />
-    );
+  } else if (loadFailed) {
+    body = <p className={styles.empty}>Couldn't load worktrees</p>;
   } else if (list === undefined) {
     body = <p role="status">Loading worktrees…</p>;
   } else if (bare) {
@@ -192,17 +198,6 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
           )}
         </div>
       </SectionHead>
-      {actions.error && (
-        <RepoError
-          error={actions.error}
-          path={null}
-          variant="panel"
-          onDismiss={actions.clearError}
-        />
-      )}
-      {opener.error && (
-        <RepoError error={opener.error} path={null} variant="panel" onDismiss={opener.clearError} />
-      )}
       <div id={bodyId}>{body}</div>
       <ContextMenu
         open={menu !== null}
@@ -240,7 +235,7 @@ export function WorktreesPanel({ repoId }: { repoId: RepoId }): React.JSX.Elemen
         repoId={repoId}
         open={adding}
         onClose={() => setAdding(false)}
-        onAdded={(path) => void opener.open(path)}
+        onAdded={openPath}
         fallbackFocus={headingRef}
       />
     </section>

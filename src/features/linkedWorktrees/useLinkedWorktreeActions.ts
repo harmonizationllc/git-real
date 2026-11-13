@@ -24,8 +24,6 @@ export interface UseLinkedWorktreeActions {
   prune(paths: string[]): Promise<AppError | null>;
   /** True while any worktree action of this repo runs, in this instance or another. */
   pending: boolean;
-  error: AppError | null;
-  clearError(): void;
 }
 
 type Request =
@@ -54,7 +52,6 @@ function closeTabsOn(paths: string[]): Promise<void>[] {
 
 export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActions {
   const queryClient = useQueryClient();
-  const [error, setError] = useState<AppError | null>(null);
   // Counted here rather than read from `isPending`, whose observer update lands a tick later.
   const [busy, setBusy] = useState(0);
   const elsewhere = useIsMutating({ mutationKey: mutationKeys.linkedWorktree(repoId) }) > 0;
@@ -74,30 +71,21 @@ export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActio
 
   /** `closing` settles before the command starts, so no watcher holds the folder git touches. */
   const run = (req: Request, closing: Promise<void>[] = []): Promise<AppError | null> => {
-    setError(null);
     setBusy((n) => n + 1);
     return Promise.all(closing)
       .then(() => mutateAsync(req))
       .then(
         () => null,
-        (e: AppError) => {
-          setError(e);
-          return e;
-        },
+        (e: AppError) => e,
       )
       .finally(() => setBusy((n) => n - 1));
   };
 
   // A read, so no mutation and no invalidation; it still counts as pending.
   const checkDirty = (path: string): Promise<boolean | AppError> => {
-    setError(null);
     setBusy((n) => n + 1);
     return isLinkedWorktreeDirty(repoId, path)
-      .catch((e: unknown) => {
-        const err = toAppError(e);
-        setError(err);
-        return err;
-      })
+      .catch((e: unknown) => toAppError(e))
       .finally(() => setBusy((n) => n - 1));
   };
 
@@ -107,7 +95,5 @@ export function useLinkedWorktreeActions(repoId: RepoId): UseLinkedWorktreeActio
     remove: (path, force) => run({ action: "remove", path, force }, closeTabsOn([path])),
     prune: (paths) => run({ action: "prune" }, closeTabsOn(paths)),
     pending: busy > 0 || elsewhere,
-    error,
-    clearError: () => setError(null),
   };
 }
