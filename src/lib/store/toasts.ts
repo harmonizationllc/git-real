@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useMessages } from "./messages";
 
 export type ToastVariant = "info" | "success" | "error";
 
@@ -8,6 +9,8 @@ export interface Toast {
   action: { label: string; run(): void } | null;
   variant: ToastVariant;
   sticky: boolean;
+  /** Raw output (e.g. git's) behind the notice, shown in a Details dialog. */
+  details: string | null;
 }
 
 /** The most toasts shown at once; a further one drops the oldest non-error (else the oldest). */
@@ -17,11 +20,12 @@ interface ToastsState {
   toasts: Toast[];
   /** Appends an info toast that times out, and returns its id. */
   show(text: string, action?: Toast["action"]): number;
-  /** Appends a toast with a variant; errors stay until dismissed unless `sticky` says otherwise. */
+  /** Appends a toast with a variant; every toast times out unless `sticky` is true. */
   notify(t: {
     text: string;
     variant: ToastVariant;
     action?: Toast["action"];
+    details?: string | null;
     sticky?: boolean;
   }): number;
   dismiss(id: number): void;
@@ -44,15 +48,23 @@ export const useToasts = create<ToastsState>()((set) => ({
   toasts: [],
   show: (text, action = null) => {
     const id = nextId++;
+    useMessages.getState().append({ id, at: Date.now(), text, variant: "info", details: null });
     set((s) => ({
-      toasts: capped(s.toasts, { id, text, action, variant: "info", sticky: false }),
+      toasts: capped(s.toasts, {
+        id,
+        text,
+        action,
+        variant: "info",
+        sticky: false,
+        details: null,
+      }),
     }));
     return id;
   },
-  notify: ({ text, variant, action = null, sticky }) => {
+  notify: ({ text, variant, action = null, details = null, sticky = false }) => {
     const id = nextId++;
-    const stays = sticky ?? variant === "error";
-    set((s) => ({ toasts: capped(s.toasts, { id, text, action, variant, sticky: stays }) }));
+    useMessages.getState().append({ id, at: Date.now(), text, variant, details });
+    set((s) => ({ toasts: capped(s.toasts, { id, text, action, variant, sticky, details }) }));
     return id;
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

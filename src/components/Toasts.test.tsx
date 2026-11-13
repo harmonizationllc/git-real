@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { declarationsOf } from "../test/cssRules";
+import { useMessages } from "../lib/store/messages";
 import { useToasts } from "../lib/store/toasts";
 import { TOAST_MS, Toasts } from "./Toasts";
 import type { ToastVariant } from "../lib/store/toasts";
@@ -9,6 +10,7 @@ import type { ToastVariant } from "../lib/store/toasts";
 beforeEach(() => {
   vi.useFakeTimers();
   useToasts.setState({ toasts: [] });
+  useMessages.setState({ messages: [], unread: false });
 });
 
 afterEach(() => {
