@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { declarationsOf } from "../test/cssRules";
 import { useMessages } from "../lib/store/messages";
 import { useToasts } from "../lib/store/toasts";
-import { TOAST_MS, Toasts } from "./Toasts";
+import { ERROR_TOAST_MS, TOAST_MS, Toasts } from "./Toasts";
 import type { ToastVariant } from "../lib/store/toasts";
 
 beforeEach(() => {
@@ -378,6 +378,65 @@ describe("Toasts variants (GR-14)", () => {
       vi.advanceTimersByTime(TOAST_MS);
     });
     expect(screen.queryByText("gone")).toBeNull();
+  });
+});
+
+// Contract: errors time out after ERROR_TOAST_MS; a toast with details offers a Details dialog
+// that holds the timer while open.
+describe("Toasts details and error timeout", () => {
+  const advance = (ms: number) =>
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  const notifyError = (details: string | null = "git said no") => {
+    act(() => {
+      useToasts.getState().notify({ text: "Push failed", variant: "error", details });
+    });
+  };
+
+  it("dismisses an error toast after ERROR_TOAST_MS, not after TOAST_MS", () => {
+    render(<Toasts />);
+    notifyError(null);
+    advance(TOAST_MS);
+    expect(screen.getByText("Push failed")).toBeInTheDocument();
+    advance(ERROR_TOAST_MS - TOAST_MS);
+    expect(screen.queryByText("Push failed")).toBeNull();
+  });
+
+  it("renders a Details button only when the toast has details", () => {
+    render(<Toasts />);
+    notifyError(null);
+    expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
+    notifyError("out");
+    expect(screen.getAllByRole("button", { name: "Details" })).toHaveLength(1);
+  });
+
+  it("Details opens the dialog with the toast text as title and keeps the toast", () => {
+    render(<Toasts />);
+    notifyError();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(screen.getByRole("dialog", { name: "Push failed" })).toHaveTextContent("git said no");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("holds the timer while the details dialog is open", () => {
+    render(<Toasts />);
+    notifyError();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    advance(ERROR_TOAST_MS * 2);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("restarts a full timeout when the details dialog closes", () => {
+    render(<Toasts />);
+    notifyError();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    advance(ERROR_TOAST_MS);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    advance(ERROR_TOAST_MS - 1);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    advance(1);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 
