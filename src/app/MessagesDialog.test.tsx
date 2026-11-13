@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,6 +53,27 @@ describe("MessagesDialog", () => {
     useMessages.setState({ messages: [msg(1, "boom")], unread: true });
     setup();
     expect(useMessages.getState().unread).toBe(false);
+  });
+
+  it("marks a message that arrives while open as read at once", () => {
+    setup();
+    act(() => useMessages.getState().append(msg(1, "late")));
+    expect(useMessages.getState().messages).toHaveLength(1);
+    expect(useMessages.getState().unread).toBe(false);
+  });
+
+  it("focuses Close on open, not the newest row's Details", () => {
+    useMessages.setState({ messages: [msg(1, "git said no", "fatal: nope")] });
+    setup();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("gives each Details button the message it belongs to as its description", () => {
+    useMessages.setState({ messages: [msg(1, "git said no", "fatal: nope")] });
+    setup();
+    expect(screen.getByRole("button", { name: "Details" })).toHaveAccessibleDescription(
+      "git said no",
+    );
   });
 
   it("shows Details only for a message with details, and opens it", async () => {

@@ -18,13 +18,15 @@ const formatTime = (at: number): string =>
 /** The Messages dialog: every notice raised this session, newest first. */
 export function MessagesDialog({ onClose, fallbackFocus }: MessagesDialogProps) {
   const titleId = useId();
+  const listId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const messages = useMessages((s) => s.messages);
   const [selected, setSelected] = useState<Message | null>(null);
 
   useRestoreFocus(fallbackFocus);
   useLayoutEffect(() => {
-    dialogRef.current?.querySelector<HTMLElement>("button")?.focus();
+    closeRef.current?.focus();
   }, []);
   // Opening the dialog is reading it, and an error that lands while it is open is read at once.
   useEffect(() => {
@@ -33,8 +35,6 @@ export function MessagesDialog({ onClose, fallbackFocus }: MessagesDialogProps) 
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || e.nativeEvent.isComposing || e.keyCode === 229) return;
-    // The Details dialog is portaled but its keys still bubble here; its Escape is its own.
-    if (selected !== null) return;
     onClose();
   };
 
@@ -60,13 +60,16 @@ export function MessagesDialog({ onClose, fallbackFocus }: MessagesDialogProps) 
                 <span className={styles.icon} aria-hidden="true">
                   {VARIANT_ICON[m.variant]}
                 </span>
-                <span className={styles.text}>{m.text}</span>
+                <span id={`${listId}-${m.id}`} className={styles.text}>
+                  {m.text}
+                </span>
                 <span className={styles.time}>{formatTime(m.at)}</span>
                 {m.details !== null && (
                   <button
                     type="button"
                     data-variant="ghost"
                     data-size="sm"
+                    aria-describedby={`${listId}-${m.id}`}
                     onClick={() => setSelected(m)}
                   >
                     Details
@@ -85,7 +88,7 @@ export function MessagesDialog({ onClose, fallbackFocus }: MessagesDialogProps) 
           >
             Clear
           </button>
-          <button type="button" data-variant="neutral" onClick={onClose}>
+          <button ref={closeRef} type="button" data-variant="neutral" onClick={onClose}>
             Close
           </button>
         </div>

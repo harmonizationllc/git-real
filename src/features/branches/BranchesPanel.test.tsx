@@ -26,6 +26,7 @@ import type {
   RebaseCommit,
 } from "../../lib/ipc";
 import { useMessages } from "../../lib/store/messages";
+import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useShell } from "../../lib/store/shell";
 import type { RepoActions } from "../../lib/store/shell";
 import { useToasts } from "../../lib/store/toasts";
@@ -133,6 +134,10 @@ beforeEach(() => {
   useToasts.setState({ toasts: [] });
   useMessages.setState({ messages: [], unread: false });
   useShell.setState({ repoActions: null });
+  useRepoTabs.setState({
+    tabs: [{ id: 1 }, { id: 2 }] as unknown as ReturnType<typeof useRepoTabs.getState>["tabs"],
+    activeId: 1,
+  });
   integrationRun.mockResolvedValue(null);
   provideMerge();
   vi.mocked(listBranches).mockResolvedValue(list());
@@ -343,6 +348,7 @@ describe("BranchesPanel activation", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     expect(await oneToast()).toMatchObject({ text: checkoutFailed.message, variant: "error" });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("should toast a remote checkout failure", async () => {
@@ -748,8 +754,9 @@ describe("BranchesPanel delete", () => {
     const { user } = await renderPanel();
     const dialog = await openDelete(user);
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
-    expect((await oneToast()).text).toBe("disk exploded");
+    expect(await oneToast()).toMatchObject({ text: "disk exploded", variant: "error" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("should close the force dialog and toast the error when the forced delete fails", async () => {
@@ -2813,15 +2820,6 @@ describe("BranchesPanel set upstream", () => {
 
 // Contract: every left-column notice is a toast raised by the call site that ran the action.
 describe("BranchesPanel toasts", () => {
-  it("toasts a failed checkout instead of rendering an alert", async () => {
-    vi.mocked(checkoutBranch).mockRejectedValue(checkoutFailed);
-    const { user } = await renderPanel();
-    await user.dblClick(localRow("feature"));
-    await waitFor(() => expect(toasts()).toHaveLength(1));
-    expect(toasts()[0]).toMatchObject({ text: checkoutFailed.message, variant: "error" });
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
   it("does not toast a create failure shown in the dialog", async () => {
     vi.mocked(createBranch).mockRejectedValue({ kind: "branchExists", message: "taken" });
     const { user } = await renderPanel();
@@ -2831,18 +2829,6 @@ describe("BranchesPanel toasts", () => {
     await user.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("taken");
     expect(toasts()).toEqual([]);
-  });
-
-  it("toasts a failed delete after the confirm closes", async () => {
-    vi.mocked(deleteBranch).mockRejectedValue({ kind: "io", message: "disk exploded" });
-    const { user } = await renderPanel();
-    rightClick(localRow("feature"));
-    await user.click(menuItem("Delete…"));
-    const dialog = await dialogNamed("Delete branch feature?");
-    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(toasts()).toHaveLength(1);
-    expect(toasts()[0]).toMatchObject({ text: "disk exploded", variant: "error" });
   });
 
   it("does not toast the unmerged hand-off", async () => {
@@ -2867,7 +2853,7 @@ describe("BranchesPanel toasts", () => {
     await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
     await waitFor(() => expect(toasts()).toHaveLength(1));
     expect(toasts()[0]).toMatchObject({
-      text: "Could not reach the remote Check your network connection and the remote URL.",
+      text: "Could not reach the remote. Check your network connection and the remote URL.",
       variant: "error",
       details: "ssh: connect to host example.com: timed out",
     });
@@ -2889,7 +2875,9 @@ describe("BranchesPanel toasts", () => {
 
   it("runs the focused pane's pull from a network toast's Pull action", async () => {
     const pull = vi.fn();
-    useShell.setState({ repoActions: { pull, fetch: vi.fn() } as unknown as RepoActions });
+    useShell.setState({
+      repoActions: { repoId: 1, pull, fetch: vi.fn() } as unknown as RepoActions,
+    });
     const { toast } = await failRemoteDelete(networkError("pushRejectedNonFastForward"));
     expect(toast.action?.label).toBe("Pull");
     act(() => toast.action?.run());
@@ -2898,18 +2886,57 @@ describe("BranchesPanel toasts", () => {
 
   it("runs the focused pane's fetch from a network toast's Fetch action", async () => {
     const fetch = vi.fn();
-    useShell.setState({ repoActions: { pull: vi.fn(), fetch } as unknown as RepoActions });
+    useShell.setState({
+      repoActions: { repoId: 1, pull: vi.fn(), fetch } as unknown as RepoActions,
+    });
     const { toast } = await failRemoteDelete(networkError("leaseStale"));
     expect(toast.action?.label).toBe("Fetch");
     act(() => toast.action?.run());
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it("opens the remotes list from a network toast's Edit remote… action", async () => {
+  it("opens the failed remote's editor from a network toast's Edit remote… action", async () => {
     const { toast, onOpenRemotes } = await failRemoteDelete(networkError("repoNotFound"));
     expect(toast.action?.label).toBe("Edit remote…");
     act(() => toast.action?.run());
+    expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "edit", name: "origin" });
+  });
+
+  it("opens the remotes list from Edit remote… when the failure names no remote", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue(networkError("repoNotFound"));
+    const onOpenRemotes = vi.fn();
+    const { user } = renderWithProviders(
+      <BranchesPanel repoId={1} onOpenRemotes={onOpenRemotes} onCreatePullRequest={null} />,
+    );
+    await user.dblClick(await screen.findByTitle("refs/heads/feature"));
+    const toast = await oneToast();
+    act(() => toast.action?.run());
     expect(onOpenRemotes).toHaveBeenCalledExactlyOnceWith({ mode: "list" });
+  });
+
+  it("brings the repo's tab forward when a toast action runs after a tab switch", async () => {
+    const pull = vi.fn();
+    const { toast, onOpenRemotes } = await failRemoteDelete(
+      networkError("pushRejectedNonFastForward"),
+    );
+    // The user moved to another tab: this pane unmounted in the app, its toast lives on.
+    useRepoTabs.setState({ activeId: 2 });
+    useShell.setState({ repoActions: { repoId: 2, pull } as unknown as RepoActions });
+    act(() => toast.action?.run());
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    // The other repo's actions must never run for this repo's toast.
+    expect(pull).not.toHaveBeenCalled();
+    expect(onOpenRemotes).not.toHaveBeenCalled();
+  });
+
+  it("runs the repo's own pull once its tab is active again", async () => {
+    const pull = vi.fn();
+    const { toast } = await failRemoteDelete(networkError("pushRejectedNonFastForward"));
+    useRepoTabs.setState({ activeId: 2 });
+    useShell.setState({ repoActions: { repoId: 1, pull } as unknown as RepoActions });
+    act(() => toast.action?.run());
+    expect(useRepoTabs.getState().activeId).toBe(1);
+    expect(pull).toHaveBeenCalledOnce();
   });
 
   it("shows the placeholder and one Retry toast when the list fails to load", async () => {

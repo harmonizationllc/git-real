@@ -5,6 +5,7 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
 import { deleteRemoteBranch } from "../../lib/ipc";
 import type { AppError, BranchList, HeadState, RepoId, WorktreeBranch } from "../../lib/ipc";
+import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useShell } from "../../lib/store/shell";
 import { useWorkspace } from "../../lib/store/workspace";
 import { AddWorktreeDialog } from "../linkedWorktrees/AddWorktreeDialog";
@@ -147,27 +148,37 @@ export function BranchesProvider({
 
   const loadFailed = useLoadFailureToast("branches", branches !== undefined, listError, refetch);
 
-  /** Runs a network failure's suggested action. */
-  const onAction = (kind: MessageAction) => {
+  /**
+   * Runs a network failure's suggested action. The toast outlives this pane (only the active
+   * tab's pane is mounted), so the repo's tab is brought forward first; pull and fetch then run
+   * only if that tab's pane has published its actions, and the remotes dialog opens only when
+   * the repo is the active one. `remote` is the remote the failure names, when known.
+   */
+  const onAction = (kind: MessageAction, remote?: string) => {
+    useRepoTabs.getState().activate(repoId);
+    const actions = useShell.getState().repoActions;
+    const own = actions?.repoId === repoId ? actions : undefined;
     switch (kind) {
       case "pull":
-        useShell.getState().repoActions?.pull();
+        own?.pull();
         break;
       case "fetch":
-        useShell.getState().repoActions?.fetch();
+        own?.fetch();
         break;
       case "editRemote":
-        onOpenRemotes?.({ mode: "list" });
+        if (useRepoTabs.getState().activeId !== repoId) break;
+        onOpenRemotes?.(remote === undefined ? { mode: "list" } : { mode: "edit", name: remote });
         break;
       case "addRemote":
+        if (useRepoTabs.getState().activeId !== repoId) break;
         onOpenRemotes?.({ mode: "add" });
         break;
     }
   };
 
   /** Toasts an action's resolved failure; null (success) shows nothing. */
-  const report = (error: AppError | null) => {
-    if (error !== null) toastError(error, { onAction });
+  const report = (error: AppError | null, remote?: string) => {
+    if (error !== null) toastError(error, { onAction: (kind) => onAction(kind, remote) });
   };
 
   const runIntegration = (req: IntegrationRequest) => {
@@ -240,7 +251,7 @@ export function BranchesProvider({
   const confirmDeleteRemote = async (remote: string, name: string) => {
     const result = await network.run((c) => deleteRemoteBranch(repoId, remote, name, c));
     setDialog(null);
-    if (result.status === "failed") report(result.error);
+    if (result.status === "failed") report(result.error, remote);
   };
 
   const confirmRemoveRemote = async (name: string) => {

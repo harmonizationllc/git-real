@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppError } from "../../lib/ipc";
 import { useMessages } from "../../lib/store/messages";
 import { useToasts } from "../../lib/store/toasts";
-import { toastError } from "./toastError";
+import { joinSentences, toastError } from "./toastError";
 
 const plain: AppError = { kind: "cloneFailed", message: "nope" };
 const behind: AppError = {
@@ -49,7 +49,7 @@ describe("toastError", () => {
   it("toasts a network failure's title and hint with git's output as details", () => {
     toastError(behind);
     expect(last()).toMatchObject({
-      text: "The remote has commits you don't have Pull, then push again.",
+      text: "The remote has commits you don't have. Pull, then push again.",
       variant: "error",
       details: behind.message,
     });
@@ -70,6 +70,16 @@ describe("toastError", () => {
   it("ignores retry for a network failure", () => {
     toastError(behind, { retry: vi.fn() });
     expect(last().action).toBeNull();
+  });
+
+  it("joins a title and its hint as two sentences, unless the title already ends one", () => {
+    expect(joinSentences("Could not reach the remote", "Check the URL.")).toBe(
+      "Could not reach the remote. Check the URL.",
+    );
+    for (const end of [".", "!", "?", "…"]) {
+      expect(joinSentences(`Stopped${end}`, "Try again.")).toBe(`Stopped${end} Try again.`);
+    }
+    expect(joinSentences("Push failed", null)).toBe("Push failed");
   });
 
   it("returns the toast id", () => {

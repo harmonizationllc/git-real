@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useToasts } from "../lib/store/toasts";
 import { DetailsDialog } from "./DetailsDialog";
 import type { Toast } from "../lib/store/toasts";
@@ -31,14 +31,15 @@ export const VARIANT_ICON: Record<Toast["variant"], string> = {
 
 /**
  * One toast; its timer lives and dies with it, so a dismiss or unmount clears it. The timer is
- * held while the toast is hovered or holds focus, and a full TOAST_MS restarts once neither holds.
+ * held while the toast is hovered, focused, or its Details dialog is open, and a full TOAST_MS
+ * (ERROR_TOAST_MS for an error) restarts once none of those holds.
  */
-
 function ToastItem({ toast }: { toast: Toast }) {
   const { id, text, action, variant, sticky, details } = toast;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const textId = useId();
   const held = hovered || focused || detailsOpen;
   useEffect(() => {
     // A sticky toast stays until it is dismissed by hand.
@@ -66,12 +67,15 @@ function ToastItem({ toast }: { toast: Toast }) {
         <span className={styles.icon} aria-hidden="true">
           {VARIANT_ICON[variant]}
         </span>
-        <p className={styles.text}>{text}</p>
+        <p id={textId} className={styles.text}>
+          {text}
+        </p>
         {details !== null && (
           <button
             type="button"
             data-variant="ghost"
             data-size="sm"
+            aria-describedby={textId}
             onClick={() => setDetailsOpen(true)}
           >
             Details

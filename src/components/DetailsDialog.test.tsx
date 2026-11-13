@@ -62,6 +62,21 @@ describe("DetailsDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("returns focus to the opener when closed", () => {
+    const ui = (open: boolean) => (
+      <>
+        <button>Opener</button>
+        <DetailsDialog open={open} title="T" details="d" onClose={vi.fn()} />
+      </>
+    );
+    const view = render(ui(false));
+    screen.getByRole("button", { name: "Opener" }).focus();
+    view.rerender(ui(true));
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    view.rerender(ui(false));
+    expect(screen.getByRole("button", { name: "Opener" })).toHaveFocus();
+  });
+
   it("renders into document.body, outside the render container", () => {
     const { container } = render(<DetailsDialog open title="T" details="d" onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();

@@ -7,8 +7,17 @@ import type { MessageAction } from "./networkMessage";
 export interface ToastErrorOptions {
   /** Runs the network failure's suggested action (Pull, Fetch, Edit remote…). */
   onAction?(kind: MessageAction): void;
-  /** Re-runs the failed operation; offered as Retry on a plain error. */
+  /**
+   * Re-runs the failed operation; offered as Retry on a plain error. It applies to non-network
+   * errors only: a `networkFailed` error carries the network action instead.
+   */
   retry?(): void;
+}
+
+/** Joins a title and its hint as two sentences, adding a full stop only when the title lacks one. */
+export function joinSentences(title: string, hint: string | null): string {
+  if (!hint) return title;
+  return /[.!?…]$/.test(title) ? `${title} ${hint}` : `${title}. ${hint}`;
 }
 
 /** Raises an error toast for `error` and returns its id. */
@@ -21,7 +30,7 @@ export function toastError(error: AppError, opts: ToastErrorOptions = {}): numbe
         ? { label: action.label, run: () => onAction(action.kind) }
         : null;
     return useToasts.getState().notify({
-      text: hint ? `${title} ${hint}` : title,
+      text: joinSentences(title, hint),
       variant: "error",
       details,
       action: toastAction,

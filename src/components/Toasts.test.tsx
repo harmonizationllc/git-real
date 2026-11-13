@@ -412,6 +412,14 @@ describe("Toasts details and error timeout", () => {
     expect(screen.getAllByRole("button", { name: "Details" })).toHaveLength(1);
   });
 
+  it("describes the Details button by the toast's text", () => {
+    render(<Toasts />);
+    notifyError("out");
+    expect(screen.getByRole("button", { name: "Details" })).toHaveAccessibleDescription(
+      "Push failed",
+    );
+  });
+
   it("Details opens the dialog with the toast text as title and keeps the toast", () => {
     render(<Toasts />);
     notifyError();
