@@ -2,6 +2,7 @@
 //! remote deletion shell out (see [`switch`] and [`crate::remote::push_delete`]).
 //! Tags live in the private `tags` child module.
 
+mod auto_stash;
 pub(crate) mod switch;
 mod tags;
 
@@ -9,7 +10,9 @@ use git2::{Branch, BranchType, Commit, ErrorCode, Repository};
 
 use crate::error::GitError;
 use crate::git_cli;
-use crate::model::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
+use crate::model::{
+    BranchList, CheckoutOutcome, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking,
+};
 use crate::remote::push_delete::PushDelete;
 use crate::remote::remotes::Direction;
 use crate::repo::RepoSession;
@@ -228,13 +231,20 @@ impl RepoSession {
         })
     }
 
-    /// Switches to a local branch through `git switch`.
-    pub fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
+    /// Switches to a local branch through `git switch`, auto-stashing tracked
+    /// local changes that would block it.
+    pub fn checkout_branch(&self, name: &str) -> Result<CheckoutOutcome, GitError> {
         validate_branch_name(name)?;
         find_local(self.repo(), name)?;
         self.refuse_checked_out_elsewhere(name)?;
         let git = git_cli::locate()?;
-        switch::run(&git, self.workdir()?, switch::SwitchTarget::Local(name))
+        self.switch_auto_stash(
+            &git,
+            self.workdir()?,
+            switch::SwitchTarget::Local(name),
+            name,
+        )
+        .map(|auto_stash| CheckoutOutcome { auto_stash })
     }
 
     /// Checks out `<remote>/<name>`: switches to the local branch `name` when

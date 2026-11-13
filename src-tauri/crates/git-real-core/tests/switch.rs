@@ -124,50 +124,48 @@ fn checkout_rejects_an_invalid_name() {
 
 // --- checkout_branch: git's own refusal and hooks ---
 
+/// `b` changes README.md's first line and the tree its last, so git refuses
+/// the plain switch and the auto-stash pops cleanly on `b`.
 fn dirty_conflict_fixture() -> (tempfile::TempDir, PathBuf, RepoSession, String) {
     let (d, path, session, head) = fixture();
-    common::branch_with_commit(&path, "b", "README.md", "# changed on b\n");
-    std::fs::write(path.join("README.md"), "# dirty edit\n").unwrap();
+    common::commit_file(&path, "README.md", "top\n1\n2\n3\n4\n5\nbottom\n", "base");
+    common::branch_with_commit(&path, "b", "README.md", "top on b\n1\n2\n3\n4\n5\nbottom\n");
+    std::fs::write(path.join("README.md"), "top\n1\n2\n3\n4\n5\nbottom dirty\n").unwrap();
     (d, path, session, head)
 }
 
 #[test]
-fn checkout_with_a_conflicting_dirty_file_fails_with_gits_stderr() {
+fn checkout_with_a_conflicting_dirty_file_auto_stashes_and_succeeds() {
     if !git_available() {
         return;
     }
     let (_d, _p, session, _head) = dirty_conflict_fixture();
-    let err = session.checkout_branch("b").unwrap_err();
-    match err {
-        GitError::CheckoutFailed { code, stderr, .. } => {
-            assert_ne!(code, Some(0));
-            assert!(stderr.contains("overwritten"), "stderr was: {stderr}");
-        }
-        other => panic!("expected CheckoutFailed, got {other:?}"),
-    }
+    let out = session.checkout_branch("b").unwrap();
+    assert!(out.auto_stash.is_some(), "{out:?}");
 }
 
 #[test]
-fn checkout_with_a_conflicting_dirty_file_keeps_head_unchanged() {
-    if !git_available() {
-        return;
-    }
-    let (_d, path, session, head) = dirty_conflict_fixture();
-    let _ = session.checkout_branch("b");
-    assert_eq!(head_ref(&path), head);
-}
-
-#[test]
-fn checkout_with_a_conflicting_dirty_file_keeps_the_local_edit() {
+fn checkout_with_a_conflicting_dirty_file_auto_stashes_and_moves_head() {
     if !git_available() {
         return;
     }
     let (_d, path, session, _head) = dirty_conflict_fixture();
-    let _ = session.checkout_branch("b");
+    session.checkout_branch("b").unwrap();
+    assert_eq!(head_ref(&path), "b");
+}
+
+#[test]
+fn checkout_with_a_conflicting_dirty_file_carries_the_local_edit_and_leaves_no_stash() {
+    if !git_available() {
+        return;
+    }
+    let (_d, path, session, _head) = dirty_conflict_fixture();
+    session.checkout_branch("b").unwrap();
     assert_eq!(
         std::fs::read_to_string(path.join("README.md")).unwrap(),
-        "# dirty edit\n"
+        "top on b\n1\n2\n3\n4\n5\nbottom dirty\n"
     );
+    assert!(session.list_stashes().unwrap().is_empty());
 }
 
 #[cfg(unix)]

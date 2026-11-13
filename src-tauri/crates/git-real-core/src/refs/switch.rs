@@ -13,7 +13,6 @@ pub(crate) const TRACKED_COLLISION: &str =
 pub(crate) const UNTRACKED_COLLISION: &str = "untracked working tree files would be overwritten";
 
 /// True only for a refusal caused solely by tracked local changes.
-#[allow(dead_code)] // consumed by the auto-stash switch in the next commit
 pub(crate) fn is_tracked_collision(stderr: &str) -> bool {
     stderr.contains(TRACKED_COLLISION) && !stderr.contains(UNTRACKED_COLLISION)
 }
