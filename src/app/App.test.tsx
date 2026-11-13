@@ -450,6 +450,12 @@ describe("App global shortcuts (GR-14)", () => {
     if (appRoot) expect(appRoot).toHaveFocus();
   });
 
+  it("mounts the Messages dialog when the shell opens it", async () => {
+    renderApp();
+    act(() => useShell.getState().open({ kind: "messages" }));
+    expect(await screen.findByRole("dialog", { name: "Messages" })).toBeInTheDocument();
+  });
+
   // CommandPalette component arrives in Cycle 3. This test asserts the shell store state
   // (per plan: useGlobalShortcuts tests assert the store) rather than a DOM dialog.
   it("Ctrl+K sets the palette dialog on the shell store and Ctrl+, switches to settings", async () => {

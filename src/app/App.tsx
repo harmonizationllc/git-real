@@ -16,6 +16,7 @@ import styles from "./App.module.css";
 import { closeRepoTab } from "./closeRepoTab";
 import { startFontWarmup } from "./fontWarmup";
 import { RepoPane } from "./RepoPane";
+import { MessagesDialog } from "./MessagesDialog";
 import { TabBar } from "./TabBar";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
 import { useNativeContextMenuGuard } from "./useNativeContextMenuGuard";
@@ -87,6 +88,9 @@ function AppShell(): React.JSX.Element {
       )}
       {dialog?.kind === "shortcuts" && (
         <ShortcutsDialog onClose={closeDialog} fallbackFocus={rootRef} />
+      )}
+      {dialog?.kind === "messages" && (
+        <MessagesDialog onClose={closeDialog} fallbackFocus={rootRef} />
       )}
       <Toasts />
     </div>

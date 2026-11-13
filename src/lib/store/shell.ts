@@ -8,7 +8,8 @@ export type ShellDialog =
   | null
   | { kind: "settings"; section?: SettingsSection }
   | { kind: "palette" }
-  | { kind: "shortcuts" };
+  | { kind: "shortcuts" }
+  | { kind: "messages" };
 
 /** The active pane's sync verbs and their gate reasons, published for the palette to read. */
 export interface RepoActions {

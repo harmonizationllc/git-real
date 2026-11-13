@@ -22,15 +22,17 @@ export function Toasts() {
   );
 }
 
-/**
- * One toast; its timer lives and dies with it, so a dismiss or unmount clears it. The timer is
- * held while the toast is hovered or holds focus, and a full TOAST_MS restarts once neither holds.
- */
-const VARIANT_ICON: Record<Toast["variant"], string> = {
+/** The glyph that marks each variant, in a toast and in the Messages dialog. */
+export const VARIANT_ICON: Record<Toast["variant"], string> = {
   info: "i",
   success: "✓",
   error: "!",
 };
+
+/**
+ * One toast; its timer lives and dies with it, so a dismiss or unmount clears it. The timer is
+ * held while the toast is hovered or holds focus, and a full TOAST_MS restarts once neither holds.
+ */
 
 function ToastItem({ toast }: { toast: Toast }) {
   const { id, text, action, variant, sticky, details } = toast;
