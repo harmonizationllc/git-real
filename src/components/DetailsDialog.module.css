@@ -1,5 +1,4 @@
-/* Above the toast stack (z-index 20): the dialog is opened from a toast. The toast root sets
-   pointer-events: none, which a descendant inherits, so the backdrop turns it back on. */
+/* Above the toast stack (z-index 20): the dialog is opened from a toast. */
 .backdrop {
   position: fixed;
   top: 0;
@@ -10,7 +9,6 @@
   display: grid;
   place-items: center;
   background: var(--color-backdrop);
-  pointer-events: auto;
 }
 
 .dialog {

@@ -51,6 +51,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <>
       <div
+        className={styles.toast}
         data-variant={variant}
         role={variant === "error" ? "alert" : undefined}
         onPointerEnter={() => setHovered(true)}

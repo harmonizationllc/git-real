@@ -19,7 +19,7 @@ function renderDialog(props: Props = {}) {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  Reflect.deleteProperty(navigator, "clipboard");
 });
 
 // Contract: a modal dialog showing raw output, with Copy and Close.
@@ -44,7 +44,7 @@ describe("DetailsDialog", () => {
 
   it("Copy writes the details to the clipboard", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     renderDialog();
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
     expect(writeText).toHaveBeenCalledWith("remote: denied\nfatal: nope");
@@ -60,6 +60,12 @@ describe("DetailsDialog", () => {
     const { onClose } = renderDialog();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("renders into document.body, outside the render container", () => {
+    const { container } = render(<DetailsDialog open title="T" details="d" onClose={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.getByRole("dialog").parentElement?.parentElement).toBe(document.body);
   });
 
   it("a backdrop click calls onClose, a click inside does not", () => {

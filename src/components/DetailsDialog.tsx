@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, MouseEvent, RefObject } from "react";
+import { createPortal } from "react-dom";
 import styles from "./DetailsDialog.module.css";
 import { useRestoreFocus } from "./useRestoreFocus";
 
@@ -38,7 +39,9 @@ function DetailsDialogBody({ title, details, onClose, fallbackFocus }: DetailsDi
     void navigator.clipboard?.writeText(details)?.catch(() => undefined);
   };
 
-  return (
+  // A portal, so a dialog opened from a toast sits outside the toasts' polite live region and
+  // their pointer-events: none stack.
+  return createPortal(
     <div className={styles.backdrop} onClick={onBackdropClick}>
       <div
         role="dialog"
@@ -61,6 +64,7 @@ function DetailsDialogBody({ title, details, onClose, fallbackFocus }: DetailsDi
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -6,6 +6,7 @@ import { useMessages } from "../lib/store/messages";
 import { useToasts } from "../lib/store/toasts";
 import { ERROR_TOAST_MS, TOAST_MS, Toasts } from "./Toasts";
 import type { ToastVariant } from "../lib/store/toasts";
+import styles from "./Toasts.module.css";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -437,6 +438,15 @@ describe("Toasts details and error timeout", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
     advance(1);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("Toasts styling hook", () => {
+  it("gives the toast element the module's toast class (the stack disables pointer events)", () => {
+    render(<Toasts />);
+    show("Hi");
+    expect(styles.toast).toBeTruthy();
+    expect(screen.getByText("Hi").parentElement).toHaveClass(styles.toast as string);
   });
 });
 
