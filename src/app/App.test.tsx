@@ -15,8 +15,11 @@ import {
   getLogSummary,
   getStatus,
   listBranches,
+  listLinkedWorktrees,
   listRecent,
   listRemotes,
+  listStashes,
+  listTags,
   onCloneProgress,
   onRepoChanged,
   openRepo,
@@ -48,6 +51,9 @@ vi.mock(import("../lib/ipc"), async (importOriginal) => ({
   getLogSummary: vi.fn(),
   getStatus: vi.fn(),
   listBranches: vi.fn(),
+  listTags: vi.fn(),
+  listStashes: vi.fn(),
+  listLinkedWorktrees: vi.fn(),
   listRemotes: vi.fn(),
   pullDefaultMode: vi.fn(),
   fetchAll: vi.fn(),
@@ -93,6 +99,10 @@ beforeEach(() => {
     local: [],
     remotes: [],
   });
+  // A list that cannot load now raises a toast, so the left column's lists resolve empty.
+  vi.mocked(listTags).mockResolvedValue({ tags: [], remotes: [] });
+  vi.mocked(listStashes).mockResolvedValue([]);
+  vi.mocked(listLinkedWorktrees).mockResolvedValue([]);
   vi.mocked(listRemotes).mockResolvedValue([remoteInfo("origin")]);
   vi.mocked(pullDefaultMode).mockResolvedValue("merge");
   vi.mocked(fetchAll).mockResolvedValue(undefined);
