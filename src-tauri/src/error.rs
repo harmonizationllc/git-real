@@ -35,6 +35,7 @@ pub enum AppErrorKind {
     RemoteNotFound,
     UpstreamUnmapped,
     CheckoutFailed,
+    CheckoutFailedStashKept,
     LogStale,
     CommitNotFound,
     BinaryFile,
@@ -180,6 +181,7 @@ impl From<GitError> for AppError {
             GitError::RemoteNotFound(_) => AppErrorKind::RemoteNotFound,
             GitError::UpstreamUnmapped { .. } => AppErrorKind::UpstreamUnmapped,
             GitError::CheckoutFailed { .. } => AppErrorKind::CheckoutFailed,
+            GitError::CheckoutFailedStashKept { .. } => AppErrorKind::CheckoutFailedStashKept,
             GitError::LogStale => AppErrorKind::LogStale,
             GitError::CommitNotFound(_) => AppErrorKind::CommitNotFound,
             GitError::BinaryFile(_) => AppErrorKind::BinaryFile,
@@ -234,6 +236,14 @@ impl From<GitError> for AppError {
                 stdout,
                 stderr,
             } => cli_failure_message("switch", *code, stdout, stderr),
+            GitError::CheckoutFailedStashKept {
+                code,
+                stdout,
+                stderr,
+            } => format!(
+                "{} Your changes are in the stash list.",
+                cli_failure_message("switch", *code, stdout, stderr)
+            ),
             GitError::NetworkFailed {
                 verb,
                 code,

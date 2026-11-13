@@ -77,8 +77,9 @@ fn list_branches_inner_includes_remote_groups() {
 #[test]
 fn create_branch_inner_without_checkout_keeps_head() {
     let (_d, path, reg, id, head) = open_fixture();
-    let branch = create_branch_inner(&reg, id, "topic", None, false).unwrap();
-    assert_eq!(branch.name, "topic");
+    let created = create_branch_inner(&reg, id, "topic", None, false).unwrap();
+    assert_eq!(created.branch.name, "topic");
+    assert_eq!(created.auto_stash, None);
     assert_eq!(common::head_branch_name(&path), head);
     assert!(local_exists(&path, "topic"));
 }
@@ -99,22 +100,33 @@ fn create_branch_inner_with_checkout_returns_the_branch_marked_as_head() {
         return;
     }
     let (_d, _p, reg, id, _head) = open_fixture();
-    let branch = create_branch_inner(&reg, id, "topic", None, true).unwrap();
-    assert!(branch.is_head);
+    let created = create_branch_inner(&reg, id, "topic", None, true).unwrap();
+    assert!(created.branch.is_head);
 }
 
 #[test]
-fn create_branch_inner_with_checkout_removes_the_branch_when_git_refuses() {
+fn create_branch_inner_with_checkout_returns_the_branch_and_no_stash() {
     if !common::git_available() {
         return;
     }
-    let (_d, path, reg, id, head) = open_fixture();
+    let (_d, _p, reg, id, _head) = open_fixture();
+    let created = create_branch_inner(&reg, id, "topic", None, true).unwrap();
+    assert_eq!(created.branch.name, "topic");
+    assert_eq!(created.auto_stash, None);
+}
+
+#[test]
+fn create_branch_inner_with_checkout_auto_stashes_a_tracked_collision() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, path, reg, id, _head) = open_fixture();
     common::branch_with_commit(&path, "b2", "README.md", "# on b2\n");
     std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
-    let err = create_branch_inner(&reg, id, "new", Some("b2"), true).unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
-    assert!(!local_exists(&path, "new"));
-    assert_eq!(common::head_branch_name(&path), head);
+    let created = create_branch_inner(&reg, id, "new", Some("b2"), true).unwrap();
+    assert_eq!(created.auto_stash.as_ref().map(|s| s.files), Some(1));
+    assert!(local_exists(&path, "new"));
+    assert_eq!(common::head_branch_name(&path), "new");
 }
 
 #[test]
@@ -129,7 +141,7 @@ fn create_branch_inner_honours_the_start_point() {
     common::commit_file(&path, "more.txt", "m\n", "second");
     let branch =
         create_branch_inner(&reg, id, "topic", Some(&first.to_string()[..7]), false).unwrap();
-    assert_eq!(branch.oid, first.to_string());
+    assert_eq!(branch.branch.oid, first.to_string());
 }
 
 #[test]
@@ -258,16 +270,16 @@ fn checkout_branch_inner_maps_missing_branch() {
 }
 
 #[test]
-fn checkout_branch_inner_maps_git_refusal_to_checkout_failed() {
+fn checkout_branch_inner_auto_stashes_a_tracked_collision() {
     if !common::git_available() {
         return;
     }
     let (_d, path, reg, id, _head) = open_fixture();
     common::branch_with_commit(&path, "b", "README.md", "# on b\n");
     std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
-    let err = checkout_branch_inner(&reg, id, "b").unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
-    assert!(err.message.contains("overwritten"), "{}", err.message);
+    let out = checkout_branch_inner(&reg, id, "b").unwrap();
+    assert_eq!(out.auto_stash.as_ref().map(|s| s.files), Some(1));
+    assert_eq!(common::head_branch_name(&path), "b");
 }
 
 #[test]
@@ -525,7 +537,7 @@ fn create_branch_inner_without_checkout_does_not_need_the_git_cli() {
     // Plain creation stays on git2: it must work with no git on PATH at all.
     let (_d, path, reg, id, head) = open_fixture();
     let branch = create_branch_inner(&reg, id, "topic", None, false).unwrap();
-    assert!(!branch.is_head);
+    assert!(!branch.branch.is_head);
     assert_eq!(common::head_branch_name(&path), head);
 }
 
@@ -588,7 +600,7 @@ fn checkout_remote_branch_inner_switches_to_an_existing_local_branch() {
 }
 
 #[test]
-fn checkout_remote_branch_inner_maps_git_refusal_to_checkout_failed() {
+fn checkout_remote_branch_inner_auto_stashes_a_tracked_collision() {
     if !common::git_available() {
         return;
     }
@@ -603,9 +615,9 @@ fn checkout_remote_branch_inner_maps_git_refusal_to_checkout_failed() {
     // has an uncommitted edit.
     common::commit_file(&path, "README.md", "# v2\n", "v2");
     std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
-    let err = checkout_remote_branch_inner(&reg, id, "origin", "feature").unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
-    assert!(!local_exists(&path, "feature"));
+    let out = checkout_remote_branch_inner(&reg, id, "origin", "feature").unwrap();
+    assert_eq!(out.auto_stash.as_ref().map(|s| s.files), Some(1));
+    assert_eq!(common::head_branch_name(&path), "feature");
 }
 
 #[test]

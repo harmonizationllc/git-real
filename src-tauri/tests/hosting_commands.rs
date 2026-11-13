@@ -764,7 +764,8 @@ fn checkout_of_a_same_repo_pr_tracks_the_head_branch() {
     assert_eq!(
         outcome,
         CheckoutPrOutcome::CheckedOut {
-            branch: "feature".to_owned()
+            branch: "feature".to_owned(),
+            auto_stash: None
         }
     );
 }
@@ -822,7 +823,8 @@ fn checkout_of_a_github_fork_pr_fetches_refs_pull_and_creates_pr_n() {
         (outcome, ref_oid(&fx.path, "refs/heads/pr/7")),
         (
             CheckoutPrOutcome::CheckedOut {
-                branch: "pr/7".to_owned()
+                branch: "pr/7".to_owned(),
+                auto_stash: None
             },
             Some(pr_oid)
         )
@@ -943,7 +945,8 @@ fn checkout_with_reset_moves_pr_n_to_the_pull_request_head() {
         (outcome, ref_oid(&fx.path, "refs/heads/pr/7")),
         (
             CheckoutPrOutcome::CheckedOut {
-                branch: "pr/7".to_owned()
+                branch: "pr/7".to_owned(),
+                auto_stash: None
             },
             Some(new_head)
         )
@@ -966,7 +969,8 @@ fn checkout_again_when_pr_n_already_contains_the_head_just_switches() {
     assert_eq!(
         outcome,
         CheckoutPrOutcome::CheckedOut {
-            branch: "pr/7".to_owned()
+            branch: "pr/7".to_owned(),
+            auto_stash: None
         }
     );
 }

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use git_real_core::{CommitDetail, LogPage, LogSummary, ResetMode};
+use git_real_core::{CheckoutOutcome, CommitDetail, LogPage, LogSummary, ResetMode};
 use tauri::State;
 
 use super::{run_blocking, with_session};
@@ -46,7 +46,11 @@ pub fn get_commit_inner(
     with_session(reg, id, |s| s.commit_detail(oid))
 }
 
-pub fn checkout_commit_inner(reg: &RepoRegistry, id: RepoId, oid: &str) -> Result<(), AppError> {
+pub fn checkout_commit_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    oid: &str,
+) -> Result<CheckoutOutcome, AppError> {
     with_session(reg, id, |s| s.checkout_commit(oid))
 }
 
@@ -107,7 +111,7 @@ pub async fn checkout_commit(
     reg: State<'_, Arc<RepoRegistry>>,
     id: RepoId,
     oid: String,
-) -> Result<(), AppError> {
+) -> Result<CheckoutOutcome, AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || checkout_commit_inner(&reg, id, &oid)).await
 }

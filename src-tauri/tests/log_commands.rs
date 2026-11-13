@@ -217,7 +217,7 @@ fn checkout_commit_inner_maps_an_unknown_oid_to_commit_not_found() {
 }
 
 #[test]
-fn checkout_commit_inner_maps_a_blocked_switch_to_checkout_failed() {
+fn checkout_commit_inner_auto_stashes_a_tracked_collision() {
     if !common::git_available() {
         return;
     }
@@ -225,8 +225,9 @@ fn checkout_commit_inner_maps_a_blocked_switch_to_checkout_failed() {
     let first = head_oid(&path);
     common::commit_file(&path, "README.md", "# two\n", "second");
     std::fs::write(path.join("README.md"), "# dirty\n").unwrap();
-    let err = checkout_commit_inner(&reg, id, &first.to_string()).unwrap_err();
-    assert_eq!(err.kind, AppErrorKind::CheckoutFailed);
+    let out = checkout_commit_inner(&reg, id, &first.to_string()).unwrap();
+    assert_eq!(out.auto_stash.as_ref().map(|s| s.files), Some(1));
+    assert_eq!(head_oid(&path), first);
 }
 
 // --- unknown repo id: every command maps to unknownRepo ---
