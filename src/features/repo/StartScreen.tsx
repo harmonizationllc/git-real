@@ -13,7 +13,7 @@ export function StartScreen({ opener, onClone }: { opener: UseOpenRepo; onClone(
   const { open, init, error, errorPath, clearError } = opener;
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const pickThen = async (title: string, action: (path: string) => Promise<boolean>) => {
+  const pickThen = async (title: string, action: (path: string) => Promise<unknown>) => {
     const path = await pickFolder(title);
     if (path !== null) await action(path);
   };

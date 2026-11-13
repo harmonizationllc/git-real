@@ -51,7 +51,7 @@ function AppShell(): React.JSX.Element {
     openPath: async (path) => {
       // A failed open from a shortcut or the palette sends the user back to the start screen,
       // where RepoError can offer "Initialize here".
-      if (!(await opener.open(path))) activate(null);
+      if ((await opener.open(path)) !== null) activate(null);
     },
   };
   useGlobalShortcuts(actions);
