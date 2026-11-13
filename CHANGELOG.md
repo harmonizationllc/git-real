@@ -4,7 +4,10 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## 0.3.0
 
-- **Auto-fetch**: the focused repo is fetched automatically on open, tab switch, checkout, window focus and every 5 minutes (Settings → Fetch). A failure shows one error notice with a Fetch button; the automatic path never asks for credentials.
+- **Auto-fetch**: the focused repo is fetched automatically on open, tab switch, checkout, window focus and every 5 minutes (Settings → Fetch). A failure shows one error toast with a Fetch button that dismisses after 12 s and stays in Messages; the automatic path never asks for credentials.
+- **Left-column toasts**: notices from Branches, Tags, Stashes and Worktrees are toasts; nothing is rendered inline in the left column any more. All toasts dismiss on their own (errors after 12 s) and are held while hovered or focused.
+- **Toast details**: a toast that carries git's output has a Details link that opens a dialog with the full text and a Copy button.
+- **Messages**: a bell button left of Settings opens the session's message history, newest first, with an unread dot when an error arrives.
 - **Tag folders**: tags are grouped into collapsible folders by their slash path, every folder open by default, the same as branches.
 - **Fixed**: a left-column section's header stays in place while its list scrolls beneath it.
 - **Change ruler**: a strip beside the diff's scrollbar marks every change block (green added, red removed, amber modified) across the diff; click a mark to jump to it.
