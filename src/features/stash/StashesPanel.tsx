@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SectionHead } from "../../components/SectionHead";
@@ -8,13 +8,12 @@ import { filterStashes, isFiltering } from "../branches/branchFilter";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { useNow } from "../graph/useNow";
 import { useOperationState } from "../merge/useOperationState";
-import { RepoError } from "../repo/RepoError";
+import { toastError } from "../remotes/toastError";
 import { useStatus } from "../worktree/useStatus";
 import { StashButton } from "./StashButton";
-import { StashFeedback } from "./StashFeedback";
 import { StashRow } from "./StashRow";
 import styles from "./StashesPanel.module.css";
-import { stashRef } from "./stashCopy";
+import { displayError, stashRef } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashes } from "./useStashes";
@@ -47,10 +46,25 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   const filtering = isFiltering(query);
   const shown = stashes ? filterStashes(stashes, query) : [];
 
-  // A newer result must not hide behind an older, undismissed error.
+  // A load failure with nothing to show toasts once per error object, so a failed Retry (a new
+  // error) toasts again. `refetch` is read through an effect event, not listed as a dependency.
+  const toastLoadFailure = useEffectEvent((error: AppError) =>
+    toastError(
+      { ...error, message: `Couldn't load stashes: ${error.message}` },
+      { retry: refetch },
+    ),
+  );
+  const loadFailed = stashes === undefined && listError !== null;
+  useEffect(() => {
+    if (loadFailed) toastLoadFailure(listError);
+  }, [loadFailed, listError]);
+
+  // The failure is toasted here, from the resolved result; a notice the action raised was already
+  // toasted by the hook.
   const run = (action: () => Promise<AppError | null>) => {
-    actions.clearError();
-    void action();
+    void action().then((e) => {
+      if (e !== null) toastError(displayError(e));
+    });
   };
 
   const menuItems = (entry: StashEntry): MenuItem[] => [
@@ -66,7 +80,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
       label: "Pop",
       disabled: actions.pending || apply.disabled,
       title: apply.title,
-      onSelect: () => run(() => actions.pop(entry)),
+      onSelect: () => run(() => actions.pop(entry).then((r) => r.error)),
     },
     {
       id: "drop",
@@ -84,16 +98,8 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   };
 
   let body: React.ReactNode;
-  if (listError !== null) {
-    body = (
-      <RepoError
-        error={listError}
-        path={null}
-        variant="panel"
-        onRetry={refetch}
-        onDismiss={refetch}
-      />
-    );
+  if (loadFailed) {
+    body = <p className={styles.empty}>Couldn't load stashes</p>;
   } else if (stashes === undefined) {
     body = <p role="status">Loading stashes…</p>;
   } else if (stashes.length === 0) {
@@ -143,7 +149,6 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           />
         </div>
       </SectionHead>
-      <StashFeedback actions={actions} />
       {body}
       <ContextMenu
         open={menu !== null}

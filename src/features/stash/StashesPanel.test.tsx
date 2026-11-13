@@ -10,6 +10,8 @@ import {
   stashPush,
 } from "../../lib/ipc";
 import type { OperationState, StashEntry, WorkingTreeStatus } from "../../lib/ipc";
+import { useMessages } from "../../lib/store/messages";
+import { useToasts } from "../../lib/store/toasts";
 import { useWorkspace } from "../../lib/store/workspace";
 import { renderWithProviders } from "../../test/renderWithProviders";
 import { stashEntry, statusEntry, workingStatus } from "../../test/stashFixtures";
@@ -48,8 +50,12 @@ function load(
   vi.mocked(getOperationState).mockResolvedValue(over.state ?? { kind: "none" });
 }
 
+const toasts = () => useToasts.getState().toasts;
+
 beforeEach(() => {
   vi.resetAllMocks();
+  useToasts.setState({ toasts: [] });
+  useMessages.setState({ messages: [], unread: false });
   useWorkspace.setState({ selectedStash: {}, selectedCommit: {}, refsFilter: {} });
   load();
   vi.mocked(stashApply).mockResolvedValue("applied");
@@ -76,18 +82,24 @@ describe("StashesPanel list", () => {
     expect(await screen.findByText("Loading stashes…")).toBeInTheDocument();
   });
 
-  it("should show the list error with Retry", async () => {
+  it("shows the placeholder and a Retry toast on load failure", async () => {
     vi.mocked(listStashes).mockRejectedValueOnce({ kind: "io", message: "list broke" });
-    const { user } = renderWithProviders(<StashesPanel repoId={1} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("list broke");
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    renderWithProviders(<StashesPanel repoId={1} />);
+    expect(await screen.findByText("Couldn't load stashes")).toBeInTheDocument();
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("Couldn't load stashes: list broke");
+    expect(toasts()[0].action?.label).toBe("Retry");
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => toasts()[0].action?.run());
     expect(await screen.findByRole("list", { name: "Stash list" })).toBeInTheDocument();
   });
 
-  it("should render the list error alert in the panel variant", async () => {
-    vi.mocked(listStashes).mockRejectedValueOnce({ kind: "io", message: "list broke" });
-    renderWithProviders(<StashesPanel repoId={1} />);
-    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  it("neither toasts nor replaces the list when a refetch fails while a list shows", async () => {
+    const { queryClient } = await renderPanel();
+    vi.mocked(listStashes).mockRejectedValue({ kind: "io", message: "later" });
+    await act(() => queryClient.refetchQueries({ queryKey: ["repo", 1, "stashes"] }));
+    expect(screen.getByRole("list", { name: "Stash list" })).toBeInTheDocument();
+    expect(toasts()).toEqual([]);
   });
 
   it("puts the heading row on the accent band", async () => {
@@ -382,6 +394,7 @@ describe("StashesPanel drop", () => {
 });
 
 // Contract: conflict notices, stale and git errors surface in the panel.
+// Contract: conflict notices, stale and git errors surface as toasts.
 describe("StashesPanel feedback", () => {
   async function applyWith(index = 0) {
     const view = await renderPanel();
@@ -391,63 +404,44 @@ describe("StashesPanel feedback", () => {
     return view;
   }
 
-  it("shows the apply conflict notice and dismisses it", async () => {
+  it("toasts the apply conflict notice", async () => {
     vi.mocked(stashApply).mockResolvedValue("conflicts");
-    const { user } = await applyWith();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Applied with conflicts. Resolve them in Changes.",
-    );
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("status")).toBeNull();
+    await applyWith();
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({
+      text: "Applied with conflicts. Resolve them in Changes.",
+      variant: "info",
+    });
   });
 
-  it("shows the pop notice with the kept suffix", async () => {
+  it("toasts the pop notice with the kept suffix", async () => {
     vi.mocked(stashPop).mockResolvedValue("conflicts");
     const { user } = await renderPanel();
     await waitFor(() => expect(plus()).toBeEnabled());
     rightClick(row(0));
     await user.click(menuItem("Pop"));
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe(
       "Applied with conflicts. Resolve them in Changes. The stash was kept; drop it once resolved.",
     );
   });
 
-  it("the next action clears the notice", async () => {
-    vi.mocked(stashApply).mockResolvedValueOnce("conflicts");
-    const { user } = await applyWith();
-    await screen.findByRole("status");
-    rightClick(row(0));
-    await user.click(menuItem("Apply"));
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-  });
-
-  it("shows The stash list changed; it has been refreshed. on staleStash and refetches the list", async () => {
+  it("toasts the stale copy on staleStash and refetches the list", async () => {
     vi.mocked(stashApply).mockRejectedValue({ kind: "staleStash", message: "raw stale" });
     await applyWith();
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The stash list changed; it has been refreshed.",
-    );
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({
+      text: "The stash list changed; it has been refreshed.",
+      variant: "error",
+    });
     await waitFor(() => expect(listStashes).toHaveBeenCalledTimes(2));
   });
 
-  it("tags a failed action's alert with the panel variant", async () => {
+  it("toasts git's message on operationFailed", async () => {
     vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
     await applyWith();
-    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
-  });
-
-  it("shows git's message on operationFailed", async () => {
-    vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
-    await applyWith();
-    expect(await screen.findByRole("alert")).toHaveTextContent("git said no");
-  });
-
-  it("dismissing an error clears it", async () => {
-    vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
-    const { user } = await applyWith();
-    await screen.findByRole("alert");
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("git said no");
   });
 
   it("refreshes the status after an action", async () => {
@@ -521,31 +515,26 @@ describe("StashesPanel row keys", () => {
 });
 
 describe("StashesPanel feedback edge cases", () => {
-  it("a later action clears an older undismissed error", async () => {
-    vi.mocked(stashApply).mockRejectedValueOnce({
-      kind: "operationFailed",
-      message: "git said no",
-    });
-    const { user } = await renderPanel();
-    await waitFor(() => expect(plus()).toBeEnabled());
-    rightClick(row(0));
-    await user.click(menuItem("Apply"));
-    await screen.findByRole("alert");
-    rightClick(row(0));
-    await user.click(menuItem("Pop"));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-  });
-
-  it("a failed drop closes the confirm and shows the error", async () => {
+  it("toasts a failed drop with stash copy after the confirm closes", async () => {
     vi.mocked(stashDrop).mockRejectedValue({ kind: "staleStash", message: "raw" });
     const { user } = await renderPanel();
     rightClick(row(1));
     await user.click(menuItem("Drop…"));
     await user.click(await screen.findByRole("button", { name: "Drop" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The stash list changed; it has been refreshed.",
-    );
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("The stash list changed; it has been refreshed.");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("renders no alert or status in the panel", async () => {
+    vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "git said no" });
+    const { user } = await renderPanel();
+    await waitFor(() => expect(plus()).toBeEnabled());
+    rightClick(row(0));
+    await user.click(menuItem("Apply"));
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("is busy while an action runs and not afterwards", async () => {

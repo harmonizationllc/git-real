@@ -3,6 +3,8 @@ import { useState } from "react";
 import { stashApply, stashDrop, stashPop, stashPush, toAppError } from "../../lib/ipc";
 import type { AppError, RepoId, StashEntry, StashOutcome } from "../../lib/ipc";
 import { mutationKeys, queryKeys } from "../../lib/query/keys";
+import { useToasts } from "../../lib/store/toasts";
+import { noticeText } from "./stashCopy";
 
 /** An apply or pop that left conflicts, or a pop that applied but kept the stash (`popKept`). */
 export interface StashNotice {
@@ -12,17 +14,19 @@ export interface StashNotice {
 
 type StashTarget = Pick<StashEntry, "index" | "oid">;
 
-/** Each action resolves with the AppError or null and never rejects. */
+/** What a pop resolves: the failure, or the notice a StashSummary needs to block a second Pop. */
+export interface StashPopResult {
+  error: AppError | null;
+  notice: StashNotice | null;
+}
+
+/** Each action resolves with the AppError or null and never rejects (pop: a StashPopResult). */
 export interface UseStashActions {
   push(message: string | null, includeUntracked: boolean): Promise<AppError | null>;
   apply(entry: StashTarget): Promise<AppError | null>;
-  pop(entry: StashTarget): Promise<AppError | null>;
+  pop(entry: StashTarget): Promise<StashPopResult>;
   drop(entry: StashTarget): Promise<AppError | null>;
   pending: boolean;
-  error: AppError | null;
-  notice: StashNotice | null;
-  clearError(): void;
-  clearNotice(): void;
 }
 
 type StashRequest =
@@ -59,10 +63,9 @@ function execute(repoId: RepoId, req: StashRequest): Promise<StashNotice | null>
 
 export function useStashActions(repoId: RepoId): UseStashActions {
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<StashNotice | null>(null);
   // Counted here rather than read from `isPending`, whose observer update lands a tick later.
   const [busy, setBusy] = useState(0);
-  const mutation = useMutation<StashNotice | null, AppError, StashRequest>({
+  const { mutateAsync } = useMutation<StashNotice | null, AppError, StashRequest>({
     mutationKey: mutationKeys.stash(repoId),
     mutationFn: (req) =>
       execute(repoId, req).catch((e: unknown) => {
@@ -71,31 +74,29 @@ export function useStashActions(repoId: RepoId): UseStashActions {
     // Runs on failure too: a stale stash needs the new list, a failed apply may have partly applied.
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.repo(repoId) }),
   });
-  const { mutateAsync } = mutation;
 
-  const run = (req: StashRequest): Promise<AppError | null> => {
-    setNotice(null);
+  /** Toasts the notice of an apply or pop; the call site toasts the failure. */
+  const run = (req: StashRequest): Promise<StashPopResult> => {
     setBusy((n) => n + 1);
     return mutateAsync(req)
       .then(
-        (next) => {
-          setNotice(next);
-          return null;
+        (notice): StashPopResult => {
+          if (notice !== null) {
+            useToasts.getState().notify({ text: noticeText(notice), variant: "info" });
+          }
+          return { error: null, notice };
         },
-        (e: AppError) => e,
+        (error: AppError): StashPopResult => ({ error, notice: null }),
       )
       .finally(() => setBusy((n) => n - 1));
   };
 
   return {
-    push: (message, includeUntracked) => run({ action: "push", message, includeUntracked }),
-    apply: ({ index, oid }) => run({ action: "apply", index, oid }),
+    push: (message, includeUntracked) =>
+      run({ action: "push", message, includeUntracked }).then((r) => r.error),
+    apply: ({ index, oid }) => run({ action: "apply", index, oid }).then((r) => r.error),
     pop: ({ index, oid }) => run({ action: "pop", index, oid }),
-    drop: ({ index, oid }) => run({ action: "drop", index, oid }),
+    drop: ({ index, oid }) => run({ action: "drop", index, oid }).then((r) => r.error),
     pending: busy > 0,
-    error: mutation.error,
-    notice,
-    clearError: mutation.reset,
-    clearNotice: () => setNotice(null),
   };
 }

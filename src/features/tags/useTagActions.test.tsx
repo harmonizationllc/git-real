@@ -4,6 +4,7 @@ import { createTag, deleteRemoteTag, deleteTag, pushTag } from "../../lib/ipc";
 import { authError, networkError } from "../../test/remoteFixtures";
 import { mutationKeys } from "../../lib/query/keys";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
+import { useToasts } from "../../lib/store/toasts";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import { useTagActions } from "./useTagActions";
 
@@ -32,8 +33,11 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+const toasts = () => useToasts.getState().toasts;
+
 beforeEach(() => {
   vi.resetAllMocks();
+  useToasts.setState({ toasts: [] });
   vi.mocked(createTag).mockResolvedValue(undefined);
   vi.mocked(deleteTag).mockResolvedValue(undefined);
   vi.mocked(pushTag).mockResolvedValue(undefined);
@@ -77,74 +81,46 @@ describe("useTagActions calls", () => {
   });
 });
 
-// Contract: only a successful push or remote delete leaves a status, cleared by the next action.
-describe("useTagActions status", () => {
-  it("starts idle with no error, no status and no last name", () => {
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    expect([
-      result.current.pending,
-      result.current.error,
-      result.current.status,
-      result.current.lastName,
-    ]).toEqual([false, null, null, null]);
-  });
-
-  it("push sets a pushed status", async () => {
+// Contract: only a successful push or remote delete toasts a success; the hook toasts no failure.
+describe("useTagActions success toasts", () => {
+  it("toasts a success notice after a push", async () => {
     const { result } = renderHookWithProviders(() => useTagActions(1));
     await act(() => result.current.push("origin", "v1"));
-    expect(result.current.status).toEqual({ kind: "pushed", name: "v1", remote: "origin" });
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toMatchObject({ text: "Pushed v1 to origin.", variant: "success" });
   });
 
-  it("deleteRemote sets a deletedRemote status", async () => {
+  it("toasts a success notice after a remote delete", async () => {
     const { result } = renderHookWithProviders(() => useTagActions(1));
     await act(() => result.current.deleteRemote("origin", "v1"));
-    expect(result.current.status).toEqual({
-      kind: "deletedRemote",
-      name: "v1",
-      remote: "origin",
-    });
+    expect(toasts()[0]).toMatchObject({ text: "Deleted v1 from origin.", variant: "success" });
   });
 
-  it("create and remove set no status", async () => {
+  it("create and remove toast nothing", async () => {
     const { result } = renderHookWithProviders(() => useTagActions(1));
     await act(() => result.current.create("v1", OID, null));
     await act(() => result.current.remove("v1"));
-    expect(result.current.status).toBeNull();
+    expect(toasts()).toEqual([]);
   });
 
-  it("the next action clears the previous status", async () => {
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    await act(() => result.current.remove("v1"));
-    expect(result.current.status).toBeNull();
-  });
-
-  it("a failed push sets no status", async () => {
+  it("a failed push toasts nothing", async () => {
     vi.mocked(pushTag).mockRejectedValue(failure);
     const { result } = renderHookWithProviders(() => useTagActions(1));
     await act(() => result.current.push("origin", "v1"));
-    expect(result.current.status).toBeNull();
+    expect(toasts()).toEqual([]);
   });
 
-  it("a failed push clears the status of an earlier push", async () => {
+  it("no longer exposes error or status", () => {
     const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    vi.mocked(pushTag).mockRejectedValue(failure);
-    await act(() => result.current.push("origin", "v2"));
-    expect(result.current.status).toBeNull();
-  });
-
-  it("clearStatus resets the status", async () => {
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    act(() => result.current.clearStatus());
-    expect(result.current.status).toBeNull();
+    expect(Object.keys(result.current).sort()).toEqual(
+      ["create", "deleteRemote", "pending", "prompt", "push", "remove"].sort(),
+    );
   });
 });
 
-// Contract: failures resolve with the AppError, mirror it in error, and never reject.
+// Contract: failures resolve with the AppError and never reject.
 describe("useTagActions errors", () => {
-  it("a rejected action resolves with the AppError and mirrors it in error", async () => {
+  it("a rejected action resolves with the AppError", async () => {
     vi.mocked(deleteTag).mockRejectedValue({ kind: "tagNotFound", message: "gone" });
     const { result } = renderHookWithProviders(() => useTagActions(1));
     let outcome: unknown = null;
@@ -152,9 +128,6 @@ describe("useTagActions errors", () => {
       outcome = await result.current.remove("v1");
     });
     expect(outcome).toEqual({ kind: "tagNotFound", message: "gone" });
-    await waitFor(() =>
-      expect(result.current.error).toEqual({ kind: "tagNotFound", message: "gone" }),
-    );
   });
 
   it("a plain Error rejection becomes an io AppError", async () => {
@@ -165,29 +138,6 @@ describe("useTagActions errors", () => {
       outcome = await result.current.create("v1", OID, null);
     });
     expect(outcome).toEqual({ kind: "io", message: "boom" });
-  });
-
-  it("clearError resets the error", async () => {
-    vi.mocked(pushTag).mockRejectedValue(failure);
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    await waitFor(() => expect(result.current.error).not.toBeNull());
-    act(() => result.current.clearError());
-    await waitFor(() => expect(result.current.error).toBeNull());
-  });
-
-  it("lastName names the tag of the latest action", async () => {
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    await act(() => result.current.push("origin", "v2"));
-    expect(result.current.lastName).toBe("v2");
-  });
-
-  it("lastName names the tag of a failed action", async () => {
-    vi.mocked(deleteTag).mockRejectedValue({ kind: "tagNotFound", message: "gone" });
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.remove("v9"));
-    expect(result.current.lastName).toBe("v9");
   });
 });
 
@@ -349,7 +299,7 @@ describe("useTagActions network gate", () => {
       username: "me",
       token: "tok",
     });
-    expect(result.current.status).toEqual({ kind: "pushed", name: "v1", remote: "origin" });
+    expect(toasts().map((t) => t.text)).toEqual(["Pushed v1 to origin."]);
     expect(result.current.prompt).toBeNull();
   });
 
@@ -365,7 +315,7 @@ describe("useTagActions network gate", () => {
     await act(async () => {
       await done;
     });
-    expect(result.current.status).toEqual({ kind: "deletedRemote", name: "v1", remote: "origin" });
+    expect(toasts().map((t) => t.text)).toEqual(["Deleted v1 from origin."]);
   });
 
   it("has no prompt while idle", () => {
@@ -373,7 +323,7 @@ describe("useTagActions network gate", () => {
     expect(result.current.prompt).toBeNull();
   });
 
-  it("a cancelled sign-in resolves null with no status and no error", async () => {
+  it("a cancelled sign-in resolves null and toasts nothing", async () => {
     vi.mocked(pushTag).mockRejectedValue(authError());
     const { result } = renderHookWithProviders(() => useTagActions(1));
     let done: Promise<unknown> = Promise.resolve();
@@ -387,11 +337,10 @@ describe("useTagActions network gate", () => {
       outcome = await done;
     });
     expect(outcome).toBeNull();
-    expect(result.current.status).toBeNull();
-    expect(result.current.error).toBeNull();
+    expect(toasts()).toEqual([]);
   });
 
-  it("a network failure resolves with the AppError and mirrors it in error", async () => {
+  it("a network failure resolves with the AppError and toasts nothing itself", async () => {
     const error = networkError("hostUnreachable");
     vi.mocked(pushTag).mockRejectedValue(error);
     const { result } = renderHookWithProviders(() => useTagActions(1));
@@ -400,26 +349,18 @@ describe("useTagActions network gate", () => {
       outcome = await result.current.push("origin", "v1");
     });
     expect(outcome).toEqual(error);
-    await waitFor(() => expect(result.current.error).toEqual(error));
+    expect(toasts()).toEqual([]);
   });
 
-  it("a remote delete failure also mirrors in error and clearError resets it", async () => {
+  it("a remote delete failure resolves with the AppError", async () => {
     const error = networkError("hostUnreachable");
     vi.mocked(deleteRemoteTag).mockRejectedValue(error);
     const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.deleteRemote("origin", "v1"));
-    await waitFor(() => expect(result.current.error).toEqual(error));
-    act(() => result.current.clearError());
-    await waitFor(() => expect(result.current.error).toBeNull());
-  });
-
-  it("a successful push after a failure clears the mirrored error", async () => {
-    vi.mocked(pushTag).mockRejectedValueOnce(networkError("hostUnreachable"));
-    const { result } = renderHookWithProviders(() => useTagActions(1));
-    await act(() => result.current.push("origin", "v1"));
-    await waitFor(() => expect(result.current.error).not.toBeNull());
-    await act(() => result.current.push("origin", "v1"));
-    expect(result.current.error).toBeNull();
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await result.current.deleteRemote("origin", "v1");
+    });
+    expect(outcome).toEqual(error);
   });
 
   it("pending covers a network action of this repo run elsewhere", async () => {

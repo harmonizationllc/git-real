@@ -73,13 +73,9 @@ const status = (...entries: StatusEntry[]): WorkingTreeStatus => ({ entries, hea
 const stashActionsStub = (): UseStashActions => ({
   push: vi.fn().mockResolvedValue(null),
   apply: vi.fn().mockResolvedValue(null),
-  pop: vi.fn().mockResolvedValue(null),
+  pop: vi.fn().mockResolvedValue({ error: null, notice: null }),
   drop: vi.fn().mockResolvedValue(null),
   pending: false,
-  error: null,
-  notice: null,
-  clearError: vi.fn(),
-  clearNotice: vi.fn(),
 });
 
 const integrationRun = vi.fn<UseIntegrationActions["run"]>();
