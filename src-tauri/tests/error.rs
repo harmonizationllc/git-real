@@ -146,6 +146,15 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::CheckoutFailedStashKept,
             Some("fatal: hook says no. Your changes are in the stash list."),
         ),
+        (
+            GitError::CheckoutFailedStashKept {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+            AppErrorKind::CheckoutFailedStashKept,
+            Some("git switch failed with exit code 1. Your changes are in the stash list."),
+        ),
         (GitError::NoRemotes, AppErrorKind::NoRemotes, None),
         (GitError::NoUpstream, AppErrorKind::NoUpstream, None),
         (GitError::DetachedHead, AppErrorKind::DetachedHead, None),

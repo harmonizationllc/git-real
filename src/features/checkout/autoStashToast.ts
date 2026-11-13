@@ -14,32 +14,31 @@ const files = (n: number, adjective: string): string =>
 
 /** Exported for tests: the toast's text, variant, stickiness and details for a report. */
 export function autoStashNotice(report: AutoStash, target: string): AutoStashNotice {
-  const on = target;
   switch (report.reapply) {
     case "applied":
       return {
-        text: `Stashed ${files(report.files, "changed")} and reapplied ${report.files === 1 ? "it" : "them"} on ${on}.`,
+        text: `Stashed ${files(report.files, "changed")} and reapplied ${report.files === 1 ? "it" : "them"} on ${target}.`,
         variant: "success",
         sticky: false,
         details: null,
       };
     case "conflicts":
       return {
-        text: `Switched to ${on}, but reapplying your ${files(report.files, "stashed")} hit conflicts. Resolve them, then drop the stash.`,
+        text: `Switched to ${target}, but reapplying your ${files(report.files, "stashed")} hit conflicts. Resolve them, then drop the stash.`,
         variant: "error",
         sticky: true,
         details: null,
       };
     case "appliedNotDropped":
       return {
-        text: `Reapplied your ${files(report.files, "stashed")} on ${on}; the stash could not be dropped and is still listed.`,
+        text: `Reapplied your ${files(report.files, "stashed")} on ${target}; the stash could not be dropped and is still listed.`,
         variant: "info",
         sticky: false,
         details: null,
       };
     case "kept":
       return {
-        text: `Switched to ${on}, but your ${files(report.files, "changed")} could not be reapplied. They are in the stash list.`,
+        text: `Switched to ${target}, but your ${files(report.files, "changed")} could not be reapplied. They are in the stash list.`,
         variant: "error",
         sticky: true,
         details: report.detail,
