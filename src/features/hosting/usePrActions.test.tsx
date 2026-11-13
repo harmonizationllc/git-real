@@ -1,9 +1,11 @@
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copyText, hostingCheckoutPullRequest, openExternal } from "../../lib/ipc";
+import type { AutoStash } from "../../lib/ipc";
 import { pullRequest } from "../../test/hostingFixtures";
 import { authError, networkError } from "../../test/remoteFixtures";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
+import { toastAutoStash } from "../checkout/autoStashToast";
 import { usePrActions } from "./usePrActions";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
@@ -11,6 +13,10 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   hostingCheckoutPullRequest: vi.fn(),
   openExternal: vi.fn(),
   copyText: vi.fn(),
+}));
+vi.mock(import("../checkout/autoStashToast"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  toastAutoStash: vi.fn(),
 }));
 
 const pr7 = () => pullRequest(7);
@@ -20,6 +26,7 @@ beforeEach(() => {
   vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({
     kind: "checkedOut",
     branch: "feature-7",
+    autoStash: null,
   });
   vi.mocked(openExternal).mockResolvedValue(undefined);
   vi.mocked(copyText).mockResolvedValue(undefined);
@@ -51,7 +58,11 @@ describe("usePrActions checkout", () => {
   });
 
   it("should report pr/7 for a fork pull request, not its source branch", async () => {
-    vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({ kind: "checkedOut", branch: "pr/7" });
+    vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({
+      kind: "checkedOut",
+      branch: "pr/7",
+      autoStash: null,
+    });
     const { result } = renderHookWithProviders(() => usePrActions(1));
     await act(() => result.current.checkout(pullRequest(7, { fromFork: true, sourceBranch: "x" })));
     expect(result.current.status).toBe("Checked out pr/7.");
@@ -255,7 +266,7 @@ describe("usePrActions shared error slot", () => {
   it("should show the link error again once the checkout error is gone", async () => {
     vi.mocked(hostingCheckoutPullRequest)
       .mockRejectedValueOnce(networkError("hostUnreachable"))
-      .mockResolvedValue({ kind: "checkedOut", branch: "feature-7" });
+      .mockResolvedValue({ kind: "checkedOut", branch: "feature-7", autoStash: null });
     vi.mocked(openExternal).mockRejectedValue(new Error("blocked"));
     const { result } = renderHookWithProviders(() => usePrActions(1));
     await act(() => result.current.checkout(pr7()));
@@ -359,5 +370,28 @@ describe("usePrActions newest error wins", () => {
     });
     await waitFor(() => expect(result.current.pending).toBe(true));
     expect(result.current.error).toBeNull();
+  });
+});
+
+// Contract: a checkedOut outcome toasts its auto-stash report under the branch it landed on.
+describe("usePrActions auto-stash toast", () => {
+  const report: AutoStash = { files: 3, reapply: "kept", detail: "boom" };
+
+  it("toasts the report after a checkedOut outcome, naming the branch", async () => {
+    vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({
+      kind: "checkedOut",
+      branch: "pr/7",
+      autoStash: report,
+    });
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    expect(toastAutoStash).toHaveBeenCalledExactlyOnceWith(report, "pr/7");
+  });
+
+  it("does not toast after a needsReset outcome", async () => {
+    vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({ kind: "needsReset", branch: "pr/7" });
+    const { result } = renderHookWithProviders(() => usePrActions(1));
+    await act(() => result.current.checkout(pr7()));
+    expect(toastAutoStash).not.toHaveBeenCalled();
   });
 });

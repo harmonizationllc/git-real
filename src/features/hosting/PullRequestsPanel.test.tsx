@@ -49,6 +49,7 @@ beforeEach(async () => {
   vi.mocked(hostingCheckoutPullRequest).mockResolvedValue({
     kind: "checkedOut",
     branch: "feature-12",
+    autoStash: null,
   });
   vi.mocked(openExternal).mockResolvedValue(undefined);
   vi.mocked(copyText).mockResolvedValue(undefined);
@@ -457,7 +458,7 @@ describe("PullRequestsPanel checkout", () => {
   it("Reset calls again with reset true", async () => {
     vi.mocked(hostingCheckoutPullRequest)
       .mockResolvedValueOnce({ kind: "needsReset", branch: "pr/9" })
-      .mockResolvedValueOnce({ kind: "checkedOut", branch: "pr/9" });
+      .mockResolvedValueOnce({ kind: "checkedOut", branch: "pr/9", autoStash: null });
     const { user } = await renderPanel();
     rightClick(row(9));
     await user.click(menuItem("Check out"));

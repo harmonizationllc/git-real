@@ -8,9 +8,10 @@ import {
   setBranchUpstream,
   toAppError,
 } from "../../lib/ipc";
-import type { AppError, RepoId } from "../../lib/ipc";
+import type { AppError, CheckoutOutcome, CreatedBranch, RepoId } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
+import { toastAutoStash } from "../checkout/autoStashToast";
 
 export type BranchRequest =
   | { action: "create"; name: string; startPoint: string | null; checkout: boolean }
@@ -41,7 +42,25 @@ function fetchesAfter(req: BranchRequest): boolean {
   }
 }
 
-function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
+/** What a request resolves with: a create its branch and report, a checkout its report. */
+type BranchResult = CreatedBranch | CheckoutOutcome | void;
+
+/** Toasts the auto-stash report of a successful request that switched branches. */
+function toastSwitch(req: BranchRequest, data: BranchResult): void {
+  switch (req.action) {
+    case "create":
+      if (req.checkout) toastAutoStash((data as CreatedBranch).autoStash, req.name);
+      return;
+    case "checkout":
+    case "checkoutRemote":
+      toastAutoStash((data as CheckoutOutcome).autoStash, req.name);
+      return;
+    default:
+      return;
+  }
+}
+
+function execute(repoId: RepoId, req: BranchRequest): Promise<BranchResult> {
   switch (req.action) {
     case "create":
       return createBranch(repoId, req.name, req.startPoint, req.checkout);
@@ -60,15 +79,16 @@ function execute(repoId: RepoId, req: BranchRequest): Promise<unknown> {
 
 export function useBranchActions(repoId: RepoId): UseBranchActions {
   const queryClient = useQueryClient();
-  const mutation = useMutation<unknown, AppError, BranchRequest>({
+  const mutation = useMutation<BranchResult, AppError, BranchRequest>({
     mutationFn: (req) =>
       execute(repoId, req).catch((e: unknown) => {
         throw toAppError(e);
       }),
     // A new HEAD or a newly set upstream may be behind its remote, so the focused pane is
     // asked to fetch; unsetting an upstream leaves nothing to compare against.
-    onSuccess: (_data, req) => {
+    onSuccess: (data, req) => {
       if (fetchesAfter(req)) useAutoFetchState.getState().request(repoId);
+      toastSwitch(req, data);
     },
     // Returning the promise keeps `pending` true until the refetch is triggered. Runs on
     // failure too, since a failed switch or create may have partly applied.

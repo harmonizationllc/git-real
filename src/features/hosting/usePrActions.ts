@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { hostingCheckoutPullRequest } from "../../lib/ipc";
 import type { AppError, PullRequest, RepoId } from "../../lib/ipc";
+import { toastAutoStash } from "../checkout/autoStashToast";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import type { CredentialPrompt } from "../remotes/useNetworkAction";
 import { useLinkActions } from "./useLinkActions";
@@ -49,7 +50,10 @@ export function usePrActions(repoId: RepoId): UsePrActions {
       const outcome = result.value;
       // The outcome names the branch it landed on: a fork pull request lands on pr/<n>.
       if (outcome.kind === "needsReset") setResetRequest({ pr, branch: outcome.branch });
-      else setStatus(`Checked out ${outcome.branch}.`);
+      else {
+        setStatus(`Checked out ${outcome.branch}.`);
+        toastAutoStash(outcome.autoStash, outcome.branch);
+      }
     }
   };
 

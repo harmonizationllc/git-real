@@ -1,10 +1,11 @@
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { checkoutCommit, resetToCommit } from "../../lib/ipc";
-import type { AppError } from "../../lib/ipc";
+import type { AppError, AutoStash, CheckoutOutcome } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
+import { toastAutoStash } from "../checkout/autoStashToast";
 import { useCommitActions } from "./useCommitActions";
 import type { CommitRequest } from "./useCommitActions";
 
@@ -13,8 +14,13 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutCommit: vi.fn(),
   resetToCommit: vi.fn(),
 }));
+vi.mock(import("../checkout/autoStashToast"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  toastAutoStash: vi.fn(),
+}));
 
 const oid = "b".repeat(40);
+const noStash: CheckoutOutcome = { autoStash: null };
 const failed: AppError = { kind: "checkoutFailed", message: "local changes would be overwritten" };
 
 type Actions = ReturnType<typeof useCommitActions>;
@@ -29,7 +35,7 @@ async function run(actions: () => Actions, req: CommitRequest): Promise<AppError
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(checkoutCommit).mockResolvedValue(undefined);
+  vi.mocked(checkoutCommit).mockResolvedValue(noStash);
   vi.mocked(resetToCommit).mockResolvedValue(undefined);
 });
 
@@ -138,8 +144,8 @@ describe("useCommitActions state", () => {
   it("should be pending while the call is in flight", async () => {
     let finish!: () => void;
     vi.mocked(checkoutCommit).mockReturnValue(
-      new Promise<undefined>((resolve) => {
-        finish = () => resolve(undefined);
+      new Promise<CheckoutOutcome>((resolve) => {
+        finish = () => resolve(noStash);
       }),
     );
     const { result } = renderHookWithProviders(() => useCommitActions(1));
@@ -172,7 +178,7 @@ describe("useCommitActions state", () => {
   });
 
   it("should replace the error with null after a later success", async () => {
-    vi.mocked(checkoutCommit).mockRejectedValueOnce(failed).mockResolvedValue(undefined);
+    vi.mocked(checkoutCommit).mockRejectedValueOnce(failed).mockResolvedValue(noStash);
     const { result } = renderHookWithProviders(() => useCommitActions(1));
     await run(() => result.current, { action: "checkout", oid });
     await run(() => result.current, { action: "checkout", oid });
@@ -198,5 +204,30 @@ describe("useCommitActions auto-fetch requests", () => {
     const { result } = renderHookWithProviders(() => useCommitActions(1));
     await run(() => result.current, { action: "reset", oid, mode: "hard" });
     expect(requested()).toBe(0);
+  });
+});
+
+// Contract: a successful commit checkout toasts its auto-stash report under the short oid.
+describe("useCommitActions auto-stash toast", () => {
+  const report: AutoStash = { files: 2, reapply: "conflicts", detail: null };
+
+  it("toasts the report after a checkout, naming the short oid", async () => {
+    vi.mocked(checkoutCommit).mockResolvedValue({ autoStash: report });
+    const { result } = renderHookWithProviders(() => useCommitActions(1));
+    await run(() => result.current, { action: "checkout", oid });
+    expect(toastAutoStash).toHaveBeenCalledExactlyOnceWith(report, oid.slice(0, 7));
+  });
+
+  it("does not toast after a reset", async () => {
+    const { result } = renderHookWithProviders(() => useCommitActions(1));
+    await run(() => result.current, { action: "reset", oid, mode: "hard" });
+    expect(toastAutoStash).not.toHaveBeenCalled();
+  });
+
+  it("does not toast after a failed checkout", async () => {
+    vi.mocked(checkoutCommit).mockRejectedValue(failed);
+    const { result } = renderHookWithProviders(() => useCommitActions(1));
+    await run(() => result.current, { action: "checkout", oid });
+    expect(toastAutoStash).not.toHaveBeenCalled();
   });
 });
