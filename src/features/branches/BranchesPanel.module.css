@@ -6,7 +6,7 @@
   color: var(--color-text);
 }
 
-/* The provider's host block: the branch error banners in flow above Local, plus overlays. */
+/* The provider's host block above Local: the menus and dialogs (overlays), nothing in flow. */
 .host {
   flex: none;
   min-width: 0;

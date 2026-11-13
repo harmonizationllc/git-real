@@ -206,7 +206,7 @@ describe("useOpenRepo overlapping calls", () => {
       .mockReturnValueOnce(new Promise((_, rej) => (rejectFirst = rej)))
       .mockResolvedValueOnce(opened("/b", 2));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let first!: Promise<boolean>;
+    let first!: Promise<AppError | null>;
     act(() => {
       first = result.current.open("/a");
     });
@@ -220,16 +220,16 @@ describe("useOpenRepo overlapping calls", () => {
   });
 });
 
-// Contract: clone shares the open/init pipeline but resolves a boolean and has no retryable path.
+// Contract: clone shares the open/init pipeline but resolves its error or null and has no retryable path.
 describe("useOpenRepo clone", () => {
-  it("should open a tab and resolve true when clone succeeds", async () => {
+  it("should open a tab and resolve null when clone succeeds", async () => {
     vi.mocked(cloneRepo).mockResolvedValue(opened("/d"));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       outcome = await result.current.clone("u", "/d", 5);
     });
-    expect(outcome).toBe(true);
+    expect(outcome).toBeNull();
     expect(useRepoTabs.getState().tabs).toHaveLength(1);
   });
 
@@ -248,15 +248,15 @@ describe("useOpenRepo clone", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["recent"] });
   });
 
-  it("should resolve false and set the error when clone rejects with an AppError", async () => {
+  it("should resolve the error and set it when clone rejects with an AppError", async () => {
     const err: AppError = { kind: "cloneFailed", message: "nope" };
     vi.mocked(cloneRepo).mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       outcome = await result.current.clone("u", "/d", 5);
     });
-    expect(outcome).toBe(false);
+    expect(outcome).toEqual(err);
     expect(result.current.error).toEqual(err);
   });
 
@@ -284,65 +284,65 @@ describe("useOpenRepo clone", () => {
   });
 });
 
-// Contract: a stale clone failure neither sets the error nor changes its own boolean outcome.
+// Contract: a stale clone failure neither sets the error nor changes its own outcome.
 describe("useOpenRepo clone overlapping calls", () => {
-  it("should resolve false without setting the error when an older clone fails after a newer open succeeded", async () => {
+  it("should resolve its error without setting it when an older clone fails after a newer open succeeded", async () => {
     let rejectClone!: (e: unknown) => void;
     vi.mocked(cloneRepo).mockReturnValueOnce(new Promise((_, rej) => (rejectClone = rej)));
     vi.mocked(openRepo).mockResolvedValueOnce(opened("/b", 2));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let first!: Promise<boolean>;
+    let first!: Promise<AppError | null>;
     act(() => {
       first = result.current.clone("u", "/d", 5);
     });
     await act(() => result.current.open("/b"));
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       rejectClone({ kind: "cloneFailed", message: "late" });
       outcome = await first;
     });
-    expect(outcome).toBe(false);
+    expect(outcome).toEqual({ kind: "cloneFailed", message: "late" });
     expect(result.current.error).toBeNull();
     expect(useRepoTabs.getState().tabs.map((t) => t.summary.path)).toEqual(["/b"]);
   });
 });
 
-// Contract (GR-14): open and init resolve boolean; clone toasts Cloned <name>.
+// Contract (GR-14): open and init resolve their error or null; clone toasts Cloned <name>.
 import { useToasts } from "../../lib/store/toasts";
 
-describe("useOpenRepo boolean results (GR-14)", () => {
+describe("useOpenRepo outcomes (GR-14)", () => {
   beforeEach(() => {
     useToasts.setState({ toasts: [] });
   });
 
-  it("open resolves true on success", async () => {
+  it("open resolves null on success", async () => {
     vi.mocked(openRepo).mockResolvedValue(opened("/r"));
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       outcome = await result.current.open("/r");
     });
-    expect(outcome).toBe(true);
+    expect(outcome).toBeNull();
   });
 
-  it("open resolves false on failure", async () => {
+  it("open resolves the error on failure", async () => {
     vi.mocked(openRepo).mockRejectedValue(notARepo);
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       outcome = await result.current.open("/r");
     });
-    expect(outcome).toBe(false);
+    expect(outcome).toEqual(notARepo);
   });
 
-  it("init resolves false on failure", async () => {
+  it("init resolves the error on failure", async () => {
     vi.mocked(initRepo).mockRejectedValue(notARepo);
     const { result } = renderHookWithProviders(() => useOpenRepo());
-    let outcome: boolean | undefined;
+    let outcome: AppError | null | undefined;
     await act(async () => {
       outcome = await result.current.init("/r");
     });
-    expect(outcome).toBe(false);
+    expect(outcome).toEqual(notARepo);
   });
 
   it("toasts Cloned <name> on clone success and not on open", async () => {

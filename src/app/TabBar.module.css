@@ -65,3 +65,18 @@
 .shell + .shell {
   margin-left: 0;
 }
+
+/* The Messages button carries an unread dot at the glyph's top-right. */
+.messages {
+  position: relative;
+}
+
+.dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}

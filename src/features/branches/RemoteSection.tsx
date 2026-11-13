@@ -17,7 +17,8 @@ const remoteCount = (list: BranchList | undefined): number =>
 /**
  * The Remote column section (spec: Local and Remote sections): a collapsible "Remote (n)" heading
  * counting every remote's branches, then one group per remote whose name heading keeps its menu.
- * Loading and list errors are shown by Local and the provider, so Remote shows its header alone.
+ * Loading and a load failure are shown by Local (and the failure's toast), so Remote shows its
+ * header alone.
  */
 export function RemoteSection() {
   const bodyId = useId();

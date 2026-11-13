@@ -5,6 +5,8 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
 import { deleteRemoteBranch } from "../../lib/ipc";
 import type { AppError, BranchList, HeadState, RepoId, WorktreeBranch } from "../../lib/ipc";
+import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useShell } from "../../lib/store/shell";
 import { useWorkspace } from "../../lib/store/workspace";
 import { AddWorktreeDialog } from "../linkedWorktrees/AddWorktreeDialog";
 import { folderName } from "../linkedWorktrees/worktreePath";
@@ -14,13 +16,13 @@ import { useCanFastForward } from "../merge/useCanFastForward";
 import { useIntegrationActions, type IntegrationRequest } from "../merge/useIntegrationActions";
 import { useOperationState } from "../merge/useOperationState";
 import { CredentialDialog } from "../remotes/CredentialDialog";
-import { NetworkError } from "../remotes/NetworkError";
-import { networkMessage } from "../remotes/networkMessage";
+import type { MessageAction } from "../remotes/networkMessage";
 import { removeRemoteCopy } from "../remotes/remoteCopy";
 import type { RemotesTarget } from "../remotes/remotesTarget";
+import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { useNetworkAction } from "../remotes/useNetworkAction";
 import { useRemoteActions } from "../remotes/useRemoteActions";
-import { RepoError } from "../repo/RepoError";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
 import styles from "./BranchesPanel.module.css";
@@ -47,6 +49,8 @@ export interface BranchesContextValue {
   filtering: boolean;
   /** True while the list is loading (no list and no list error). */
   loading: boolean;
+  /** True when there is no list because it failed to load; the provider toasts it with Retry. */
+  loadFailed: boolean;
   pending: boolean;
   /** The Local section's root: the focus fallback of every dialog and menu. */
   rootRef: RefObject<HTMLElement | null>;
@@ -106,8 +110,9 @@ const remoteBranchNames = (list: BranchList | undefined): string[] =>
 /**
  * The branch state shared by the Local and Remote sections (spec: Local and Remote sections): the
  * list query, actions, drag-to-merge, both context menus and every dialog. It renders its host
- * block (the list error, the action error banner, menus and dialogs) once, then its children, so a
- * failure never hides inside a collapsed section.
+ * block (menus and dialogs) once, then its children. Each failure is a toast raised by the call
+ * site that ran the action, so none hides inside a collapsed section; a dialog with an error slot
+ * shows its own failure instead.
  */
 export function BranchesProvider({
   repoId,
@@ -122,12 +127,9 @@ export function BranchesProvider({
   const integration = useIntegrationActions(repoId);
   const network = useNetworkAction(repoId);
   const remoteActions = useRemoteActions(repoId);
-  // The last remote delete or remove failure; those actions resolve it rather than holding it.
-  const [remoteError, setRemoteError] = useState<AppError | null>(null);
   const pending =
     actions.pending || integration.pending || network.pending || remoteActions.pending;
   const opener = useOpenRepo();
-  const panelError = actions.error ?? integration.error ?? remoteError ?? opener.error;
   const query = useWorkspace((s) => s.refsFilter[repoId] ?? "");
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -144,36 +146,65 @@ export function BranchesProvider({
       : branchId(menu.target);
   const ff = useCanFastForward(repoId, menuBranch);
 
-  const clearErrors = () => {
-    actions.clearError();
-    integration.clearError();
-    setRemoteError(null);
-    opener.clearError();
+  const loadFailed = useLoadFailureToast("branches", branches !== undefined, listError, refetch);
+
+  /**
+   * Runs a network failure's suggested action. The toast outlives this pane (only the active
+   * tab's pane is mounted), so the repo's tab is brought forward first; pull and fetch then run
+   * only if that tab's pane has published its actions, and the remotes dialog opens only when
+   * the repo is the active one. `remote` is the remote the failure names, when known.
+   */
+  const onAction = (kind: MessageAction, remote?: string) => {
+    useRepoTabs.getState().activate(repoId);
+    const actions = useShell.getState().repoActions;
+    const own = actions?.repoId === repoId ? actions : undefined;
+    switch (kind) {
+      case "pull":
+        own?.pull();
+        break;
+      case "fetch":
+        own?.fetch();
+        break;
+      case "editRemote":
+        if (useRepoTabs.getState().activeId !== repoId) break;
+        onOpenRemotes?.(remote === undefined ? { mode: "list" } : { mode: "edit", name: remote });
+        break;
+      case "addRemote":
+        if (useRepoTabs.getState().activeId !== repoId) break;
+        onOpenRemotes?.({ mode: "add" });
+        break;
+    }
   };
 
-  // A newer integration failure must not hide behind an older, undismissed panel error.
+  /** Toasts an action's resolved failure; null (success) shows nothing. */
+  const report = (error: AppError | null, remote?: string) => {
+    if (error !== null) toastError(error, { onAction: (kind) => onAction(kind, remote) });
+  };
+
   const runIntegration = (req: IntegrationRequest) => {
-    clearErrors();
-    void integration.run(req);
+    void integration.run(req).then(report);
   };
 
-  // Every dialog opens clean: an earlier panel error must not reappear inside it.
+  // Every dialog opens clean: an earlier failure must not reappear in its error slot.
   const openDialog = (d: Dialog) => {
-    clearErrors();
+    actions.clearError();
     setDialog(d);
   };
 
   const closeDialog = () => {
     setDialog(null);
-    clearErrors();
+    actions.clearError();
   };
 
   const activate = (t: BranchTarget) => {
     if (pending) return;
     if (t.kind === "local") {
-      if (!t.branch.isHead) void actions.run({ action: "checkout", name: t.branch.name });
+      if (!t.branch.isHead) {
+        void actions.run({ action: "checkout", name: t.branch.name }).then(report);
+      }
     } else {
-      void actions.run({ action: "checkoutRemote", remote: t.branch.remote, name: t.branch.name });
+      const { remote, name } = t.branch;
+      void actions.run({ action: "checkoutRemote", remote, name }).then(report);
     }
   };
 
@@ -198,7 +229,7 @@ export function BranchesProvider({
   };
 
   // A confirm dialog has no error slot: other than the force-delete hand-off, a failure closes
-  // the dialog and the error shows in the panel.
+  // the dialog and toasts.
   const confirmDeleteLocal = async (name: string) => {
     const err = await actions.run({ action: "delete", name, force: false });
     if (err?.kind === "branchNotMerged") {
@@ -206,25 +237,27 @@ export function BranchesProvider({
       setDialog({ kind: "forceDelete", name });
     } else {
       setDialog(null);
+      report(err);
     }
   };
 
   const confirmForceDelete = async (name: string) => {
-    await actions.run({ action: "delete", name, force: true });
+    const err = await actions.run({ action: "delete", name, force: true });
     setDialog(null);
+    report(err);
   };
 
   // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
   const confirmDeleteRemote = async (remote: string, name: string) => {
     const result = await network.run((c) => deleteRemoteBranch(repoId, remote, name, c));
     setDialog(null);
-    if (result.status === "failed") setRemoteError(result.error);
+    if (result.status === "failed") report(result.error, remote);
   };
 
   const confirmRemoveRemote = async (name: string) => {
     const error = await remoteActions.remove(name);
     setDialog(null);
-    setRemoteError(error);
+    report(error);
   };
 
   const headingItems = (remote: string): MenuItem[] => [
@@ -439,6 +472,8 @@ export function BranchesProvider({
     shown: branches && filterBranches(branches, query),
     filtering: isFiltering(query),
     loading: branches === undefined && listError === null,
+    // A failed background refetch keeps the cached list; only a missing list shows the placeholder.
+    loadFailed,
     pending,
     rootRef,
     row,
@@ -449,22 +484,6 @@ export function BranchesProvider({
   return (
     <BranchesContext.Provider value={value}>
       <div className={styles.host}>
-        {listError !== null && (
-          <RepoError
-            error={listError}
-            path={null}
-            variant="panel"
-            onRetry={refetch}
-            onDismiss={refetch}
-          />
-        )}
-        {dialog === null &&
-          panelError !== null &&
-          (panelError.kind === "networkFailed" ? (
-            <NetworkError message={networkMessage(panelError)} onDismiss={clearErrors} />
-          ) : (
-            <RepoError error={panelError} path={null} variant="panel" onDismiss={clearErrors} />
-          ))}
         <ContextMenu
           open={menu !== null && branches !== undefined}
           x={menu?.x ?? 0}
@@ -600,7 +619,7 @@ export function BranchesProvider({
             open
             initial={dialog.initial}
             onClose={closeDialog}
-            onAdded={(path) => void opener.open(path)}
+            onAdded={(path) => void opener.open(path).then(report)}
             fallbackFocus={rootRef}
           />
         )}

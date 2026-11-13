@@ -70,10 +70,9 @@ describe("useLinkedWorktreeActions add", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.repo(1) });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.recent });
-    expect(result.current.error).toBeNull();
   });
 
-  it("should resolve the AppError of a rejected add and set error", async () => {
+  it("should resolve the AppError of a rejected add", async () => {
     vi.mocked(addLinkedWorktree).mockRejectedValue(pathExists);
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
     let outcome: unknown = "unset";
@@ -81,30 +80,23 @@ describe("useLinkedWorktreeActions add", () => {
       outcome = await result.current.add("/x", { kind: "new", name: "x", start: null });
     });
     expect(outcome).toEqual(pathExists);
-    expect(result.current.error).toEqual(pathExists);
   });
 
   it("should map a plain Error to an io error", async () => {
     vi.mocked(addLinkedWorktree).mockRejectedValue(new Error("boom"));
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
-    await act(() => result.current.add("/x", { kind: "existing", name: "x" }));
-    expect(result.current.error).toEqual({ kind: "io", message: "boom" });
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.add("/x", { kind: "existing", name: "x" });
+    });
+    expect(outcome).toEqual({ kind: "io", message: "boom" });
   });
 
-  it("should clear the error with clearError", async () => {
-    vi.mocked(addLinkedWorktree).mockRejectedValue(pathExists);
+  it("should no longer expose error or clearError", () => {
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
-    await act(() => result.current.add("/x", { kind: "existing", name: "x" }));
-    act(() => result.current.clearError());
-    expect(result.current.error).toBeNull();
-  });
-
-  it("should clear an earlier error when the next action starts", async () => {
-    vi.mocked(addLinkedWorktree).mockRejectedValueOnce(pathExists);
-    const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
-    await act(() => result.current.add("/x", { kind: "existing", name: "x" }));
-    await act(() => result.current.add("/y", { kind: "existing", name: "y" }));
-    expect(result.current.error).toBeNull();
+    expect(Object.keys(result.current).sort()).toEqual(
+      ["add", "checkDirty", "pending", "prune", "remove"].sort(),
+    );
   });
 });
 
@@ -138,7 +130,6 @@ describe("useLinkedWorktreeActions remove", () => {
       outcome = await result.current.remove("/repos/app-feat-a", false);
     });
     expect(outcome).toEqual(dirty);
-    expect(result.current.error).toEqual(dirty);
     expect(tabIds()).toEqual([1]);
   });
 
@@ -201,10 +192,9 @@ describe("useLinkedWorktreeActions checkDirty", () => {
     expect(isLinkedWorktreeDirty).toHaveBeenCalledExactlyOnceWith(1, "/repos/app-feat-a");
     expect(closeRepo).not.toHaveBeenCalled();
     expect(tabIds()).toEqual([1, 2]);
-    expect(result.current.error).toBeNull();
   });
 
-  it("should resolve the AppError of a failed check and set error", async () => {
+  it("should resolve the AppError of a failed check", async () => {
     const failed: AppError = { kind: "git", message: "status failed" };
     vi.mocked(isLinkedWorktreeDirty).mockRejectedValue(failed);
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
@@ -213,7 +203,6 @@ describe("useLinkedWorktreeActions checkDirty", () => {
       outcome = await result.current.checkDirty("/repos/app-feat-a");
     });
     expect(outcome).toEqual(failed);
-    expect(result.current.error).toEqual(failed);
   });
 
   it("should be pending while the check runs", async () => {
@@ -285,7 +274,7 @@ describe("useLinkedWorktreeActions prune", () => {
 describe("useLinkedWorktreeActions pending", () => {
   it("should start idle", () => {
     const { result } = renderHookWithProviders(() => useLinkedWorktreeActions(1));
-    expect([result.current.pending, result.current.error]).toEqual([false, null]);
+    expect(result.current.pending).toBe(false);
   });
 
   it("should be pending while a call is in flight", async () => {

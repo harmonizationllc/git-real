@@ -12,14 +12,14 @@ import { filterTags, isFiltering } from "../branches/branchFilter";
 import { buildBranchTree } from "../branches/branchTree";
 import { useBranches } from "../branches/useBranches";
 import { CredentialDialog } from "../remotes/CredentialDialog";
-import { RepoError } from "../repo/RepoError";
+import { toastError } from "../remotes/toastError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { CreateTagDialog } from "./CreateTagDialog";
-import { TagFeedback } from "./TagFeedback";
 import { TagRow } from "./TagRow";
 import styles from "./TagsPanel.module.css";
 import { headCommit } from "./headCommit";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
-import { MAKE_COMMIT_FIRST, NO_REMOTES_TITLE } from "./tagCopy";
+import { MAKE_COMMIT_FIRST, NO_REMOTES_TITLE, displayError } from "./tagCopy";
 import { useTagActions } from "./useTagActions";
 import { useTags } from "./useTags";
 
@@ -50,7 +50,6 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [creating, setCreating] = useState(false);
-  const [copyError, setCopyError] = useState<AppError | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   const filtering = isFiltering(query);
@@ -63,11 +62,14 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   const head = headCommit(branches);
   const remotes = list?.remotes ?? [];
 
-  // A newer result must not hide behind an older, undismissed error.
-  const run = (action: () => Promise<AppError | null>) => {
-    actions.clearError();
-    setCopyError(null);
-    void action();
+  const loadFailed = useLoadFailureToast("tags", list !== undefined, listError, refetch);
+
+  // The failure is toasted here, from the resolved result; no push failure offers an action
+  // (the panel has no remotes access), but the toast still carries git's output as Details.
+  const run = (action: () => Promise<AppError | null>, name: string) => {
+    void action().then((e) => {
+      if (e !== null) toastError(displayError(e, name));
+    });
   };
 
   // Disabled, so never selected; closing the menu stands in for an action.
@@ -87,7 +89,7 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
             id: `push:${remote}`,
             label: `Push to ${remote}`,
             disabled: actions.pending,
-            onSelect: () => run(() => actions.push(remote, tag.name)),
+            onSelect: () => run(() => actions.push(remote, tag.name), tag.name),
           })),
           ...remotes.map((remote) => ({
             id: `deleteRemote:${remote}`,
@@ -102,7 +104,7 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
     {
       id: "copy",
       label: "Copy name",
-      onSelect: () => void copyText(tag.name).catch((e: unknown) => setCopyError(toAppError(e))),
+      onSelect: () => void copyText(tag.name).catch((e: unknown) => toastError(toAppError(e))),
     },
     ...remoteItems(tag),
     {
@@ -117,24 +119,17 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
   // Closes at once, as the stash drop confirm does; the action's pending state disables the menu.
   const confirmAction = (c: Confirm) => {
     setConfirm(null);
-    run(() =>
-      c.kind === "delete" ? actions.remove(c.name) : actions.deleteRemote(c.remote, c.name),
+    run(
+      () => (c.kind === "delete" ? actions.remove(c.name) : actions.deleteRemote(c.remote, c.name)),
+      c.name,
     );
   };
 
   let body: React.ReactNode;
   if (!expanded) {
     body = null;
-  } else if (listError !== null) {
-    body = (
-      <RepoError
-        error={listError}
-        path={null}
-        variant="panel"
-        onRetry={refetch}
-        onDismiss={refetch}
-      />
-    );
+  } else if (loadFailed) {
+    body = <p className={styles.empty}>Couldn't load tags</p>;
   } else if (list === undefined) {
     body = <p role="status">Loading tags…</p>;
   } else if (list.tags.length === 0) {
@@ -205,15 +200,6 @@ export function TagsPanel({ repoId }: TagsPanelProps) {
           </button>
         </div>
       </SectionHead>
-      <TagFeedback actions={actions} />
-      {copyError && (
-        <RepoError
-          error={copyError}
-          path={null}
-          variant="panel"
-          onDismiss={() => setCopyError(null)}
-        />
-      )}
       <div id={bodyId}>{body}</div>
       <ContextMenu
         open={menu !== null}

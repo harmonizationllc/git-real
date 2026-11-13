@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stashApply, stashDrop, stashPop, stashPush } from "../../lib/ipc";
 import type { StashOutcome } from "../../lib/ipc";
 import { mutationKeys } from "../../lib/query/keys";
+import { useToasts } from "../../lib/store/toasts";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { useStashActions } from "./useStashActions";
 
@@ -16,8 +17,11 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
 
 const entry = { index: 2, oid: "b".repeat(40) };
 
+const toasts = () => useToasts.getState().toasts;
+
 beforeEach(() => {
   vi.resetAllMocks();
+  useToasts.setState({ toasts: [] });
   vi.mocked(stashPush).mockResolvedValue(undefined);
   vi.mocked(stashApply).mockResolvedValue("applied");
   vi.mocked(stashPop).mockResolvedValue("applied");
@@ -64,49 +68,66 @@ describe("useStashActions", () => {
     expect(stashDrop).toHaveBeenCalledExactlyOnceWith(1, 2, entry.oid);
   });
 
-  it('apply resolving "conflicts" sets an apply notice with the index', async () => {
+  it("toasts the conflict notice after apply", async () => {
     vi.mocked(stashApply).mockResolvedValue("conflicts");
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.apply(entry));
-    expect(result.current.notice).toEqual({ kind: "apply", index: 2 });
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.apply(entry);
+    });
+    expect(outcome).toBeNull();
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toMatchObject({
+      text: "Applied with conflicts. Resolve them in Changes.",
+      variant: "info",
+    });
   });
 
-  it('pop resolving "conflicts" sets a pop notice', async () => {
+  it('pop resolving "conflicts" toasts the kept notice and resolves it', async () => {
     vi.mocked(stashPop).mockResolvedValue("conflicts");
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.pop(entry));
-    expect(result.current.notice).toEqual({ kind: "pop", index: 2 });
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await result.current.pop(entry);
+    });
+    expect(outcome).toEqual({ error: null, notice: { kind: "pop", index: 2 } });
+    expect(toasts()[0].text).toBe(
+      "Applied with conflicts. Resolve them in Changes. The stash was kept; drop it once resolved.",
+    );
   });
 
-  it('pop resolving "appliedNotDropped" sets a popKept notice and no error', async () => {
+  it('pop resolving "appliedNotDropped" toasts and resolves a popKept notice', async () => {
     vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.pop(entry));
-    expect(result.current.notice).toEqual({ kind: "popKept", index: 2 });
-    expect(result.current.error).toBeNull();
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await result.current.pop(entry);
+    });
+    expect(outcome).toEqual({ error: null, notice: { kind: "popKept", index: 2 } });
+    expect(toasts()[0]).toMatchObject({ variant: "info" });
   });
 
-  it('pop resolving "applied" leaves no notice', async () => {
+  it('pop resolving "applied" toasts nothing and resolves no notice', async () => {
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.pop(entry));
-    expect(result.current.notice).toBeNull();
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await result.current.pop(entry);
+    });
+    expect(outcome).toEqual({ error: null, notice: null });
+    expect(toasts()).toEqual([]);
   });
 
-  it('apply resolving "applied" leaves no notice', async () => {
+  it('apply resolving "applied" toasts nothing and resolves null', async () => {
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.apply(entry));
-    expect(result.current.notice).toBeNull();
+    let outcome: unknown = "unset";
+    await act(async () => {
+      outcome = await result.current.apply(entry);
+    });
+    expect(outcome).toBeNull();
+    expect(toasts()).toEqual([]);
   });
 
-  it("the next action clears the previous notice", async () => {
-    vi.mocked(stashApply).mockResolvedValue("conflicts");
-    const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.apply(entry));
-    await act(() => result.current.drop(entry));
-    expect(result.current.notice).toBeNull();
-  });
-
-  it("a rejected action resolves with the AppError and mirrors it in error", async () => {
+  it("a rejected action resolves with the AppError and toasts nothing itself", async () => {
     const err = { kind: "staleStash", message: "stale" };
     vi.mocked(stashDrop).mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useStashActions(1));
@@ -115,7 +136,18 @@ describe("useStashActions", () => {
       outcome = await result.current.drop(entry);
     });
     expect(outcome).toEqual(err);
-    await waitFor(() => expect(result.current.error).toEqual(err));
+    expect(toasts()).toEqual([]);
+  });
+
+  it("a rejected pop resolves the error with no notice", async () => {
+    const err = { kind: "operationFailed", message: "x" };
+    vi.mocked(stashPop).mockRejectedValue(err);
+    const { result } = renderHookWithProviders(() => useStashActions(1));
+    let outcome: unknown = null;
+    await act(async () => {
+      outcome = await result.current.pop(entry);
+    });
+    expect(outcome).toEqual({ error: err, notice: null });
   });
 
   it("a plain Error rejection becomes an io AppError", async () => {
@@ -128,37 +160,11 @@ describe("useStashActions", () => {
     expect(outcome).toEqual({ kind: "io", message: "boom" });
   });
 
-  it("a rejected apply sets no notice", async () => {
-    vi.mocked(stashApply).mockRejectedValue({ kind: "operationFailed", message: "x" });
+  it("no longer exposes error or notice", () => {
     const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.apply(entry));
-    expect(result.current.notice).toBeNull();
-  });
-
-  it("clearError resets the error", async () => {
-    vi.mocked(stashDrop).mockRejectedValue({ kind: "io", message: "x" });
-    const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.drop(entry));
-    await waitFor(() => expect(result.current.error).not.toBeNull());
-    act(() => result.current.clearError());
-    await waitFor(() => expect(result.current.error).toBeNull());
-  });
-
-  it("clearNotice resets the notice", async () => {
-    vi.mocked(stashApply).mockResolvedValue("conflicts");
-    const { result } = renderHookWithProviders(() => useStashActions(1));
-    await act(() => result.current.apply(entry));
-    act(() => result.current.clearNotice());
-    expect(result.current.notice).toBeNull();
-  });
-
-  it("starts idle with no error and no notice", () => {
-    const { result } = renderHookWithProviders(() => useStashActions(1));
-    expect([result.current.pending, result.current.error, result.current.notice]).toEqual([
-      false,
-      null,
-      null,
-    ]);
+    expect(Object.keys(result.current).sort()).toEqual(
+      ["apply", "drop", "pending", "pop", "push"].sort(),
+    );
   });
 
   it("pending is true while an action runs", async () => {

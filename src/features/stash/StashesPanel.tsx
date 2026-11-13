@@ -8,13 +8,12 @@ import { filterStashes, isFiltering } from "../branches/branchFilter";
 import { sectionCountLabel } from "../branches/sectionCountLabel";
 import { useNow } from "../graph/useNow";
 import { useOperationState } from "../merge/useOperationState";
-import { RepoError } from "../repo/RepoError";
+import { useLoadFailureToast } from "../remotes/useLoadFailureToast";
 import { useStatus } from "../worktree/useStatus";
 import { StashButton } from "./StashButton";
-import { StashFeedback } from "./StashFeedback";
 import { StashRow } from "./StashRow";
 import styles from "./StashesPanel.module.css";
-import { stashRef } from "./stashCopy";
+import { stashRef, toastStashError } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashes } from "./useStashes";
@@ -47,10 +46,11 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   const filtering = isFiltering(query);
   const shown = stashes ? filterStashes(stashes, query) : [];
 
-  // A newer result must not hide behind an older, undismissed error.
+  const loadFailed = useLoadFailureToast("stashes", stashes !== undefined, listError, refetch);
+
+  // A notice an action raised was already toasted by the hook; the failure is toasted here.
   const run = (action: () => Promise<AppError | null>) => {
-    actions.clearError();
-    void action();
+    void action().then(toastStashError);
   };
 
   const menuItems = (entry: StashEntry): MenuItem[] => [
@@ -66,7 +66,7 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
       label: "Pop",
       disabled: actions.pending || apply.disabled,
       title: apply.title,
-      onSelect: () => run(() => actions.pop(entry)),
+      onSelect: () => run(() => actions.pop(entry).then((r) => r.error)),
     },
     {
       id: "drop",
@@ -84,16 +84,8 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
   };
 
   let body: React.ReactNode;
-  if (listError !== null) {
-    body = (
-      <RepoError
-        error={listError}
-        path={null}
-        variant="panel"
-        onRetry={refetch}
-        onDismiss={refetch}
-      />
-    );
+  if (loadFailed) {
+    body = <p className={styles.empty}>Couldn't load stashes</p>;
   } else if (stashes === undefined) {
     body = <p role="status">Loading stashes…</p>;
   } else if (stashes.length === 0) {
@@ -143,7 +135,6 @@ export function StashesPanel({ repoId }: StashesPanelProps) {
           />
         </div>
       </SectionHead>
-      <StashFeedback actions={actions} />
       {body}
       <ContextMenu
         open={menu !== null}

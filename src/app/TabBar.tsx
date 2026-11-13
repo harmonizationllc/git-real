@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RepoId, ShortcutKeycaps } from "../lib/ipc";
+import { useMessages } from "../lib/store/messages";
 import { useShell } from "../lib/store/shell";
 import type { RepoTab } from "../lib/store/repoTabs";
 import { formatKeys } from "../lib/shortcuts";
@@ -33,6 +34,7 @@ export function TabBar({
   const paletteKeys = useShortcutKeys("palette");
   const settingsKeys = useShortcutKeys("settings");
   const keycaps = useKeycaps();
+  const unread = useMessages((s) => s.unread);
   const [dragState, setDrag] = useState<{ id: RepoId; over: RepoId | null } | null>(null);
   // A drag whose tab has closed is over (its dragend fires on a detached node), so ignore it.
   const drag = dragState !== null && tabs.some((t) => t.id === dragState.id) ? dragState : null;
@@ -117,6 +119,26 @@ export function TabBar({
         onClick={() => useShell.getState().open({ kind: "palette" })}
       >
         <span aria-hidden="true">⌘</span>
+      </button>
+      <button
+        type="button"
+        aria-label={unread ? "Messages, new errors" : "Messages"}
+        title="Messages"
+        className={`${styles.shell} ${styles.messages}`}
+        data-variant="icon"
+        onClick={() => useShell.getState().open({ kind: "messages" })}
+      >
+        <svg
+          width="1em"
+          height="1em"
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M8 1.5a.75.75 0 0 1 .75.75v.6A4.5 4.5 0 0 1 12.5 7.3v2.2l1.2 1.9a.5.5 0 0 1-.43.76H2.73a.5.5 0 0 1-.43-.76l1.2-1.9V7.3a4.5 4.5 0 0 1 3.75-4.45v-.6A.75.75 0 0 1 8 1.5ZM6.5 13h3a1.5 1.5 0 0 1-3 0Z" />
+        </svg>
+        {unread && <span className={styles.dot} aria-hidden="true" />}
       </button>
       <button
         type="button"

@@ -1,0 +1,53 @@
+/* Above the toast stack (z-index 20): the dialog is opened from a toast. */
+.backdrop {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: var(--color-backdrop);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: calc(100% - 2rem);
+  max-width: 40rem;
+  padding: var(--space-4);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-card);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.details {
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  max-height: 60vh;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

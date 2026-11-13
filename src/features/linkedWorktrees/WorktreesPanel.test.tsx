@@ -14,6 +14,8 @@ import {
 import type { AppError, BranchList, LinkedWorktree, OpenedRepo } from "../../lib/ipc";
 import { useCommitDraft } from "../../lib/store/commitDraft";
 import { useRepoTabs } from "../../lib/store/repoTabs";
+import { useMessages } from "../../lib/store/messages";
+import { useToasts } from "../../lib/store/toasts";
 import { useWorkspace } from "../../lib/store/workspace";
 import { useSettings } from "../../lib/store/settings";
 import { oidOf } from "../../test/graphFixtures";
@@ -66,8 +68,12 @@ const opened = (id: number, path: string): OpenedRepo => ({
   summary: { path, name: path.split("/").at(-1) as string, headBranch: "main", isBare: false },
 });
 
+const toasts = () => useToasts.getState().toasts;
+
 beforeEach(async () => {
   vi.resetAllMocks();
+  useToasts.setState({ toasts: [] });
+  useMessages.setState({ messages: [], unread: false });
   await resetSettings();
   useRepoTabs.setState({ tabs: [], activeId: null });
   useWorkspace.setState({ refsFilter: {} });
@@ -145,18 +151,27 @@ describe("WorktreesPanel list", () => {
     expect(screen.queryByRole("button", { name: "Prune stale worktrees" })).toBeNull();
   });
 
-  it("should show a list error with Retry", async () => {
-    vi.mocked(listLinkedWorktrees).mockRejectedValueOnce({ kind: "git", message: "broken" });
-    const { user } = renderWithProviders(<WorktreesPanel repoId={1} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("broken");
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+  it("shows the placeholder and a Retry toast on load failure", async () => {
+    vi.mocked(listLinkedWorktrees).mockRejectedValueOnce({
+      kind: "operationFailed",
+      message: "broken",
+    });
+    renderWithProviders(<WorktreesPanel repoId={1} />);
+    expect(await screen.findByText("Couldn't load worktrees")).toBeInTheDocument();
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("Couldn't load worktrees: broken");
+    expect(toasts()[0].action?.label).toBe("Retry");
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => toasts()[0].action?.run());
     expect(await screen.findByRole("list", { name: "Worktree list" })).toBeInTheDocument();
   });
 
-  it("should render the list error alert in the panel variant", async () => {
-    vi.mocked(listLinkedWorktrees).mockRejectedValueOnce({ kind: "git", message: "broken" });
-    renderWithProviders(<WorktreesPanel repoId={1} />);
-    expect(await screen.findByRole("alert")).toHaveAttribute("data-variant", "panel");
+  it("neither toasts nor replaces the list when a refetch fails while a list shows", async () => {
+    const { queryClient } = await renderPanel();
+    vi.mocked(listLinkedWorktrees).mockRejectedValue({ kind: "operationFailed", message: "later" });
+    await act(() => queryClient.refetchQueries({ queryKey: ["repo", 1] }));
+    expect(list()).toBeInTheDocument();
+    expect(toasts()).toEqual([]);
   });
 
   it("should collapse and expand with the stored preference", async () => {
@@ -227,14 +242,14 @@ describe("WorktreesPanel open", () => {
     expect(openRepo).not.toHaveBeenCalled();
   });
 
-  it("should show an open failure inline", async () => {
+  it("toasts a failed open", async () => {
     vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "not a repo" });
     const { user } = await renderPanel();
     await user.dblClick(row("app-feat-a"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not a repo");
-    expect(screen.queryByRole("button", { name: "Initialize repository here" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({ text: "not a repo", variant: "error" });
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Initialize repository here" })).toBeNull();
   });
 
   it("should close the menu on Escape without acting", async () => {
@@ -356,14 +371,15 @@ describe("WorktreesPanel remove", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("should show a dirty-check error inline", async () => {
+  it("toasts a dirty-check error", async () => {
     vi.mocked(isLinkedWorktreeDirty).mockRejectedValue({ kind: "git", message: "status broke" });
     useRepoTabs.getState().openTab(opened(5, a.path));
     const { user } = await renderPanel();
     await user.click(
       within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent("status broke");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("status broke");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(closeRepo).not.toHaveBeenCalled();
     expect(removeLinkedWorktree).not.toHaveBeenCalled();
@@ -390,7 +406,7 @@ describe("WorktreesPanel remove", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("should show worktreeNotFound inline and refetch the list", async () => {
+  it("toasts worktreeNotFound and refetches the list", async () => {
     const notFound: AppError = {
       kind: "worktreeNotFound",
       message: "`/repos/app-feat-a` is not a worktree of this repository",
@@ -402,15 +418,15 @@ describe("WorktreesPanel remove", () => {
     await user.click(
       within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(notFound.message);
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe(notFound.message);
     await waitFor(() => expect(toggle()).toHaveTextContent("Worktrees (1)"));
     // Fetched again by the remove's settle invalidation.
     expect(listLinkedWorktrees).toHaveBeenCalledTimes(2);
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("should show another remove failure inline without a force step", async () => {
+  it("toasts a failed remove after the confirm closes, without a force step", async () => {
     vi.mocked(removeLinkedWorktree).mockRejectedValueOnce({
       kind: "worktreeLocked",
       message: "the worktree is locked",
@@ -419,7 +435,9 @@ describe("WorktreesPanel remove", () => {
     await user.click(
       within(await chooseRemove("app-feat-a")).getByRole("button", { name: "Remove" }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent("the worktree is locked");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({ text: "the worktree is locked", variant: "error" });
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(removeLinkedWorktree).toHaveBeenCalledOnce();
   });
@@ -480,7 +498,7 @@ describe("WorktreesPanel prune", () => {
     expect(useRepoTabs.getState().tabs.map((t) => t.id)).toEqual([5]);
   });
 
-  it("should show a prune failure inline", async () => {
+  it("toasts a prune failure", async () => {
     vi.mocked(listLinkedWorktrees).mockResolvedValue([main, stale]);
     vi.mocked(pruneLinkedWorktrees).mockRejectedValue({
       kind: "operationFailed",
@@ -488,7 +506,8 @@ describe("WorktreesPanel prune", () => {
     });
     const { user } = await renderPanel();
     await user.click(pruneButton());
-    expect(await screen.findByRole("alert")).toHaveTextContent("worktree prune failed");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("worktree prune failed");
   });
 });
 
@@ -510,6 +529,17 @@ describe("WorktreesPanel add", () => {
       start: null,
     });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("toasts a failed open of the new worktree", async () => {
+    vi.mocked(openRepo).mockRejectedValue({ kind: "notARepository", message: "not a repo" });
+    const { user } = await renderPanel();
+    await user.click(plus());
+    const dialog = await screen.findByRole("dialog", { name: "Add worktree" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "feat/x");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe("not a repo");
   });
 
   it("should close the add dialog on Cancel without adding", async () => {

@@ -126,9 +126,9 @@ function CloneDialogBody({ onClose }: { onClose(): void }) {
     const sub = onCloneProgress(cloneId, setProgress).catch(() => undefined);
     subRef.current = sub;
     await sub;
-    const ok = await clone(url.trim(), dest, cloneId);
+    const failure = await clone(url.trim(), dest, cloneId);
     releaseSubscription(subRef);
-    if (ok) onClose();
+    if (failure === null) onClose();
     else setCloning(false);
   };
 

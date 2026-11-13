@@ -7,10 +7,9 @@ import { fullDate } from "../graph/model/relativeTime";
 import { useOperationState } from "../merge/useOperationState";
 import { RepoError } from "../repo/RepoError";
 import { useStatus } from "../worktree/useStatus";
-import { StashFeedback } from "./StashFeedback";
 import { StashFileGroup } from "./StashFileGroup";
 import styles from "./StashSummary.module.css";
-import { POP_KEPT_TITLE, stashRef, stashSubject } from "./stashCopy";
+import { POP_KEPT_TITLE, stashRef, stashSubject, toastStashError } from "./stashCopy";
 import { applyGate } from "./stashGate";
 import { useStashActions } from "./useStashActions";
 import { useStashFiles } from "./useStashFiles";
@@ -85,13 +84,22 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
   const [confirming, setConfirming] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const apply = applyGate(status, state);
-  // After a pop that applied but kept the stash, another Pop would apply it again.
-  const popKept = actions.notice?.kind === "popKept";
+  // After a pop that applied but kept the stash, another Pop would apply it again; the next
+  // action of any kind clears it.
+  const [popKept, setPopKept] = useState(false);
 
-  // A newer result must not hide behind an older, undismissed error.
+  // The failure is toasted here, from the resolved result; the hook toasts the notice.
   const run = (action: () => Promise<AppError | null>) => {
-    actions.clearError();
-    void action();
+    setPopKept(false);
+    void action().then(toastStashError);
+  };
+
+  const pop = () => {
+    setPopKept(false);
+    void actions.pop(entry).then(({ error, notice }) => {
+      toastStashError(error);
+      setPopKept(notice?.kind === "popKept");
+    });
   };
 
   // Closes at once, as the Changes discard confirm does; the drop's pending state disables the actions.
@@ -156,7 +164,6 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
           Close
         </button>
       </header>
-      <StashFeedback actions={actions} />
       <strong className={styles.subject}>{stashSubject(entry.message)}</strong>
       {entry.branch !== null && (
         <p className={styles.meta}>
@@ -187,7 +194,7 @@ function Details({ repoId, entry, files, filesError, onRetryFiles, onClose }: De
           type="button"
           disabled={actions.pending || apply.disabled || popKept}
           title={apply.title ?? (popKept ? POP_KEPT_TITLE : undefined)}
-          onClick={() => run(() => actions.pop(entry))}
+          onClick={pop}
         >
           Pop
         </button>

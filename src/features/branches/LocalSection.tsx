@@ -7,6 +7,7 @@ import { BranchTreeItems, useCollapsedFolders } from "./BranchTreeItems";
 import { buildBranchTree } from "./branchTree";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
+import groupStyles from "./BranchGroup.module.css";
 import styles from "./BranchesPanel.module.css";
 
 /** The non-interactive first Local row for a HEAD that is not on a born branch. */
@@ -30,7 +31,7 @@ function headRow(head: HeadState) {
  */
 export function LocalSection() {
   const bodyId = useId();
-  const { branches, shown, filtering, loading, pending, rootRef, row, openNewBranch } =
+  const { branches, shown, filtering, loading, loadFailed, pending, rootRef, row, openNewBranch } =
     useBranchesContext();
   const collapsed = useSettings((s) => s.settings.layout.localCollapsed);
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
@@ -42,6 +43,9 @@ export function LocalSection() {
   let body: React.ReactNode = null;
   if (!expanded) {
     body = null;
+  } else if (loadFailed) {
+    // The provider toasts the failure with Retry; the body keeps a plain marker.
+    body = <p className={groupStyles.empty}>Couldn't load branches</p>;
   } else if (loading) {
     body = <p role="status">Loading branches…</p>;
   } else if (branches !== undefined && shown !== undefined) {

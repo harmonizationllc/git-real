@@ -6,7 +6,7 @@ export type BranchesPanelProps = Omit<BranchesProviderProps, "children">;
 
 /**
  * Local and Remote on their shared provider, stacked without the column's sizing: the provider's
- * host block (errors, menus, dialogs) first, then the two sections. The column composes the same
+ * host block (menus, dialogs) first, then the two sections. The column composes the same
  * three parts into separate section wrappers.
  */
 export function BranchesPanel(props: BranchesPanelProps) {

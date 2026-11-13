@@ -564,7 +564,7 @@ describe("RepoPane live header", () => {
   it("should fall back to the summary branch when the list fails", async () => {
     vi.mocked(listBranches).mockRejectedValue({ kind: "io", message: "list exploded" });
     renderWithProviders(<RepoPane tab={tab(1, "dev")} />);
-    await screen.findByText("list exploded");
+    await screen.findByText("Couldn't load branches");
     expect(within(header()).getByText("dev")).toBeInTheDocument();
   });
 });

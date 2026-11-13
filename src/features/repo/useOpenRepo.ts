@@ -12,12 +12,12 @@ type OpenRequest =
   | { action: "clone"; url: string; dest: string; cloneId: number };
 
 export interface UseOpenRepo {
-  /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
-  open(path: string): Promise<boolean>;
-  /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
-  init(path: string): Promise<boolean>;
-  /** Resolves true when the repo opened, false on failure (error is then set). Never rejects. */
-  clone(url: string, dest: string, cloneId: number): Promise<boolean>;
+  /** Resolves null when the repo opened, else the failure (error is then set). Never rejects. */
+  open(path: string): Promise<AppError | null>;
+  /** Resolves null when the repo opened, else the failure (error is then set). Never rejects. */
+  init(path: string): Promise<AppError | null>;
+  /** Resolves null when the repo opened, else the failure (error is then set). Never rejects. */
+  clone(url: string, dest: string, cloneId: number): Promise<AppError | null>;
   error: AppError | null;
   errorPath: string | null;
   clearError(): void;
@@ -41,7 +41,7 @@ export function useOpenRepo(): UseOpenRepo {
 
   const latestCall = useRef(0);
 
-  const run = async (req: OpenRequest): Promise<boolean> => {
+  const run = async (req: OpenRequest): Promise<AppError | null> => {
     const id = ++latestCall.current;
     setFailure(null);
     try {
@@ -51,12 +51,13 @@ export function useOpenRepo(): UseOpenRepo {
       if (req.action === "clone") {
         useToasts.getState().notify({ text: `Cloned ${repo.summary.name}`, variant: "success" });
       }
-      return true;
+      return null;
     } catch (e) {
+      const error = toAppError(e);
       if (id === latestCall.current) {
-        setFailure({ error: toAppError(e), path: req.action === "clone" ? null : req.path });
+        setFailure({ error, path: req.action === "clone" ? null : req.path });
       }
-      return false;
+      return error;
     }
   };
 

@@ -11,6 +11,7 @@ import {
 } from "../../lib/ipc";
 import type { OperationState, StashEntry, StashOutcome } from "../../lib/ipc";
 import { queryKeys } from "../../lib/query/keys";
+import { useToasts } from "../../lib/store/toasts";
 import { useWorkspace } from "../../lib/store/workspace";
 import { oidOf } from "../../test/graphFixtures";
 import { commitFile } from "../../test/historyFixtures";
@@ -47,8 +48,11 @@ const merging: OperationState = {
   message: { subject: "Merge", body: "" },
 };
 
+const toasts = () => useToasts.getState().toasts;
+
 beforeEach(() => {
   vi.resetAllMocks();
+  useToasts.setState({ toasts: [] });
   useWorkspace.setState({ selectedStash: { 1: W }, selected: {}, selectedCommit: {} });
   vi.mocked(listStashes).mockResolvedValue([stashEntry(0), W_ENTRY]);
   vi.mocked(getStashFiles).mockResolvedValue(FILES);
@@ -261,15 +265,17 @@ describe("StashSummary actions", () => {
     expect(inDetails().getByRole("button", { name: "Drop…" })).toBeDisabled();
   });
 
-  it("Pop that applies but keeps the stash shows the kept notice and stays open", async () => {
+  it("Pop that applies but keeps the stash toasts the kept notice and stays open", async () => {
     vi.mocked(stashPop).mockResolvedValue("appliedNotDropped" as StashOutcome);
     const { user } = await renderSummary();
     const pop = inDetails().getByRole("button", { name: "Pop" });
     await waitFor(() => expect(pop).toBeEnabled());
     await user.click(pop);
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Applied, but the stash could not be dropped. Drop it once you no longer need it.",
-    );
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({
+      text: "Applied, but the stash could not be dropped. Drop it once you no longer need it.",
+      variant: "info",
+    });
     expect(details()).toBeInTheDocument();
   });
 
@@ -279,7 +285,7 @@ describe("StashSummary actions", () => {
     const pop = inDetails().getByRole("button", { name: "Pop" });
     await waitFor(() => expect(pop).toBeEnabled());
     await view.user.click(pop);
-    await screen.findByRole("status");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
     return { ...view, pop };
   }
 
@@ -298,34 +304,25 @@ describe("StashSummary actions", () => {
     await waitFor(() => expect(pop).toBeEnabled());
     vi.mocked(getOperationState).mockResolvedValue(merging);
     await user.click(pop);
-    await screen.findByRole("status");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
     await waitFor(() => expect(pop).toHaveAttribute("title", IN_PROGRESS_TITLE));
     expect(pop).toBeDisabled();
   });
 
-  it("clears the kept notice and its Pop hint when Drop is confirmed", async () => {
+  it("clears the Pop hint when Drop is confirmed", async () => {
     vi.mocked(stashDrop).mockReturnValue(new Promise(() => undefined));
     const { user, pop } = await popKept();
     await waitFor(() => expect(pop).toBeDisabled());
     await user.click(inDetails().getByRole("button", { name: "Drop…" }));
     const dialog = await screen.findByRole("dialog", { name: "Drop stash@{1}?" });
     await user.click(within(dialog).getByRole("button", { name: "Drop" }));
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-    expect(pop).not.toHaveAttribute("title");
+    await waitFor(() => expect(pop).not.toHaveAttribute("title"));
   });
 
-  it("re-enables Pop when the kept notice is dismissed", async () => {
-    const { user, pop } = await popKept();
-    await user.click(inDetails().getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(pop).toBeEnabled());
-    expect(pop).not.toHaveAttribute("title");
-  });
-
-  it("re-enables Pop when a new action clears the kept notice", async () => {
+  it("re-enables Pop when a new action clears the kept state", async () => {
     const { user, pop } = await popKept();
     await waitFor(() => expect(pop).toBeDisabled());
     await user.click(inDetails().getByRole("button", { name: "Apply" }));
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     await waitFor(() => expect(pop).toBeEnabled());
   });
 
@@ -335,7 +332,7 @@ describe("StashSummary actions", () => {
     const pop = inDetails().getByRole("button", { name: "Pop" });
     await waitFor(() => expect(pop).toBeEnabled());
     await user.click(pop);
-    await screen.findByRole("status");
+    await waitFor(() => expect(toasts()).toHaveLength(1));
     await waitFor(() => expect(pop).toBeEnabled());
   });
 
@@ -346,26 +343,41 @@ describe("StashSummary actions", () => {
     expect(stashDrop).not.toHaveBeenCalled();
   });
 
-  it("shows the pop conflict notice", async () => {
+  it("toasts the pop conflict notice", async () => {
     vi.mocked(stashPop).mockResolvedValue("conflicts");
     const { user } = await renderSummary();
     const pop = inDetails().getByRole("button", { name: "Pop" });
     await waitFor(() => expect(pop).toBeEnabled());
     await user.click(pop);
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0].text).toBe(
       "Applied with conflicts. Resolve them in Changes. The stash was kept; drop it once resolved.",
     );
   });
 
-  it("shows the stale message on staleStash", async () => {
+  it("toasts a failed Pop with git's message and leaves Pop enabled", async () => {
+    vi.mocked(stashPop).mockRejectedValue({ kind: "operationFailed", message: "pop said no" });
+    const { user } = await renderSummary();
+    const pop = inDetails().getByRole("button", { name: "Pop" });
+    await waitFor(() => expect(pop).toBeEnabled());
+    await user.click(pop);
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({ text: "pop said no", variant: "error" });
+    await waitFor(() => expect(pop).toBeEnabled());
+  });
+
+  it("toasts the stale message on staleStash", async () => {
     vi.mocked(stashApply).mockRejectedValue({ kind: "staleStash", message: "raw" });
     const { user } = await renderSummary();
     const apply = inDetails().getByRole("button", { name: "Apply" });
     await waitFor(() => expect(apply).toBeEnabled());
     await user.click(apply);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The stash list changed; it has been refreshed.",
-    );
+    await waitFor(() => expect(toasts()).toHaveLength(1));
+    expect(toasts()[0]).toMatchObject({
+      text: "The stash list changed; it has been refreshed.",
+      variant: "error",
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("returns focus to the stash heading when Drop is cancelled and its opener never had focus", async () => {

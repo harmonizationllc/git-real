@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSettings } from "../lib/ipc";
 import type { RepoTab } from "../lib/store/repoTabs";
+import { useMessages } from "../lib/store/messages";
 import { useShell } from "../lib/store/shell";
 import { declarationsOf } from "../test/cssRules";
 import { resetSettings, seedSettings } from "../test/settingsStore";
@@ -24,6 +25,7 @@ const threeTabs = [...tabs, tab(3, "gamma")];
 
 beforeEach(async () => {
   useShell.setState({ dialog: null, repoActions: null });
+  useMessages.setState({ messages: [], unread: false });
   vi.mocked(updateSettings).mockReset();
   await resetSettings();
 });
@@ -344,5 +346,31 @@ describe("TabBar drag and drop", () => {
     fireEvent.drop(wrapper("beta"));
     expect(document.querySelector("[data-drop-target]")).toBeNull();
     expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+// Contract: the Messages button opens the session's notice history and flags unread errors.
+describe("TabBar Messages button", () => {
+  it("sits immediately before Settings", () => {
+    setup();
+    const names = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    const i = names.indexOf("Messages");
+    expect(i).toBeGreaterThan(-1);
+    expect(names[i + 1]).toBe("Settings");
+  });
+
+  it("opens the messages dialog", async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Messages" }));
+    expect(useShell.getState().dialog).toEqual({ kind: "messages" });
+  });
+
+  it('is labelled "Messages, new errors" while unread', () => {
+    useMessages.setState({ unread: true });
+    setup();
+    expect(screen.getByRole("button", { name: "Messages, new errors" })).toHaveAttribute(
+      "title",
+      "Messages",
+    );
   });
 });

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useMessages } from "./messages";
 import { MAX_TOASTS, useToasts } from "./toasts";
 
 beforeEach(() => {
   useToasts.setState({ toasts: [] });
+  useMessages.setState({ messages: [], unread: false });
 });
 
 // Contract: a minimal list of toasts with one optional action each.
@@ -74,13 +76,39 @@ describe("useToasts notify (GR-14)", () => {
     expect(t?.sticky).toBe(false);
   });
 
-  it("notify defaults sticky to true for error and false otherwise", () => {
+  it("notify defaults every variant to non-sticky", () => {
     const { notify } = useToasts.getState();
     notify({ text: "err", variant: "error" });
     notify({ text: "ok", variant: "success" });
     const [err, ok] = useToasts.getState().toasts;
-    expect(err?.sticky).toBe(true);
+    expect(err?.sticky).toBe(false);
     expect(ok?.sticky).toBe(false);
+  });
+
+  it("notify stores details", () => {
+    useToasts.getState().notify({ text: "bad", variant: "error", details: "git said no" });
+    expect(useToasts.getState().toasts[0]?.details).toBe("git said no");
+  });
+
+  it("notify stores null details by default", () => {
+    useToasts.getState().notify({ text: "bad", variant: "error" });
+    useToasts.getState().show("Hi");
+    expect(useToasts.getState().toasts.map((t) => t.details)).toEqual([null, null]);
+  });
+
+  it("logs every toast to messages", () => {
+    const id = useToasts.getState().notify({ text: "bad", variant: "error", details: "why" });
+    const m = useMessages.getState().messages[0];
+    expect(m).toMatchObject({ id, text: "bad", variant: "error", details: "why" });
+    expect(typeof m?.at).toBe("number");
+  });
+
+  it("logs a toast the cap drops", () => {
+    for (let i = 0; i <= MAX_TOASTS; i++) {
+      useToasts.getState().notify({ text: `T${i}`, variant: "info" });
+    }
+    expect(useToasts.getState().toasts).toHaveLength(MAX_TOASTS);
+    expect(useMessages.getState().messages).toHaveLength(MAX_TOASTS + 1);
   });
 
   it("notify honours an explicit sticky=false on error", () => {
