@@ -28,6 +28,7 @@ const KINDS: Record<AppErrorKind, true> = {
   remoteNotFound: true,
   upstreamUnmapped: true,
   checkoutFailed: true,
+  checkoutFailedStashKept: true,
   logStale: true,
   commitNotFound: true,
   binaryFile: true,

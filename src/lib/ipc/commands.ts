@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Blame,
   BranchList,
+  CheckoutOutcome,
   CheckoutPrOutcome,
   CommitConfig,
   CommitDetail,
@@ -11,6 +12,7 @@ import type {
   Credentials,
   ConflictSide,
   CreatePrRequest,
+  CreatedBranch,
   DiffScope,
   DiffSide,
   FastForwardCheck,
@@ -25,7 +27,6 @@ import type {
   HunkSelection,
   Issue,
   LinkedWorktree,
-  LocalBranch,
   LogPage,
   LogSummary,
   MergeMode,
@@ -168,8 +169,8 @@ export function createBranch(
   name: string,
   startPoint: string | null,
   checkout: boolean,
-): Promise<LocalBranch> {
-  return invoke<LocalBranch>("create_branch", { id, name, startPoint, checkout });
+): Promise<CreatedBranch> {
+  return invoke<CreatedBranch>("create_branch", { id, name, startPoint, checkout });
 }
 
 export function renameBranch(id: RepoId, oldName: string, newName: string): Promise<void> {
@@ -190,13 +191,17 @@ export function setBranchUpstream(
   return invoke<void>("set_branch_upstream", { id, branch, upstream });
 }
 
-export function checkoutBranch(id: RepoId, name: string): Promise<void> {
-  return invoke<void>("checkout_branch", { id, name });
+export function checkoutBranch(id: RepoId, name: string): Promise<CheckoutOutcome> {
+  return invoke<CheckoutOutcome>("checkout_branch", { id, name });
 }
 
 /** Switches to a local branch tracking `remote/name`, creating it when missing. */
-export function checkoutRemoteBranch(id: RepoId, remote: string, name: string): Promise<void> {
-  return invoke<void>("checkout_remote_branch", { id, remote, name });
+export function checkoutRemoteBranch(
+  id: RepoId,
+  remote: string,
+  name: string,
+): Promise<CheckoutOutcome> {
+  return invoke<CheckoutOutcome>("checkout_remote_branch", { id, remote, name });
 }
 
 /** Deletes `name` on `remote` through `git push --delete`. */
@@ -234,8 +239,8 @@ export function getCommit(id: RepoId, oid: string): Promise<CommitDetail> {
 }
 
 /** Detaches HEAD at `oid` through `git switch --detach`. */
-export function checkoutCommit(id: RepoId, oid: string): Promise<void> {
-  return invoke<void>("checkout_commit", { id, oid });
+export function checkoutCommit(id: RepoId, oid: string): Promise<CheckoutOutcome> {
+  return invoke<CheckoutOutcome>("checkout_commit", { id, oid });
 }
 
 export function resetToCommit(id: RepoId, oid: string, mode: ResetMode): Promise<void> {
