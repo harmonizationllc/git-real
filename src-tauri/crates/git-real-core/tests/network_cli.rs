@@ -435,7 +435,7 @@ fn tag_push_and_remote_deletes_pass_credentials_through() {
         ["push", "origin", "--delete", "tags/v1"]
     );
     session
-        .prepare_remote_delete("origin", &head)
+        .prepare_remote_delete("origin", &[&head])
         .unwrap()
         .run(Some(&c))
         .unwrap();
@@ -1056,7 +1056,7 @@ fn fetch_and_push_report_the_urls_they_use() {
     );
     assert_eq!(
         session
-            .prepare_remote_delete("origin", &head)
+            .prepare_remote_delete("origin", &[&head])
             .unwrap()
             .urls()
             .to_vec(),

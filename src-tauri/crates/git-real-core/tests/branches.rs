@@ -746,6 +746,51 @@ fn delete_with_force_on_a_missing_branch_still_fails() {
     assert!(matches!(err, GitError::BranchNotFound(_)));
 }
 
+// --- delete_branches ---
+
+#[test]
+fn delete_branches_reports_one_outcome_per_name_in_order() {
+    let (_d, path, session, _head) = fixture();
+    session.create_branch("a", None).unwrap();
+    session.create_branch("b", None).unwrap();
+    let out = session.delete_branches(&["b", "a"], false);
+    assert_eq!(
+        out.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        ["b", "a"]
+    );
+    assert!(out.iter().all(|(_, r)| r.is_ok()));
+    assert!(!branch_exists(&path, "a") && !branch_exists(&path, "b"));
+}
+
+#[test]
+fn delete_branches_keeps_going_past_a_failure() {
+    let (_d, path, session, _head) = fixture();
+    common::branch_with_commit(&path, "wip", "wip.txt", "w\n");
+    session.create_branch("old", None).unwrap();
+    let out = session.delete_branches(&["wip", "old"], false);
+    assert!(matches!(out[0].1, Err(GitError::BranchNotMerged(ref n)) if n == "wip"));
+    assert!(out[1].1.is_ok());
+    assert!(branch_exists(&path, "wip"));
+    assert!(!branch_exists(&path, "old"));
+}
+
+#[test]
+fn delete_branches_reports_the_current_branch_and_a_duplicate() {
+    let (_d, path, session, head) = fixture();
+    session.create_branch("a", None).unwrap();
+    let out = session.delete_branches(&[&head, "a", "a"], true);
+    assert!(matches!(out[0].1, Err(GitError::CannotDeleteCurrent(ref n)) if *n == head));
+    assert!(out[1].1.is_ok());
+    assert!(matches!(out[2].1, Err(GitError::BranchNotFound(ref n)) if n == "a"));
+    assert!(branch_exists(&path, &head));
+}
+
+#[test]
+fn delete_branches_with_no_names_returns_empty() {
+    let (_d, _p, session, _head) = fixture();
+    assert!(session.delete_branches(&[], true).is_empty());
+}
+
 #[test]
 fn delete_with_an_unborn_head_counts_the_branch_as_unmerged() {
     let (_d, path, _session, _head) = fixture();
@@ -1123,7 +1168,9 @@ fn checkout_remote_with_an_illegal_remote_name_fails_with_a_git2_error() {
 fn prepare_remote_delete_with_an_illegal_remote_name_fails_with_a_git2_error() {
     let (_d, _path, session, _head) = fixture();
     assert!(matches!(
-        session.prepare_remote_delete("bad name", "x").unwrap_err(),
+        session
+            .prepare_remote_delete("bad name", &["x"])
+            .unwrap_err(),
         GitError::Git2(_)
     ));
 }
