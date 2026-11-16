@@ -5,7 +5,7 @@ export interface ClickModifiers {
   shift: boolean;
 }
 
-export interface UseFileSelection {
+export interface UseListSelection {
   /** Read-only view of the selected keys; never mutate it. */
   selected: ReadonlySet<string>;
   click(key: string, modifiers: ClickModifiers): void;
@@ -35,7 +35,7 @@ function prune(state: SelectionState, keys: string[]): SelectionState {
  * Multi-selection over opaque keys in display order: plain click selects one, ctrl toggles,
  * shift selects the range from the anchor. Keys that leave `orderedKeys` are pruned.
  */
-export function useFileSelection(orderedKeys: string[]): UseFileSelection {
+export function useListSelection(orderedKeys: string[]): UseListSelection {
   const [state, setState] = useState<SelectionState>(EMPTY);
   const signature = signatureOf(orderedKeys);
   const [seenSignature, setSeenSignature] = useState(signature);

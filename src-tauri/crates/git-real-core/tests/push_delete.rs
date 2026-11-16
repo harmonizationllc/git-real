@@ -49,7 +49,7 @@ fn prepare_rejects_an_unknown_remote() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
     let err = session
-        .prepare_remote_delete("nope", "feature")
+        .prepare_remote_delete("nope", &["feature"])
         .unwrap_err();
     assert!(matches!(err, GitError::RemoteNotFound(n) if n == "nope"));
 }
@@ -58,7 +58,9 @@ fn prepare_rejects_an_unknown_remote() {
 fn prepare_rejects_an_unknown_remote_branch() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let err = session.prepare_remote_delete("origin", "nope").unwrap_err();
+    let err = session
+        .prepare_remote_delete("origin", &["nope"])
+        .unwrap_err();
     assert!(matches!(err, GitError::BranchNotFound(n) if n == "origin/nope"));
 }
 
@@ -66,7 +68,9 @@ fn prepare_rejects_an_unknown_remote_branch() {
 fn prepare_rejects_a_leading_dash_name() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let err = session.prepare_remote_delete("origin", "-x").unwrap_err();
+    let err = session
+        .prepare_remote_delete("origin", &["-x"])
+        .unwrap_err();
     assert!(matches!(err, GitError::InvalidBranchName(n) if n == "-x"));
 }
 
@@ -74,7 +78,9 @@ fn prepare_rejects_a_leading_dash_name() {
 fn prepare_rejects_an_invalid_name() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let err = session.prepare_remote_delete("origin", "a..b").unwrap_err();
+    let err = session
+        .prepare_remote_delete("origin", &["a..b"])
+        .unwrap_err();
     assert!(matches!(err, GitError::InvalidBranchName(_)));
 }
 
@@ -85,9 +91,11 @@ fn prepare_returns_the_validated_remote_and_branch() {
     }
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     assert_eq!(push.remote(), "origin");
-    assert_eq!(push.name(), "feature");
+    assert_eq!(push.names(), ["feature"]);
 }
 
 #[test]
@@ -97,7 +105,9 @@ fn prepare_returns_the_repository_workdir() {
     }
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     assert_eq!(common::canonical(push.workdir()), common::canonical(&path));
 }
 
@@ -108,7 +118,9 @@ fn prepare_does_not_touch_the_remote() {
     }
     let (_d, _b, path, bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    session.prepare_remote_delete("origin", "feature").unwrap();
+    session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     assert!(bare_has_branch(&bare, "feature"));
 }
 
@@ -122,7 +134,7 @@ fn run_deletes_the_branch_on_the_bare_remote() {
     let (_d, _b, path, bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
     session
-        .prepare_remote_delete("origin", "feature")
+        .prepare_remote_delete("origin", &["feature"])
         .unwrap()
         .run(None)
         .unwrap();
@@ -137,7 +149,7 @@ fn run_removes_the_remote_tracking_ref() {
     let (_d, _b, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
     session
-        .prepare_remote_delete("origin", "feature")
+        .prepare_remote_delete("origin", &["feature"])
         .unwrap()
         .run(None)
         .unwrap();
@@ -153,7 +165,7 @@ fn run_leaves_the_local_branch_and_other_remote_branches_alone() {
     let head = common::head_branch_name(&path);
     let session = RepoSession::open(&path).unwrap();
     session
-        .prepare_remote_delete("origin", "feature")
+        .prepare_remote_delete("origin", &["feature"])
         .unwrap()
         .run(None)
         .unwrap();
@@ -169,7 +181,9 @@ fn run_reports_push_failure_when_the_remote_branch_is_already_gone() {
     }
     let (_d, _b, path, bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     Repository::open_bare(&bare)
         .unwrap()
         .find_branch("feature", BranchType::Local)
@@ -192,7 +206,9 @@ fn run_reports_push_failure_when_the_remote_is_unreachable() {
     }
     let (_d, bare_dir, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     Repository::open(&path)
         .unwrap()
         .remote_set_url(
@@ -213,7 +229,9 @@ fn run_keeps_the_remote_tracking_ref_when_the_push_fails() {
     }
     let (_d, bare_dir, path, _bare) = fixture();
     let session = RepoSession::open(&path).unwrap();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     Repository::open(&path)
         .unwrap()
         .remote_set_url(
@@ -223,6 +241,95 @@ fn run_keeps_the_remote_tracking_ref_when_the_push_fails() {
         .unwrap();
     let _ = push.run(None);
     assert!(tracking_ref_exists(&path, "feature"));
+}
+
+#[test]
+fn prepare_validates_every_name_before_building() {
+    let (_d, _b, path, _bare) = fixture();
+    let session = RepoSession::open(&path).unwrap();
+    let err = session
+        .prepare_remote_delete("origin", &["feature", "nope"])
+        .unwrap_err();
+    assert!(matches!(err, GitError::BranchNotFound(n) if n == "origin/nope"));
+}
+
+#[test]
+fn prepare_rejects_an_empty_batch() {
+    let (_d, _b, path, _bare) = fixture();
+    let session = RepoSession::open(&path).unwrap();
+    assert!(matches!(
+        session.prepare_remote_delete("origin", &[]).unwrap_err(),
+        GitError::InvalidBranchName(n) if n.is_empty()
+    ));
+}
+
+#[test]
+fn prepare_deduplicates_names_keeping_first_occurrence_order() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _b, path, _bare) = fixture();
+    let head = common::head_branch_name(&path);
+    let session = RepoSession::open(&path).unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature", &head, "feature", &head])
+        .unwrap();
+    assert_eq!(push.names(), ["feature", head.as_str()]);
+}
+
+#[test]
+fn run_deletes_several_branches_in_one_push() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _b, path, bare) = fixture();
+    let head = common::head_branch_name(&path);
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature2", &commit, false).unwrap();
+    }
+    common::push_branch(&path, "feature2");
+    common::fetch_remote(&path, "origin");
+    let session = RepoSession::open(&path).unwrap();
+    session
+        .prepare_remote_delete("origin", &["feature", "feature2"])
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert!(!bare_has_branch(&bare, "feature"));
+    assert!(!bare_has_branch(&bare, "feature2"));
+    assert!(bare_has_branch(&bare, &head));
+}
+
+#[test]
+fn run_with_a_stale_name_deletes_nothing() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _b, path, bare) = fixture();
+    {
+        let repo = Repository::open(&path).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("gone", &commit, false).unwrap();
+    }
+    common::push_branch(&path, "gone");
+    common::fetch_remote(&path, "origin");
+    let session = RepoSession::open(&path).unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature", "gone"])
+        .unwrap();
+    Repository::open_bare(&bare)
+        .unwrap()
+        .find_branch("gone", BranchType::Local)
+        .unwrap()
+        .delete()
+        .unwrap();
+    assert!(matches!(
+        push.run(None).unwrap_err(),
+        GitError::NetworkFailed { .. }
+    ));
+    assert!(bare_has_branch(&bare, "feature"));
 }
 
 // --- a remote named like a flag must never reach argv ---
@@ -238,7 +345,7 @@ fn prepare_rejects_a_remote_whose_name_starts_with_a_dash() {
     common::fetch_remote(&path, "-x");
     let session = RepoSession::open(&path).unwrap();
     assert!(matches!(
-        session.prepare_remote_delete("-x", &head).unwrap_err(),
+        session.prepare_remote_delete("-x", &[&head]).unwrap_err(),
         GitError::RemoteNotFound(name) if name == "-x"
     ));
 }

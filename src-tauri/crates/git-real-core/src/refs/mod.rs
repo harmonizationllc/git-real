@@ -173,6 +173,20 @@ impl RepoSession {
         Ok(())
     }
 
+    /// Deletes several local branches, one outcome per name in input order.
+    /// Never short-circuits: each entry is what `delete_branch` returns for
+    /// that name, so a duplicate name reports `BranchNotFound` the second time.
+    pub fn delete_branches(
+        &self,
+        names: &[&str],
+        force: bool,
+    ) -> Vec<(String, Result<(), GitError>)> {
+        names
+            .iter()
+            .map(|n| (n.to_string(), self.delete_branch(n, force)))
+            .collect()
+    }
+
     /// Points a local branch at a remote-tracking branch, or clears its
     /// upstream. `upstream` is the short remote-tracking name (`origin/main`);
     /// `None` clears it. A name that is not a remote-tracking branch is
@@ -286,15 +300,32 @@ impl RepoSession {
             .map(|auto_stash| CheckoutOutcome { auto_stash })
     }
 
-    /// Validates a remote branch deletion and returns the push to run after
-    /// the session lock is released.
-    pub fn prepare_remote_delete(&self, remote: &str, name: &str) -> Result<PushDelete, GitError> {
-        self.remote_branch_ref(remote, name)?;
+    /// Validates a remote branch deletion of every name in `names` and
+    /// returns the push to run after the session lock is released. Repeated
+    /// names are collapsed, keeping the first occurrence's order. An empty
+    /// batch is `InvalidBranchName("")`.
+    pub fn prepare_remote_delete(
+        &self,
+        remote: &str,
+        names: &[&str],
+    ) -> Result<PushDelete, GitError> {
+        if names.is_empty() {
+            return Err(GitError::InvalidBranchName(String::new()));
+        }
+        let mut unique: Vec<&str> = Vec::with_capacity(names.len());
+        for name in names {
+            if !unique.contains(name) {
+                unique.push(name);
+            }
+        }
+        for name in &unique {
+            self.remote_branch_ref(remote, name)?;
+        }
         Ok(PushDelete::new(
             git_cli::locate()?,
             self.workdir()?.to_path_buf(),
             remote.to_owned(),
-            name.to_owned(),
+            unique.iter().map(|n| n.to_string()).collect(),
             self.used_url(remote, Direction::Push)?
                 .into_iter()
                 .collect(),

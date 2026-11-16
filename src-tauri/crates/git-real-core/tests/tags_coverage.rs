@@ -185,7 +185,7 @@ fn remote_delete_checks_the_remote_before_the_branch_name() {
     common::add_remote_and_fetch(&path, &bare.1, &common::head_branch_name(&path));
     for remote in ["nope", "-x"] {
         let err = session
-            .prepare_remote_delete(remote, "bad..name")
+            .prepare_remote_delete(remote, &["bad..name"])
             .unwrap_err();
         assert!(
             matches!(err, GitError::RemoteNotFound(ref r) if r == remote),
@@ -194,7 +194,7 @@ fn remote_delete_checks_the_remote_before_the_branch_name() {
     }
     // A known remote with that name still reports the name.
     assert!(matches!(
-        session.prepare_remote_delete("origin", "bad..name"),
+        session.prepare_remote_delete("origin", &["bad..name"]),
         Err(GitError::InvalidBranchName(_))
     ));
 }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Blame,
+  BranchDeleteOutcome,
   BranchList,
   CheckoutOutcome,
   CheckoutPrOutcome,
@@ -177,9 +178,13 @@ export function renameBranch(id: RepoId, oldName: string, newName: string): Prom
   return invoke<void>("rename_branch", { id, oldName, newName });
 }
 
-/** Without `force`, an unmerged branch rejects with `branchNotMerged`. */
-export function deleteBranch(id: RepoId, name: string, force: boolean): Promise<void> {
-  return invoke<void>("delete_branch", { id, name, force });
+/** Deletes each name, reporting per name; without `force` an unmerged branch is `notMerged`. */
+export function deleteBranches(
+  id: RepoId,
+  names: string[],
+  force: boolean,
+): Promise<BranchDeleteOutcome[]> {
+  return invoke<BranchDeleteOutcome[]>("delete_branches", { id, names, force });
 }
 
 /** `upstream` is a short remote-tracking name such as `origin/main`; null clears it. */
@@ -204,14 +209,14 @@ export function checkoutRemoteBranch(
   return invoke<CheckoutOutcome>("checkout_remote_branch", { id, remote, name });
 }
 
-/** Deletes `name` on `remote` through `git push --delete`. */
-export function deleteRemoteBranch(
+/** Deletes `names` on `remote` in a single push that removes every named branch. */
+export function deleteRemoteBranches(
   id: RepoId,
   remote: string,
-  name: string,
+  names: string[],
   credentials: Credentials | null = null,
 ): Promise<void> {
-  return invoke<void>("delete_remote_branch", { id, remote, name, credentials });
+  return invoke<void>("delete_remote_branches", { id, remote, names, credentials });
 }
 
 /** The cached log's generation, row count and lane width; reading it rebuilds a stale cache. */

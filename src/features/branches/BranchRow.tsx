@@ -29,7 +29,10 @@ export interface BranchDrag {
 export interface BranchRowProps {
   target: BranchTarget;
   current: boolean;
+  /** The row is part of the multi-selection. */
+  selected: boolean;
   drag?: BranchDrag;
+  onClick(mods: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): void;
   onActivate(): void;
   onContextMenu(x: number, y: number): void;
 }
@@ -89,13 +92,23 @@ function dragProps(drag: BranchDrag | undefined, id: string) {
   };
 }
 
-export function BranchRow({ target, current, drag, onActivate, onContextMenu }: BranchRowProps) {
+export function BranchRow({
+  target,
+  current,
+  selected,
+  drag,
+  onClick,
+  onActivate,
+  onContextMenu,
+}: BranchRowProps) {
   const { branch } = target;
   const id = branchId(target);
   const fullRef = target.kind === "local" ? `refs/heads/${id}` : `refs/remotes/${id}`;
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === "Enter") {
+      // Without this the button's native Enter activation also fires a click, reported as a selection click.
+      e.preventDefault();
       onActivate();
     } else if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
       // Without this WebKit also fires a native contextmenu on the row, opening the menu twice.
@@ -118,7 +131,9 @@ export function BranchRow({ target, current, drag, onActivate, onContextMenu }: 
         type="button"
         className={`${styles.row} ${current ? styles.current : ""}`}
         aria-current={current || undefined}
+        aria-pressed={selected}
         title={fullRef}
+        onClick={(e) => onClick({ ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey })}
         onDoubleClick={onActivate}
         onKeyDown={onKeyDown}
       >

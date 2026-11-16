@@ -4,6 +4,7 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SPLIT_HANDLE_WIDTH, SplitHandle } from "../../components/SplitHandle";
 import { KEY_STEP } from "../../app/layout";
 import type { ChangeKind, RepoId, StatusEntry } from "../../lib/ipc";
+import { useListSelection } from "../../lib/selection/useListSelection";
 import { useSettings } from "../../lib/store/settings";
 import { setChangesUnstagedHeight } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -16,7 +17,6 @@ import { StashButton } from "../stash/StashButton";
 import styles from "./ChangesPanel.module.css";
 import { PANE_FLOOR, fitChangesPanes } from "./changesLayout";
 import { FileRow, type Section } from "./FileRow";
-import { useFileSelection } from "./useFileSelection";
 import { useStatus } from "./useStatus";
 import { useWorktreeActions } from "./useWorktreeActions";
 
@@ -131,7 +131,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const pending = actions.pending || integration.pending;
   const panelError = actions.error ?? integration.error;
   const rows = rowsBySection(status?.entries ?? []);
-  const selection = useFileSelection(
+  const selection = useListSelection(
     SECTIONS.flatMap(({ section }) => rows[section].map((r) => r.key)),
   );
   const [menu, setMenu] = useState<MenuState | null>(null);

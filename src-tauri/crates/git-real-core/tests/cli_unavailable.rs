@@ -123,7 +123,9 @@ fn prepare_remote_delete_without_git_on_path_fails_with_git_cli_missing() {
     let (_e, empty) = empty_path();
     with_path(empty, || {
         assert!(matches!(
-            session.prepare_remote_delete("origin", &head).unwrap_err(),
+            session
+                .prepare_remote_delete("origin", &[&head])
+                .unwrap_err(),
             GitError::GitCliMissing
         ));
     });
@@ -169,7 +171,7 @@ fn remote_delete_with_a_git_that_cannot_be_executed_fails_with_io() {
     let broken = non_executable_git();
     // The executable is located when the deletion is prepared.
     with_path(broken.path().as_os_str().to_owned(), || {
-        let push = session.prepare_remote_delete("origin", &head).unwrap();
+        let push = session.prepare_remote_delete("origin", &[&head]).unwrap();
         assert!(matches!(push.run(None).unwrap_err(), GitError::Io(_)));
     });
 }

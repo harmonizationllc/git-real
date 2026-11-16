@@ -220,7 +220,9 @@ fn failed_tracking_checkout_creates_no_local_branch() {
 #[test]
 fn remote_delete_pushes_a_heads_qualified_name() {
     let (_d, _b, path, session) = fixture();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     push.run(None).unwrap();
     assert_eq!(
         after_workdir(&path),
@@ -229,10 +231,30 @@ fn remote_delete_pushes_a_heads_qualified_name() {
 }
 
 #[test]
+fn remote_delete_pushes_every_name_in_order() {
+    let (_d, _b, path, session) = fixture();
+    session
+        .prepare_remote_delete("origin", &["feature", "feat/slash"])
+        .unwrap()
+        .run(None)
+        .unwrap();
+    assert_eq!(
+        after_workdir(&path),
+        [
+            "push",
+            "origin",
+            "--delete",
+            "heads/feature",
+            "heads/feat/slash"
+        ]
+    );
+}
+
+#[test]
 fn remote_delete_keeps_slashes_in_the_name() {
     let (_d, _b, path, session) = fixture();
     session
-        .prepare_remote_delete("origin", "feat/slash")
+        .prepare_remote_delete("origin", &["feat/slash"])
         .unwrap()
         .run(None)
         .unwrap();
@@ -245,7 +267,9 @@ fn remote_delete_keeps_slashes_in_the_name() {
 #[test]
 fn remote_delete_runs_in_the_accessor_workdir() {
     let (_d, _b, path, session) = fixture();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     push.run(None).unwrap();
     assert_eq!(argv(&path)[1], push.workdir().to_str().unwrap());
 }
@@ -253,7 +277,9 @@ fn remote_delete_runs_in_the_accessor_workdir() {
 #[test]
 fn push_failure_carries_exit_code_stdout_and_stderr_separately() {
     let (_d, _b, path, session) = fixture();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     script_behaviour(&path, "echo push-out\necho push-err >&2\nexit 7");
     match push.run(None).unwrap_err() {
         GitError::NetworkFailed {
@@ -277,7 +303,9 @@ fn push_failure_carries_exit_code_stdout_and_stderr_separately() {
 #[test]
 fn push_killed_by_a_signal_reports_no_exit_code() {
     let (_d, _b, path, session) = fixture();
-    let push = session.prepare_remote_delete("origin", "feature").unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature"])
+        .unwrap();
     script_behaviour(&path, "kill -9 $$");
     assert!(matches!(
         push.run(None).unwrap_err(),
@@ -291,10 +319,10 @@ fn push_killed_by_a_signal_reports_no_exit_code() {
 fn push_delete_exposes_the_validated_remote_name_and_workdir() {
     let (_d, _b, path, session) = fixture();
     let push = session
-        .prepare_remote_delete("origin", "feat/slash")
+        .prepare_remote_delete("origin", &["feat/slash"])
         .unwrap();
     assert_eq!(push.remote(), "origin");
-    assert_eq!(push.name(), "feat/slash");
+    assert_eq!(push.names(), ["feat/slash"]);
     assert_eq!(common::canonical(push.workdir()), common::canonical(&path));
 }
 

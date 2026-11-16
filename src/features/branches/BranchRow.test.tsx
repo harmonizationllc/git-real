@@ -33,6 +33,8 @@ function renderRow(over: Partial<BranchRowProps> = {}) {
   const props: BranchRowProps = {
     target: local(),
     current: false,
+    selected: false,
+    onClick: vi.fn(),
     onActivate: vi.fn(),
     onContextMenu: vi.fn(),
     ...over,
@@ -154,6 +156,13 @@ describe("BranchRow activation", () => {
     const props = renderRow();
     fireEvent.keyDown(rowButton(), { key: "Enter" });
     expect(props.onActivate).toHaveBeenCalledOnce();
+  });
+
+  it("should prevent the native click on Enter so it is not reported as a selection click", () => {
+    const props = renderRow();
+    const notPrevented = fireEvent.keyDown(rowButton(), { key: "Enter" });
+    expect(notPrevented).toBe(false);
+    expect(props.onClick).not.toHaveBeenCalled();
   });
 
   it("should not call onActivate on a single click", async () => {
@@ -595,5 +604,54 @@ describe("refs row styling", () => {
     ]) {
       expect(read(path)).toMatch(/gr-section-heading/);
     }
+  });
+});
+
+// Contract: a click reports its modifiers; the row reflects the selection as aria-pressed.
+describe("BranchRow selection", () => {
+  it("should set aria-pressed true when selected", () => {
+    renderRow({ selected: true });
+    expect(rowButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("should set aria-pressed false when not selected", () => {
+    renderRow({ selected: false });
+    expect(rowButton()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("should report a plain click with no modifiers", () => {
+    const props = renderRow();
+    fireEvent.click(rowButton());
+    expect(props.onClick).toHaveBeenCalledExactlyOnceWith({
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    });
+  });
+
+  it("should report ctrl, meta and shift on a click", () => {
+    const props = renderRow();
+    fireEvent.click(rowButton(), { ctrlKey: true, metaKey: true, shiftKey: true });
+    expect(props.onClick).toHaveBeenCalledExactlyOnceWith({
+      ctrlKey: true,
+      metaKey: true,
+      shiftKey: true,
+    });
+  });
+
+  it("should still not call onActivate on a click", () => {
+    const props = renderRow();
+    fireEvent.click(rowButton());
+    expect(props.onActivate).not.toHaveBeenCalled();
+  });
+
+  it("should paint the selected background after hover and before current", () => {
+    const css = readFileSync("src/features/branches/BranchRow.module.css", "utf8");
+    const selected = css.indexOf('.row[aria-pressed="true"]');
+    expect(selected).toBeGreaterThan(css.indexOf(".row:hover"));
+    expect(selected).toBeLessThan(css.indexOf(".row.current {"));
+    expect(css).toMatch(
+      /\.row\[aria-pressed="true"\]\s*\{[^}]*background:\s*var\(--color-line-selected\)/,
+    );
   });
 });
