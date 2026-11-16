@@ -1,10 +1,20 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode, RefObject } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { PromptDialog } from "../../components/PromptDialog";
-import { deleteRemoteBranch } from "../../lib/ipc";
-import type { AppError, BranchList, HeadState, RepoId, WorktreeBranch } from "../../lib/ipc";
+import { deleteRemoteBranches } from "../../lib/ipc";
+import type {
+  AppError,
+  BranchList,
+  HeadState,
+  LocalBranch,
+  RemoteBranch,
+  RepoId,
+  WorktreeBranch,
+} from "../../lib/ipc";
+import { useListSelection } from "../../lib/selection/useListSelection";
+import { useSettings } from "../../lib/store/settings";
 import { useRepoTabs } from "../../lib/store/repoTabs";
 import { useShell } from "../../lib/store/shell";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -27,6 +37,8 @@ import { useOpenRepo } from "../repo/useOpenRepo";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
 import styles from "./BranchesPanel.module.css";
 import { filterBranches, isFiltering } from "./branchFilter";
+import { buildBranchTree, visibleBranchKeys, type BranchNode } from "./branchTree";
+import { useCollapsedFolders } from "./BranchTreeItems";
 import { useBranchActions } from "./useBranchActions";
 import { useBranches } from "./useBranches";
 import { UpstreamDialog } from "./UpstreamDialog";
@@ -54,9 +66,23 @@ export interface BranchesContextValue {
   pending: boolean;
   /** The Local section's root: the focus fallback of every dialog and menu. */
   rootRef: RefObject<HTMLElement | null>;
+  /** The Local tree of `shown`. */
+  localTree: BranchNode<LocalBranch>[];
+  /** One tree per remote group of `shown`, index-aligned with `shown.remotes`. */
+  remoteTrees: BranchNode<RemoteBranch>[][];
+  localFolders: FolderState;
+  remoteFolders: FolderState;
+  /** Escape clears the row selection; the event is only prevented when something was selected. */
+  onSectionKeyDown(e: KeyboardEvent<HTMLElement>): void;
   row(target: BranchTarget, key: string, current: boolean): ReactNode;
   openNewBranch(): void;
   openHeadingMenu(remote: string, x: number, y: number): void;
+}
+
+/** A section's collapsed folder keys and the toggle for one of them. */
+export interface FolderState {
+  collapsed: ReadonlySet<string>;
+  toggle(key: string): void;
 }
 
 const BranchesContext = createContext<BranchesContextValue | null>(null);
@@ -230,8 +256,17 @@ export function BranchesProvider({
 
   // A confirm dialog has no error slot: other than the force-delete hand-off, a failure closes
   // the dialog and toasts.
+  // Task 6 rewrites the delete flow; this keeps the single-name path working on the batch API.
+  const deleteOne = async (name: string, force: boolean) => {
+    const result = await actions.deleteBranches([name], force);
+    if (!Array.isArray(result)) return result;
+    const status = result[0]?.status;
+    if (status?.kind === "notMerged") return { kind: "branchNotMerged", message: "" } as AppError;
+    return status?.kind === "failed" ? status.error : null;
+  };
+
   const confirmDeleteLocal = async (name: string) => {
-    const err = await actions.run({ action: "delete", name, force: false });
+    const err = await deleteOne(name, false);
     if (err?.kind === "branchNotMerged") {
       actions.clearError();
       setDialog({ kind: "forceDelete", name });
@@ -242,14 +277,14 @@ export function BranchesProvider({
   };
 
   const confirmForceDelete = async (name: string) => {
-    const err = await actions.run({ action: "delete", name, force: true });
+    const err = await deleteOne(name, true);
     setDialog(null);
     report(err);
   };
 
   // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
   const confirmDeleteRemote = async (remote: string, name: string) => {
-    const result = await network.run((c) => deleteRemoteBranch(repoId, remote, name, c));
+    const result = await network.run((c) => deleteRemoteBranches(repoId, remote, [name], c));
     setDialog(null);
     if (result.status === "failed") report(result.error, remote);
   };
@@ -456,11 +491,63 @@ export function BranchesProvider({
   });
 
   const canDrag = state?.kind === "none" && branches?.head.kind === "branch" && !pending;
+  const shown = useMemo(() => branches && filterBranches(branches, query), [branches, query]);
+  const filtering = isFiltering(query);
+  const localTree = useMemo(() => buildBranchTree(shown?.local ?? []), [shown]);
+  const remoteTrees = useMemo(
+    () => shown?.remotes.map((g) => buildBranchTree(g.branches)) ?? [],
+    [shown],
+  );
+  const localFolders = useCollapsedFolders();
+  const remoteFolders = useCollapsedFolders();
+  const localCollapsed = useSettings((s) => s.settings.layout.localCollapsed);
+  const remoteCollapsed = useSettings((s) => s.settings.layout.remoteCollapsed);
+  // Rows of a collapsed section or folder are not on screen, so they cannot be selected or ranged over.
+  const orderedKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (filtering || !localCollapsed) {
+      keys.push(
+        ...visibleBranchKeys(localTree, localFolders.collapsed, "", (b) => `local:${b.name}`),
+      );
+    }
+    if (filtering || !remoteCollapsed) {
+      shown?.remotes.forEach((g, i) => {
+        keys.push(
+          ...visibleBranchKeys(
+            remoteTrees[i],
+            remoteFolders.collapsed,
+            `${g.remote}:`,
+            (b) => `${g.remote}/${b.name}`,
+          ),
+        );
+      });
+    }
+    return keys;
+  }, [
+    filtering,
+    localCollapsed,
+    remoteCollapsed,
+    localTree,
+    remoteTrees,
+    shown,
+    localFolders.collapsed,
+    remoteFolders.collapsed,
+  ]);
+  const selection = useListSelection(orderedKeys);
+
+  const onSectionKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Escape" || selection.selected.size === 0) return;
+    e.preventDefault();
+    selection.clear();
+  };
+
   const row = (target: BranchTarget, key: string, current: boolean) => (
     <BranchRow
       key={key}
       target={target}
       current={current}
+      selected={selection.isSelected(key)}
+      onClick={(m) => selection.click(key, { ctrl: m.ctrlKey || m.metaKey, shift: m.shiftKey })}
       drag={branchDrag(target, current, canDrag)}
       onActivate={() => activate(target)}
       onContextMenu={(x, y) => setMenu({ x, y, target })}
@@ -469,8 +556,13 @@ export function BranchesProvider({
 
   const value: BranchesContextValue = {
     branches,
-    shown: branches && filterBranches(branches, query),
-    filtering: isFiltering(query),
+    shown,
+    filtering,
+    localTree,
+    remoteTrees,
+    localFolders,
+    remoteFolders,
+    onSectionKeyDown,
     loading: branches === undefined && listError === null,
     // A failed background refetch keeps the cached list; only a missing list shows the placeholder.
     loadFailed,

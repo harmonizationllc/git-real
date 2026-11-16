@@ -1,10 +1,9 @@
-import { useId, useMemo } from "react";
+import { useId } from "react";
 import type { BranchList } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setRemoteCollapsed } from "../../lib/store/settingsActions";
 import { BranchGroup, BranchSectionHeader } from "./BranchGroup";
-import { BranchTreeItems, useCollapsedFolders } from "./BranchTreeItems";
-import { buildBranchTree } from "./branchTree";
+import { BranchTreeItems } from "./BranchTreeItems";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import groupStyles from "./BranchGroup.module.css";
@@ -22,15 +21,20 @@ const remoteCount = (list: BranchList | undefined): number =>
  */
 export function RemoteSection() {
   const bodyId = useId();
-  const { branches, shown, filtering, pending, row, openHeadingMenu } = useBranchesContext();
+  const {
+    branches,
+    shown,
+    filtering,
+    pending,
+    row,
+    openHeadingMenu,
+    remoteTrees: trees,
+    remoteFolders: { collapsed: collapsedFolders, toggle: toggleFolder },
+    onSectionKeyDown,
+  } = useBranchesContext();
   const collapsed = useSettings((s) => s.settings.layout.remoteCollapsed);
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
-  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
-  const trees = useMemo(
-    () => shown?.remotes.map((group) => buildBranchTree(group.branches)) ?? [],
-    [shown],
-  );
 
   let body: React.ReactNode = null;
   if (expanded && shown !== undefined) {
@@ -62,7 +66,12 @@ export function RemoteSection() {
   }
 
   return (
-    <section aria-label="Remote branches" aria-busy={pending || undefined} className={styles.root}>
+    <section
+      aria-label="Remote branches"
+      aria-busy={pending || undefined}
+      className={styles.root}
+      onKeyDown={onSectionKeyDown}
+    >
       <BranchSectionHeader
         label={sectionCountLabel(
           "Remote",

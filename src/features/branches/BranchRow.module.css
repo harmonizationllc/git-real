@@ -24,11 +24,21 @@
   background: var(--color-surface-hover);
 }
 
-/* After the hover rule at equal specificity, so the tint holds under the pointer. */
+/* After the hover rule at equal specificity, so the selection holds under the pointer. */
+.row[aria-pressed="true"] {
+  background: var(--color-line-selected);
+}
+
+/* After the selected rule at equal specificity, so the current tint holds under the pointer. */
 .row.current {
   background: var(--color-accent-tint);
   font-weight: 600;
   color: var(--color-accent);
+}
+
+/* A selected current row keeps the selected background with the current colour and weight. */
+.row.current[aria-pressed="true"] {
+  background: var(--color-line-selected);
 }
 
 .name {

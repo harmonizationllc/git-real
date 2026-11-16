@@ -1,10 +1,9 @@
-import { useId, useMemo } from "react";
+import { useId } from "react";
 import type { HeadState } from "../../lib/ipc";
 import { useSettings } from "../../lib/store/settings";
 import { setLocalCollapsed } from "../../lib/store/settingsActions";
 import { BranchGroupBody, BranchSectionHeader } from "./BranchGroup";
-import { BranchTreeItems, useCollapsedFolders } from "./BranchTreeItems";
-import { buildBranchTree } from "./branchTree";
+import { BranchTreeItems } from "./BranchTreeItems";
 import { sectionCountLabel } from "./sectionCountLabel";
 import { useBranchesContext } from "./BranchesProvider";
 import groupStyles from "./BranchGroup.module.css";
@@ -31,14 +30,24 @@ function headRow(head: HeadState) {
  */
 export function LocalSection() {
   const bodyId = useId();
-  const { branches, shown, filtering, loading, loadFailed, pending, rootRef, row, openNewBranch } =
-    useBranchesContext();
+  const {
+    branches,
+    shown,
+    filtering,
+    loading,
+    loadFailed,
+    pending,
+    rootRef,
+    row,
+    openNewBranch,
+    localTree: tree,
+    localFolders: { collapsed: collapsedFolders, toggle: toggleFolder },
+    onSectionKeyDown,
+  } = useBranchesContext();
   const collapsed = useSettings((s) => s.settings.layout.localCollapsed);
   // The filter shows its matches even when collapsed; the stored preference applies once it clears.
   const expanded = filtering || !collapsed;
   const unborn = branches?.head.kind === "unborn";
-  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders();
-  const tree = useMemo(() => buildBranchTree(shown?.local ?? []), [shown]);
 
   let body: React.ReactNode = null;
   if (!expanded) {
@@ -76,6 +85,7 @@ export function LocalSection() {
       aria-label="Local branches"
       aria-busy={pending || undefined}
       className={styles.root}
+      onKeyDown={onSectionKeyDown}
     >
       <BranchSectionHeader
         label={sectionCountLabel(
