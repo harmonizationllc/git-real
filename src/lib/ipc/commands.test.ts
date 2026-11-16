@@ -17,8 +17,8 @@ import {
   commit,
   createBranch,
   createTag,
-  deleteBranch,
-  deleteRemoteBranch,
+  deleteBranches,
+  deleteRemoteBranches,
   deleteRemoteTag,
   deleteTag,
   discardPaths,
@@ -89,6 +89,7 @@ import {
 } from "./commands";
 import { isAppError } from "./errors";
 import type {
+  BranchDeleteOutcome,
   BranchList,
   CheckoutOutcome,
   CheckoutPrOutcome,
@@ -484,16 +485,31 @@ describe("branch commands", () => {
     ]);
   });
 
-  it("deleteBranch sends delete_branch with id, name and force", async () => {
-    const calls = mockWith(null);
-    await deleteBranch(3, "topic", true);
-    expect(calls).toEqual([{ cmd: "delete_branch", args: { id: 3, name: "topic", force: true } }]);
+  it("deleteBranches sends delete_branches with id, names and force", async () => {
+    const calls = mockWith([]);
+    await deleteBranches(3, ["a", "b"], true);
+    expect(calls).toEqual([
+      { cmd: "delete_branches", args: { id: 3, names: ["a", "b"], force: true } },
+    ]);
   });
 
-  it("deleteBranch sends force false unchanged", async () => {
-    const calls = mockWith(null);
-    await deleteBranch(3, "topic", false);
+  it("deleteBranches sends force false unchanged", async () => {
+    const calls = mockWith([]);
+    await deleteBranches(3, ["a"], false);
     expect(calls[0]?.args).toMatchObject({ force: false });
+  });
+
+  it("deleteBranches resolves with the per-name outcomes as sent", async () => {
+    const outcomes: BranchDeleteOutcome[] = [
+      { name: "a", status: { kind: "deleted" } },
+      { name: "b", status: { kind: "notMerged" } },
+      {
+        name: "c",
+        status: { kind: "failed", error: { kind: "checkoutFailed", message: "busy" } },
+      },
+    ];
+    mockWith(outcomes);
+    await expect(deleteBranches(3, ["a", "b", "c"], false)).resolves.toEqual(outcomes);
   });
 
   it("checkoutBranch sends checkout_branch with id and name", async () => {
@@ -527,30 +543,30 @@ describe("branch commands", () => {
     ]);
   });
 
-  it("deleteRemoteBranch sends delete_remote_branch with id, remote and name", async () => {
+  it("deleteRemoteBranches sends delete_remote_branches with id, remote, names and null credentials", async () => {
     const calls = mockWith(null);
-    await deleteRemoteBranch(3, "origin", "topic");
+    await deleteRemoteBranches(3, "origin", ["topic", "other"]);
     expect(calls).toEqual([
       {
-        cmd: "delete_remote_branch",
-        args: { id: 3, remote: "origin", name: "topic", credentials: null },
+        cmd: "delete_remote_branches",
+        args: { id: 3, remote: "origin", names: ["topic", "other"], credentials: null },
       },
     ]);
   });
 
   it("branch rejection is recognised by isAppError", async () => {
     mockThrowing({ kind: "branchNotMerged", message: "not merged" });
-    await expect(deleteBranch(3, "topic", false)).rejects.toSatisfy(isAppError);
+    await expect(deleteBranches(3, ["topic"], false)).rejects.toSatisfy(isAppError);
   });
 
   it.each([
     ["listBranches", () => listBranches(1)],
     ["createBranch", () => createBranch(1, "a", null, false)],
     ["renameBranch", () => renameBranch(1, "a", "b")],
-    ["deleteBranch", () => deleteBranch(1, "a", false)],
+    ["deleteBranches", () => deleteBranches(1, ["a"], false)],
     ["checkoutBranch", () => checkoutBranch(1, "a")],
     ["checkoutRemoteBranch", () => checkoutRemoteBranch(1, "origin", "a")],
-    ["deleteRemoteBranch", () => deleteRemoteBranch(1, "origin", "a")],
+    ["deleteRemoteBranches", () => deleteRemoteBranches(1, "origin", ["a"])],
   ])("%s rejection passes through", async (_name, call) => {
     const err = { kind: "checkoutFailed", message: "nope" };
     mockThrowing(err);
@@ -1201,11 +1217,11 @@ describe("remote command wrappers", () => {
     expect(calls).toEqual([{ cmd: "remove_remote", args: { id: 2, name: "origin" } }]);
   });
 
-  it("pushTag, deleteRemoteTag and deleteRemoteBranch send null credentials by default", async () => {
+  it("pushTag, deleteRemoteTag and deleteRemoteBranches send null credentials by default", async () => {
     const calls = mockWith(null);
     await pushTag(2, "origin", "v1");
     await deleteRemoteTag(2, "origin", "v1");
-    await deleteRemoteBranch(2, "origin", "b");
+    await deleteRemoteBranches(2, "origin", ["b"]);
     expect(calls.map((c) => (c.args as { credentials: unknown }).credentials)).toEqual([
       null,
       null,
@@ -1213,11 +1229,11 @@ describe("remote command wrappers", () => {
     ]);
   });
 
-  it("pushTag, deleteRemoteTag and deleteRemoteBranch send the given credentials", async () => {
+  it("pushTag, deleteRemoteTag and deleteRemoteBranches send the given credentials", async () => {
     const calls = mockWith(null);
     await pushTag(2, "origin", "v1", creds);
     await deleteRemoteTag(2, "origin", "v1", creds);
-    await deleteRemoteBranch(2, "origin", "b", creds);
+    await deleteRemoteBranches(2, "origin", ["b"], creds);
     expect(calls).toEqual([
       { cmd: "push_tag", args: { id: 2, remote: "origin", name: "v1", credentials: creds } },
       {
@@ -1225,8 +1241,8 @@ describe("remote command wrappers", () => {
         args: { id: 2, remote: "origin", name: "v1", credentials: creds },
       },
       {
-        cmd: "delete_remote_branch",
-        args: { id: 2, remote: "origin", name: "b", credentials: creds },
+        cmd: "delete_remote_branches",
+        args: { id: 2, remote: "origin", names: ["b"], credentials: creds },
       },
     ]);
   });

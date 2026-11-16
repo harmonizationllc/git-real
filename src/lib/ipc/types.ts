@@ -737,3 +737,13 @@ export interface CreatedBranch {
   branch: LocalBranch;
   autoStash: AutoStash | null;
 }
+
+/** How one name in a batch branch delete fared; `notMerged` means the branch was kept. */
+export type BranchDeleteStatus =
+  { kind: "deleted" } | { kind: "notMerged" } | { kind: "failed"; error: AppError };
+
+/** The per-name result of `deleteBranches`, in the order the names were sent. */
+export interface BranchDeleteOutcome {
+  name: string;
+  status: BranchDeleteStatus;
+}
