@@ -16,7 +16,7 @@ import { StashButton } from "../stash/StashButton";
 import styles from "./ChangesPanel.module.css";
 import { PANE_FLOOR, fitChangesPanes } from "./changesLayout";
 import { FileRow, type Section } from "./FileRow";
-import { useFileSelection } from "./useFileSelection";
+import { useListSelection } from "../../lib/selection/useListSelection";
 import { useStatus } from "./useStatus";
 import { useWorktreeActions } from "./useWorktreeActions";
 
@@ -131,7 +131,7 @@ export function ChangesPanel({ repoId }: ChangesPanelProps) {
   const pending = actions.pending || integration.pending;
   const panelError = actions.error ?? integration.error;
   const rows = rowsBySection(status?.entries ?? []);
-  const selection = useFileSelection(
+  const selection = useListSelection(
     SECTIONS.flatMap(({ section }) => rows[section].map((r) => r.key)),
   );
   const [menu, setMenu] = useState<MenuState | null>(null);

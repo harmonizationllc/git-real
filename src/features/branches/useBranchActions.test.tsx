@@ -4,11 +4,17 @@ import {
   checkoutBranch,
   checkoutRemoteBranch,
   createBranch,
-  deleteBranch,
+  deleteBranches,
   renameBranch,
   setBranchUpstream,
 } from "../../lib/ipc";
-import type { AppError, AutoStash, CheckoutOutcome, CreatedBranch } from "../../lib/ipc";
+import type {
+  AppError,
+  AutoStash,
+  BranchDeleteOutcome,
+  CheckoutOutcome,
+  CreatedBranch,
+} from "../../lib/ipc";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
 import { toastAutoStash } from "../checkout/autoStashToast";
@@ -19,7 +25,7 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   createBranch: vi.fn(),
   renameBranch: vi.fn(),
-  deleteBranch: vi.fn(),
+  deleteBranches: vi.fn(),
   checkoutBranch: vi.fn(),
   checkoutRemoteBranch: vi.fn(),
   setBranchUpstream: vi.fn(),
@@ -37,6 +43,7 @@ const created: CreatedBranch = {
   autoStash: null,
 };
 const noStash: CheckoutOutcome = { autoStash: null };
+const deletedA: BranchDeleteOutcome[] = [{ name: "a", status: { kind: "deleted" } }];
 
 // Runs a request inside act and returns what run resolved with.
 async function run(actions: () => UseBranchActions, req: Request): Promise<AppError | null> {
@@ -51,7 +58,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(createBranch).mockResolvedValue(created);
   vi.mocked(renameBranch).mockResolvedValue(undefined);
-  vi.mocked(deleteBranch).mockResolvedValue(undefined);
+  vi.mocked(deleteBranches).mockResolvedValue(deletedA);
   vi.mocked(checkoutBranch).mockResolvedValue(noStash);
   vi.mocked(checkoutRemoteBranch).mockResolvedValue(noStash);
 });
@@ -86,16 +93,26 @@ describe("useBranchActions wrapper calls", () => {
     expect(renameBranch).toHaveBeenCalledExactlyOnceWith(4, "a", "b");
   });
 
-  it("should call deleteBranch without force when delete runs unforced", async () => {
+  it("should call deleteBranches with the names and force and resolve the outcomes", async () => {
+    const outcomes: BranchDeleteOutcome[] = [{ name: "a", status: { kind: "deleted" } }];
+    vi.mocked(deleteBranches).mockResolvedValue(outcomes);
     const { result } = renderHookWithProviders(() => useBranchActions(4));
-    await run(() => result.current, { action: "delete", name: "a", force: false });
-    expect(deleteBranch).toHaveBeenCalledExactlyOnceWith(4, "a", false);
+    let out: BranchDeleteOutcome[] | AppError | null = null;
+    await act(async () => {
+      out = await result.current.deleteBranches(["a", "b"], true);
+    });
+    expect(out).toEqual(outcomes);
+    expect(deleteBranches).toHaveBeenCalledExactlyOnceWith(4, ["a", "b"], true);
   });
 
-  it("should call deleteBranch with force when delete runs forced", async () => {
+  it("should resolve the AppError when deleteBranches rejects", async () => {
+    vi.mocked(deleteBranches).mockRejectedValue(exists);
     const { result } = renderHookWithProviders(() => useBranchActions(4));
-    await run(() => result.current, { action: "delete", name: "a", force: true });
-    expect(deleteBranch).toHaveBeenCalledExactlyOnceWith(4, "a", true);
+    let out: BranchDeleteOutcome[] | AppError | null = null;
+    await act(async () => {
+      out = await result.current.deleteBranches(["a"], false);
+    });
+    expect(out).toEqual(exists);
   });
 
   it("should call checkoutBranch with the name when checkout runs", async () => {
@@ -114,7 +131,7 @@ describe("useBranchActions wrapper calls", () => {
     const { result } = renderHookWithProviders(() => useBranchActions(4));
     await run(() => result.current, { action: "checkout", name: "a" });
     expect(checkoutRemoteBranch).not.toHaveBeenCalled();
-    expect(deleteBranch).not.toHaveBeenCalled();
+    expect(deleteBranches).not.toHaveBeenCalled();
   });
 });
 
@@ -140,13 +157,11 @@ describe("useBranchActions run result", () => {
 
   it.each<[string, Request]>([
     ["rename", { action: "rename", oldName: "a", newName: "b" }],
-    ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
   ])("should resolve the AppError when %s fails", async (_n, req) => {
     const err: AppError = { kind: "checkoutFailed", message: "no" };
     vi.mocked(renameBranch).mockRejectedValue(err);
-    vi.mocked(deleteBranch).mockRejectedValue(err);
     vi.mocked(checkoutBranch).mockRejectedValue(err);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(err);
     const { result } = renderHookWithProviders(() => useBranchActions(1));
@@ -211,7 +226,6 @@ describe("useBranchActions invalidation", () => {
   const cases: [string, Request][] = [
     ["create", { action: "create", name: "t", startPoint: null, checkout: true }],
     ["rename", { action: "rename", oldName: "a", newName: "b" }],
-    ["delete", { action: "delete", name: "a", force: false }],
     ["checkout", { action: "checkout", name: "a" }],
     ["checkoutRemote", { action: "checkoutRemote", remote: "origin", name: "a" }],
     ["setUpstream", { action: "setUpstream", name: "topic", upstream: "origin/topic" }],
@@ -227,13 +241,27 @@ describe("useBranchActions invalidation", () => {
   it.each(cases)("should invalidate the repo key when %s fails", async (_n, req) => {
     vi.mocked(createBranch).mockRejectedValue(exists);
     vi.mocked(renameBranch).mockRejectedValue(exists);
-    vi.mocked(deleteBranch).mockRejectedValue(exists);
     vi.mocked(checkoutBranch).mockRejectedValue(exists);
     vi.mocked(checkoutRemoteBranch).mockRejectedValue(exists);
     vi.mocked(setBranchUpstream).mockRejectedValue(exists);
     const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     await run(() => result.current, req);
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["repo", 4] }));
+  });
+
+  it("should invalidate the repo key when deleteBranches succeeds", async () => {
+    const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.deleteBranches(["a"], false));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["repo", 4] }));
+  });
+
+  it("should invalidate the repo key when deleteBranches fails", async () => {
+    vi.mocked(deleteBranches).mockRejectedValue(exists);
+    const { result, queryClient } = renderHookWithProviders(() => useBranchActions(4));
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    await act(() => result.current.deleteBranches(["a"], false));
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["repo", 4] }));
   });
 });
@@ -406,7 +434,7 @@ describe("useBranchActions auto-fetch requests", () => {
     expect(requested()).toBe(0);
   });
 
-  it("requests nothing after create, rename or delete", async () => {
+  it("requests nothing after create, rename or deleteBranches", async () => {
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     await run(() => result.current, {
       action: "create",
@@ -415,7 +443,7 @@ describe("useBranchActions auto-fetch requests", () => {
       checkout: true,
     });
     await run(() => result.current, { action: "rename", oldName: "topic", newName: "t2" });
-    await run(() => result.current, { action: "delete", name: "t2", force: false });
+    await act(() => result.current.deleteBranches(["t2"], false));
     expect(requested()).toBe(0);
   });
 });

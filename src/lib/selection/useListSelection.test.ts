@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { useFileSelection } from "./useFileSelection";
+import { useListSelection } from "./useListSelection";
 
 const plain = { ctrl: false, shift: false };
 const ctrl = { ctrl: true, shift: false };
@@ -9,12 +9,12 @@ const shift = { ctrl: false, shift: true };
 const paths = ["a", "b", "c", "d", "e"];
 
 function setup(initial: string[] = paths) {
-  return renderHook(({ list }) => useFileSelection(list), { initialProps: { list: initial } });
+  return renderHook(({ list }) => useListSelection(list), { initialProps: { list: initial } });
 }
 
 const sorted = (s: ReadonlySet<string>): string[] => [...s].sort();
 
-describe("useFileSelection initial state", () => {
+describe("useListSelection initial state", () => {
   it("should start with nothing selected", () => {
     const { result } = setup();
     expect(result.current.selected.size).toBe(0);
@@ -27,7 +27,7 @@ describe("useFileSelection initial state", () => {
 });
 
 // Contract: a plain click selects only the clicked path.
-describe("useFileSelection plain click", () => {
+describe("useListSelection plain click", () => {
   it("should select only the clicked path", () => {
     const { result } = setup();
     act(() => result.current.click("b", plain));
@@ -58,7 +58,7 @@ describe("useFileSelection plain click", () => {
 });
 
 // Contract: ctrl-click toggles one path without disturbing the rest.
-describe("useFileSelection ctrl click", () => {
+describe("useListSelection ctrl click", () => {
   it("should add an unselected path to the selection", () => {
     const { result } = setup();
     act(() => result.current.click("a", plain));
@@ -97,7 +97,7 @@ describe("useFileSelection ctrl click", () => {
 });
 
 // Contract: shift-click selects the range from the anchor (last plain click) in list order.
-describe("useFileSelection shift click", () => {
+describe("useListSelection shift click", () => {
   it("should select the range from the anchor down to the clicked path", () => {
     const { result } = setup();
     act(() => result.current.click("b", plain));
@@ -165,7 +165,7 @@ describe("useFileSelection shift click", () => {
 });
 
 // Contract: paths that disappear from the ordered list are pruned from the selection.
-describe("useFileSelection pruning", () => {
+describe("useListSelection pruning", () => {
   it("should drop selected paths that are no longer in the list", () => {
     const { result, rerender } = setup();
     act(() => result.current.click("a", plain));
@@ -213,7 +213,7 @@ describe("useFileSelection pruning", () => {
   });
 });
 
-describe("useFileSelection clear", () => {
+describe("useListSelection clear", () => {
   it("should empty the selection", () => {
     const { result } = setup();
     act(() => result.current.click("a", plain));
@@ -237,7 +237,7 @@ describe("useFileSelection clear", () => {
 });
 
 // Contract: keys are opaque, so equal paths in different sections never collide.
-describe("useFileSelection section keys", () => {
+describe("useListSelection section keys", () => {
   const keys = ["staged:a", "staged:b", "unstaged:a", "unstaged:b"];
 
   it("should select only the clicked section's entry for a shared path", () => {
@@ -272,7 +272,7 @@ describe("useFileSelection section keys", () => {
 });
 
 // Contract: pins how the anchor behaves around deselection and pruning.
-describe("useFileSelection anchor edges", () => {
+describe("useListSelection anchor edges", () => {
   it("should range from a ctrl-deselected anchor, since ctrl moves the anchor to that key", () => {
     const { result } = setup();
     act(() => result.current.click("b", plain));

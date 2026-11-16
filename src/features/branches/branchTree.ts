@@ -49,3 +49,23 @@ export function buildBranchTree<B extends { name: string }>(
   }
   return flatten(root);
 }
+
+/**
+ * Keys of the branch leaves in depth-first display order, skipping the contents of collapsed
+ * folders. A folder's collapsed key is `keyPrefix + path`; folders contribute no key themselves.
+ */
+export function visibleBranchKeys<B>(
+  nodes: readonly BranchNode<B>[],
+  collapsed: ReadonlySet<string>,
+  keyPrefix: string,
+  keyOf: (branch: B) => string,
+): string[] {
+  const keys: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === "branch") keys.push(keyOf(node.branch));
+    else if (!collapsed.has(keyPrefix + node.path)) {
+      keys.push(...visibleBranchKeys(node.children, collapsed, keyPrefix, keyOf));
+    }
+  }
+  return keys;
+}

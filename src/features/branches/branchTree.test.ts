@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBranchTree, lastSegment } from "./branchTree";
+import { buildBranchTree, lastSegment, visibleBranchKeys } from "./branchTree";
 
 const b = (name: string) => ({ name });
 
@@ -85,5 +85,42 @@ describe("buildBranchTree", () => {
 
   it("should return an empty tree for no branches", () => {
     expect(buildBranchTree([])).toEqual([]);
+  });
+});
+
+describe("visibleBranchKeys", () => {
+  const keyOf = (b: { name: string }) => `local:${b.name}`;
+  const tree = () =>
+    buildBranchTree([{ name: "a" }, { name: "f/x" }, { name: "f/y" }, { name: "z" }]);
+
+  it("should list branch keys depth-first in display order", () => {
+    expect(visibleBranchKeys(tree(), new Set(), "", keyOf)).toEqual([
+      "local:f/x",
+      "local:f/y",
+      "local:a",
+      "local:z",
+    ]);
+  });
+
+  it("should skip the children of a collapsed folder", () => {
+    expect(visibleBranchKeys(tree(), new Set(["f"]), "", keyOf)).toEqual(["local:a", "local:z"]);
+  });
+
+  it("should match a collapsed folder by its prefixed key", () => {
+    const keys = visibleBranchKeys(tree(), new Set(["origin:f"]), "origin:", keyOf);
+    expect(keys).toEqual(["local:a", "local:z"]);
+  });
+
+  it("should not collapse a folder whose unprefixed path is in the set", () => {
+    expect(visibleBranchKeys(tree(), new Set(["f"]), "origin:", keyOf)).toHaveLength(4);
+  });
+
+  it("should skip a nested folder under a collapsed parent", () => {
+    const nested = buildBranchTree([{ name: "f/g/x" }, { name: "f/y" }, { name: "z" }]);
+    expect(visibleBranchKeys(nested, new Set(["f"]), "", keyOf)).toEqual(["local:z"]);
+    expect(visibleBranchKeys(nested, new Set(["f/g"]), "", keyOf)).toEqual([
+      "local:f/y",
+      "local:z",
+    ]);
   });
 });
