@@ -8,9 +8,10 @@ import {
   renameBranch,
   setBranchUpstream,
 } from "../../lib/ipc";
-import type { AppError } from "../../lib/ipc";
+import type { AppError, AutoStash, CheckoutOutcome, CreatedBranch } from "../../lib/ipc";
 import { useAutoFetchState } from "../../lib/store/autoFetch";
 import { renderHookWithProviders } from "../../test/renderWithProviders";
+import { toastAutoStash } from "../checkout/autoStashToast";
 import { useBranchActions } from "./useBranchActions";
 import type { UseBranchActions } from "./useBranchActions";
 
@@ -23,17 +24,19 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   checkoutRemoteBranch: vi.fn(),
   setBranchUpstream: vi.fn(),
 }));
+vi.mock(import("../checkout/autoStashToast"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  toastAutoStash: vi.fn(),
+}));
 
 type Request = Parameters<UseBranchActions["run"]>[0];
 
 const exists: AppError = { kind: "branchExists", message: "taken" };
-const created = {
-  name: "topic",
-  oid: "a".repeat(40),
-  isHead: true,
-  tracking: null,
-  worktree: null,
+const created: CreatedBranch = {
+  branch: { name: "topic", oid: "a".repeat(40), isHead: true, tracking: null, worktree: null },
+  autoStash: null,
 };
+const noStash: CheckoutOutcome = { autoStash: null };
 
 // Runs a request inside act and returns what run resolved with.
 async function run(actions: () => UseBranchActions, req: Request): Promise<AppError | null> {
@@ -49,8 +52,8 @@ beforeEach(() => {
   vi.mocked(createBranch).mockResolvedValue(created);
   vi.mocked(renameBranch).mockResolvedValue(undefined);
   vi.mocked(deleteBranch).mockResolvedValue(undefined);
-  vi.mocked(checkoutBranch).mockResolvedValue(undefined);
-  vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
+  vi.mocked(checkoutBranch).mockResolvedValue(noStash);
+  vi.mocked(checkoutRemoteBranch).mockResolvedValue(noStash);
 });
 
 // Contract: each request calls its wrapper with the repo id and the given arguments.
@@ -189,7 +192,7 @@ describe("useBranchActions error state", () => {
   });
 
   it("should replace the error with null after a later success", async () => {
-    vi.mocked(checkoutBranch).mockRejectedValueOnce(exists).mockResolvedValue(undefined);
+    vi.mocked(checkoutBranch).mockRejectedValueOnce(exists).mockResolvedValue(noStash);
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     await run(() => result.current, { action: "checkout", name: "a" });
     await run(() => result.current, { action: "checkout", name: "a" });
@@ -244,7 +247,9 @@ describe("useBranchActions pending", () => {
 
   it("should be pending while a request is in flight and idle after it settles", async () => {
     let finish!: () => void;
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>((r) => (finish = r)));
+    vi.mocked(checkoutBranch).mockReturnValue(
+      new Promise<CheckoutOutcome>((r) => (finish = () => r(noStash))),
+    );
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     let call!: Promise<unknown>;
     act(() => {
@@ -281,7 +286,7 @@ describe("useBranchActions overlapping runs", () => {
   }
 
   it("should expose the error of the latest run when an earlier run settles afterwards", async () => {
-    const first = gate<undefined>();
+    const first = gate<CheckoutOutcome>();
     vi.mocked(checkoutBranch).mockReturnValueOnce(first.promise).mockRejectedValueOnce(other);
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     let firstResult: AppError | null | undefined;
@@ -291,7 +296,7 @@ describe("useBranchActions overlapping runs", () => {
     await run(() => result.current, { action: "checkout", name: "b" });
     await waitFor(() => expect(result.current.error).toEqual(other));
     await act(async () => {
-      first.resolve(undefined);
+      first.resolve(noStash);
       await first.promise;
     });
     expect(firstResult).toBeNull();
@@ -299,8 +304,8 @@ describe("useBranchActions overlapping runs", () => {
   });
 
   it("should resolve each run with its own outcome", async () => {
-    const first = gate<undefined>();
-    vi.mocked(checkoutBranch).mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+    const first = gate<CheckoutOutcome>();
+    vi.mocked(checkoutBranch).mockReturnValueOnce(first.promise).mockResolvedValueOnce(noStash);
     const { result } = renderHookWithProviders(() => useBranchActions(1));
     let firstResult: AppError | null | undefined;
     act(() => {
@@ -412,5 +417,54 @@ describe("useBranchActions auto-fetch requests", () => {
     await run(() => result.current, { action: "rename", oldName: "topic", newName: "t2" });
     await run(() => result.current, { action: "delete", name: "t2", force: false });
     expect(requested()).toBe(0);
+  });
+});
+
+// Contract: a successful checkout or checkout-create toasts its auto-stash report.
+describe("useBranchActions auto-stash toast", () => {
+  const report: AutoStash = { files: 2, reapply: "applied", detail: null };
+
+  it("toasts the report after a checkout, naming the branch", async () => {
+    vi.mocked(checkoutBranch).mockResolvedValue({ autoStash: report });
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkout", name: "dev" });
+    expect(toastAutoStash).toHaveBeenCalledExactlyOnceWith(report, "dev");
+  });
+
+  it("toasts the report after a remote checkout, naming the branch", async () => {
+    vi.mocked(checkoutRemoteBranch).mockResolvedValue({ autoStash: report });
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkoutRemote", remote: "origin", name: "dev" });
+    expect(toastAutoStash).toHaveBeenCalledExactlyOnceWith(report, "dev");
+  });
+
+  it("toasts the report after a create that checks out, naming the new branch", async () => {
+    vi.mocked(createBranch).mockResolvedValue({ ...created, autoStash: report });
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, {
+      action: "create",
+      name: "topic",
+      startPoint: null,
+      checkout: true,
+    });
+    expect(toastAutoStash).toHaveBeenCalledExactlyOnceWith(report, "topic");
+  });
+
+  it("does not toast after a create that does not check out", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, {
+      action: "create",
+      name: "topic",
+      startPoint: null,
+      checkout: false,
+    });
+    expect(toastAutoStash).not.toHaveBeenCalled();
+  });
+
+  it("does not toast after a failed checkout", async () => {
+    vi.mocked(checkoutBranch).mockRejectedValue({ kind: "checkoutFailedStashKept", message: "m" });
+    const { result } = renderHookWithProviders(() => useBranchActions(1));
+    await run(() => result.current, { action: "checkout", name: "dev" });
+    expect(toastAutoStash).not.toHaveBeenCalled();
   });
 });

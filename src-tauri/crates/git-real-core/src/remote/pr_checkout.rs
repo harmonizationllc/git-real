@@ -15,7 +15,7 @@ use super::remotes::Direction;
 use super::run_network;
 use crate::error::GitError;
 use crate::model::CheckoutPrOutcome;
-use crate::refs::switch::{self, SwitchTarget};
+use crate::refs::switch::SwitchTarget;
 use crate::refs::{find_local, is_not_found, refuse_duplicate_branch};
 use crate::repo::RepoSession;
 
@@ -120,8 +120,11 @@ impl RepoSession {
                 oid: &hex,
             },
         };
-        switch::run(&git, workdir, target)?;
-        Ok(CheckoutPrOutcome::CheckedOut { branch: name })
+        let auto_stash = self.switch_auto_stash(&git, workdir, target, &name)?;
+        Ok(CheckoutPrOutcome::CheckedOut {
+            branch: name,
+            auto_stash,
+        })
     }
 }
 

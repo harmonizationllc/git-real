@@ -66,6 +66,14 @@ pub enum GitError {
         stdout: String,
         stderr: String,
     },
+    /// The switch after an auto-stash failed and popping the stash back failed
+    /// too, so the user's changes are left in the stash list.
+    #[error("git switch failed (exit code {code:?}): {stderr}; your changes are in the stash list")]
+    CheckoutFailedStashKept {
+        code: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
     #[error("the commit graph changed; reload it")]
     LogStale,
     #[error("{0} is not a commit in this repository")]

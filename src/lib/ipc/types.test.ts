@@ -2,7 +2,11 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   AppError,
   AppErrorKind,
+  AutoStash,
+  AutoStashReapply,
+  CheckoutOutcome,
   CheckoutPrOutcome,
+  CreatedBranch,
   CiState,
   Credentials,
   HostingAccount,
@@ -654,10 +658,54 @@ describe("hosting types", () => {
 
   it("should accept both CheckoutPrOutcome arms", () => {
     const outcomes: CheckoutPrOutcome[] = [
-      { kind: "checkedOut", branch: "pr/7" },
+      { kind: "checkedOut", branch: "pr/7", autoStash: null },
       { kind: "needsReset", branch: "pr/7" },
     ];
     expect(outcomes.map((o) => o.kind)).toEqual(["checkedOut", "needsReset"]);
+  });
+});
+
+// Contract: the auto-stash report the checkout commands return.
+describe("auto-stash checkout types", () => {
+  it("should accept all four AutoStashReapply values", () => {
+    const reapplies: AutoStashReapply[] = ["applied", "conflicts", "appliedNotDropped", "kept"];
+    expect(reapplies).toHaveLength(4);
+  });
+
+  it("should accept an AutoStash carrying every field", () => {
+    const report: AutoStash = { files: 3, reapply: "kept", detail: "error: boom" };
+    expect(Object.keys(report).sort()).toEqual(["detail", "files", "reapply"]);
+  });
+
+  it("should accept a CheckoutOutcome with and without a report", () => {
+    const outcomes: CheckoutOutcome[] = [
+      { autoStash: null },
+      { autoStash: { files: 1, reapply: "applied", detail: null } },
+    ];
+    expect(outcomes.map((o) => o.autoStash === null)).toEqual([true, false]);
+  });
+
+  it("should accept a CreatedBranch carrying the branch and the report", () => {
+    const created: CreatedBranch = {
+      branch: { name: "a", oid: "abc", isHead: true, tracking: null, worktree: null },
+      autoStash: { files: 2, reapply: "conflicts", detail: null },
+    };
+    expect(Object.keys(created).sort()).toEqual(["autoStash", "branch"]);
+  });
+
+  it("should accept a checkedOut CheckoutPrOutcome carrying a report", () => {
+    const outcome: CheckoutPrOutcome = {
+      kind: "checkedOut",
+      branch: "pr/7",
+      autoStash: { files: 2, reapply: "appliedNotDropped", detail: null },
+    };
+    expectTypeOf(outcome).toMatchTypeOf<CheckoutPrOutcome>();
+    expect(outcome.kind).toBe("checkedOut");
+  });
+
+  it("should accept checkoutFailedStashKept as an AppErrorKind", () => {
+    const kind: AppErrorKind = "checkoutFailedStashKept";
+    expect(kind).toBe("checkoutFailedStashKept");
   });
 });
 

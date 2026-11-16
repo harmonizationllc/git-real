@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use git_real_core::{BranchList, LocalBranch};
+use git_real_core::{BranchList, CheckoutOutcome, CreatedBranch};
 use tauri::State;
 
 use super::remote::{CredentialsArg, NetworkAuth, credentials_from_arg};
@@ -23,12 +23,16 @@ pub fn create_branch_inner(
     name: &str,
     start_point: Option<&str>,
     checkout: bool,
-) -> Result<LocalBranch, AppError> {
+) -> Result<CreatedBranch, AppError> {
     with_session(reg, id, |s| {
         if checkout {
             s.create_and_checkout_branch(name, start_point)
         } else {
             s.create_branch(name, start_point)
+                .map(|branch| CreatedBranch {
+                    branch,
+                    auto_stash: None,
+                })
         }
     })
 }
@@ -60,7 +64,11 @@ pub fn set_branch_upstream_inner(
     with_session(reg, id, |s| s.set_branch_upstream(branch, upstream))
 }
 
-pub fn checkout_branch_inner(reg: &RepoRegistry, id: RepoId, name: &str) -> Result<(), AppError> {
+pub fn checkout_branch_inner(
+    reg: &RepoRegistry,
+    id: RepoId,
+    name: &str,
+) -> Result<CheckoutOutcome, AppError> {
     with_session(reg, id, |s| s.checkout_branch(name))
 }
 
@@ -69,7 +77,7 @@ pub fn checkout_remote_branch_inner(
     id: RepoId,
     remote: &str,
     name: &str,
-) -> Result<(), AppError> {
+) -> Result<CheckoutOutcome, AppError> {
     with_session(reg, id, |s| s.checkout_remote_branch(remote, name))
 }
 
@@ -103,7 +111,7 @@ pub async fn create_branch(
     name: String,
     start_point: Option<String>,
     checkout: bool,
-) -> Result<LocalBranch, AppError> {
+) -> Result<CreatedBranch, AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || create_branch_inner(&reg, id, &name, start_point.as_deref(), checkout))
         .await
@@ -148,7 +156,7 @@ pub async fn checkout_branch(
     reg: State<'_, Arc<RepoRegistry>>,
     id: RepoId,
     name: String,
-) -> Result<(), AppError> {
+) -> Result<CheckoutOutcome, AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || checkout_branch_inner(&reg, id, &name)).await
 }
@@ -159,7 +167,7 @@ pub async fn checkout_remote_branch(
     id: RepoId,
     remote: String,
     name: String,
-) -> Result<(), AppError> {
+) -> Result<CheckoutOutcome, AppError> {
     let reg = Arc::clone(reg.inner());
     run_blocking(move || checkout_remote_branch_inner(&reg, id, &remote, &name)).await
 }

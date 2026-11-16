@@ -71,6 +71,7 @@ fn fetch_pr(session: &RepoSession, n: u64) -> RefFetch {
 fn checked_out(branch: &str) -> CheckoutPrOutcome {
     CheckoutPrOutcome::CheckedOut {
         branch: branch.to_owned(),
+        auto_stash: None,
     }
 }
 
@@ -174,17 +175,18 @@ fn a_diverged_pr_branch_needs_a_reset_and_reset_moves_it() {
     assert_eq!(ref_oid(&path, "refs/heads/pr/7"), Some(b));
 }
 
-// Uncommitted local edits that the PR head would overwrite block the switch like any other.
+// An untracked file the PR head would overwrite blocks the switch like any other (tracked
+// edits are auto-stashed instead; see tests/auto_stash.rs and pr_checkout_coverage.rs).
 #[test]
-fn a_conflicting_dirty_tree_blocks_checkout_with_checkout_failed() {
+fn an_untracked_file_the_pr_would_overwrite_blocks_checkout_with_checkout_failed() {
     if !common::git_available() {
         return;
     }
     let (_d, _b, path, bare, _head) = fx();
-    pr_head(&bare, 7, "README.md", "changed by the pr\n", false);
+    pr_head(&bare, 7, "f.txt", "added by the pr\n", false);
     let session = RepoSession::open(&path).unwrap();
     let fetch = fetch_pr(&session, 7);
-    common::write_file(&path, "README.md", "local edit\n");
+    common::write_file(&path, "f.txt", "mine\n");
 
     let err = session.checkout_fetch_head(&fetch, 7, false).unwrap_err();
 

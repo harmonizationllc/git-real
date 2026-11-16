@@ -1,6 +1,7 @@
 //! Plain data types exchanged with the app layer.
 
 mod branch;
+mod checkout;
 mod commit;
 mod diff;
 mod history;
@@ -16,6 +17,7 @@ mod status;
 mod tag;
 
 pub use branch::{BranchList, HeadState, LocalBranch, RemoteBranch, RemoteGroup, Tracking};
+pub use checkout::{AutoStash, AutoStashReapply, CheckoutOutcome, CreatedBranch};
 pub use commit::{CommitConfig, CommitMessage, CommitOutcome, SigningFormat};
 pub use diff::{
     DiffLine, DiffLineKind, DiffOptions, DiffScope, DiffSide, FileDiff, Hunk, HunkAction,

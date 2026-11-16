@@ -18,8 +18,8 @@ pub use self::shared::LogSnapshot;
 use self::shared::lock;
 use crate::error::GitError;
 use crate::git_cli;
-use crate::model::{CommitDetail, LogPage, LogSummary, ResetMode, Signature};
-use crate::refs::switch::{self, SwitchTarget};
+use crate::model::{CheckoutOutcome, CommitDetail, LogPage, LogSummary, ResetMode, Signature};
+use crate::refs::switch::SwitchTarget;
 use crate::repo::RepoSession;
 use crate::revision;
 
@@ -89,12 +89,14 @@ impl RepoSession {
         })
     }
 
-    /// Detaches HEAD at `oid` through `git switch --detach`. Only the
-    /// canonical hex of a commit that exists reaches the command line.
-    pub fn checkout_commit(&self, oid: &str) -> Result<(), GitError> {
+    /// Detaches HEAD at `oid` through `git switch --detach`, auto-stashing
+    /// tracked local changes that would block it. Only the canonical hex of a
+    /// commit that exists reaches the command line.
+    pub fn checkout_commit(&self, oid: &str) -> Result<CheckoutOutcome, GitError> {
         let hex = self.find_commit_hex(oid)?.id().to_string();
         let git = git_cli::locate()?;
-        switch::run(&git, self.workdir()?, SwitchTarget::Detach(&hex))
+        self.switch_auto_stash(&git, self.workdir()?, SwitchTarget::Detach(&hex), &hex[..7])
+            .map(|auto_stash| CheckoutOutcome { auto_stash })
     }
 
     /// Moves HEAD (and the branch it is on) to `oid`, resetting the index

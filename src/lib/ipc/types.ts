@@ -68,6 +68,7 @@ export type AppErrorKind =
   | "remoteNotFound"
   | "upstreamUnmapped"
   | "checkoutFailed"
+  | "checkoutFailedStashKept"
   | "logStale"
   | "commitNotFound"
   | "binaryFile"
@@ -713,4 +714,26 @@ export interface CreatePrRequest {
 }
 
 export type CheckoutPrOutcome =
-  { kind: "checkedOut"; branch: string } | { kind: "needsReset"; branch: string };
+  | { kind: "checkedOut"; branch: string; autoStash: AutoStash | null }
+  | { kind: "needsReset"; branch: string };
+
+/** How the stash taken around a refused checkout fared when popped on the new HEAD. */
+export type AutoStashReapply = "applied" | "conflicts" | "appliedNotDropped" | "kept";
+
+/** The stash a checkout took: `files` changed paths; `detail` is git's pop output when kept. */
+export interface AutoStash {
+  files: number;
+  reapply: AutoStashReapply;
+  detail: string | null;
+}
+
+/** What a checkout command resolves with; `autoStash` is null when no stash was needed. */
+export interface CheckoutOutcome {
+  autoStash: AutoStash | null;
+}
+
+/** What `createBranch` resolves with; `autoStash` is always null without `checkout`. */
+export interface CreatedBranch {
+  branch: LocalBranch;
+  autoStash: AutoStash | null;
+}

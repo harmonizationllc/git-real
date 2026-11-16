@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use git_real_core::hosting::CheckoutPrOutcome;
 use git_real_core::remote::pr_checkout::RefFetch;
-use git_real_core::{GitError, RepoSession};
+use git_real_core::{AutoStashReapply, GitError, RepoSession};
 use git2::Repository;
 use tempfile::TempDir;
 
@@ -73,7 +73,24 @@ fn fetch_pr(session: &RepoSession, n: u64) -> RefFetch {
 fn checked_out(branch: &str) -> CheckoutPrOutcome {
     CheckoutPrOutcome::CheckedOut {
         branch: branch.to_owned(),
+        auto_stash: None,
     }
+}
+
+/// README.md on the default branch; the PR changes its first line and the
+/// local edit its last, so an auto-stash pops cleanly on the PR branch.
+const BASE: &str = "top\n1\n2\n3\n4\n5\nbottom\n";
+const ON_PR: &str = "top on pr\n1\n2\n3\n4\n5\nbottom\n";
+const DIRTY: &str = "top\n1\n2\n3\n4\n5\nbottom dirty\n";
+const MERGED: &str = "top on pr\n1\n2\n3\n4\n5\nbottom dirty\n";
+
+/// `fx()` with `BASE` committed on the default branch and pushed, so PR heads
+/// built on the default branch carry it.
+fn fx_multiline() -> (TempDir, TempDir, PathBuf, PathBuf, String) {
+    let (d, b, path, bare, head) = fx();
+    common::commit_file(&path, "README.md", BASE, "base");
+    common::push_branch(&path, &head);
+    (d, b, path, bare, head)
 }
 
 /// Fetches PR `n` and checks out `pr/n`, then switches back to `head`.
@@ -493,7 +510,39 @@ fn a_non_conflicting_dirty_tree_is_carried_over() {
 }
 
 #[test]
-fn a_conflicting_dirty_tree_blocks_reset_too_and_moves_nothing() {
+fn a_conflicting_dirty_tree_is_auto_stashed_across_a_reset() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, head) = fx_multiline();
+    pr_head(&bare, 7, "a.txt", "a\n", false);
+    let session = RepoSession::open(&path).unwrap();
+    let fetch = fetch_pr(&session, 7);
+    session.checkout_fetch_head(&fetch, 7, false).unwrap();
+    common::commit_file(&path, "l.txt", "local\n", "local commit");
+    common::run_git_ok(&path, &["switch", &head]);
+    let fetched = pr_head(&bare, 7, "README.md", ON_PR, false);
+    let fetch = fetch_pr(&session, 7);
+    common::write_file(&path, "README.md", DIRTY);
+
+    match session.checkout_fetch_head(&fetch, 7, true).unwrap() {
+        CheckoutPrOutcome::CheckedOut { branch, auto_stash } => {
+            assert_eq!(branch, "pr/7");
+            assert_eq!(auto_stash.unwrap().reapply, AutoStashReapply::Applied);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(ref_oid(&path, "refs/heads/pr/7"), Some(fetched));
+    assert_eq!(common::head_branch_name(&path), "pr/7");
+    assert_eq!(
+        std::fs::read_to_string(path.join("README.md")).unwrap(),
+        MERGED
+    );
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
+#[test]
+fn an_untracked_collision_blocks_reset_too_and_moves_nothing() {
     if !common::git_available() {
         return;
     }
@@ -504,15 +553,40 @@ fn a_conflicting_dirty_tree_blocks_reset_too_and_moves_nothing() {
     session.checkout_fetch_head(&fetch, 7, false).unwrap();
     let local = common::commit_file(&path, "l.txt", "local\n", "local commit");
     common::run_git_ok(&path, &["switch", &head]);
-    pr_head(&bare, 7, "README.md", "pr readme\n", false);
+    pr_head(&bare, 7, "f.txt", "added by the pr\n", false);
     let fetch = fetch_pr(&session, 7);
-    common::write_file(&path, "README.md", "local edit\n");
+    common::write_file(&path, "f.txt", "mine\n");
 
     let err = session.checkout_fetch_head(&fetch, 7, true).unwrap_err();
 
     assert!(matches!(err, GitError::CheckoutFailed { .. }), "{err:?}");
     assert_eq!(ref_oid(&path, "refs/heads/pr/7"), Some(local.to_string()));
     assert_eq!(common::head_branch_name(&path), head);
+    assert!(session.list_stashes().unwrap().is_empty());
+}
+
+#[test]
+fn pr_checkout_reports_the_auto_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let (_d, _b, path, bare, _head) = fx_multiline();
+    pr_head(&bare, 7, "README.md", ON_PR, false);
+    let session = RepoSession::open(&path).unwrap();
+    let fetch = fetch_pr(&session, 7);
+    common::write_file(&path, "README.md", DIRTY);
+
+    match session.checkout_fetch_head(&fetch, 7, false).unwrap() {
+        CheckoutPrOutcome::CheckedOut { branch, auto_stash } => {
+            assert_eq!(branch, "pr/7");
+            assert_eq!(auto_stash.unwrap().reapply, AutoStashReapply::Applied);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        std::fs::read_to_string(path.join("README.md")).unwrap(),
+        MERGED
+    );
 }
 
 #[test]

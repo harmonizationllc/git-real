@@ -99,6 +99,27 @@ fn push_branch_to_bare(bare: &Path, name: &str) {
     git(&side, &["push", "-q", "origin", name]);
 }
 
+/// Pushes a branch `name` to `bare` from a side clone, with one commit writing `content` to `file`.
+fn push_branch_with_file(bare: &Path, name: &str, file: &str, content: &str) {
+    let side_dir = tempfile::tempdir().unwrap();
+    let side = side_dir.path().join("side");
+    git(
+        side_dir.path(),
+        &[
+            "clone",
+            "-c",
+            "core.autocrlf=false",
+            "-q",
+            bare.to_str().unwrap(),
+            "side",
+        ],
+    );
+    common::configure_identity(&side);
+    git(&side, &["checkout", "-q", "-b", name]);
+    common::commit_file(&side, file, content, "feature edit");
+    git(&side, &["push", "-q", "origin", name]);
+}
+
 /// A repository whose `origin` is `https://github.com/o/r.git`, redirected to a local bare
 /// clone by `insteadOf`, registered in a fresh registry with an empty account store.
 struct Hosted {
@@ -764,8 +785,50 @@ fn checkout_of_a_same_repo_pr_tracks_the_head_branch() {
     assert_eq!(
         outcome,
         CheckoutPrOutcome::CheckedOut {
-            branch: "feature".to_owned()
+            branch: "feature".to_owned(),
+            auto_stash: None
         }
+    );
+}
+
+// A tracked edit that collides with the PR branch is stashed around the switch and reapplied.
+#[test]
+fn checkout_of_a_same_repo_pr_with_a_tracked_collision_reports_the_reapplied_stash() {
+    if !common::git_available() {
+        return;
+    }
+    let fx = hosted();
+    fx.connect();
+    common::commit_file(
+        &fx.path,
+        "README.md",
+        "top\n1\n2\n3\n4\n5\nbottom\n",
+        "base",
+    );
+    git(&fx.path, &["push", "-q", "origin", "HEAD"]);
+    push_branch_with_file(
+        &fx.bare,
+        "feature",
+        "README.md",
+        "top on feature\n1\n2\n3\n4\n5\nbottom\n",
+    );
+    std::fs::write(
+        fx.path.join("README.md"),
+        "top\n1\n2\n3\n4\n5\nbottom dirty\n",
+    )
+    .unwrap();
+    let t = FakeTransport::new().reply(200, &github_pr(3, "feature", false));
+    let outcome = fx.checkout(&t, 3, false).unwrap();
+    let CheckoutPrOutcome::CheckedOut { branch, auto_stash } = outcome else {
+        panic!("expected CheckedOut, got {outcome:?}");
+    };
+    assert_eq!(branch, "feature");
+    let report = auto_stash.expect("a stash was taken");
+    assert_eq!(report.reapply, git_real_core::AutoStashReapply::Applied);
+    assert_eq!(common::head_branch_name(&fx.path), "feature");
+    assert_eq!(
+        std::fs::read_to_string(fx.path.join("README.md")).unwrap(),
+        "top on feature\n1\n2\n3\n4\n5\nbottom dirty\n"
     );
 }
 
@@ -822,7 +885,8 @@ fn checkout_of_a_github_fork_pr_fetches_refs_pull_and_creates_pr_n() {
         (outcome, ref_oid(&fx.path, "refs/heads/pr/7")),
         (
             CheckoutPrOutcome::CheckedOut {
-                branch: "pr/7".to_owned()
+                branch: "pr/7".to_owned(),
+                auto_stash: None
             },
             Some(pr_oid)
         )
@@ -943,7 +1007,8 @@ fn checkout_with_reset_moves_pr_n_to_the_pull_request_head() {
         (outcome, ref_oid(&fx.path, "refs/heads/pr/7")),
         (
             CheckoutPrOutcome::CheckedOut {
-                branch: "pr/7".to_owned()
+                branch: "pr/7".to_owned(),
+                auto_stash: None
             },
             Some(new_head)
         )
@@ -966,7 +1031,8 @@ fn checkout_again_when_pr_n_already_contains_the_head_just_switches() {
     assert_eq!(
         outcome,
         CheckoutPrOutcome::CheckedOut {
-            branch: "pr/7".to_owned()
+            branch: "pr/7".to_owned(),
+            auto_stash: None
         }
     );
 }

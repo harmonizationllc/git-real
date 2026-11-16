@@ -56,8 +56,8 @@ beforeEach(async () => {
     clearError: vi.fn(),
   });
   vi.mocked(listBranches).mockResolvedValue(list());
-  vi.mocked(createBranch).mockResolvedValue(localBranch("topic"));
-  vi.mocked(checkoutBranch).mockResolvedValue(undefined);
+  vi.mocked(createBranch).mockResolvedValue({ branch: localBranch("topic"), autoStash: null });
+  vi.mocked(checkoutBranch).mockResolvedValue({ autoStash: null });
 });
 
 function renderLocal() {

@@ -128,6 +128,33 @@ fn app_error_kind_for_each_git_error_variant() {
             AppErrorKind::CheckoutFailed,
             Some("git switch failed with exit code 128"),
         ),
+        (
+            GitError::CheckoutFailedStashKept {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "hook says no".into(),
+            },
+            AppErrorKind::CheckoutFailedStashKept,
+            Some("hook says no. Your changes are in the stash list."),
+        ),
+        (
+            GitError::CheckoutFailedStashKept {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "fatal: hook says no.".into(),
+            },
+            AppErrorKind::CheckoutFailedStashKept,
+            Some("fatal: hook says no. Your changes are in the stash list."),
+        ),
+        (
+            GitError::CheckoutFailedStashKept {
+                code: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+            AppErrorKind::CheckoutFailedStashKept,
+            Some("git switch failed with exit code 1. Your changes are in the stash list."),
+        ),
         (GitError::NoRemotes, AppErrorKind::NoRemotes, None),
         (GitError::NoUpstream, AppErrorKind::NoUpstream, None),
         (GitError::DetachedHead, AppErrorKind::DetachedHead, None),
@@ -506,6 +533,10 @@ fn branch_error_kinds_serialize_camel_case() {
         (AppErrorKind::RemoteNotFound, "remoteNotFound"),
         (AppErrorKind::UpstreamUnmapped, "upstreamUnmapped"),
         (AppErrorKind::CheckoutFailed, "checkoutFailed"),
+        (
+            AppErrorKind::CheckoutFailedStashKept,
+            "checkoutFailedStashKept",
+        ),
     ];
     for (kind, expected) in cases {
         assert_eq!(serde_json::to_value(kind).unwrap(), json!(expected));

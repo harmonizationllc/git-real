@@ -131,14 +131,11 @@ beforeEach(() => {
   );
   vi.mocked(searchLog).mockResolvedValue([]);
   vi.mocked(listBranches).mockResolvedValue(branchList());
-  vi.mocked(checkoutCommit).mockResolvedValue(undefined);
+  vi.mocked(checkoutCommit).mockResolvedValue({ autoStash: null });
   vi.mocked(resetToCommit).mockResolvedValue(undefined);
   vi.mocked(createBranch).mockResolvedValue({
-    name: "topic",
-    oid: oidOf(0),
-    isHead: false,
-    tracking: null,
-    worktree: null,
+    branch: { name: "topic", oid: oidOf(0), isHead: false, tracking: null, worktree: null },
+    autoStash: null,
   });
   vi.mocked(copyText).mockResolvedValue(undefined);
   vi.mocked(createTag).mockResolvedValue(undefined);
@@ -1536,7 +1533,7 @@ describe("GraphPanel action errors and busy state", () => {
 
   it("should be aria-busy and disable the menu items while a checkout is pending", async () => {
     const pending = deferred();
-    vi.mocked(checkoutCommit).mockReturnValue(pending.promise);
+    vi.mocked(checkoutCommit).mockReturnValue(pending.promise.then(() => ({ autoStash: null })));
     const { user } = await renderPanel();
     rightClick(optionAt(1));
     await user.click(menuItem("Checkout"));
@@ -1553,7 +1550,7 @@ describe("GraphPanel action errors and busy state", () => {
 
   it("should stop being busy once the checkout settles", async () => {
     const pending = deferred();
-    vi.mocked(checkoutCommit).mockReturnValue(pending.promise);
+    vi.mocked(checkoutCommit).mockReturnValue(pending.promise.then(() => ({ autoStash: null })));
     const { user } = await renderPanel();
     rightClick(optionAt(1));
     await user.click(menuItem("Checkout"));

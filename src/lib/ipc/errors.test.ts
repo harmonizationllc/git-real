@@ -329,3 +329,15 @@ describe("isAppError linked worktree kinds", () => {
     expect(toAppError(e)).toBe(e);
   });
 });
+
+// Contract: the auto-stash checkout failure kind is recognised.
+describe("isAppError auto-stash kinds", () => {
+  it("isAppError accepts kind checkoutFailedStashKept", () => {
+    expect(isAppError({ kind: "checkoutFailedStashKept", message: "m" })).toBe(true);
+  });
+
+  it("toAppError passes kind checkoutFailedStashKept through unchanged", () => {
+    const e = { kind: "checkoutFailedStashKept", message: "m" };
+    expect(toAppError(e)).toBe(e);
+  });
+});

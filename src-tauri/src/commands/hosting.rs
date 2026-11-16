@@ -96,8 +96,11 @@ pub fn hosting_checkout_pull_request_inner(
     match hosting::checkout_plan(repo.provider, &pr)? {
         CheckoutPlan::TrackBranch { branch } => {
             fetch_remote_inner(reg, id, "origin", auth)?;
-            with_session(reg, id, |s| s.checkout_remote_branch("origin", &branch))?;
-            Ok(CheckoutPrOutcome::CheckedOut { branch })
+            let out = with_session(reg, id, |s| s.checkout_remote_branch("origin", &branch))?;
+            Ok(CheckoutPrOutcome::CheckedOut {
+                branch,
+                auto_stash: out.auto_stash,
+            })
         }
         CheckoutPlan::FetchHead { source, refspec } => {
             let fetch = with_session(reg, id, |s| s.prepare_ref_fetch(&source, &refspec))?;

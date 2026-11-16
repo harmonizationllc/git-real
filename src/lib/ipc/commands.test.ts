@@ -90,6 +90,9 @@ import {
 import { isAppError } from "./errors";
 import type {
   BranchList,
+  CheckoutOutcome,
+  CheckoutPrOutcome,
+  CreatedBranch,
   CreatePrRequest,
   Credentials,
   RemoteInfo,
@@ -451,9 +454,14 @@ describe("branch commands", () => {
     expect(calls).toEqual([{ cmd: "list_branches", args: { id: 3 } }]);
   });
 
+  const createdReport: CreatedBranch = {
+    branch: created,
+    autoStash: { files: 2, reapply: "applied", detail: null },
+  };
+
   it("createBranch sends create_branch with id, name, startPoint and checkout", async () => {
-    const calls = mockWith(created);
-    await expect(createBranch(3, "topic", "main", true)).resolves.toEqual(created);
+    const calls = mockWith(createdReport);
+    await expect(createBranch(3, "topic", "main", true)).resolves.toEqual(createdReport);
     expect(calls).toEqual([
       {
         cmd: "create_branch",
@@ -463,7 +471,7 @@ describe("branch commands", () => {
   });
 
   it("createBranch sends a null startPoint unchanged", async () => {
-    const calls = mockWith(created);
+    const calls = mockWith({ branch: created, autoStash: null });
     await createBranch(3, "topic", null, false);
     expect(calls[0]?.args).toEqual({ id: 3, name: "topic", startPoint: null, checkout: false });
   });
@@ -492,6 +500,20 @@ describe("branch commands", () => {
     const calls = mockWith(null);
     await checkoutBranch(3, "topic");
     expect(calls).toEqual([{ cmd: "checkout_branch", args: { id: 3, name: "topic" } }]);
+  });
+
+  it("checkoutBranch resolves with the auto-stash report", async () => {
+    const outcome: CheckoutOutcome = {
+      autoStash: { files: 3, reapply: "kept", detail: "error: conflict" },
+    };
+    mockWith(outcome);
+    await expect(checkoutBranch(3, "topic")).resolves.toEqual(outcome);
+  });
+
+  it("checkoutRemoteBranch resolves with the auto-stash report", async () => {
+    const outcome: CheckoutOutcome = { autoStash: null };
+    mockWith(outcome);
+    await expect(checkoutRemoteBranch(3, "origin", "feature/x")).resolves.toEqual(outcome);
   });
 
   it("checkoutRemoteBranch sends checkout_remote_branch with id, remote and name", async () => {
@@ -671,9 +693,12 @@ describe("commit graph command argument edges", () => {
     await expect(getCommit(1, "dead")).rejects.toBe(err);
   });
 
-  it("checkoutCommit resolves to undefined", async () => {
-    mockWith(null);
-    await expect(checkoutCommit(1, "abc")).resolves.toBeNull();
+  it("checkoutCommit resolves with the auto-stash report", async () => {
+    const outcome: CheckoutOutcome = {
+      autoStash: { files: 1, reapply: "conflicts", detail: null },
+    };
+    mockWith(outcome);
+    await expect(checkoutCommit(1, "abc")).resolves.toEqual(outcome);
   });
 });
 
@@ -1339,6 +1364,16 @@ describe("hosting command wrappers", () => {
     const calls = mockWith({ kind: "needsReset", branch: "pr/7" });
     await hostingCheckoutPullRequest(1, 7, false, null);
     expect(calls[0]?.args).toEqual({ id: 1, number: 7, reset: false, credentials: null });
+  });
+
+  it("hostingCheckoutPullRequest resolves a checkedOut outcome with its auto-stash report", async () => {
+    const outcome: CheckoutPrOutcome = {
+      kind: "checkedOut",
+      branch: "pr/7",
+      autoStash: { files: 2, reapply: "appliedNotDropped", detail: null },
+    };
+    mockWith(outcome);
+    await expect(hostingCheckoutPullRequest(1, 7, false)).resolves.toEqual(outcome);
   });
 
   it("hostingCheckoutPullRequest resolves to the outcome", async () => {

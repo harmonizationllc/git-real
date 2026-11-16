@@ -67,7 +67,7 @@ beforeEach(async () => {
     clearError: vi.fn(),
   });
   vi.mocked(listBranches).mockResolvedValue(list());
-  vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
+  vi.mocked(checkoutRemoteBranch).mockResolvedValue({ autoStash: null });
   vi.mocked(removeRemote).mockResolvedValue(undefined);
 });
 

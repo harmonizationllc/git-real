@@ -141,12 +141,12 @@ beforeEach(() => {
   integrationRun.mockResolvedValue(null);
   provideMerge();
   vi.mocked(listBranches).mockResolvedValue(list());
-  vi.mocked(createBranch).mockResolvedValue(localBranch("topic"));
+  vi.mocked(createBranch).mockResolvedValue({ branch: localBranch("topic"), autoStash: null });
   vi.mocked(renameBranch).mockResolvedValue(undefined);
   vi.mocked(setBranchUpstream).mockResolvedValue(undefined);
   vi.mocked(deleteBranch).mockResolvedValue(undefined);
-  vi.mocked(checkoutBranch).mockResolvedValue(undefined);
-  vi.mocked(checkoutRemoteBranch).mockResolvedValue(undefined);
+  vi.mocked(checkoutBranch).mockResolvedValue({ autoStash: null });
+  vi.mocked(checkoutRemoteBranch).mockResolvedValue({ autoStash: null });
   vi.mocked(deleteRemoteBranch).mockResolvedValue(undefined);
   vi.mocked(rebasePlan).mockResolvedValue([]);
   vi.mocked(removeRemote).mockResolvedValue(undefined);
@@ -953,7 +953,7 @@ describe("BranchesPanel query errors", () => {
 describe("BranchesPanel pending", () => {
   it("should set aria-busy on the region while an action is pending", async () => {
     const d = deferred();
-    vi.mocked(checkoutBranch).mockReturnValue(d.promise);
+    vi.mocked(checkoutBranch).mockReturnValue(d.promise.then(() => ({ autoStash: null })));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
@@ -971,7 +971,7 @@ describe("BranchesPanel pending", () => {
   });
 
   it("should disable the menu items while an action is pending", async () => {
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise(() => {}));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
@@ -986,7 +986,9 @@ describe("BranchesPanel pending", () => {
 
   async function openPendingCreate() {
     const d = deferred();
-    vi.mocked(createBranch).mockReturnValue(d.promise.then(() => localBranch("topic")));
+    vi.mocked(createBranch).mockReturnValue(
+      d.promise.then(() => ({ branch: localBranch("topic"), autoStash: null })),
+    );
     const { user } = await renderPanel();
     await user.click(screen.getByRole("button", { name: "New branch…" }));
     const dialog = await dialogNamed("New branch");
@@ -1157,7 +1159,7 @@ describe("BranchesPanel switch checkbox reset", () => {
 // Contract (architect 7): activation does nothing while an action is pending.
 describe("BranchesPanel activation while pending", () => {
   async function startPendingCheckout() {
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise(() => {}));
     const view = await renderPanel();
     await view.user.dblClick(localRow("feature"));
     await waitFor(() =>
@@ -1363,7 +1365,7 @@ describe("BranchesPanel busy state after failure", () => {
   });
 
   it("should disable every item of a remote branch's menu while an action is pending", async () => {
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise(() => {}));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
@@ -1393,7 +1395,7 @@ describe("BranchesPanel New branch… while pending", () => {
 
   it("should disable New branch… while an action is pending and enable it once it settles", async () => {
     const d = deferred();
-    vi.mocked(checkoutBranch).mockReturnValue(d.promise);
+    vi.mocked(checkoutBranch).mockReturnValue(d.promise.then(() => ({ autoStash: null })));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(busy()).toHaveAttribute("aria-busy", "true"));
@@ -1595,7 +1597,7 @@ describe("BranchesPanel integration menu items", () => {
   });
 
   it("should disable the items while a branch action is pending", async () => {
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise(() => {}));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>
@@ -2299,7 +2301,7 @@ describe("BranchesPanel drag-to-merge", () => {
   });
 
   it("should disable dragging while a branch action is pending", async () => {
-    vi.mocked(checkoutBranch).mockReturnValue(new Promise<void>(() => {}));
+    vi.mocked(checkoutBranch).mockReturnValue(new Promise(() => {}));
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() =>

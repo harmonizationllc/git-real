@@ -156,7 +156,7 @@ impl RepoSession {
         }
     }
 
-    fn stash_tip(&self) -> Option<Oid> {
+    pub(crate) fn stash_tip(&self) -> Option<Oid> {
         self.repo().refname_to_id(STASH_REF).ok()
     }
 
