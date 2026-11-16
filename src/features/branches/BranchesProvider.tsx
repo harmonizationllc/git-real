@@ -139,7 +139,6 @@ const createDialog = (title: string, startPoint: string | null): CreateDialog =>
   checkout: true,
 });
 
-/** Every remote-tracking short name (`origin/main`), in the list's remote then branch order. */
 /** A forced delete cannot be unmerged, so a `notMerged` outcome there is reported as a failure. */
 const unmergedAsFailed = (outcomes: BranchDeleteOutcome[]): BranchDeleteOutcome[] =>
   outcomes.map((o) =>
@@ -154,6 +153,7 @@ const unmergedAsFailed = (outcomes: BranchDeleteOutcome[]): BranchDeleteOutcome[
       : o,
   );
 
+/** Every remote-tracking short name (`origin/main`), in the list's remote then branch order. */
 const remoteBranchNames = (list: BranchList | undefined): string[] =>
   list?.remotes.flatMap((g) => g.branches.map((b) => `${g.remote}/${b.name}`)) ?? [];
 
