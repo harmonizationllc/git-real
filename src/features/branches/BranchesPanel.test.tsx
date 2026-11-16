@@ -67,12 +67,13 @@ const localBranch = (
   name: string,
   isHead = false,
   tracking: LocalBranch["tracking"] = null,
+  worktree: LocalBranch["worktree"] = null,
 ): LocalBranch => ({
   name,
   oid: oid("a"),
   isHead,
   tracking,
-  worktree: null,
+  worktree,
 });
 const list = (over: Partial<BranchList> = {}): BranchList => ({
   head: { kind: "branch", name: "main" },
@@ -3136,5 +3137,174 @@ describe("BranchesPanel selection", () => {
     const { user } = await renderPanel();
     await user.dblClick(localRow("feature"));
     await waitFor(() => expect(checkoutBranch).toHaveBeenCalledWith(1, "feature"));
+  });
+});
+
+describe("BranchesPanel batch delete", () => {
+  const three = () =>
+    list({
+      local: [localBranch("main", true), localBranch("feature"), localBranch("feature2")],
+    });
+  type User = Awaited<ReturnType<typeof renderPanel>>["user"];
+
+  /** Plain-clicks the first row and ctrl-clicks the rest. */
+  async function selectRows(user: User, rows: HTMLElement[]) {
+    await user.click(rows[0]);
+    await user.keyboard("{Control>}");
+    for (const r of rows.slice(1)) await user.click(r);
+    await user.keyboard("{/Control}");
+  }
+
+  async function openBatchDelete(user: User) {
+    await selectRows(user, [localRow("feature"), localRow("feature2")]);
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Delete 2 branches…"));
+    return dialogNamed("Delete 2 branches?");
+  }
+
+  it("should label Delete with the count of selected deletable local rows", async () => {
+    const { user } = await renderPanel(three());
+    await selectRows(user, [localRow("feature"), localRow("feature2"), localRow("main")]);
+    rightClick(localRow("feature2"));
+    expect(menuItem("Delete 2 branches…")).toBeEnabled();
+  });
+
+  it("should disable Delete when every selected local row is HEAD or locked", async () => {
+    const data = list({
+      local: [
+        localBranch("main", true),
+        localBranch("wt", false, null, "/work/wt-folder"),
+        localBranch("feature"),
+      ],
+    });
+    const { user } = await renderPanel(data);
+    await selectRows(user, [localRow("main"), localRow("wt")]);
+    rightClick(localRow("wt"));
+    expect(menuItem("Delete…")).toBeDisabled();
+    expect(menuItem("Delete…")).toHaveAttribute("title", "Checked out in worktree wt-folder");
+  });
+
+  it("should act on the right-clicked row alone when it is not selected", async () => {
+    const { user } = await renderPanel(three());
+    await selectRows(user, [localRow("feature"), localRow("main")]);
+    rightClick(localRow("feature2"));
+    await user.click(menuItem("Delete…"));
+    await dialogNamed("Delete branch feature2?");
+  });
+
+  it("should confirm with the names listed and delete them in one call", async () => {
+    const { user } = await renderPanel(three());
+    const dialog = await openBatchDelete(user);
+    const items = within(within(dialog).getByRole("list", { name: "Branches" })).getAllByRole(
+      "listitem",
+    );
+    expect(items.map((i) => i.textContent)).toEqual(["feature", "feature2"]);
+    expect(dialog).toHaveTextContent("The branches are merged into the current branch.");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(deleteBranches).toHaveBeenCalledExactlyOnceWith(1, ["feature", "feature2"], false);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("should hand only the unmerged names to the force dialog", async () => {
+    vi.mocked(deleteBranches).mockResolvedValueOnce([
+      { name: "feature", status: { kind: "deleted" } },
+      { name: "feature2", status: { kind: "notMerged" } },
+    ]);
+    const { user } = await renderPanel(three());
+    const dialog = await openBatchDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const force = await dialogNamed("Force delete feature2?");
+    await user.click(within(force).getByRole("button", { name: "Force delete" }));
+    expect(deleteBranches).toHaveBeenLastCalledWith(1, ["feature2"], true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("should use the plural force copy for several unmerged names", async () => {
+    vi.mocked(deleteBranches).mockResolvedValueOnce([
+      { name: "feature", status: { kind: "notMerged" } },
+      { name: "feature2", status: { kind: "notMerged" } },
+    ]);
+    const { user } = await renderPanel(three());
+    const dialog = await openBatchDelete(user);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const force = await dialogNamed("Force delete 2 branches?");
+    expect(force).toHaveTextContent(
+      "These branches have commits that are not merged into the current branch.",
+    );
+    expect(force).toHaveTextContent("featurefeature2");
+  });
+
+  it("should toast the failed names and still hand off the unmerged ones", async () => {
+    const data = list({
+      local: [localBranch("main", true), localBranch("a"), localBranch("b"), localBranch("c")],
+    });
+    vi.mocked(deleteBranches).mockResolvedValueOnce([
+      { name: "a", status: { kind: "failed", error: { kind: "io", message: "disk exploded" } } },
+      { name: "b", status: { kind: "notMerged" } },
+      { name: "c", status: { kind: "failed", error: { kind: "io", message: "other" } } },
+    ]);
+    const { user } = await renderPanel(data);
+    await selectRows(user, [localRow("a"), localRow("b"), localRow("c")]);
+    rightClick(localRow("a"));
+    await user.click(menuItem("Delete 3 branches…"));
+    const dialog = await dialogNamed("Delete 3 branches?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await dialogNamed("Force delete b?");
+    expect((await oneToast()).text).toBe("Couldn't delete a, c: disk exploded");
+  });
+
+  it("should keep only the surviving rows selected after the refetch", async () => {
+    const { user } = await renderPanel(three());
+    const dialog = await openBatchDelete(user);
+    vi.mocked(listBranches).mockResolvedValue(
+      list({ local: [localBranch("main", true), localBranch("feature2")] }),
+    );
+    vi.mocked(deleteBranches).mockResolvedValueOnce([
+      { name: "feature", status: { kind: "deleted" } },
+      { name: "feature2", status: { kind: "failed", error: { kind: "io", message: "no" } } },
+    ]);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByTitle("refs/heads/feature")).toBeNull());
+    expect(localRow("feature2").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("should label and confirm a remote batch", async () => {
+    const { user } = await renderPanel();
+    await selectRows(user, [remoteRow("origin", "main"), remoteRow("origin", "other")]);
+    rightClick(remoteRow("origin", "other"));
+    await user.click(menuItem("Delete 2 on origin…"));
+    const dialog = await dialogNamed("Delete 2 branches on origin?");
+    expect(dialog).toHaveTextContent("This removes the branches from the remote for everyone.");
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    expect(deleteRemoteBranches).toHaveBeenCalledExactlyOnceWith(
+      1,
+      "origin",
+      ["main", "other"],
+      null,
+    );
+  });
+
+  it("should scope a mixed selection to the right-clicked row's group", async () => {
+    const { user } = await renderPanel();
+    await selectRows(user, [localRow("feature"), remoteRow("origin", "other")]);
+    rightClick(remoteRow("origin", "other"));
+    expect(menuItem("Delete on origin…")).toBeEnabled();
+  });
+
+  it("should toast git's output when a remote batch fails", async () => {
+    vi.mocked(deleteRemoteBranches).mockRejectedValue(
+      networkError("other", {}, "remote: permission denied"),
+    );
+    const { user } = await renderPanel();
+    await selectRows(user, [remoteRow("origin", "main"), remoteRow("origin", "other")]);
+    rightClick(remoteRow("origin", "other"));
+    await user.click(menuItem("Delete 2 on origin…"));
+    const dialog = await dialogNamed("Delete 2 branches on origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    expect(await oneToast()).toMatchObject({
+      text: "git push failed",
+      details: "remote: permission denied",
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

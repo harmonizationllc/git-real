@@ -6,6 +6,7 @@ import { PromptDialog } from "../../components/PromptDialog";
 import { deleteRemoteBranches } from "../../lib/ipc";
 import type {
   AppError,
+  BranchDeleteOutcome,
   BranchList,
   HeadState,
   LocalBranch,
@@ -36,7 +37,16 @@ import { useRemoteActions } from "../remotes/useRemoteActions";
 import { useOpenRepo } from "../repo/useOpenRepo";
 import { BranchRow, branchId, type BranchDrag, type BranchTarget } from "./BranchRow";
 import styles from "./BranchesPanel.module.css";
+import { batchTargets, deletableLocal } from "./batchTargets";
 import { filterBranches, isFiltering } from "./branchFilter";
+import {
+  deleteMenuLabel,
+  failedDeleteToast,
+  forceDeleteCopy,
+  localDeleteCopy,
+  remoteDeleteCopy,
+  remoteDeleteMenuLabel,
+} from "./deleteCopy";
 import { buildBranchTree, visibleBranchKeys, type BranchNode } from "./branchTree";
 import { useCollapsedFolders } from "./BranchTreeItems";
 import { useBranchActions } from "./useBranchActions";
@@ -113,9 +123,9 @@ type Dialog =
   | { kind: "create"; title: string; startPoint: string | null; checkout: boolean }
   | { kind: "rename"; name: string }
   | { kind: "upstream"; name: string; current: string | null }
-  | { kind: "deleteLocal"; name: string }
-  | { kind: "forceDelete"; name: string }
-  | { kind: "deleteRemote"; remote: string; name: string }
+  | { kind: "deleteLocal"; names: string[] }
+  | { kind: "forceDelete"; names: string[] }
+  | { kind: "deleteRemote"; remote: string; names: string[] }
   | { kind: "removeRemote"; name: string }
   | { kind: "rebase"; base: string }
   | { kind: "worktree"; initial: WorktreeBranch };
@@ -173,6 +183,50 @@ export function BranchesProvider({
   const ff = useCanFastForward(repoId, menuBranch);
 
   const loadFailed = useLoadFailureToast("branches", branches !== undefined, listError, refetch);
+
+  const shown = useMemo(() => branches && filterBranches(branches, query), [branches, query]);
+  const filtering = isFiltering(query);
+  const localTree = useMemo(() => buildBranchTree(shown?.local ?? []), [shown]);
+  const remoteTrees = useMemo(
+    () => shown?.remotes.map((g) => buildBranchTree(g.branches)) ?? [],
+    [shown],
+  );
+  const localFolders = useCollapsedFolders();
+  const remoteFolders = useCollapsedFolders();
+  const localCollapsed = useSettings((s) => s.settings.layout.localCollapsed);
+  const remoteCollapsed = useSettings((s) => s.settings.layout.remoteCollapsed);
+  // Rows of a collapsed section or folder are not on screen, so they cannot be selected or ranged over.
+  const orderedKeys = useMemo(() => {
+    const keys: string[] = [];
+    if (filtering || !localCollapsed) {
+      keys.push(
+        ...visibleBranchKeys(localTree, localFolders.collapsed, "", (b) => `local:${b.name}`),
+      );
+    }
+    if (filtering || !remoteCollapsed) {
+      shown?.remotes.forEach((g, i) => {
+        keys.push(
+          ...visibleBranchKeys(
+            remoteTrees[i],
+            remoteFolders.collapsed,
+            `${g.remote}:`,
+            (b) => `${g.remote}/${b.name}`,
+          ),
+        );
+      });
+    }
+    return keys;
+  }, [
+    filtering,
+    localCollapsed,
+    remoteCollapsed,
+    localTree,
+    remoteTrees,
+    shown,
+    localFolders.collapsed,
+    remoteFolders.collapsed,
+  ]);
+  const selection = useListSelection(orderedKeys);
 
   /**
    * Runs a network failure's suggested action. The toast outlives this pane (only the active
@@ -254,37 +308,62 @@ export function BranchesProvider({
     if (err === null) closeDialog();
   };
 
-  // A confirm dialog has no error slot: other than the force-delete hand-off, a failure closes
-  // the dialog and toasts.
-  // Task 6 rewrites the delete flow; this keeps the single-name path working on the batch API.
-  const deleteOne = async (name: string, force: boolean) => {
-    const result = await actions.deleteBranches([name], force);
-    if (!Array.isArray(result)) return result;
-    const status = result[0]?.status;
-    if (status?.kind === "notMerged") return { kind: "branchNotMerged", message: "" } as AppError;
-    return status?.kind === "failed" ? status.error : null;
+  /** Toasts the branches a delete outcome list says failed; returns the names git called unmerged. */
+  const settleDelete = (outcomes: BranchDeleteOutcome[]): string[] => {
+    const failed: { name: string; error: AppError }[] = [];
+    const unmerged: string[] = [];
+    for (const o of outcomes) {
+      if (o.status.kind === "failed") failed.push({ name: o.name, error: o.status.error });
+      else if (o.status.kind === "notMerged") unmerged.push(o.name);
+    }
+    if (failed.length > 0) report(failedDeleteToast(failed));
+    return unmerged;
   };
 
-  const confirmDeleteLocal = async (name: string) => {
-    const err = await deleteOne(name, false);
-    if (err?.kind === "branchNotMerged") {
+  // A confirm dialog has no error slot: other than the force-delete hand-off, a failure closes
+  // the dialog and toasts.
+  const confirmDeleteLocal = async (names: string[]) => {
+    const result = await actions.deleteBranches(names, false);
+    if (!Array.isArray(result)) {
+      setDialog(null);
+      report(result);
+      return;
+    }
+    const unmerged = settleDelete(result);
+    if (unmerged.length > 0) {
       actions.clearError();
-      setDialog({ kind: "forceDelete", name });
+      setDialog({ kind: "forceDelete", names: unmerged });
     } else {
       setDialog(null);
-      report(err);
     }
   };
 
-  const confirmForceDelete = async (name: string) => {
-    const err = await deleteOne(name, true);
+  // A forced delete cannot be unmerged, so any such outcome is only reported as a failure.
+  const confirmForceDelete = async (names: string[]) => {
+    const result = await actions.deleteBranches(names, true);
     setDialog(null);
-    report(err);
+    if (!Array.isArray(result)) {
+      report(result);
+      return;
+    }
+    settleDelete(
+      result.map((o) =>
+        o.status.kind === "notMerged"
+          ? {
+              name: o.name,
+              status: {
+                kind: "failed",
+                error: { kind: "branchNotMerged", message: `${o.name} is not merged` },
+              },
+            }
+          : o,
+      ),
+    );
   };
 
   // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
-  const confirmDeleteRemote = async (remote: string, name: string) => {
-    const result = await network.run((c) => deleteRemoteBranches(repoId, remote, [name], c));
+  const confirmDeleteRemote = async (remote: string, names: string[]) => {
+    const result = await network.run((c) => deleteRemoteBranches(repoId, remote, names, c));
     setDialog(null);
     if (result.status === "failed") report(result.error, remote);
   };
@@ -392,6 +471,9 @@ export function BranchesProvider({
     };
     if (target.kind === "remote") {
       const { remote, name } = target.branch;
+      const names = batchTargets(target, selection.selected, orderedKeys, list).map(
+        (t) => t.branch.name,
+      );
       const worktreeTitle = twin?.isHead ? "Already checked out in this worktree" : lockedTitle;
       return [
         {
@@ -416,16 +498,17 @@ export function BranchesProvider({
         ...rebaseItems(target, list.head),
         {
           id: "deleteRemote",
-          label: `Delete on ${remote}…`,
+          label: remoteDeleteMenuLabel(remote, names.length),
           danger: true,
           disabled: pending,
-          onSelect: () => openDialog({ kind: "deleteRemote", remote, name }),
+          onSelect: () => openDialog({ kind: "deleteRemote", remote, names }),
         },
       ];
     }
     const { name, isHead } = target.branch;
     const current = target.branch.tracking?.upstream ?? null;
     const noRemotes = remoteBranchNames(list).length === 0 && current === null;
+    const deletable = deletableLocal(batchTargets(target, selection.selected, orderedKeys, list));
     return [
       { ...checkout, disabled: pending || isHead || elsewhere !== null },
       ...(isHead && onCreatePullRequest
@@ -460,11 +543,11 @@ export function BranchesProvider({
       },
       {
         id: "delete",
-        label: "Delete…",
+        label: deleteMenuLabel(Math.max(deletable.length, 1)),
         danger: true,
-        disabled: pending || isHead || elsewhere !== null,
-        title: lockedTitle,
-        onSelect: () => openDialog({ kind: "deleteLocal", name }),
+        disabled: pending || deletable.length === 0,
+        title: deletable.length === 0 ? lockedTitle : undefined,
+        onSelect: () => openDialog({ kind: "deleteLocal", names: deletable.map((b) => b.name) }),
       },
     ];
   };
@@ -491,50 +574,6 @@ export function BranchesProvider({
   });
 
   const canDrag = state?.kind === "none" && branches?.head.kind === "branch" && !pending;
-  const shown = useMemo(() => branches && filterBranches(branches, query), [branches, query]);
-  const filtering = isFiltering(query);
-  const localTree = useMemo(() => buildBranchTree(shown?.local ?? []), [shown]);
-  const remoteTrees = useMemo(
-    () => shown?.remotes.map((g) => buildBranchTree(g.branches)) ?? [],
-    [shown],
-  );
-  const localFolders = useCollapsedFolders();
-  const remoteFolders = useCollapsedFolders();
-  const localCollapsed = useSettings((s) => s.settings.layout.localCollapsed);
-  const remoteCollapsed = useSettings((s) => s.settings.layout.remoteCollapsed);
-  // Rows of a collapsed section or folder are not on screen, so they cannot be selected or ranged over.
-  const orderedKeys = useMemo(() => {
-    const keys: string[] = [];
-    if (filtering || !localCollapsed) {
-      keys.push(
-        ...visibleBranchKeys(localTree, localFolders.collapsed, "", (b) => `local:${b.name}`),
-      );
-    }
-    if (filtering || !remoteCollapsed) {
-      shown?.remotes.forEach((g, i) => {
-        keys.push(
-          ...visibleBranchKeys(
-            remoteTrees[i],
-            remoteFolders.collapsed,
-            `${g.remote}:`,
-            (b) => `${g.remote}/${b.name}`,
-          ),
-        );
-      });
-    }
-    return keys;
-  }, [
-    filtering,
-    localCollapsed,
-    remoteCollapsed,
-    localTree,
-    remoteTrees,
-    shown,
-    localFolders.collapsed,
-    remoteFolders.collapsed,
-  ]);
-  const selection = useListSelection(orderedKeys);
-
   const onSectionKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== "Escape" || selection.selected.size === 0) return;
     e.preventDefault();
@@ -654,12 +693,10 @@ export function BranchesProvider({
           <ConfirmDialog
             key="deleteLocal"
             open
-            title={`Delete branch ${dialog.name}?`}
-            body="The branch is merged into the current branch."
-            confirmLabel="Delete"
+            {...localDeleteCopy(dialog.names)}
             danger
             pending={actions.pending}
-            onConfirm={() => void confirmDeleteLocal(dialog.name)}
+            onConfirm={() => void confirmDeleteLocal(dialog.names)}
             onCancel={closeDialog}
             fallbackFocus={rootRef}
           />
@@ -668,12 +705,10 @@ export function BranchesProvider({
           <ConfirmDialog
             key="forceDelete"
             open
-            title={`Force delete ${dialog.name}?`}
-            body={`${dialog.name} has commits that are not merged into the current branch. Deleting it loses them unless another ref points at them.`}
-            confirmLabel="Force delete"
+            {...forceDeleteCopy(dialog.names)}
             danger
             pending={actions.pending}
-            onConfirm={() => void confirmForceDelete(dialog.name)}
+            onConfirm={() => void confirmForceDelete(dialog.names)}
             onCancel={closeDialog}
             fallbackFocus={rootRef}
           />
@@ -682,12 +717,10 @@ export function BranchesProvider({
           <ConfirmDialog
             key="deleteRemote"
             open
-            title={`Delete ${dialog.remote}/${dialog.name} on ${dialog.remote}?`}
-            body="This removes the branch from the remote for everyone."
-            confirmLabel={`Delete on ${dialog.remote}`}
+            {...remoteDeleteCopy(dialog.remote, dialog.names)}
             danger
             pending={network.pending}
-            onConfirm={() => void confirmDeleteRemote(dialog.remote, dialog.name)}
+            onConfirm={() => void confirmDeleteRemote(dialog.remote, dialog.names)}
             onCancel={closeDialog}
             fallbackFocus={rootRef}
           />
