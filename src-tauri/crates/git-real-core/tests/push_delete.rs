@@ -259,8 +259,22 @@ fn prepare_rejects_an_empty_batch() {
     let session = RepoSession::open(&path).unwrap();
     assert!(matches!(
         session.prepare_remote_delete("origin", &[]).unwrap_err(),
-        GitError::InvalidBranchName(_)
+        GitError::InvalidBranchName(n) if n.is_empty()
     ));
+}
+
+#[test]
+fn prepare_deduplicates_names_keeping_first_occurrence_order() {
+    if !git_available() {
+        return;
+    }
+    let (_d, _b, path, _bare) = fixture();
+    let head = common::head_branch_name(&path);
+    let session = RepoSession::open(&path).unwrap();
+    let push = session
+        .prepare_remote_delete("origin", &["feature", &head, "feature", &head])
+        .unwrap();
+    assert_eq!(push.names(), ["feature", head.as_str()]);
 }
 
 #[test]

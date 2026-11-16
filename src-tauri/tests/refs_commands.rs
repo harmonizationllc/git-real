@@ -4,8 +4,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use git_real_core::GitError;
-use git_real_core::{HeadState, RepoSession};
+use git_real_core::{GitError, HeadState, RepoSession};
 use git_real_lib::commands::refs::{
     BranchDeleteOutcome, BranchDeleteStatus, checkout_branch_inner, checkout_remote_branch_inner,
     create_branch_inner, delete_branches_inner, delete_remote_branches_inner, list_branches_inner,
@@ -289,6 +288,14 @@ fn delete_branch_outcome_serialises_with_a_tagged_status() {
     assert_eq!(v["status"]["kind"], "failed");
     assert_eq!(v["status"]["error"], expected_error);
     assert_eq!(v["status"]["error"]["kind"], "branchNotFound");
+    assert_eq!(v["status"]["error"]["message"], "no branch named a");
+}
+
+#[test]
+fn delete_branches_inner_with_no_names_returns_no_outcomes() {
+    let (_d, _p, reg, id, _head) = open_fixture();
+    let out = delete_branches_inner(&reg, id, &[], false).unwrap();
+    assert!(out.is_empty());
 }
 
 // --- checkout_branch_inner / checkout_remote_branch_inner ---

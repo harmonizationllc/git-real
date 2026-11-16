@@ -6,9 +6,9 @@ use super::auth::Credentials;
 use super::run_push;
 use crate::error::GitError;
 
-/// A validated remote branch deletion of one or more branches, ready to run once the session lock is
-/// released. Only `RepoSession::prepare_remote_delete` builds one, so only
-/// validated names ever reach the command line.
+/// A validated remote branch deletion of one or more branches, ready to run
+/// once the session lock is released. Only `RepoSession::prepare_remote_delete`
+/// builds one, so only validated names ever reach the command line.
 #[derive(Debug)]
 pub struct PushDelete {
     git: PathBuf,
