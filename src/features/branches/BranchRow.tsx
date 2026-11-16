@@ -107,6 +107,8 @@ export function BranchRow({
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === "Enter") {
+      // Without this the button's native Enter activation also fires a click, reported as a selection click.
+      e.preventDefault();
       onActivate();
     } else if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
       // Without this WebKit also fires a native contextmenu on the row, opening the menu twice.

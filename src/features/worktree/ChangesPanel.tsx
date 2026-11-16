@@ -4,6 +4,7 @@ import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import { SPLIT_HANDLE_WIDTH, SplitHandle } from "../../components/SplitHandle";
 import { KEY_STEP } from "../../app/layout";
 import type { ChangeKind, RepoId, StatusEntry } from "../../lib/ipc";
+import { useListSelection } from "../../lib/selection/useListSelection";
 import { useSettings } from "../../lib/store/settings";
 import { setChangesUnstagedHeight } from "../../lib/store/settingsActions";
 import { useWorkspace } from "../../lib/store/workspace";
@@ -16,7 +17,6 @@ import { StashButton } from "../stash/StashButton";
 import styles from "./ChangesPanel.module.css";
 import { PANE_FLOOR, fitChangesPanes } from "./changesLayout";
 import { FileRow, type Section } from "./FileRow";
-import { useListSelection } from "../../lib/selection/useListSelection";
 import { useStatus } from "./useStatus";
 import { useWorktreeActions } from "./useWorktreeActions";
 

@@ -140,6 +140,20 @@ const createDialog = (title: string, startPoint: string | null): CreateDialog =>
 });
 
 /** Every remote-tracking short name (`origin/main`), in the list's remote then branch order. */
+/** A forced delete cannot be unmerged, so a `notMerged` outcome there is reported as a failure. */
+const unmergedAsFailed = (outcomes: BranchDeleteOutcome[]): BranchDeleteOutcome[] =>
+  outcomes.map((o) =>
+    o.status.kind === "notMerged"
+      ? {
+          name: o.name,
+          status: {
+            kind: "failed",
+            error: { kind: "branchNotMerged", message: `${o.name} is not fully merged` },
+          },
+        }
+      : o,
+  );
+
 const remoteBranchNames = (list: BranchList | undefined): string[] =>
   list?.remotes.flatMap((g) => g.branches.map((b) => `${g.remote}/${b.name}`)) ?? [];
 
@@ -346,19 +360,7 @@ export function BranchesProvider({
       report(result);
       return;
     }
-    settleDelete(
-      result.map((o) =>
-        o.status.kind === "notMerged"
-          ? {
-              name: o.name,
-              status: {
-                kind: "failed",
-                error: { kind: "branchNotMerged", message: `${o.name} is not merged` },
-              },
-            }
-          : o,
-      ),
-    );
+    settleDelete(unmergedAsFailed(result));
   };
 
   // Through the network gate: the confirm stays open (pending) during a sign-in and its retry.
@@ -543,7 +545,7 @@ export function BranchesProvider({
       },
       {
         id: "delete",
-        label: deleteMenuLabel(Math.max(deletable.length, 1)),
+        label: deleteMenuLabel(deletable.length),
         danger: true,
         disabled: pending || deletable.length === 0,
         title: deletable.length === 0 ? lockedTitle : undefined,

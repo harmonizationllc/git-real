@@ -76,7 +76,7 @@ export function remoteDeleteCopy(remote: string, names: string[]): DeleteCopy<st
 }
 
 export const deleteMenuLabel = (n: number): string =>
-  n === 1 ? "Delete…" : `Delete ${n} branches…`;
+  n <= 1 ? "Delete…" : `Delete ${n} branches…`;
 
 export const remoteDeleteMenuLabel = (remote: string, n: number): string =>
   n === 1 ? `Delete on ${remote}…` : `Delete ${n} on ${remote}…`;
@@ -85,8 +85,5 @@ export const remoteDeleteMenuLabel = (remote: string, n: number): string =>
 export function failedDeleteToast(failed: { name: string; error: AppError }[]): AppError {
   if (failed.length === 1) return failed[0].error;
   const names = failed.map((f) => f.name).join(", ");
-  return {
-    kind: failed[0].error.kind,
-    message: `Couldn't delete ${names}: ${failed[0].error.message}`,
-  } as AppError;
+  return { ...failed[0].error, message: `Couldn't delete ${names}: ${failed[0].error.message}` };
 }

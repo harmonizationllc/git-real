@@ -105,6 +105,14 @@ describe("useBranchActions wrapper calls", () => {
     expect(deleteBranches).toHaveBeenCalledExactlyOnceWith(4, ["a", "b"], true);
   });
 
+  it("should not toast an auto-stash after a batch delete", async () => {
+    const { result } = renderHookWithProviders(() => useBranchActions(4));
+    await act(async () => {
+      await result.current.deleteBranches(["a"], false);
+    });
+    expect(toastAutoStash).not.toHaveBeenCalled();
+  });
+
   it("should resolve the AppError when deleteBranches rejects", async () => {
     vi.mocked(deleteBranches).mockRejectedValue(exists);
     const { result } = renderHookWithProviders(() => useBranchActions(4));

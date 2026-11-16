@@ -21,7 +21,7 @@
 .nameList {
   max-height: calc(10 * 1.5em);
   overflow-y: auto;
-  margin: 0;
+  margin: 0 0 var(--space-2);
   padding-left: var(--space-4);
   font-family: var(--font-mono-ui);
 }

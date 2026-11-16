@@ -111,7 +111,7 @@ export function useBranchActions(repoId: RepoId): UseBranchActions {
       ),
     deleteBranches: (names, force) =>
       mutateAsync({ action: "deleteBatch", names, force }).then(
-        (outcomes) => outcomes as BranchDeleteOutcome[],
+        (outcomes): BranchDeleteOutcome[] => (Array.isArray(outcomes) ? outcomes : []),
         (e: AppError) => e,
       ),
     pending: mutation.isPending,

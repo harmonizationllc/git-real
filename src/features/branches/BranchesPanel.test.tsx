@@ -3231,7 +3231,11 @@ describe("BranchesPanel batch delete", () => {
     expect(force).toHaveTextContent(
       "These branches have commits that are not merged into the current branch.",
     );
-    expect(force).toHaveTextContent("featurefeature2");
+    expect(
+      within(force)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["feature", "feature2"]);
   });
 
   it("should toast the failed names and still hand off the unmerged ones", async () => {
@@ -3286,9 +3290,54 @@ describe("BranchesPanel batch delete", () => {
 
   it("should scope a mixed selection to the right-clicked row's group", async () => {
     const { user } = await renderPanel();
-    await selectRows(user, [localRow("feature"), remoteRow("origin", "other")]);
+    await selectRows(user, [
+      localRow("feature"),
+      remoteRow("origin", "main"),
+      remoteRow("origin", "other"),
+    ]);
     rightClick(remoteRow("origin", "other"));
-    expect(menuItem("Delete on origin…")).toBeEnabled();
+    await user.click(menuItem("Delete 2 on origin…"));
+    const dialog = await dialogNamed("Delete 2 branches on origin?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete on origin" }));
+    expect(deleteRemoteBranches).toHaveBeenCalledExactlyOnceWith(
+      1,
+      "origin",
+      ["main", "other"],
+      null,
+    );
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Delete…"));
+    await dialogNamed("Delete branch feature?");
+  });
+
+  it("should open the batch menu from the keyboard on a selected row", async () => {
+    const { user } = await renderPanel(three());
+    await selectRows(user, [localRow("feature"), localRow("feature2")]);
+    fireEvent.keyDown(localRow("feature"), { key: "F10", shiftKey: true });
+    expect(menuItem("Delete 2 branches…")).toBeEnabled();
+  });
+
+  it("should disable Delete without a title when only the current branch is selected", async () => {
+    const { user } = await renderPanel(three());
+    await user.click(localRow("main"));
+    rightClick(localRow("main"));
+    expect(menuItem("Delete…")).toBeDisabled();
+    expect(menuItem("Delete…")).not.toHaveAttribute("title");
+  });
+
+  it("should toast that a branch is not fully merged when the forced delete still reports it", async () => {
+    vi.mocked(deleteBranches)
+      .mockResolvedValueOnce([{ name: "feature", status: { kind: "notMerged" } }])
+      .mockResolvedValueOnce([{ name: "feature", status: { kind: "notMerged" } }]);
+    const { user } = await renderPanel(three());
+    await user.click(localRow("feature"));
+    rightClick(localRow("feature"));
+    await user.click(menuItem("Delete…"));
+    const dialog = await dialogNamed("Delete branch feature?");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const force = await dialogNamed("Force delete feature?");
+    await user.click(within(force).getByRole("button", { name: "Force delete" }));
+    expect((await oneToast()).text).toBe("feature is not fully merged");
   });
 
   it("should toast git's output when a remote batch fails", async () => {

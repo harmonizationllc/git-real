@@ -12,9 +12,15 @@ import {
   remoteDeleteMenuLabel,
 } from "./deleteCopy";
 
-const text = (node: ReactNode) => {
+/** Renders a copy body and returns its list items and the sentence after the list. */
+const rendered = (node: ReactNode) => {
   const { container } = render(<div>{node}</div>);
-  return container.textContent;
+  const items = [...container.querySelectorAll("li")].map((li) => li.textContent);
+  const sentence = [...container.firstElementChild!.childNodes]
+    .filter((n) => n.nodeType === Node.TEXT_NODE)
+    .map((n) => n.textContent)
+    .join("");
+  return { items, sentence };
 };
 
 describe("localDeleteCopy", () => {
@@ -28,7 +34,9 @@ describe("localDeleteCopy", () => {
   it("should list the names for several branches", () => {
     const c = localDeleteCopy(["a", "b"]);
     expect(c.title).toBe("Delete 2 branches?");
-    expect(text(c.body)).toBe("abThe branches are merged into the current branch.");
+    const { items, sentence } = rendered(c.body);
+    expect(items).toEqual(["a", "b"]);
+    expect(sentence).toBe("The branches are merged into the current branch.");
   });
 });
 
@@ -45,8 +53,10 @@ describe("forceDeleteCopy", () => {
   it("should use the plural copy for several branches", () => {
     const c = forceDeleteCopy(["a", "b"]);
     expect(c.title).toBe("Force delete 2 branches?");
-    expect(text(c.body)).toBe(
-      "abThese branches have commits that are not merged into the current branch. Deleting them loses those commits unless another ref points at them.",
+    const { items, sentence } = rendered(c.body);
+    expect(items).toEqual(["a", "b"]);
+    expect(sentence).toBe(
+      "These branches have commits that are not merged into the current branch. Deleting them loses those commits unless another ref points at them.",
     );
   });
 });
@@ -62,7 +72,9 @@ describe("remoteDeleteCopy", () => {
   it("should use the plural copy for several branches", () => {
     const c = remoteDeleteCopy("origin", ["a", "b"]);
     expect(c.title).toBe("Delete 2 branches on origin?");
-    expect(text(c.body)).toBe("abThis removes the branches from the remote for everyone.");
+    const { items, sentence } = rendered(c.body);
+    expect(items).toEqual(["a", "b"]);
+    expect(sentence).toBe("This removes the branches from the remote for everyone.");
     expect(c.confirmLabel).toBe("Delete on origin");
   });
 });
@@ -77,6 +89,7 @@ describe("NameList", () => {
 
 describe("menu labels", () => {
   it("should label by count", () => {
+    expect(deleteMenuLabel(0)).toBe("Delete…");
     expect(deleteMenuLabel(1)).toBe("Delete…");
     expect(deleteMenuLabel(3)).toBe("Delete 3 branches…");
     expect(remoteDeleteMenuLabel("origin", 1)).toBe("Delete on origin…");

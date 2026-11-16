@@ -158,6 +158,13 @@ describe("BranchRow activation", () => {
     expect(props.onActivate).toHaveBeenCalledOnce();
   });
 
+  it("should prevent the native click on Enter so it is not reported as a selection click", () => {
+    const props = renderRow();
+    const notPrevented = fireEvent.keyDown(rowButton(), { key: "Enter" });
+    expect(notPrevented).toBe(false);
+    expect(props.onClick).not.toHaveBeenCalled();
+  });
+
   it("should not call onActivate on a single click", async () => {
     const props = renderRow();
     await userEvent.click(rowButton());
