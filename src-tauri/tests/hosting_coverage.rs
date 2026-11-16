@@ -10,7 +10,7 @@ use common::{FakeTransport, MemoryTokenStore, github_account, hosting_store_with
 use git_real_core::hosting::{Account, Provider, Token, UserInfo};
 use git_real_core::{PullMode, PushTarget, RepoSession};
 use git_real_lib::commands::hosting::hosting_list_pull_requests_inner;
-use git_real_lib::commands::refs::delete_remote_branch_inner;
+use git_real_lib::commands::refs::delete_remote_branches_inner;
 use git_real_lib::commands::remote::{NetworkAuth, pull_inner, push_inner};
 use git_real_lib::commands::repo::clone_repo_inner;
 use git_real_lib::commands::tags::{delete_remote_tag_inner, push_tag_inner};
@@ -297,11 +297,11 @@ fn remote_branch_delete_with_account_auth_runs_when_the_keychain_cannot_be_read(
     git(&fx.path, &["branch", "side"]);
     git(&fx.path, &["push", "-q", "origin", "side"]);
     assert!(bare_has(&fx.bare, "refs/heads/side"));
-    delete_remote_branch_inner(
+    delete_remote_branches_inner(
         &fx.reg,
         fx.id,
         "origin",
-        "side",
+        &["side".into()],
         NetworkAuth::Accounts(&fx.store),
     )
     .unwrap();

@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use git_real_core::{BranchList, CheckoutOutcome, CreatedBranch};
+use git_real_core::{BranchList, CheckoutOutcome, CreatedBranch, GitError};
+use serde::Serialize;
 use tauri::State;
 
 use super::remote::{CredentialsArg, NetworkAuth, credentials_from_arg};
@@ -46,13 +47,49 @@ pub fn rename_branch_inner(
     with_session(reg, id, |s| s.rename_branch(old_name, new_name))
 }
 
-pub fn delete_branch_inner(
+/// The result of deleting one branch in a batch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum BranchDeleteStatus {
+    Deleted,
+    /// Refused because the branch is unmerged; a forced delete would succeed.
+    NotMerged,
+    Failed {
+        error: AppError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchDeleteOutcome {
+    pub name: String,
+    pub status: BranchDeleteStatus,
+}
+
+/// Deletes every name, never stopping at a failure: one outcome per name, in
+/// input order.
+pub fn delete_branches_inner(
     reg: &RepoRegistry,
     id: RepoId,
-    name: &str,
+    names: &[String],
     force: bool,
-) -> Result<(), AppError> {
-    with_session(reg, id, |s| s.delete_branch(name, force))
+) -> Result<Vec<BranchDeleteOutcome>, AppError> {
+    with_session(reg, id, |s| {
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        Ok(s.delete_branches(&names, force)
+            .into_iter()
+            .map(|(name, result)| BranchDeleteOutcome {
+                name,
+                status: match result {
+                    Ok(()) => BranchDeleteStatus::Deleted,
+                    Err(GitError::BranchNotMerged(_)) => BranchDeleteStatus::NotMerged,
+                    Err(e) => BranchDeleteStatus::Failed {
+                        error: AppError::from(e),
+                    },
+                },
+            })
+            .collect())
+    })
 }
 
 pub fn set_branch_upstream_inner(
@@ -83,14 +120,17 @@ pub fn checkout_remote_branch_inner(
 
 /// Validates under the session lock, then pushes with the lock released so a
 /// slow network call never blocks other operations on the repository.
-pub fn delete_remote_branch_inner(
+pub fn delete_remote_branches_inner(
     reg: &RepoRegistry,
     id: RepoId,
     remote: &str,
-    name: &str,
+    names: &[String],
     auth: NetworkAuth<'_>,
 ) -> Result<(), AppError> {
-    let push = with_session(reg, id, |s| s.prepare_remote_delete(remote, name))?;
+    let push = with_session(reg, id, |s| {
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        s.prepare_remote_delete(remote, &names)
+    })?;
     push.run(auth.resolve(push.urls()).as_ref())
         .map_err(AppError::from)
 }
@@ -129,14 +169,14 @@ pub async fn rename_branch(
 }
 
 #[tauri::command]
-pub async fn delete_branch(
+pub async fn delete_branches(
     reg: State<'_, Arc<RepoRegistry>>,
     id: RepoId,
-    name: String,
+    names: Vec<String>,
     force: bool,
-) -> Result<(), AppError> {
+) -> Result<Vec<BranchDeleteOutcome>, AppError> {
     let reg = Arc::clone(reg.inner());
-    run_blocking(move || delete_branch_inner(&reg, id, &name, force)).await
+    run_blocking(move || delete_branches_inner(&reg, id, &names, force)).await
 }
 
 #[tauri::command]
@@ -173,19 +213,19 @@ pub async fn checkout_remote_branch(
 }
 
 #[tauri::command]
-pub async fn delete_remote_branch(
+pub async fn delete_remote_branches(
     reg: State<'_, Arc<RepoRegistry>>,
     hosting: State<'_, Arc<HostingStore>>,
     id: RepoId,
     remote: String,
-    name: String,
+    names: Vec<String>,
     credentials: Option<CredentialsArg>,
 ) -> Result<(), AppError> {
     let credentials = credentials_from_arg(credentials)?;
     let (reg, hosting) = (Arc::clone(reg.inner()), Arc::clone(hosting.inner()));
     run_blocking(move || {
         let auth = NetworkAuth::new(credentials.as_ref(), &hosting);
-        delete_remote_branch_inner(&reg, id, &remote, &name, auth)
+        delete_remote_branches_inner(&reg, id, &remote, &names, auth)
     })
     .await
 }

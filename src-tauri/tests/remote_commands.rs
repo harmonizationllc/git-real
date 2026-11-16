@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use git_real_core::{
     Credentials, NetworkErrorKind, OperationOutcome, PullMode, PushTarget, RemoteInfo, RepoSession,
 };
-use git_real_lib::commands::refs::delete_remote_branch_inner;
+use git_real_lib::commands::refs::delete_remote_branches_inner;
 use git_real_lib::commands::remote::{
     CredentialsArg, NetworkAuth, add_remote_inner, credentials_from_arg, fetch_inner,
     fetch_remote_inner, list_remotes_inner, pull_default_mode_inner, pull_inner, push_inner,
@@ -513,11 +513,11 @@ fn tag_and_remote_branch_pushes_take_credentials_and_map_network_failures() {
         "{}",
         err.message
     );
-    delete_remote_branch_inner(
+    delete_remote_branches_inner(
         &reg,
         id,
         "origin",
-        "gone-soon",
+        &["gone-soon".into()],
         NetworkAuth::Accounts(common::empty_store()),
     )
     .unwrap();
