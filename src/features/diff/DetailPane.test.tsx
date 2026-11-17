@@ -9,6 +9,8 @@ import {
   updateSettings,
 } from "../../lib/ipc";
 import type { AppError, FileDiff, StatusEntry } from "../../lib/ipc";
+import { resolveBindings, setActiveBindings } from "../../lib/shortcuts";
+import { useDiffSearchStore } from "../../lib/store/diffSearch";
 import { useSettings } from "../../lib/store/settings";
 import { useShell } from "../../lib/store/shell";
 import { resetSettings, seedSettings } from "../../test/settingsStore";
@@ -22,6 +24,7 @@ import { DECODED_REASON, DetailPane, PENDING_REASON, WHITESPACE_REASON } from ".
 import { changeBlocks } from "./model/changes";
 import { FULL_DIFF_LINES } from "./model/limits";
 import { buildRows } from "./model/rows";
+import lineStyles from "./LineContent.module.css";
 
 vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -791,13 +794,14 @@ describe("DetailPane revert dialog", () => {
     rowMenu(1);
     fireEvent.click(menuItem("Revert this line"));
     fireEvent.click(within(revertDialog()).getByRole("button", { name: "Cancel" }));
-    // The fallback is FileDetail's root, the Diff region's parent.
-    expect(region.parentElement).toHaveFocus();
+    // The fallback is FileDetail's root, the parent of the viewer area holding the Diff region.
+    expect(region.parentElement!.parentElement).toHaveFocus();
   });
 
   it("should mark the file detail root as a programmatic focus target", async () => {
     setup();
-    const target = (await diffRegion()).parentElement;
+    // The root is the parent of the viewer area holding the Diff region.
+    const target = (await diffRegion()).parentElement!.parentElement;
     expect(target).toHaveAttribute("data-focus-target");
     expect(target).toHaveAttribute("tabindex", "-1");
   });
@@ -2688,5 +2692,185 @@ describe("DetailPane change ruler", () => {
       ),
     );
     expect(screen.getAllByRole("button", markName)).toHaveLength(unified.length);
+  });
+});
+
+// --- Find in diff ----------------------------------------------------------------------------
+//
+// threePairDiff in split mode: "two" hits row 1 twice, old "one two three" then new
+// "one two THREE", both at offset 4; "eight" hits row 3 on both sides.
+
+describe("find in diff", () => {
+  const modF = { key: "f", code: "KeyF", ctrlKey: true };
+  /** The TextDiff root, which owns the shortcut. */
+  const paneRoot = () => document.querySelector<HTMLElement>("[data-focus-target]")!;
+  const field = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Find" });
+  const bar = () => screen.queryByRole("search", { name: "Find in diff" });
+  const counter = () => within(screen.getByRole("search")).getByText(/^\d+\/\d+\+?$/);
+  /** Texts of the marks of `kind` in a row's cell. */
+  const marked = (row: number, side: "old" | "new", kind: "match" | "matchCurrent") =>
+    Array.from(
+      document.querySelectorAll(`[data-index="${row}"] [data-side="${side}"] .${lineStyles[kind]}`),
+    ).map((e) => e.textContent);
+  const allMarks = () => document.querySelectorAll(`.${lineStyles.match}`).length;
+
+  async function openFind() {
+    const rendered = setup();
+    await diffRegion();
+    fireEvent.keyDown(paneRoot(), modF);
+    await screen.findByRole("search", { name: "Find in diff" });
+    return rendered;
+  }
+
+  beforeEach(() => {
+    useDiffSearchStore.setState({ query: "", wholeWord: false, matchCase: false });
+    setActiveBindings(resolveBindings({}));
+    serveThree();
+  });
+
+  afterEach(() => {
+    setActiveBindings(resolveBindings({}));
+  });
+
+  it("Mod+F opens the bar, focuses and selects the field, and prevents the default", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    setup();
+    await diffRegion();
+    expect(bar()).toBeNull();
+    const event = createEvent.keyDown(paneRoot(), modF);
+    fireEvent(paneRoot(), event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("search", { name: "Find in diff" })).toBeInTheDocument();
+    await waitFor(() => expect(field()).toHaveFocus());
+    expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]);
+    // The viewer was mounted before the search needed it: the first hit is revealed.
+    await waitFor(() => expect(scrollToIndex).toHaveBeenCalledWith(1, { align: "auto" }));
+  });
+
+  it("a second Mod+F while open reselects the field", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    await waitFor(() => expect(field()).toHaveFocus());
+    field().setSelectionRange(3, 3);
+    const event = createEvent.keyDown(field(), modF);
+    fireEvent(field(), event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(field()).toHaveFocus();
+    expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]);
+  });
+
+  it("typing a query marks the hits in the rows and the counter reads 1/2", async () => {
+    const { user } = await openFind();
+    await user.type(field(), "two");
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    expect(marked(1, "old", "match")).toEqual(["two"]);
+    expect(marked(1, "new", "match")).toEqual(["two"]);
+    expect(marked(1, "old", "matchCurrent")).toEqual(["two"]);
+    expect(marked(1, "new", "matchCurrent")).toEqual([]);
+    expect(allMarks()).toBe(2);
+  });
+
+  it("Enter steps to the next hit and the viewer reveals its row (scrollToIndex align auto)", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    scrollToIndex.mockClear();
+    fireEvent.keyDown(field(), { key: "Enter", code: "Enter" });
+    expect(counter()).toHaveTextContent("2/2");
+    expect(marked(1, "new", "matchCurrent")).toEqual(["two"]);
+    expect(marked(1, "old", "matchCurrent")).toEqual([]);
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(1, { align: "auto" });
+  });
+
+  it("searches both sides in split view and orders old before new", async () => {
+    useDiffSearchStore.setState({ query: "eight" });
+    await openFind();
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    expect(marked(3, "old", "match")).toEqual(["eight"]);
+    expect(marked(3, "new", "match")).toEqual(["eight"]);
+    expect(marked(3, "old", "matchCurrent")).toEqual(["eight"]);
+    fireEvent.keyDown(field(), { key: "Enter", code: "Enter" });
+    expect(marked(3, "new", "matchCurrent")).toEqual(["eight"]);
+  });
+
+  it("Escape closes the bar, clears the marks and focuses the scroll container", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    await waitFor(() => expect(allMarks()).toBe(2));
+    fireEvent.keyDown(field(), { key: "Escape", code: "Escape" });
+    expect(bar()).toBeNull();
+    expect(allMarks()).toBe(0);
+    expect(screen.getByTestId("diff-scroll")).toHaveFocus();
+    // The query is kept for the next time the bar opens.
+    expect(useDiffSearchStore.getState().query).toBe("two");
+  });
+
+  it("the bar survives a mode switch and re-searches", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+    // Unified rows: 0 ctx, 1..3 deletions, 4..6 additions, 7 ctx.
+    await waitFor(() => expect(marked(4, "new", "match")).toEqual(["two"]));
+    expect(bar()).toBeInTheDocument();
+    expect(marked(1, "old", "match")).toEqual(["two"]);
+    expect(counter()).toHaveTextContent("1/2");
+  });
+
+  it("the bar survives a diff refetch and keeps the current hit when its anchor still matches", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    const { queryClient } = await openFind();
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    fireEvent.keyDown(field(), { key: "Enter", code: "Enter" });
+    expect(counter()).toHaveTextContent("2/2");
+    scrollToIndex.mockClear();
+    const changed = threeDiff();
+    changed.hunks[0].lines[6] = { ...changed.hunks[0].lines[6], content: "SEVEN eight TEN" };
+    vi.mocked(getFileDiff).mockResolvedValue(changed);
+    await act(() => queryClient.invalidateQueries());
+    // Word-diff marks split the changed line, so read its whole cell.
+    await waitFor(() =>
+      expect(document.querySelector('[data-index="3"] [data-side="new"] code')).toHaveTextContent(
+        "SEVEN eight TEN",
+      ),
+    );
+    expect(bar()).toBeInTheDocument();
+    expect(counter()).toHaveTextContent("2/2");
+    expect(marked(1, "new", "matchCurrent")).toEqual(["two"]);
+    expect(scrollToIndex).not.toHaveBeenCalledWith(expect.anything(), { align: "auto" });
+  });
+
+  it("the bar is not rendered for an image diff", async () => {
+    vi.mocked(getFileDiff).mockResolvedValue(
+      fileDiff([], { path: "logo.png", isBinary: true, change: "added" }),
+    );
+    const { container } = setup("logo.png");
+    await screen.findByAltText("New image");
+    const root = container.firstElementChild!;
+    const event = createEvent.keyDown(root, modF);
+    fireEvent(root, event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(bar()).toBeNull();
+  });
+
+  it("Mod+F does nothing while the pane's context menu is open", async () => {
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    const event = createEvent.keyDown(paneRoot(), modF);
+    fireEvent(paneRoot(), event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(bar()).toBeNull();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("honours a rebinding of findInDiff from the shortcuts store", async () => {
+    setActiveBindings(resolveBindings({ findInDiff: "Mod+Alt+G" }));
+    setup();
+    await diffRegion();
+    fireEvent.keyDown(paneRoot(), modF);
+    expect(bar()).toBeNull();
+    fireEvent.keyDown(paneRoot(), { key: "g", code: "KeyG", ctrlKey: true, altKey: true });
+    expect(await screen.findByRole("search", { name: "Find in diff" })).toBeInTheDocument();
   });
 });

@@ -8,6 +8,15 @@
   overflow: hidden;
 }
 
+/* The viewer area; the find bar floats over its top-right corner. */
+.viewer {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .empty {
   flex: 1;
   display: flex;
