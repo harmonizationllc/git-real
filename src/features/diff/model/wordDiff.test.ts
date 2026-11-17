@@ -126,3 +126,73 @@ describe("wordDiff at the line boundaries", () => {
     });
   });
 });
+
+// Contract: two changed ranges separated by exactly one unchanged space are shown as one range.
+describe("wordDiff bridging a single space between changed words", () => {
+  it("should bridge one space between two changed words on both sides", () => {
+    expect(wordDiff("foo bar", "baz qux")).toEqual({
+      old: [{ start: 0, end: 7 }],
+      new: [{ start: 0, end: 7 }],
+    });
+  });
+  it("should bridge a chain of changed words", () => {
+    expect(wordDiff("a b c", "x y z")).toEqual({
+      old: [{ start: 0, end: 5 }],
+      new: [{ start: 0, end: 5 }],
+    });
+  });
+  it("should bridge on one side only when just that side has two ranges", () => {
+    expect(wordDiff("a b", "x y b")).toEqual({
+      old: [{ start: 0, end: 1 }],
+      new: [{ start: 0, end: 4 }],
+    });
+  });
+  it("should not bridge two spaces", () => {
+    expect(wordDiff("foo  bar", "baz  qux")).toEqual({
+      old: [
+        { start: 0, end: 3 },
+        { start: 5, end: 8 },
+      ],
+      new: [
+        { start: 0, end: 3 },
+        { start: 5, end: 8 },
+      ],
+    });
+  });
+  it("should not bridge a tab", () => {
+    expect(wordDiff("foo\tbar", "baz\tqux")).toEqual({
+      old: [
+        { start: 0, end: 3 },
+        { start: 4, end: 7 },
+      ],
+      new: [
+        { start: 0, end: 3 },
+        { start: 4, end: 7 },
+      ],
+    });
+  });
+  it("should not bridge a non-breaking space", () => {
+    expect(wordDiff("foo bar", "baz qux")).toEqual({
+      old: [
+        { start: 0, end: 3 },
+        { start: 4, end: 7 },
+      ],
+      new: [
+        { start: 0, end: 3 },
+        { start: 4, end: 7 },
+      ],
+    });
+  });
+  it("should not bridge across an unchanged word", () => {
+    expect(wordDiff("foo b bar", "baz b qux")).toEqual({
+      old: [
+        { start: 0, end: 3 },
+        { start: 6, end: 9 },
+      ],
+      new: [
+        { start: 0, end: 3 },
+        { start: 6, end: 9 },
+      ],
+    });
+  });
+});

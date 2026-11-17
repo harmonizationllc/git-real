@@ -4,6 +4,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## 0.3.0
 
+- **Word highlighting**: two changed words with a single space between them are highlighted as one change, space included, instead of two.
 - **Multi-select branches**: click, Ctrl/Cmd-click and Shift-click select rows in Local and Remote; right-click a selected row and Delete acts on the whole selection with one confirmation. Local deletes run as one operation (unmerged ones are offered a single force-delete), remote deletes as one push with at most one sign-in.
 - **Auto-stash on checkout**: checking out a branch, commit or pull request while edited files would be overwritten no longer fails; the edits are stashed, the switch runs, and the stash is popped on the new branch, with a toast saying how many files came along. If the pop conflicts or fails, the stash is kept and the toast says so. Untracked-file collisions still show git's error.
 - **Auto-fetch**: the focused repo is fetched automatically on open, tab switch, checkout, window focus and every 5 minutes (Settings → Fetch). A failure shows one error toast with a Fetch button that dismisses after 12 s and stays in Messages; the automatic path never asks for credentials.
