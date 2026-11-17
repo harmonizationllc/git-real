@@ -1,0 +1,35 @@
+.root {
+  position: absolute;
+  top: var(--space-2);
+  right: calc(10px + var(--space-3));
+  z-index: 1;
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-popover);
+}
+
+.root input {
+  width: 16ch;
+  font-family: var(--font-mono-ui);
+}
+
+.root input[data-state="no-results"] {
+  color: var(--color-danger);
+}
+
+.count {
+  min-width: 5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.root button[aria-pressed="true"] {
+  background: var(--color-accent-tint);
+  color: var(--color-on-accent-tint);
+}
