@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react";
+import { createEvent, fireEvent } from "@testing-library/react";
 import { createRef, type Ref } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -42,6 +42,21 @@ describe("SearchBar", () => {
       "Match case",
       "Close",
     ]);
+    expect(bar.querySelector('[aria-label="Match whole word"]')).toHaveAttribute(
+      "title",
+      "Match whole word",
+    );
+    expect(bar.querySelector('[aria-label="Match case"]')).toHaveAttribute("title", "Match case");
+  });
+
+  it("Escape on a bar button calls onClose", () => {
+    const { props, getByRole } = setup();
+    const button = getByRole("button", { name: "Match case" });
+    const event = createEvent.keyDown(button, { key: "Escape" });
+    fireEvent(button, event);
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(props.onNext).not.toHaveBeenCalled();
   });
 
   it("hides the counter for an empty query and shows 0/0 with the no-results state when nothing matches", () => {

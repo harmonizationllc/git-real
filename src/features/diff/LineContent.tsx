@@ -11,7 +11,7 @@ interface Props {
   noNewlineAtEof: boolean;
   /** The part of the line inside the viewer's text range. */
   selected?: Range | null;
-  /** Find-in-diff hits in this line. */
+  /** Find-in-diff hits in this line; sorted by `start` and non-overlapping, as `matchLine` returns them. */
   matches?: Range[];
   /** The hit the find bar is on, one of `matches`. */
   current?: Range | null;

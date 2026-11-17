@@ -129,6 +129,15 @@ describe("useDiffSearch", () => {
     expect(revealRow).toHaveBeenCalledTimes(3);
   });
 
+  it("reopening after scrolling picks the first hit at or after the first visible row, not the old anchor", () => {
+    const { view, top, rerender } = harness({ query: "foo", top: 0 });
+    expect(view.result.current.hits[view.result.current.current!].row).toBe(0);
+    rerender({ open: false });
+    top.value = 3;
+    rerender({ open: true });
+    expect(view.result.current.hits[view.result.current.current!].row).toBe(4);
+  });
+
   it("re-derives the current hit on a toggle change", () => {
     const { view } = harness({ query: "foo" });
     act(() => view.result.current.next());

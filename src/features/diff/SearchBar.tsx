@@ -46,17 +46,21 @@ function counter({ query, current, total, capped }: SearchBarProps): string {
 export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
   function SearchBar(props, ref) {
     const { query, wholeWord, matchCase, total, onQueryChange, onNext, onPrev, onClose } = props;
-    const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.nativeEvent.isComposing) return;
-      const action =
-        e.key === "Enter" ? (e.shiftKey ? onPrev : onNext) : e.key === "Escape" ? onClose : null;
-      if (action === null) return;
+    const onFieldKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.nativeEvent.isComposing || e.key !== "Enter") return;
       e.preventDefault();
       e.stopPropagation();
-      action();
+      (e.shiftKey ? onPrev : onNext)();
+    };
+    // Escape from the field or any control in the bar closes it.
+    const onBarKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.nativeEvent.isComposing || e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
     };
     return (
-      <div role="search" aria-label="Find in diff" className={styles.root}>
+      <div role="search" aria-label="Find in diff" className={styles.root} onKeyDown={onBarKeyDown}>
         <input
           ref={ref}
           type="text"
@@ -65,7 +69,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
           value={query}
           data-state={query && total === 0 ? "no-results" : undefined}
           onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={onKeyDown}
+          onKeyDown={onFieldKeyDown}
         />
         <span aria-live="polite" className={styles.count}>
           {counter(props)}
@@ -97,6 +101,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
           data-variant="ghost"
           data-size="sm"
           aria-label="Match whole word"
+          title="Match whole word"
           aria-pressed={wholeWord}
           onClick={props.onToggleWholeWord}
         >
@@ -107,6 +112,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
           data-variant="ghost"
           data-size="sm"
           aria-label="Match case"
+          title="Match case"
           aria-pressed={matchCase}
           onClick={props.onToggleMatchCase}
         >

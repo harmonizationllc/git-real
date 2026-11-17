@@ -39,24 +39,47 @@ export interface RowMarks {
   new: CellMarks | null;
 }
 
-const WORD_BEFORE = "(?<![\\p{L}\\p{N}_])";
-const WORD_AFTER = "(?![\\p{L}\\p{N}_])";
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
 
-/** null for an empty query; the RegExp has the `g` flag (and `i` unless matchCase). */
-export function compileQuery(query: string, options: SearchOptions): RegExp | null {
+/** A compiled query: the literal as a RegExp, plus whether hits must be whole words. */
+export type Matcher = RegExp & { wholeWord: boolean };
+
+/**
+ * null for an empty query; the RegExp has the `g` flag (and `i` unless matchCase). Whole-word
+ * is enforced in `matchLine`, not with a lookbehind that older WebKit cannot compile.
+ */
+export function compileQuery(query: string, options: SearchOptions): Matcher | null {
   if (query === "") return null;
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const source = options.wholeWord ? `${WORD_BEFORE}${escaped}${WORD_AFTER}` : escaped;
-  return new RegExp(source, options.matchCase ? "gu" : "giu");
+  const re = new RegExp(escaped, options.matchCase ? "gu" : "giu");
+  return Object.assign(re, { wholeWord: options.wholeWord });
+}
+
+/** Whether the code point just before `index` (a pair counts once) is a word character. */
+function wordBefore(line: string, index: number): boolean {
+  if (index === 0) return false;
+  const low = line.charCodeAt(index - 1);
+  const at = low >= 0xdc00 && low <= 0xdfff && index >= 2 ? index - 2 : index - 1;
+  return WORD_CHAR.test(String.fromCodePoint(line.codePointAt(at)!));
+}
+
+function wordAt(line: string, index: number): boolean {
+  return index < line.length && WORD_CHAR.test(String.fromCodePoint(line.codePointAt(index)!));
 }
 
 /** Non-overlapping hits in `text` without its trailing newline. */
-export function matchLine(text: string, re: RegExp): Range[] {
+export function matchLine(text: string, re: Matcher): Range[] {
   const line = text.endsWith("\n") ? text.slice(0, -1) : text;
   const out: Range[] = [];
   re.lastIndex = 0;
   for (let m = re.exec(line); m !== null; m = re.exec(line)) {
-    out.push({ start: m.index, end: m.index + m[0].length });
+    const end = m.index + m[0].length;
+    if (re.wholeWord && (wordBefore(line, m.index) || wordAt(line, end))) {
+      // Not a whole word here; a later, overlapping start may be.
+      re.lastIndex = m.index + 1;
+      continue;
+    }
+    out.push({ start: m.index, end });
     if (m[0].length === 0) re.lastIndex++;
   }
   return out;

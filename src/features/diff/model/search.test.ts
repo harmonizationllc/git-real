@@ -45,6 +45,10 @@ describe("compileQuery", () => {
     expect(matchLine("foo", compileQuery("foo", { ...opts, matchCase: true })!)).toHaveLength(1);
   });
 
+  it("uses no lookbehind, for older WebKit", () => {
+    expect(compileQuery("foo", word)!.source).not.toContain("(?<");
+  });
+
   it.each([
     ["foo", "foo bar", [[0, 3]]],
     ["foo", "foobar", []],
@@ -53,6 +57,8 @@ describe("compileQuery", () => {
     ["foo", "9foo", []],
     ["foo", "(foo)", [[1, 4]]],
     ["foo", "foo", [[0, 3]]],
+    ["foo", "\u{1D49C}foo", []],
+    ["foo", "\u{1F600}foo", [[2, 5]]],
   ])("whole word %s in %j", (q, text, ranges) => {
     expect(pairs(matchLine(text, compileQuery(q, word)!))).toEqual(ranges);
   });

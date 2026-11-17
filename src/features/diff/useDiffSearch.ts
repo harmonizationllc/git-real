@@ -56,7 +56,8 @@ export function useDiffSearch(
   let index = state.index;
   if (state.hits !== hits) {
     index = pickCurrent(hits, rows, state.anchor, viewer.current?.firstVisibleRow() ?? 0);
-    const anchor = index === null ? state.anchor : hitAnchor(hits[index], rows);
+    // Closed: forget the anchor too, so reopening starts from the viewport.
+    const anchor = index === null ? (open ? state.anchor : null) : hitAnchor(hits[index], rows);
     setState({ hits, index, anchor, steps: state.steps });
   }
 

@@ -10,6 +10,7 @@
 
 /* The viewer area; the find bar floats over its top-right corner. */
 .viewer {
+  --ruler-width: 10px;
   position: relative;
   flex: 1;
   min-height: 0;

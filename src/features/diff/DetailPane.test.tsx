@@ -2703,7 +2703,8 @@ describe("DetailPane change ruler", () => {
 describe("find in diff", () => {
   const modF = { key: "f", code: "KeyF", ctrlKey: true };
   /** The TextDiff root, which owns the shortcut. */
-  const paneRoot = () => document.querySelector<HTMLElement>("[data-focus-target]")!;
+  const paneRoot = () =>
+    screen.getByRole("region", { name: "Diff" }).closest<HTMLElement>("[data-focus-target]")!;
   const field = () => screen.getByRole<HTMLInputElement>("textbox", { name: "Find" });
   const bar = () => screen.queryByRole("search", { name: "Find in diff" });
   const counter = () => within(screen.getByRole("search")).getByText(/^\d+\/\d+\+?$/);
@@ -2862,6 +2863,30 @@ describe("find in diff", () => {
     expect(event.defaultPrevented).toBe(false);
     expect(bar()).toBeNull();
     expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("Mod+F does nothing while the revert dialog is open", async () => {
+    stubCarets();
+    setup();
+    await diffRegion();
+    rowMenu(1);
+    fireEvent.click(menuItem("Revert this line"));
+    expect(revertDialog()).toBeInTheDocument();
+    const event = createEvent.keyDown(paneRoot(), modF);
+    fireEvent(paneRoot(), event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(bar()).toBeNull();
+  });
+
+  it("prevents the default of a findInDiff chord that a window handler also owns", async () => {
+    setActiveBindings(resolveBindings({ findInDiff: "F7" }));
+    setup();
+    await diffRegion();
+    const event = createEvent.keyDown(paneRoot(), { key: "F7", code: "F7" });
+    fireEvent(paneRoot(), event);
+    // RepoPane's window handlers are not mounted here; defaultPrevented is what they check.
+    expect(event.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("search", { name: "Find in diff" })).toBeInTheDocument();
   });
 
   it("honours a rebinding of findInDiff from the shortcuts store", async () => {

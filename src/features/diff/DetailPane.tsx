@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { DiffMode, FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
@@ -259,15 +259,13 @@ function TextDiff({
   const wholeWord = useDiffSearchStore((s) => s.wholeWord);
   const matchCase = useDiffSearchStore((s) => s.matchCase);
   const inputRef = useRef<HTMLInputElement>(null);
-  const selectField = () => {
+  const selectField = useCallback(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
-  };
+  }, []);
   useEffect(() => {
-    if (!findShown) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [findShown]);
+    if (findShown) selectField();
+  }, [findShown, selectField]);
   const onKeyDown = (e: React.KeyboardEvent) => {
     // The pane's own menu or revert dialog owns the keyboard while open.
     if (menu !== null || pending !== null) return;

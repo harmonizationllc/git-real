@@ -1,7 +1,7 @@
 .root {
   position: absolute;
   top: var(--space-2);
-  right: calc(10px + var(--space-3));
+  right: calc(var(--ruler-width, 10px) + var(--space-3));
   z-index: 1;
   display: flex;
   gap: var(--space-1);
