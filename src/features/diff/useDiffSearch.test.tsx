@@ -101,6 +101,33 @@ describe("useDiffSearch", () => {
     expect(hits[current!].row).toBe(4);
   });
 
+  it("keeps the current hit and does not reveal again when rows are rebuilt with the same keys", () => {
+    const { view, revealRow, rerender } = harness({ query: "foo" });
+    act(() => view.result.current.next());
+    expect(view.result.current.current).toBe(1);
+    revealRow.mockClear();
+    const before = view.result.current.hits;
+    rerender({ rows: buildRows(diff, "unified") });
+    expect(view.result.current.hits).not.toBe(before);
+    expect(view.result.current.hits).toEqual(before);
+    expect(view.result.current.current).toBe(1);
+    expect(revealRow).not.toHaveBeenCalled();
+  });
+
+  it("reveals again when stepping onto the same single hit, and after a close and reopen", () => {
+    const { view, revealRow, rerender } = harness({ query: "zz" });
+    expect(view.result.current.hits).toHaveLength(0);
+    setStore("d");
+    rerender({});
+    expect(view.result.current.hits).toHaveLength(1);
+    expect(revealRow).toHaveBeenCalledTimes(1);
+    act(() => view.result.current.next());
+    expect(revealRow).toHaveBeenCalledTimes(2);
+    rerender({ open: false });
+    rerender({ open: true });
+    expect(revealRow).toHaveBeenCalledTimes(3);
+  });
+
   it("re-derives the current hit on a toggle change", () => {
     const { view } = harness({ query: "foo" });
     act(() => view.result.current.next());
