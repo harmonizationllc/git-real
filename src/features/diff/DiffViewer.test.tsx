@@ -14,6 +14,7 @@ import { DiffViewer, type DiffViewerHandle } from "./DiffViewer";
 import lineStyles from "./LineContent.module.css";
 import type { HighlightMap } from "./model/highlight";
 import { buildRows, type DiffRow } from "./model/rows";
+import type { RowMarks } from "./model/search";
 import type { MenuTarget } from "./model/selection";
 
 // Wrapped in a spy so tests can read the options DiffViewer hands the virtualizer.
@@ -22,6 +23,20 @@ vi.mock(import("../../lib/ipc"), async (importOriginal) => ({
   ...(await importOriginal()),
   copyText: vi.fn(),
 }));
+
+// Counts renders per row key. memo, like the real rows, so a skipped row is not counted.
+const renders = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("./UnifiedRow", async (importOriginal) => {
+  const { memo } = await import("react");
+  const actual = await importOriginal<typeof import("./UnifiedRow")>();
+  const Real = actual.UnifiedRow;
+  return {
+    UnifiedRow: memo(function Counted(props: React.ComponentProps<typeof Real>) {
+      renders.keys.push(props.row.key);
+      return <Real {...props} />;
+    }),
+  };
+});
 
 vi.mock("@tanstack/react-virtual", async () => {
   const fake = await import("../../test/mockVirtualizer");
@@ -72,6 +87,7 @@ interface Over {
   onMounted?: () => void;
   onUserScroll?: () => void;
   aside?: ReactNode;
+  marks?: ReadonlyMap<number, RowMarks>;
 }
 
 function setup(over: Over = {}) {
@@ -92,6 +108,7 @@ function setup(over: Over = {}) {
       onUserScroll={over.onUserScroll}
       resolveCaret={resolveCaret}
       aside={over.aside}
+      marks={over.marks}
     />
   );
   const view = render(viewer);
@@ -749,5 +766,63 @@ describe("DiffViewer aside", () => {
     const css = readFileSync("src/features/diff/DiffViewer.module.css", "utf8");
     expect(declarationsOf(css, "root")).toContain("flex-direction: row");
     expect(declarationsOf(css, "scroll")).toContain("min-width: 0");
+  });
+});
+
+// Contract: marks reach rows by index; revealRow scrolls minimally and is not a user scroll;
+// focus() focuses the scroll container; only rows whose marks object changed re-render.
+describe("DiffViewer find support", () => {
+  const cell = (start: number, end: number) => ({ matches: [{ start, end }], current: null });
+  const matchText = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll(`.${lineStyles.match}`)).map((e) => e.textContent);
+
+  it("should render a row's marks from the map and none for rows absent from it", () => {
+    const marks = new Map<number, RowMarks>([[1, { old: cell(0, 3), new: null }]]);
+    const { container } = setup({ marks });
+    expect(matchText(rowEl(container, 1))).toEqual(["one"]);
+    expect(matchText(rowEl(container, 0))).toEqual([]);
+    expect(matchText(rowEl(container, 2))).toEqual([]);
+  });
+
+  it("should scroll with align auto on revealRow and not count it as a user scroll", () => {
+    const onUserScroll = vi.fn();
+    const { ref, scroll } = setup({ onUserScroll });
+    fireEvent.wheel(scroll, { deltaY: 100 });
+    ref.current!.revealRow(4);
+    expect(scrollToIndex).toHaveBeenCalledExactlyOnceWith(4, { align: "auto" });
+    fireEvent.scroll(scroll);
+    expect(onUserScroll).not.toHaveBeenCalled();
+  });
+
+  it("should focus the scroll container on focus()", () => {
+    const { ref, scroll } = setup();
+    ref.current!.focus();
+    expect(scroll).toHaveFocus();
+  });
+
+  it("should re-render only the rows whose marks object changed", () => {
+    const a: RowMarks = { old: cell(0, 1), new: null };
+    const b: RowMarks = { old: null, new: cell(0, 1) };
+    const first = new Map<number, RowMarks>([
+      [1, a],
+      [2, b],
+    ]);
+    const { rerender, rows } = setup({ marks: first });
+    renders.keys.length = 0;
+    const next = new Map<number, RowMarks>([
+      [1, { ...a }],
+      [2, { ...b }],
+    ]);
+    rerender(
+      <DiffViewer
+        diff={three}
+        rows={rows}
+        mode="unified"
+        highlight={null}
+        resolveCaret={resolveCaret}
+        marks={next}
+      />,
+    );
+    expect([...renders.keys].sort()).toEqual([rows[1].key, rows[2].key].sort());
   });
 });

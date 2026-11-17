@@ -16,6 +16,7 @@ import { domCaretResolver, type CaretResolver } from "./caretResolver";
 import type { HighlightMap } from "./model/highlight";
 import { rowHeightEstimate } from "./model/rowHeight";
 import type { DiffRow } from "./model/rows";
+import type { RowMarks } from "./model/search";
 import { coveredText, type MenuTarget } from "./model/selection";
 import { SplitRow } from "./SplitRow";
 import { UnifiedRow } from "./UnifiedRow";
@@ -26,6 +27,10 @@ import styles from "./DiffViewer.module.css";
 export interface DiffViewerHandle {
   scrollToRow(index: number): void;
   firstVisibleRow(): number;
+  /** Scrolls a row into view only if it is not already visible; not a user scroll. */
+  revealRow(index: number): void;
+  /** Focuses the scroll container. */
+  focus(): void;
 }
 
 export interface DiffViewerProps {
@@ -45,13 +50,15 @@ export interface DiffViewerProps {
   onUserScroll?(): void;
   /** Rendered beside the scroll container, stretched to its height; the change ruler. */
   aside?: ReactNode;
+  /** Find-in-diff matches by row index; rows absent from it have none. */
+  marks?: ReadonlyMap<number, RowMarks>;
   /** Test seam; defaults to resolving carets from the rendered rows. */
   resolveCaret?: CaretResolver;
 }
 
 /** Virtualized rows with a viewer-owned text range, copy and a context-menu target. */
 export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function DiffViewer(
-  { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, aside, resolveCaret },
+  { diff, rows, highlight, onContextMenu, onMounted, onUserScroll, aside, marks, resolveCaret },
   ref,
 ) {
   // Held in state (a callback ref) so the default caret resolver is built once it exists, and in
@@ -97,6 +104,11 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
         virtualizer.scrollToIndex(index, { align: "start" });
       },
       firstVisibleRow: () => virtualizer.range?.startIndex ?? 0,
+      revealRow: (index) => {
+        intent.current = false;
+        virtualizer.scrollToIndex(index, { align: "auto" });
+      },
+      focus: () => elRef.current?.focus(),
     }),
     [virtualizer],
   );
@@ -144,7 +156,7 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
   };
 
   const renderRow = (row: DiffRow, index: number) => {
-    const props = { diff, highlight, tint: text.tint(index) };
+    const props = { diff, highlight, tint: text.tint(index), marks: marks?.get(index) ?? null };
     return row.kind === "unified" ? (
       <UnifiedRow {...props} row={row} />
     ) : (

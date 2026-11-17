@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import { buildRows, type DiffRow } from "./model/rows";
 import type { HighlightMap } from "./model/highlight";
+import type { RowMarks } from "./model/search";
 import { UnifiedRow } from "./UnifiedRow";
 import type { RowTint } from "./useTextRange";
 import lineStyles from "./LineContent.module.css";
@@ -20,7 +21,7 @@ const rows = buildRows(diff, "unified");
 
 function setup(
   lineIndex: number,
-  over: { highlight?: HighlightMap | null; tint?: RowTint | null } = {},
+  over: { highlight?: HighlightMap | null; tint?: RowTint | null; marks?: RowMarks | null } = {},
 ) {
   const row = rows.find(
     (r): r is Extract<DiffRow, { kind: "unified" }> =>
@@ -32,6 +33,7 @@ function setup(
       row={row}
       highlight={over.highlight ?? null}
       tint={over.tint ?? null}
+      marks={over.marks ?? null}
     />,
   );
   const root = view.container.firstElementChild as HTMLElement;
@@ -238,5 +240,32 @@ describe("UnifiedRow tint", () => {
 
   it("should select nothing without a tint", () => {
     expect(setup(2).root.querySelector(`.${lineStyles.selected}`)).toBeNull();
+  });
+});
+
+// Contract: marks.old reaches a deletion line, marks.new a context or addition line.
+describe("UnifiedRow marks", () => {
+  const cell = (start: number, end: number, current = false) => {
+    const r = { start, end };
+    return { matches: [r], current: current ? r : null };
+  };
+  const matchText = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll(`.${lineStyles.match}`)).map((e) => e.textContent);
+
+  it("should pass marks.old to a deletion line", () => {
+    const marks = { old: cell(0, 5), new: cell(6, 7) };
+    expect(matchText(setup(1, { marks }).root)).toEqual(["const"]);
+  });
+
+  it("should pass marks.new to a context or addition line", () => {
+    const marks = { old: cell(0, 1), new: cell(0, 4, true) };
+    expect(matchText(setup(0, { marks }).root)).toEqual(["keep"]);
+    const added = setup(2, { marks });
+    expect(matchText(added.root)).toEqual(["cons"]);
+    expect(added.root.querySelector(`.${lineStyles.matchCurrent}`)).not.toBeNull();
+  });
+
+  it("should mark nothing without marks", () => {
+    expect(matchText(setup(1).root)).toEqual([]);
   });
 });

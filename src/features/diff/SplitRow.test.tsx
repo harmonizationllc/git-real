@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { fileDiff, hunk, L } from "../../test/diffFixtures";
 import type { HighlightMap } from "./model/highlight";
+import type { RowMarks } from "./model/search";
 import { buildRows, type DiffRow } from "./model/rows";
 import { SplitRow } from "./SplitRow";
 import type { RowTint } from "./useTextRange";
@@ -24,14 +25,20 @@ const rows = buildRows(diff, "split");
 function setup(
   oldIndex: number | null,
   newIndex: number | null,
-  over: { highlight?: HighlightMap | null; tint?: RowTint | null } = {},
+  over: { highlight?: HighlightMap | null; tint?: RowTint | null; marks?: RowMarks | null } = {},
 ) {
   const row = rows.find(
     (r): r is Extract<DiffRow, { kind: "split" }> =>
       r.kind === "split" && r.old === oldIndex && r.new === newIndex,
   )!;
   const view = render(
-    <SplitRow diff={diff} row={row} highlight={over.highlight ?? null} tint={over.tint ?? null} />,
+    <SplitRow
+      diff={diff}
+      row={row}
+      highlight={over.highlight ?? null}
+      tint={over.tint ?? null}
+      marks={over.marks ?? null}
+    />,
   );
   const cells = Array.from(
     view.container.querySelectorAll<HTMLElement>(
@@ -297,5 +304,34 @@ describe("SplitRow tint", () => {
 
   it("should select nothing without a tint", () => {
     expect(setup(1, 2).container.querySelector(`.${lineStyles.selected}`)).toBeNull();
+  });
+});
+
+// Contract: marks.old reaches the old cell and marks.new the new cell.
+describe("SplitRow marks", () => {
+  const cell = (start: number, end: number) => ({
+    matches: [{ start, end }],
+    current: null,
+  });
+  const matchText = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll(`.${lineStyles.match}`)).map((e) => e.textContent);
+
+  it("should pass marks.old to the old cell and marks.new to the new cell", () => {
+    const { left, right } = setup(1, 2, { marks: { old: cell(0, 5), new: cell(6, 7) } });
+    expect(matchText(left)).toEqual(["const"]);
+    expect(matchText(right)).toEqual(["b"]);
+  });
+
+  it("should mark both cells of a context row from the shared marks", () => {
+    const shared = cell(0, 4);
+    const { left, right } = setup(0, 0, { marks: { old: shared, new: shared } });
+    expect(matchText(left)).toEqual(["keep"]);
+    expect(matchText(right)).toEqual(["keep"]);
+  });
+
+  it("should mark nothing in an empty cell", () => {
+    const { left, right } = setup(null, 3, { marks: { old: null, new: cell(0, 4) } });
+    expect(matchText(left)).toEqual([]);
+    expect(matchText(right)).toEqual(["tail"]);
   });
 });
