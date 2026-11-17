@@ -33,8 +33,8 @@ const lightTheme = themeTokens(rootMap);
 const mediaDarkTheme = themeTokens(mediaDarkMap);
 // Review Focus item 3 (plan § Task 7): token structure assertions.
 describe("tokens.css structure", () => {
-  it("declares 44 theme tokens on :root plus --font-mono and --diff-font-size", () => {
-    expect(lightTheme.size).toBe(44); // 38 + surface-2, accent-tint, shadow-card, backdrop, shadow-popover, on-accent-tint
+  it("declares 46 theme tokens on :root plus --font-mono and --diff-font-size", () => {
+    expect(lightTheme.size).toBe(46); // 44 + search-match-bg, search-match-current-bg
     expect(rootMap.has("--font-mono")).toBe(true);
     expect(rootMap.has("--diff-font-size")).toBe(true);
   });
@@ -90,6 +90,8 @@ describe("tokens.css structure", () => {
       "--color-removed-word-bg": "rgba(137, 4, 24, 0.22)",
       "--color-hunk-bg": "rgba(0, 82, 90, 0.08)",
       "--color-line-selected": "rgba(98, 64, 0, 0.14)",
+      "--color-search-match-bg": "rgba(98, 64, 0, 0.28)",
+      "--color-search-match-current-bg": "rgba(0, 82, 90, 0.35)",
       "--graph-lane-1": "#185529",
       "--graph-lane-2": "#624000",
       "--graph-lane-3": "#78292e",
@@ -120,6 +122,8 @@ describe("tokens.css structure", () => {
       "--color-removed-word-bg": "rgba(255, 160, 154, 0.36)",
       "--color-hunk-bg": "rgba(99, 208, 223, 0.1)",
       "--color-line-selected": "rgba(255, 173, 0, 0.18)",
+      "--color-search-match-bg": "rgba(255, 173, 0, 0.32)",
+      "--color-search-match-current-bg": "rgba(99, 208, 223, 0.4)",
       "--graph-lane-0": "var(--color-accent)",
       "--graph-lane-1": "#5edb8c",
       "--graph-lane-2": "#ffad00",
