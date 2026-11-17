@@ -57,6 +57,8 @@ function pieces(
   const bounds = [...cuts].sort((a, b) => a - b);
   const out: Piece[] = [];
   let ti = 0;
+  // Matches are sorted and non-overlapping, and pieces ascend, so one pointer walks both.
+  let mi = 0;
   let tokEnd = toks[0].text.length;
   for (let i = 0; i + 1 < bounds.length; i++) {
     const [s, e] = [bounds[i], bounds[i + 1]];
@@ -65,12 +67,13 @@ function pieces(
       ti++;
       tokEnd += toks[ti].text.length;
     }
+    while (mi < matches.length && matches[mi].end <= s) mi++;
     out.push({
       text: text.slice(s, e),
       className: toks[ti].className,
       marked: ranges.some((r) => s >= r.start && e <= r.end),
       selected: selected !== null && s >= selected.start && e <= selected.end,
-      match: matches.some((r) => s >= r.start && e <= r.end),
+      match: mi < matches.length && s >= matches[mi].start && e <= matches[mi].end,
       current: current !== null && s >= current.start && e <= current.end,
     });
   }
