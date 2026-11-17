@@ -172,7 +172,7 @@ describe("wordDiff bridging a single space between changed words", () => {
     });
   });
   it("should not bridge a non-breaking space", () => {
-    expect(wordDiff("foo bar", "baz qux")).toEqual({
+    expect(wordDiff("foo\u00a0bar", "baz\u00a0qux")).toEqual({
       old: [
         { start: 0, end: 3 },
         { start: 4, end: 7 },
