@@ -383,3 +383,87 @@ describe("LineContent line length", () => {
     expect(code.textContent).toBe("\u00a0");
   });
 });
+
+// Contract: search matches wrap in span.match, the current one adds span.matchCurrent; they cut
+// tokens and combine with word marks and the selection.
+describe("LineContent search matches", () => {
+  const renderMatches = (
+    text: string,
+    matches: Range[],
+    current: Range | null = null,
+    over: { tokens?: Token[] | null; ranges?: Range[]; selected?: Range | null } = {},
+  ) =>
+    render(
+      <LineContent
+        text={text}
+        tokens={over.tokens ?? null}
+        ranges={over.ranges ?? []}
+        noNewlineAtEof={false}
+        selected={over.selected ?? null}
+        matches={matches}
+        current={current}
+      />,
+    );
+  const texts = (el: HTMLElement, cls: string) =>
+    Array.from(el.querySelectorAll(`.${cls}`)).map((e) => e.textContent);
+
+  it("wraps each match in a span with the match class", () => {
+    const { container } = renderMatches("abc abc", [
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ]);
+    expect(texts(container, styles.match)).toEqual(["abc", "abc"]);
+    expect(container.querySelector(`.${styles.matchCurrent}`)).toBeNull();
+  });
+
+  it("adds the matchCurrent class to the current match only", () => {
+    const m = [
+      { start: 0, end: 3 },
+      { start: 4, end: 7 },
+    ];
+    const { container } = renderMatches("abc abc", m, m[1]);
+    expect(texts(container, styles.matchCurrent)).toEqual(["abc"]);
+    const first = container.querySelector(`.${styles.match}`)!;
+    expect(first.textContent).toBe("abc");
+    expect(first).not.toHaveClass(styles.matchCurrent);
+  });
+
+  it("cuts a token at match bounds and keeps the token class on both pieces", () => {
+    const tokens: Token[] = [{ text: "abcdef", className: "tok-keyword" }];
+    const { container } = renderMatches("abcdef", [{ start: 2, end: 4 }], null, { tokens });
+    const spans = Array.from(container.querySelectorAll(".tok-keyword")).map((e) => e.textContent);
+    expect(spans).toEqual(["ab", "cd", "ef"]);
+    expect(texts(container, styles.match)).toEqual(["cd"]);
+  });
+
+  it("renders a match inside a word-diff mark as a match span inside the <mark>", () => {
+    const { container } = renderMatches("abcdef", [{ start: 2, end: 4 }], null, {
+      ranges: [{ start: 1, end: 5 }],
+    });
+    const mark = container.querySelector("mark")!;
+    expect(mark.textContent).toBe("bcde");
+    expect(texts(mark, styles.match)).toEqual(["cd"]);
+  });
+
+  it("renders a match that overlaps the selected range with both classes", () => {
+    const { container } = renderMatches("abcdef", [{ start: 1, end: 4 }], null, {
+      selected: { start: 3, end: 6 },
+    });
+    const both = Array.from(container.querySelectorAll(`.${styles.match}`)).find(
+      (e) => e.textContent === "d",
+    )!;
+    expect(both).toHaveClass(styles.selected);
+    expect(texts(container, styles.selected)).toEqual(["d", "ef"]);
+  });
+
+  it("renders thousands of matches on one line and marks exactly the matched pieces", () => {
+    const n = 5000;
+    // Every other character matches, so match and non-match pieces alternate.
+    const text = "ab".repeat(n);
+    const matches = Array.from({ length: n }, (_, i) => ({ start: 2 * i, end: 2 * i + 1 }));
+    const { container } = renderMatches(text, matches, matches[n - 1]);
+    expect(container.querySelectorAll(`.${styles.match}`)).toHaveLength(n);
+    expect(texts(container, styles.matchCurrent)).toEqual(["a"]);
+    expect(container.querySelector("code")?.textContent).toBe(text);
+  });
+});

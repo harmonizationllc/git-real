@@ -27,7 +27,12 @@ const diff = fileDiff([
 function setup(firstVisible = 0) {
   const scrollToRow = vi.fn();
   const firstVisibleRow = vi.fn(() => firstVisible);
-  const handle: DiffViewerHandle = { scrollToRow, firstVisibleRow };
+  const handle: DiffViewerHandle = {
+    scrollToRow,
+    firstVisibleRow,
+    revealRow: vi.fn(),
+    focus: vi.fn(),
+  };
   const viewer: RefObject<DiffViewerHandle | null> = { current: handle };
   const rows = buildRows(diff, "unified");
   const view = renderHook(({ r }) => useChangeNavigation(diff, r, viewer), {
@@ -178,7 +183,7 @@ describe("useChangeNavigation goTo guard and clamping", () => {
     const quiet = fileDiff([hunk([L("context", "a", 1, 1), L("context", "b", 2, 2)])]);
     const scrollToRow = vi.fn();
     const viewer: RefObject<DiffViewerHandle | null> = {
-      current: { scrollToRow, firstVisibleRow: () => 0 },
+      current: { scrollToRow, firstVisibleRow: () => 0, revealRow: vi.fn(), focus: vi.fn() },
     };
     const rows = buildRows(quiet, "unified");
     const { result } = renderHook(() => useChangeNavigation(quiet, rows, viewer));
@@ -211,7 +216,7 @@ describe("useChangeNavigation change at row 0", () => {
     ]);
     const scrollToRow = vi.fn();
     const viewer: RefObject<DiffViewerHandle | null> = {
-      current: { scrollToRow, firstVisibleRow: () => 0 },
+      current: { scrollToRow, firstVisibleRow: () => 0, revealRow: vi.fn(), focus: vi.fn() },
     };
     const rows = buildRows(top, "unified");
     expect(changeBlocks(top, rows)[0].firstRow).toBe(0);

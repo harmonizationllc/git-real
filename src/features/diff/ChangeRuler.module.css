@@ -2,7 +2,7 @@
   flex: none;
   position: relative;
   overflow: hidden;
-  width: 10px;
+  width: var(--ruler-width, 10px);
   border-left: 1px solid var(--color-border);
   background: var(--color-surface);
 }

@@ -4,6 +4,7 @@ import { Gutter } from "./Gutter";
 import { LineContent } from "./LineContent";
 import type { HighlightMap } from "./model/highlight";
 import type { DiffRow } from "./model/rows";
+import type { CellMarks, RowMarks } from "./model/search";
 import type { Side } from "./model/selection";
 import { wordDiff, type Range, type WordDiff } from "./model/wordDiff";
 import type { RowTint } from "./useTextRange";
@@ -14,12 +15,14 @@ interface Props {
   row: Extract<DiffRow, { kind: "split" }>;
   highlight: HighlightMap | null;
   tint: RowTint | null;
+  /** Find-in-diff matches for this row; null when it has none. */
+  marks: RowMarks | null;
 }
 
 const NO_WORDS: WordDiff = { old: [], new: [] };
 
 /** One side-by-side row: the old line on the left, the new line on the right. */
-export const SplitRow = memo(function SplitRow({ diff, row, highlight, tint }: Props) {
+export const SplitRow = memo(function SplitRow({ diff, row, highlight, tint, marks }: Props) {
   const hunk = diff.hunks[row.hunkIndex];
   const oldLine = row.old === null ? null : hunk.lines[row.old];
   const newLine = row.new === null ? null : hunk.lines[row.new];
@@ -36,8 +39,22 @@ export const SplitRow = memo(function SplitRow({ diff, row, highlight, tint }: P
   const tintOn = (side: Side) => (tint?.side === side ? tint : null);
   return (
     <div className={styles.split}>
-      <Cell {...cell} lineIndex={row.old} side="old" ranges={words.old} tint={tintOn("old")} />
-      <Cell {...cell} lineIndex={row.new} side="new" ranges={words.new} tint={tintOn("new")} />
+      <Cell
+        {...cell}
+        lineIndex={row.old}
+        side="old"
+        ranges={words.old}
+        tint={tintOn("old")}
+        marks={marks?.old ?? null}
+      />
+      <Cell
+        {...cell}
+        lineIndex={row.new}
+        side="new"
+        ranges={words.new}
+        tint={tintOn("new")}
+        marks={marks?.new ?? null}
+      />
     </div>
   );
 });
@@ -50,6 +67,7 @@ function Cell({
   ranges,
   highlight,
   tint,
+  marks,
 }: {
   hunk: Hunk;
   hunkIndex: number;
@@ -58,6 +76,7 @@ function Cell({
   ranges: Range[];
   highlight: HighlightMap | null;
   tint: RowTint | null;
+  marks: CellMarks | null;
 }) {
   if (lineIndex === null) {
     // A range row with no line on its side is acted on whole,
@@ -90,6 +109,8 @@ function Cell({
         ranges={ranges}
         noNewlineAtEof={line.noNewlineAtEof}
         selected={selected}
+        matches={marks?.matches}
+        current={marks?.current}
       />
     </div>
   );

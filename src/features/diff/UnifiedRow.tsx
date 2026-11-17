@@ -4,6 +4,7 @@ import { Gutter } from "./Gutter";
 import { LineContent } from "./LineContent";
 import type { HighlightMap } from "./model/highlight";
 import type { DiffRow } from "./model/rows";
+import type { RowMarks } from "./model/search";
 import { wordDiff, type Range } from "./model/wordDiff";
 import type { RowTint } from "./useTextRange";
 import styles from "./DiffRows.module.css";
@@ -13,12 +14,14 @@ interface Props {
   row: Extract<DiffRow, { kind: "unified" }>;
   highlight: HighlightMap | null;
   tint: RowTint | null;
+  /** Find-in-diff matches for this row; null when it has none. */
+  marks: RowMarks | null;
 }
 
 const NO_RANGES: Range[] = [];
 
 /** One line of a unified diff: old and new gutters, the sign and the content. */
-export const UnifiedRow = memo(function UnifiedRow({ diff, row, highlight, tint }: Props) {
+export const UnifiedRow = memo(function UnifiedRow({ diff, row, highlight, tint, marks }: Props) {
   const hunk = diff.hunks[row.hunkIndex];
   const line = hunk.lines[row.lineIndex];
   const partner = row.partner === null ? null : hunk.lines[row.partner];
@@ -31,6 +34,7 @@ export const UnifiedRow = memo(function UnifiedRow({ diff, row, highlight, tint 
   const tokens = highlight?.get(row.hunkIndex)?.[row.lineIndex] ?? null;
   const side = line.kind === "deletion" ? "old" : "new";
   // A line of the other kind than the range's side (a deletion on the new side) is shaded whole.
+  const cellMarks = marks === null ? null : side === "old" ? marks.old : marks.new;
   const whole = tint !== null && line.kind !== "context" && tint.side !== side;
   const selected =
     tint === null
@@ -57,6 +61,8 @@ export const UnifiedRow = memo(function UnifiedRow({ diff, row, highlight, tint 
         ranges={ranges}
         noNewlineAtEof={line.noNewlineAtEof}
         selected={selected}
+        matches={cellMarks?.matches}
+        current={cellMarks?.current}
       />
     </div>
   );

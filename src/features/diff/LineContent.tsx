@@ -11,6 +11,10 @@ interface Props {
   noNewlineAtEof: boolean;
   /** The part of the line inside the viewer's text range. */
   selected?: Range | null;
+  /** Find-in-diff hits in this line; sorted by `start` and non-overlapping, as `matchLine` returns them. */
+  matches?: Range[];
+  /** The hit the find bar is on, one of `matches`. */
+  current?: Range | null;
 }
 
 interface Piece {
@@ -18,6 +22,8 @@ interface Piece {
   className: string | null;
   marked: boolean;
   selected: boolean;
+  match: boolean;
+  current: boolean;
 }
 
 /**
@@ -29,6 +35,8 @@ function pieces(
   tokens: Token[] | null,
   ranges: Range[],
   selected: Range | null,
+  matches: Range[],
+  current: Range | null,
 ): Piece[] {
   const toks = tokens ?? [{ text, className: null }];
   const cuts = new Set<number>([0, text.length]);
@@ -37,13 +45,20 @@ function pieces(
     off += t.text.length;
     cuts.add(off);
   }
-  for (const r of [...ranges, ...(selected ? [selected] : [])]) {
+  for (const r of [
+    ...ranges,
+    ...matches,
+    ...(selected ? [selected] : []),
+    ...(current ? [current] : []),
+  ]) {
     cuts.add(r.start);
     cuts.add(r.end);
   }
   const bounds = [...cuts].sort((a, b) => a - b);
   const out: Piece[] = [];
   let ti = 0;
+  // Matches are sorted and non-overlapping, and pieces ascend, so one pointer walks both.
+  let mi = 0;
   let tokEnd = toks[0].text.length;
   for (let i = 0; i + 1 < bounds.length; i++) {
     const [s, e] = [bounds[i], bounds[i + 1]];
@@ -52,11 +67,14 @@ function pieces(
       ti++;
       tokEnd += toks[ti].text.length;
     }
+    while (mi < matches.length && matches[mi].end <= s) mi++;
     out.push({
       text: text.slice(s, e),
       className: toks[ti].className,
       marked: ranges.some((r) => s >= r.start && e <= r.end),
       selected: selected !== null && s >= selected.start && e <= selected.end,
+      match: mi < matches.length && s >= matches[mi].start && e <= matches[mi].end,
+      current: current !== null && s >= current.start && e <= current.end,
     });
   }
   return out;
@@ -74,7 +92,12 @@ function runs(parts: Piece[]): Piece[][] {
 }
 
 function pieceSpan(p: Piece, key: number) {
-  const classes = [p.className, p.selected ? styles.selected : null].filter(Boolean);
+  const classes = [
+    p.className,
+    p.selected ? styles.selected : null,
+    p.match ? styles.match : null,
+    p.current ? styles.matchCurrent : null,
+  ].filter(Boolean);
   const className = classes.length > 0 ? classes.join(" ") : undefined;
   return (
     <span key={key} className={className}>
@@ -83,8 +106,18 @@ function pieceSpan(p: Piece, key: number) {
   );
 }
 
-export function LineContent({ text, tokens, ranges, noNewlineAtEof, selected = null }: Props) {
-  const parts = text.length === 0 ? [] : pieces(text, tokens, ranges, selected);
+const NO_MATCHES: Range[] = [];
+
+export function LineContent({
+  text,
+  tokens,
+  ranges,
+  noNewlineAtEof,
+  selected = null,
+  matches = NO_MATCHES,
+  current = null,
+}: Props) {
+  const parts = text.length === 0 ? [] : pieces(text, tokens, ranges, selected, matches, current);
   return (
     <code className={styles.code} data-line-text="" data-line-length={text.length}>
       {/* A non-breaking space keeps an empty line at full height. */}

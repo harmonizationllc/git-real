@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ContextMenu, type MenuItem } from "../../components/ContextMenu";
 import type { DiffMode, FileDiff, HunkAction, HunkSelection, RepoId } from "../../lib/ipc";
+import { matchesShortcut } from "../../lib/shortcuts";
+import { useDiffSearchStore } from "../../lib/store/diffSearch";
 import { useSettings } from "../../lib/store/settings";
 import { setDiffMode, setIgnoreWhitespace } from "../../lib/store/settingsActions";
 import { useShell } from "../../lib/store/shell";
@@ -25,7 +27,9 @@ import { buildRows, type DiffRow } from "./model/rows";
 import { LABELS, NOTHING_REASON, revertBody } from "./model/menu";
 import { commitOf, isReadOnly, scopeId } from "./model/scope";
 import { selectionRequest, type MenuTarget } from "./model/selection";
+import { SearchBar } from "./SearchBar";
 import { useChangeNavigation } from "./useChangeNavigation";
+import { useDiffSearch } from "./useDiffSearch";
 import { useFileDiff } from "./useFileDiff";
 import { useHighlight } from "./useHighlight";
 import styles from "./DetailPane.module.css";
@@ -247,6 +251,35 @@ function TextDiff({
     return () => publishDiffNavigation(null);
   }, [viewerShown, repoId]);
 
+  // Find in diff: the bar shows only over the viewer; the query and options outlive the file.
+  const [findOpen, setFindOpen] = useState(false);
+  const findShown = findOpen && viewerShown;
+  const search = useDiffSearch(diff, rows, viewerRef, findShown);
+  const query = useDiffSearchStore((s) => s.query);
+  const wholeWord = useDiffSearchStore((s) => s.wholeWord);
+  const matchCase = useDiffSearchStore((s) => s.matchCase);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selectField = useCallback(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+  useEffect(() => {
+    if (findShown) selectField();
+  }, [findShown, selectField]);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    // The pane's own menu or revert dialog owns the keyboard while open.
+    if (menu !== null || pending !== null) return;
+    if (!matchesShortcut(e, "findInDiff")) return;
+    e.preventDefault();
+    // Already open: reselect now, since no state change will run the effect.
+    if (findShown) selectField();
+    else setFindOpen(true);
+  };
+  const closeFind = () => {
+    setFindOpen(false);
+    viewerRef.current?.focus();
+  };
+
   const reason = ignoreWhitespace
     ? WHITESPACE_REASON
     : isDecoded(diff)
@@ -314,6 +347,7 @@ function TextDiff({
         rows={rows}
         mode={mode}
         highlight={highlight}
+        marks={search.marks}
         onMounted={() => nav.goTo(0)}
         onUserScroll={nav.onUserScroll}
         aside={
@@ -334,7 +368,13 @@ function TextDiff({
   }
 
   return (
-    <div ref={rootRef} tabIndex={-1} data-focus-target className={styles.root}>
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      data-focus-target
+      className={styles.root}
+      onKeyDown={onKeyDown}
+    >
       {header}
       <DiffToolbar
         diff={diff}
@@ -348,7 +388,26 @@ function TextDiff({
       {actions.error && (
         <RepoError error={actions.error} path={null} onDismiss={actions.clearError} />
       )}
-      {body}
+      <div className={styles.viewer}>
+        {body}
+        {findShown && (
+          <SearchBar
+            ref={inputRef}
+            query={query}
+            wholeWord={wholeWord}
+            matchCase={matchCase}
+            current={search.current}
+            total={search.hits.length}
+            capped={search.capped}
+            onQueryChange={useDiffSearchStore.getState().setQuery}
+            onToggleWholeWord={useDiffSearchStore.getState().toggleWholeWord}
+            onToggleMatchCase={useDiffSearchStore.getState().toggleMatchCase}
+            onNext={search.next}
+            onPrev={search.prev}
+            onClose={closeFind}
+          />
+        )}
+      </div>
       {editable && (
         <>
           <ContextMenu

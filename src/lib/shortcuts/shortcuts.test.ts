@@ -19,14 +19,14 @@ afterEach(() => {
   setActiveBindings(resolveBindings({}));
 });
 
-// Contract: 16-row registry with unique ids and keys.
+// Contract: 17-row registry with unique ids and keys.
 describe("SHORTCUTS registry", () => {
-  it("registry ids and keys are unique and the table has 16 rows", () => {
-    expect(SHORTCUTS).toHaveLength(16);
+  it("registry ids and keys are unique and the table has 17 rows", () => {
+    expect(SHORTCUTS).toHaveLength(17);
     const ids = SHORTCUTS.map((s) => s.id);
     const keys = SHORTCUTS.map((s) => s.keys);
-    expect(new Set(ids).size).toBe(16);
-    expect(new Set(keys).size).toBe(16);
+    expect(new Set(ids).size).toBe(17);
+    expect(new Set(keys).size).toBe(17);
   });
 
   it("shortcut(id) returns the matching row", () => {
@@ -50,6 +50,7 @@ describe("SHORTCUTS registry", () => {
     ["prevTab", "Mod+PageUp"],
     ["nextChange", "F7"],
     ["prevChange", "Shift+F7"],
+    ["findInDiff", "Mod+F"],
     ["fetch", "Mod+Shift+F"],
     ["pull", "Mod+Shift+L"],
     ["push", "Mod+Shift+P"],
@@ -98,6 +99,7 @@ describe("matchesShortcut matrix", () => {
     ["prevTab", { ctrlKey: true, key: "PageUp", code: "PageUp" }],
     ["nextChange", { key: "F7", code: "F7" }],
     ["prevChange", { shiftKey: true, key: "F7", code: "F7" }],
+    ["findInDiff", { ctrlKey: true, key: "f", code: "KeyF" }],
     ["fetch", { ctrlKey: true, shiftKey: true, key: "F", code: "KeyF" }],
     ["pull", { ctrlKey: true, shiftKey: true, key: "L", code: "KeyL" }],
     ["push", { ctrlKey: true, shiftKey: true, key: "P", code: "KeyP" }],
