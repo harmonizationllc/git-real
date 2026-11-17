@@ -76,7 +76,8 @@ export function matchLine(text: string, re: Matcher): Range[] {
     const end = m.index + m[0].length;
     if (re.wholeWord && (wordBefore(line, m.index) || wordAt(line, end))) {
       // Not a whole word here; a later, overlapping start may be.
-      re.lastIndex = m.index + 1;
+      // A whole code point: inside a surrogate pair a `u` regex steps back and re-matches forever.
+      re.lastIndex = m.index + (line.codePointAt(m.index)! > 0xffff ? 2 : 1);
       continue;
     }
     out.push({ start: m.index, end });

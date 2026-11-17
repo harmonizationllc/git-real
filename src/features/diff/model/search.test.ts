@@ -45,6 +45,21 @@ describe("compileQuery", () => {
     expect(matchLine("foo", compileQuery("foo", { ...opts, matchCase: true })!)).toHaveLength(1);
   });
 
+  // A rejected astral-leading candidate must step a whole code point, or the regex re-matches it forever.
+  it("whole-word astral query terminates and finds the standalone hit", { timeout: 2000 }, () => {
+    expect(pairs(matchLine("a\u{1F600} \u{1F600}", compileQuery("\u{1F600}", word)!))).toEqual([
+      [4, 6],
+    ]);
+  });
+
+  it(
+    "whole-word astral letter next to a word char terminates with no hit",
+    { timeout: 2000 },
+    () => {
+      expect(matchLine("x\u{1D49C}", compileQuery("\u{1D49C}", word)!)).toEqual([]);
+    },
+  );
+
   it("uses no lookbehind, for older WebKit", () => {
     expect(compileQuery("foo", word)!.source).not.toContain("(?<");
   });
