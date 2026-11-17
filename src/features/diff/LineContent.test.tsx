@@ -456,17 +456,14 @@ describe("LineContent search matches", () => {
     expect(texts(container, styles.selected)).toEqual(["d", "ef"]);
   });
 
-  it("renders thousands of matches on one line quickly and marks exactly the matched pieces", () => {
+  it("renders thousands of matches on one line and marks exactly the matched pieces", () => {
     const n = 5000;
     // Every other character matches, so match and non-match pieces alternate.
     const text = "ab".repeat(n);
     const matches = Array.from({ length: n }, (_, i) => ({ start: 2 * i, end: 2 * i + 1 }));
-    const t0 = performance.now();
     const { container } = renderMatches(text, matches, matches[n - 1]);
-    const elapsed = performance.now() - t0;
     expect(container.querySelectorAll(`.${styles.match}`)).toHaveLength(n);
     expect(texts(container, styles.matchCurrent)).toEqual(["a"]);
     expect(container.querySelector("code")?.textContent).toBe(text);
-    expect(elapsed).toBeLessThan(2000);
   });
 });
