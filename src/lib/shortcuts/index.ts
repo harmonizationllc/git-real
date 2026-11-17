@@ -25,6 +25,7 @@ export type ShortcutId =
   | "prevTab"
   | "nextChange"
   | "prevChange"
+  | "findInDiff"
   | "fetch"
   | "pull"
   | "push"
@@ -96,6 +97,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: "Navigation",
     when: "repo",
   },
+  { id: "findInDiff", keys: "Mod+F", label: "Find in diff", group: "Navigation", when: "repo" },
   { id: "fetch", keys: "Mod+Shift+F", label: "Fetch", group: "Repository", when: "repo" },
   { id: "pull", keys: "Mod+Shift+L", label: "Pull", group: "Repository", when: "repo" },
   { id: "push", keys: "Mod+Shift+P", label: "Push", group: "Repository", when: "repo" },

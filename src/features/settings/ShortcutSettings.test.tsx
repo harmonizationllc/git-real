@@ -77,7 +77,7 @@ describe("ShortcutSettings layout", () => {
       expect(screen.getByRole("table", { name: group })).toBeInTheDocument();
     }
     expect(screen.getAllByRole("table")).toHaveLength(4);
-    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(16);
+    expect(screen.getAllByRole("button", { name: /^Change shortcut for / })).toHaveLength(17);
     expect(screen.queryByRole("heading")).toBeNull();
     const nav = screen.getByRole("table", { name: "Navigation" });
     for (const [label, part] of [
