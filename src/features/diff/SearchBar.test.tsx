@@ -1,3 +1,4 @@
+import { fireEvent } from "@testing-library/react";
 import { createRef, type Ref } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../test/renderWithProviders";
@@ -57,9 +58,7 @@ describe("SearchBar", () => {
   it("shows current+1/total, and total+ when capped", () => {
     const view = setup({ current: 1, total: 3 });
     expect(view.container.querySelector("[aria-live]")).toHaveTextContent("2/3");
-    view.rerender(
-      <SearchBar {...view.props} current={0} total={20000} capped onQueryChange={vi.fn()} />,
-    );
+    view.rerender(<SearchBar {...view.props} current={0} total={20000} capped />);
     expect(view.container.querySelector("[aria-live]")).toHaveTextContent("1/20000+");
   });
 
@@ -99,6 +98,16 @@ describe("SearchBar", () => {
     expect(seen).not.toContain("Enter");
     expect(seen).not.toContain("Escape");
     document.removeEventListener("keydown", outer);
+  });
+
+  it("ignores Enter during IME composition", () => {
+    const { getByRole, props } = setup();
+    const notPrevented = fireEvent.keyDown(getByRole("textbox", { name: "Find" }), {
+      key: "Enter",
+      isComposing: true,
+    });
+    expect(notPrevented).toBe(true);
+    expect(props.onNext).not.toHaveBeenCalled();
   });
 
   it("forwards the ref to the input", () => {

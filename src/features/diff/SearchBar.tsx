@@ -47,6 +47,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
   function SearchBar(props, ref) {
     const { query, wholeWord, matchCase, total, onQueryChange, onNext, onPrev, onClose } = props;
     const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.nativeEvent.isComposing) return;
       const action =
         e.key === "Enter" ? (e.shiftKey ? onPrev : onNext) : e.key === "Escape" ? onClose : null;
       if (action === null) return;

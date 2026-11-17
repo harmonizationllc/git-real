@@ -63,6 +63,7 @@ describe("useDiffSearch", () => {
     expect(view.result.current.hits).toHaveLength(5);
     expect(view.result.current.current).toBe(2);
     expect(revealRow).toHaveBeenLastCalledWith(2);
+    expect(revealRow).toHaveBeenCalledTimes(1);
   });
 
   it("next and prev wrap and reveal each hit", () => {
