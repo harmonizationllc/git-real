@@ -26,6 +26,7 @@ import { FULL_DIFF_LINES, totalLines } from "./model/limits";
 import { buildRows, type DiffRow } from "./model/rows";
 import { LABELS, NOTHING_REASON, revertBody } from "./model/menu";
 import { commitOf, isReadOnly, scopeId } from "./model/scope";
+import { seedFromRange } from "./model/search";
 import { selectionRequest, type MenuTarget } from "./model/selection";
 import { SearchBar } from "./SearchBar";
 import { useChangeNavigation } from "./useChangeNavigation";
@@ -263,17 +264,24 @@ function TextDiff({
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
+  // Bumped by every Mod+F, so the field is reselected after the render that holds a seeded query.
+  const [focusTick, setFocusTick] = useState(0);
   useEffect(() => {
     if (findShown) selectField();
-  }, [findShown, selectField]);
+  }, [findShown, focusTick, selectField]);
   const onKeyDown = (e: React.KeyboardEvent) => {
     // The pane's own menu or revert dialog owns the keyboard while open.
     if (menu !== null || pending !== null) return;
     if (!matchesShortcut(e, "findInDiff")) return;
     e.preventDefault();
-    // Already open: reselect now, since no state change will run the effect.
-    if (findShown) selectField();
-    else setFindOpen(true);
+    const range = viewerRef.current?.range() ?? null;
+    const seed = range === null ? null : seedFromRange(diff, rows, range);
+    if (seed !== null) {
+      useDiffSearchStore.getState().setQuery(seed.text);
+      search.seek(seed.anchor);
+    }
+    setFocusTick((t) => t + 1);
+    setFindOpen(true);
   };
   const closeFind = () => {
     setFindOpen(false);

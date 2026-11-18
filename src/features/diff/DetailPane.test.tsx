@@ -2727,6 +2727,7 @@ describe("find in diff", () => {
     useDiffSearchStore.setState({ query: "", wholeWord: false, matchCase: false });
     setActiveBindings(resolveBindings({}));
     serveThree();
+    stubCarets();
   });
 
   afterEach(() => {
@@ -2758,6 +2759,56 @@ describe("find in diff", () => {
     expect(event.defaultPrevented).toBe(true);
     expect(field()).toHaveFocus();
     expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]);
+  });
+
+  const three = (): [Parameters<typeof dragRange>[0], Parameters<typeof dragRange>[1]] => [
+    { row: 1, side: "new", offset: 8 },
+    { row: 1, side: "new", offset: 13 },
+  ];
+
+  it("Mod+F with a single-line selection seeds the query, selects it, and anchors the current hit", async () => {
+    setup();
+    await diffRegion();
+    dragRange(...three());
+    fireEvent.keyDown(paneRoot(), modF);
+    await screen.findByRole("search", { name: "Find in diff" });
+    expect(field().value).toBe("THREE");
+    await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 5]));
+    // Old "three" is hit 1; the selected new "THREE" is hit 2 and current.
+    expect(counter()).toHaveTextContent("2/2");
+    expect(marked(1, "new", "matchCurrent")).toEqual(["THREE"]);
+  });
+
+  it("Mod+F with a multi-row selection leaves the query alone", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    setup();
+    await diffRegion();
+    ownerRange();
+    fireEvent.keyDown(paneRoot(), modF);
+    await screen.findByRole("search", { name: "Find in diff" });
+    expect(field().value).toBe("two");
+    await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]));
+  });
+
+  it("Mod+F while open with a selection replaces the query and selects it", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    dragRange(...three());
+    fireEvent.keyDown(paneRoot(), modF);
+    await waitFor(() => expect(field().value).toBe("THREE"));
+    await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 5]));
+    expect(counter()).toHaveTextContent("2/2");
+  });
+
+  it("leaves the toggles untouched when seeding", async () => {
+    useDiffSearchStore.setState({ matchCase: true });
+    setup();
+    await diffRegion();
+    dragRange(...three());
+    fireEvent.keyDown(paneRoot(), modF);
+    await screen.findByRole("search", { name: "Find in diff" });
+    expect(useDiffSearchStore.getState().matchCase).toBe(true);
+    expect(counter()).toHaveTextContent("1/1");
   });
 
   it("typing a query marks the hits in the rows and the counter reads 1/2", async () => {
