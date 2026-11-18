@@ -119,8 +119,8 @@ export function seedFromRange(
   const covered = coveredText(diff, rows, range);
   const text = covered.endsWith("\n") ? covered.slice(0, -1) : covered;
   if (text.trim() === "") return null;
-  const at = rowLine(diff, rows, start.row, range.side);
-  if (at === null) return null;
+  // Non-null: coveredText returned text for this row, so the row has a line on this side.
+  const at = rowLine(diff, rows, start.row, range.side)!;
   const row = rows[start.row];
   const line = diff.hunks[at.hunkIndex].lines[at.lineIndex];
   // Must agree with the side convention in `cells()`: the side the hit is found on.

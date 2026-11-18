@@ -274,7 +274,9 @@ function TextDiff({
     if (menu !== null || pending !== null) return;
     if (!matchesShortcut(e, "findInDiff")) return;
     e.preventDefault();
-    const range = viewerRef.current?.range() ?? null;
+    // From inside the bar the viewer's old range must not overwrite what was typed.
+    const inBar = inputRef.current?.closest('[role="search"]')?.contains(e.target as Node) ?? false;
+    const range = inBar ? null : (viewerRef.current?.range() ?? null);
     const seed = range === null ? null : seedFromRange(diff, rows, range);
     if (seed !== null) {
       useDiffSearchStore.getState().setQuery(seed.text);

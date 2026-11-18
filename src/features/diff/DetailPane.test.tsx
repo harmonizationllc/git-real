@@ -2788,6 +2788,7 @@ describe("find in diff", () => {
     await screen.findByRole("search", { name: "Find in diff" });
     expect(field().value).toBe("two");
     await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]));
+    expect(counter()).toHaveTextContent("1/2");
   });
 
   it("Mod+F while open with a selection replaces the query and selects it", async () => {
@@ -2798,6 +2799,17 @@ describe("find in diff", () => {
     await waitFor(() => expect(field().value).toBe("THREE"));
     await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 5]));
     expect(counter()).toHaveTextContent("2/2");
+  });
+
+  it("Mod+F inside the field does not re-seed from the viewer's range", async () => {
+    useDiffSearchStore.setState({ query: "two" });
+    await openFind();
+    await waitFor(() => expect(counter()).toHaveTextContent("1/2"));
+    dragRange(...three());
+    fireEvent.keyDown(field(), modF);
+    await waitFor(() => expect([field().selectionStart, field().selectionEnd]).toEqual([0, 3]));
+    expect(field().value).toBe("two");
+    expect(counter()).toHaveTextContent("1/2");
   });
 
   it("leaves the toggles untouched when seeding", async () => {
