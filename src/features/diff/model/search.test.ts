@@ -261,7 +261,9 @@ describe("seedFromRange", () => {
     });
   });
 
-  it.each(cases)("invariant: the anchor is a hit of the seed text: $name", (c) => {
+  // Not a general law: a self-overlapping selection ("aa" at offset 1 of "aaaa") has no hit at
+  // its anchor, since hits never overlap. These cases do not overlap themselves.
+  it.each(cases)("the anchor is a hit of the seed text for these cases: $name", (c) => {
     const seed = seedFromRange(three, c.rows, c.range)!;
     const { hits } = findHits(three, c.rows, seed.text, opts);
     const anchors = hits.map((h) => hitAnchor(h, c.rows));

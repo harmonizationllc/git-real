@@ -4,7 +4,7 @@ Release notes for Git Real, newest first. Each `## X.Y.Z` section is the body of
 
 ## 0.3.0
 
-- **Find in diff**: Ctrl/Cmd+F in the diff pane opens a find bar with a hit counter, previous/next, whole-word and match-case toggles; it searches every line of the diff, both sides in split view; a selection in the diff seeds the query.
+- **Find in diff**: Ctrl/Cmd+F in the diff pane opens a find bar with a hit counter, previous/next, whole-word and match-case toggles; it searches every line of the diff, both sides in split view; a selection on one line seeds the query.
 - **Word highlighting**: two changed words with a single space between them are highlighted as one change, space included, instead of two.
 - **Multi-select branches**: click, Ctrl/Cmd-click and Shift-click select rows in Local and Remote; right-click a selected row and Delete acts on the whole selection with one confirmation. Local deletes run as one operation (unmerged ones are offered a single force-delete), remote deletes as one push with at most one sign-in.
 - **Auto-stash on checkout**: checking out a branch, commit or pull request while edited files would be overwritten no longer fails; the edits are stashed, the switch runs, and the stash is popped on the new branch, with a toast saying how many files came along. If the pop conflicts or fails, the stash is kept and the toast says so. Untracked-file collisions still show git's error.

@@ -107,7 +107,8 @@ export interface SearchSeed {
 
 /**
  * The find query a single-row text range seeds, with the anchor of its own occurrence; null
- * when it seeds nothing.
+ * when it seeds nothing. The anchor is a hit of the seed text unless the text overlaps itself
+ * ("aa" selected at offset 1 of "aaaa"): hits never overlap, so pickCurrent then falls back.
  */
 export function seedFromRange(
   diff: FileDiff,
