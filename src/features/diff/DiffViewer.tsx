@@ -17,7 +17,7 @@ import type { HighlightMap } from "./model/highlight";
 import { rowHeightEstimate } from "./model/rowHeight";
 import type { DiffRow } from "./model/rows";
 import type { RowMarks } from "./model/search";
-import { coveredText, type MenuTarget } from "./model/selection";
+import { coveredText, type MenuTarget, type TextRange } from "./model/selection";
 import { SplitRow } from "./SplitRow";
 import { UnifiedRow } from "./UnifiedRow";
 import { useScrollRangeHold } from "./useScrollRangeHold";
@@ -31,6 +31,8 @@ export interface DiffViewerHandle {
   revealRow(index: number): void;
   /** Focuses the scroll container. */
   focus(): void;
+  /** The viewer's own text range, if one is dragged. */
+  range(): TextRange | null;
 }
 
 export interface DiffViewerProps {
@@ -109,8 +111,9 @@ export const DiffViewer = forwardRef<DiffViewerHandle, DiffViewerProps>(function
         virtualizer.scrollToIndex(index, { align: "auto" });
       },
       focus: () => elRef.current?.focus(),
+      range: () => range,
     }),
-    [virtualizer],
+    [virtualizer, range],
   );
 
   useEffect(() => {

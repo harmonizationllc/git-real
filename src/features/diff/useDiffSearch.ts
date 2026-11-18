@@ -23,6 +23,8 @@ export interface DiffSearch {
   marks: ReadonlyMap<number, RowMarks>;
   next(): void;
   prev(): void;
+  /** Makes the hit at `anchor` current (the viewport's first hit if none starts there) and reveals it. */
+  seek(anchor: HitAnchor): void;
 }
 
 const NONE: SearchResult = { hits: [], capped: false };
@@ -70,6 +72,13 @@ export function useDiffSearch(
     },
     [hits, rows, index],
   );
+  // UNSET forces the render-time re-derive, which runs pickCurrent with the anchor; the step bump
+  // makes the reveal effect fire even when the hit itself is unchanged.
+  const seek = useCallback(
+    (anchor: HitAnchor) =>
+      setState((s) => ({ hits: UNSET, index: null, anchor, steps: s.steps + 1 })),
+    [],
+  );
   const next = useCallback(() => step(1), [step]);
   const prev = useCallback(() => step(-1), [step]);
 
@@ -96,5 +105,5 @@ export function useDiffSearch(
   }, [hits, index, rows, steps, viewer]);
 
   const marks = useMemo(() => buildMarks(hits, rows, index), [hits, rows, index]);
-  return { hits, capped, current: index, marks, next, prev };
+  return { hits, capped, current: index, marks, next, prev, seek };
 }

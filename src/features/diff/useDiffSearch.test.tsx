@@ -35,6 +35,7 @@ function harness(opts: { open?: boolean; top?: number; query?: string } = {}) {
       firstVisibleRow: () => top.value,
       revealRow,
       focus: vi.fn(),
+      range: () => null,
     },
   };
   setStore(opts.query ?? "");
@@ -44,7 +45,7 @@ function harness(opts: { open?: boolean; top?: number; query?: string } = {}) {
     Object.assign(props, next);
     view.rerender();
   };
-  return { view, top, revealRow, rerender };
+  return { view, top, revealRow, rerender, rows: props.rows };
 }
 
 describe("useDiffSearch", () => {
@@ -158,5 +159,45 @@ describe("useDiffSearch", () => {
     const view = renderHookWithProviders(() => useDiffSearch(big, rows, viewer, true));
     expect(view.result.current.capped).toBe(true);
     expect(view.result.current.hits).toHaveLength(SEARCH_HIT_CAP);
+  });
+});
+
+describe("useDiffSearch seek", () => {
+  it("makes the anchored hit current and reveals it when a new query arrives with it", () => {
+    const { view, revealRow, rows } = harness({ query: "" });
+    act(() => {
+      setStore("foo");
+      view.result.current.seek({ key: rows[4].key, side: "new", start: 4 });
+    });
+    // hits: rows 0, 1, 2, 4 (start 0), 4 (start 4)
+    expect(view.result.current.current).toBe(4);
+    expect(revealRow).toHaveBeenLastCalledWith(4);
+  });
+
+  it("moves the current hit even when the query is unchanged", () => {
+    const { view, revealRow, rows } = harness({ query: "foo" });
+    expect(view.result.current.current).toBe(0);
+    revealRow.mockClear();
+    act(() => view.result.current.seek({ key: rows[2].key, side: "new", start: 0 }));
+    expect(view.result.current.current).toBe(2);
+    expect(revealRow).toHaveBeenCalledWith(2);
+  });
+
+  it("falls back to the viewport when the anchor matches no hit", () => {
+    const { view, top, rows } = harness({ query: "foo" });
+    top.value = 3;
+    // Row 1 is a deletion, so its hits are on the old side.
+    act(() => view.result.current.seek({ key: rows[1].key, side: "new", start: 0 }));
+    expect(view.result.current.current).toBe(3);
+  });
+
+  it("applies a seek made while closed once opened in the same batch", () => {
+    const { view, rows, rerender } = harness({ open: false });
+    act(() => {
+      setStore("foo");
+      view.result.current.seek({ key: rows[4].key, side: "new", start: 4 });
+      rerender({ open: true });
+    });
+    expect(view.result.current.current).toBe(4);
   });
 });
