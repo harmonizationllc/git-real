@@ -28,20 +28,21 @@ const LINES = ["const one = 1;", "const two = 2;", "const three = 3;"];
 const A = oidOf(0);
 const B = oidOf(1);
 
+// Sampled once: hunks() is called in beforeEach and again inside a test, and fullDate renders
+// to the second, so two samples straddling a second boundary would disagree on the title.
+const NOW = Math.floor(Date.now() / 1000);
+
 // Hunk A blames lines 1-2 (three hours ago, Alice); hunk B blames line 3 (Bob).
-const hunks = () => {
-  const now = Math.floor(Date.now() / 1000);
-  return [
-    blameHunk(0, 1, 2, {
-      summary: "Add the constants",
-      author: { name: "Alice", email: "alice@x.io", time: now - 3 * 3600 },
-    }),
-    blameHunk(1, 3, 1, {
-      summary: "Add three",
-      author: { name: "Bob", email: "bob@x.io", time: now - 2 * 86400 },
-    }),
-  ];
-};
+const hunks = () => [
+  blameHunk(0, 1, 2, {
+    summary: "Add the constants",
+    author: { name: "Alice", email: "alice@x.io", time: NOW - 3 * 3600 },
+  }),
+  blameHunk(1, 3, 1, {
+    summary: "Add three",
+    author: { name: "Bob", email: "bob@x.io", time: NOW - 2 * 86400 },
+  }),
+];
 
 beforeEach(() => {
   vi.resetAllMocks();
