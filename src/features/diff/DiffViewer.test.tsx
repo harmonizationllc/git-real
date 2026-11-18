@@ -248,6 +248,28 @@ describe("DiffViewer landmarks", () => {
 // Contract: a primary-button drag on the scroll container focuses it, captures the pointer and
 // tints the rows of the range; Escape or new rows clear it.
 describe("DiffViewer text range", () => {
+  it("should expose null before any drag", () => {
+    const { ref } = setup();
+    expect(ref.current!.range()).toBeNull();
+  });
+
+  it("should expose the dragged range", () => {
+    const { ref, scroll } = setup();
+    drag(scroll, { row: 1, side: "new", offset: 8 }, { row: 3, side: "new", offset: 5 });
+    expect(ref.current!.range()).toEqual({
+      side: "new",
+      anchor: { row: 1, offset: 8 },
+      focus: { row: 3, offset: 5 },
+    });
+  });
+
+  it("should expose null after Escape clears it", () => {
+    const { ref, scroll } = setup();
+    drag(scroll, { row: 1, side: "new", offset: 8 }, { row: 3, side: "new", offset: 5 });
+    fireEvent.keyDown(scroll, { key: "Escape" });
+    expect(ref.current!.range()).toBeNull();
+  });
+
   it("should focus the scroll container on pointerdown", () => {
     const { scroll } = setup();
     hits.set(10, { row: 1, side: "old", offset: 4 });

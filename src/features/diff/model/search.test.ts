@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fileDiff, hunk, L } from "../../../test/diffFixtures";
+import { fileDiff, hunk, L, threePairDiff } from "../../../test/diffFixtures";
 import { buildRows } from "./rows";
+import type { Side, TextRange } from "./selection";
 import {
   buildMarks,
   compileQuery,
@@ -9,6 +10,7 @@ import {
   matchLine,
   pickCurrent,
   SEARCH_HIT_CAP,
+  seedFromRange,
   type SearchHit,
   type SearchOptions,
 } from "./search";
@@ -201,5 +203,83 @@ describe("buildMarks", () => {
   it("leaves rows without hits out of the map", () => {
     const marks = buildMarks(findHits(diff, unified, "keep", opts).hits, unified, null);
     expect([...marks.keys()]).toEqual([0]);
+  });
+});
+
+describe("seedFromRange", () => {
+  const three = threePairDiff();
+  const tSplit = buildRows(three, "split");
+  const tUnified = buildRows(three, "unified");
+  const range = (side: Side, anchor: [number, number], focus: [number, number]): TextRange => ({
+    side,
+    anchor: { row: anchor[0], offset: anchor[1] },
+    focus: { row: focus[0], offset: focus[1] },
+  });
+
+  const cases = [
+    {
+      name: "split partial new side",
+      rows: tSplit,
+      range: range("new", [1, 8], [1, 13]),
+      text: "THREE",
+      at: [1, "new", 8],
+    },
+    {
+      name: "backward range",
+      rows: tSplit,
+      range: range("new", [1, 13], [1, 8]),
+      text: "THREE",
+      at: [1, "new", 8],
+    },
+    {
+      name: "split context old cell resolves to new",
+      rows: tSplit,
+      range: range("old", [0, 0], [0, 1]),
+      text: "c",
+      at: [0, "new", 0],
+    },
+    {
+      name: "unified deletion dragged on old",
+      rows: tUnified,
+      range: range("old", [1, 4], [1, 7]),
+      text: "two",
+      at: [1, "old", 4],
+    },
+    {
+      name: "unified deletion dragged on new is covered whole",
+      rows: tUnified,
+      range: range("new", [1, 4], [1, 7]),
+      text: "one two three",
+      at: [1, "old", 0],
+    },
+  ] as const;
+
+  it.each(cases)("seeds: $name", (c) => {
+    expect(seedFromRange(three, c.rows, c.range)).toEqual({
+      text: c.text,
+      anchor: { key: c.rows[c.at[0]].key, side: c.at[1], start: c.at[2] },
+    });
+  });
+
+  it.each(cases)("invariant: the anchor is a hit of the seed text: $name", (c) => {
+    const seed = seedFromRange(three, c.rows, c.range)!;
+    const { hits } = findHits(three, c.rows, seed.text, opts);
+    const anchors = hits.map((h) => hitAnchor(h, c.rows));
+    expect(anchors).toContainEqual(seed.anchor);
+  });
+
+  it("seeds nothing from a multi-row range", () => {
+    expect(seedFromRange(three, tSplit, range("new", [1, 8], [3, 5]))).toBeNull();
+  });
+
+  it("seeds nothing from whitespace only", () => {
+    expect(seedFromRange(three, tSplit, range("new", [1, 3], [1, 4]))).toBeNull();
+  });
+
+  it("drops a trailing newline from the seed", () => {
+    const one = fileDiff([hunk([L("context", "abc\n", 1, 1)])]);
+    const seed = seedFromRange(one, buildRows(one, "split"), range("new", [0, 0], [0, 4]));
+    expect(seed?.text).toBe("abc");
+    expect(seed?.anchor.start).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import type { FileDiff } from "../../../lib/ipc";
 import type { DiffRow } from "./rows";
-import type { Side } from "./selection";
+import { coveredText, orderedRange, rowLine, type Side, type TextRange } from "./selection";
 import type { Range } from "./wordDiff";
 
 export const SEARCH_HIT_CAP = 20_000;
@@ -98,6 +98,43 @@ function cells(diff: FileDiff, row: DiffRow): { side: Side; content: string }[] 
   if (row.old !== null && !context) out.push({ side: "old", content: hunk.lines[row.old].content });
   if (row.new !== null) out.push({ side: "new", content: hunk.lines[row.new].content });
   return out;
+}
+
+export interface SearchSeed {
+  text: string;
+  anchor: HitAnchor;
+}
+
+/**
+ * The find query a single-row text range seeds, with the anchor of its own occurrence; null
+ * when it seeds nothing.
+ */
+export function seedFromRange(
+  diff: FileDiff,
+  rows: DiffRow[],
+  range: TextRange,
+): SearchSeed | null {
+  const { start, end } = orderedRange(range);
+  if (start.row !== end.row) return null;
+  const covered = coveredText(diff, rows, range);
+  const text = covered.endsWith("\n") ? covered.slice(0, -1) : covered;
+  if (text.trim() === "") return null;
+  const at = rowLine(diff, rows, start.row, range.side);
+  if (at === null) return null;
+  const row = rows[start.row];
+  const line = diff.hunks[at.hunkIndex].lines[at.lineIndex];
+  // Must agree with the side convention in `cells()`: the side the hit is found on.
+  const side: Side =
+    row.kind === "unified"
+      ? line.kind === "deletion"
+        ? "old"
+        : "new"
+      : row.old !== null && row.old === row.new
+        ? "new"
+        : range.side;
+  // coveredText's rule: only a cell of the range's own kind is cut at the offsets.
+  const cut = line.kind === "context" || (line.kind === "deletion") === (range.side === "old");
+  return { text, anchor: { key: row.key, side, start: cut ? start.offset : 0 } };
 }
 
 export function findHits(
